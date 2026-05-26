@@ -2,10 +2,11 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Kevs Digital | Business Intelligence</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Kevs Digital Business Intelligence v5</title>
     <script src="https://cdn.tailwindcss.com/3.4.1"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         * { font-family: 'Inter', system-ui, sans-serif; }
         body { background: #F8FAFE; }
@@ -16,28 +17,19 @@
         .msg-user { background: #1E3A5F; color: white; align-self: flex-end; border-bottom-right-radius: 3px; }
         @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
         .fade-in { animation: fadeIn 0.25s ease forwards; }
-        .typing-dot { animation: blink 1.2s infinite; display: inline-block; }
-        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
-        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
-        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
-        .pillar-btn { transition: all 0.2s ease; }
-        .pillar-active { background-color: #1E3A5F !important; color: white !important; box-shadow: 0 4px 8px -4px rgba(0,0,0,0.1); }
-        .pillar-inactive { background-color: #EFF6FF !important; color: #1E3A5F !important; border: 1px solid #BFDBFE; }
-        .pillar-inactive:hover { background-color: #DBEAFE !important; }
-        .framework-tag { background: #EFF6FF; color: #1E40AF; border: 1px solid #BFDBFE; border-radius: 999px; padding: 2px 10px; font-size: 10px; font-weight: 700; }
-        .framework-tag.live { background: #DCFCE7; color: #166534; border-color: #86EFAC; }
-        .tab-btn { border-bottom: 2px solid transparent; transition: 0.15s; }
-        .tab-active { border-color: #1E3A5F; color: #1E3A5F; font-weight: 700; }
-        .history-item { border-bottom: 1px solid #E2E8F0; transition: 0.1s; }
-        .history-item:hover { background: #F8FAFE; }
-        .live-dot { animation: pulse 2s infinite; }
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+        .loading-spinner { border: 2px solid #e5e7eb; border-top: 2px solid #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 0.8s linear infinite; display: inline-block; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .tab-active { border-bottom: 2px solid #1E3A5F; color: #1E3A5F; font-weight: 700; }
+        .pillar-btn { transition: all 0.2s; }
+        .pillar-active { background: #1E3A5F; color: white; }
+        .pillar-inactive { background: #EFF6FF; color: #1E3A5F; border: 1px solid #BFDBFE; }
+        .pillar-inactive:hover { background: #DBEAFE; }
     </style>
 </head>
 <body class="min-h-screen p-4">
 
-<!-- ==================== AUTH MODAL (Supabase‑compatible backend) ==================== -->
-<div id="authModal" class="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 transition-all" style="display: flex;">
+<!-- AUTH MODAL -->
+<div id="authModal" class="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
         <div class="flex justify-between items-center p-5 border-b border-gray-100">
             <div class="flex items-center gap-2">
@@ -60,17 +52,20 @@
                     <a href="#" id="forgotPasswordLink" class="text-xs text-blue-700 hover:text-blue-900 font-medium">Forgot password?</a>
                 </div>
                 <button id="doLoginBtn" class="w-full bg-blue-900 hover:bg-blue-800 text-white font-semibold py-2.5 rounded-xl transition text-sm">Login</button>
+                <button id="googleLoginBtn" class="w-full border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium py-2.5 rounded-xl transition text-sm flex items-center justify-center gap-2"><i class="fab fa-google text-red-500"></i> Sign in with Google</button>
             </div>
         </div>
         <!-- Signup Form -->
         <div id="signupForm" style="display: none;" class="px-6 pb-2">
             <div class="space-y-3">
-                <div class="grid grid-cols-2 gap-3"><input type="text" id="signupFirstName" placeholder="First name *" class="w-full border rounded-xl px-3 py-2.5 text-sm"><input type="text" id="signupLastName" placeholder="Last name *" class="w-full border rounded-xl px-3 py-2.5 text-sm"></div>
+                <input type="text" id="signupOrgName" placeholder="Organisation Name *" class="w-full border rounded-xl px-4 py-2.5 text-sm">
+                <input type="text" id="signupLocation" placeholder="Location (e.g., Lagos, Nigeria) *" class="w-full border rounded-xl px-4 py-2.5 text-sm">
+                <input type="text" id="signupNiche" placeholder="Niche (e.g., E-commerce, SaaS) *" class="w-full border rounded-xl px-4 py-2.5 text-sm">
+                <input type="number" id="signupBudget" placeholder="Monthly Budget (₦) *" class="w-full border rounded-xl px-4 py-2.5 text-sm">
                 <input type="email" id="signupEmail" placeholder="Email address *" class="w-full border rounded-xl px-4 py-2.5 text-sm">
-                <input type="tel" id="signupPhone" placeholder="Phone (optional)" class="w-full border rounded-xl px-4 py-2.5 text-sm">
                 <input type="password" id="signupPassword" placeholder="Password *" class="w-full border rounded-xl px-4 py-2.5 text-sm">
                 <label class="flex items-center gap-2"><input type="checkbox" id="showPasswordSignup"> <span class="text-xs">Show password</span></label>
-                <button id="doSignupBtn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-xl transition text-sm">Create Account</button>
+                <button id="doSignupBtn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-xl transition text-sm">Create Organisation & Account</button>
             </div>
         </div>
         <div class="px-6 pb-5 pt-1 text-center border-t border-gray-100 mt-1">
@@ -80,284 +75,610 @@
     </div>
 </div>
 
-<!-- ==================== MAIN DASHBOARD ==================== -->
-<div id="mainApp" style="display: none;" class="max-w-5xl mx-auto px-4 sm:px-6 py-5">
+<!-- MAIN DASHBOARD -->
+<div id="mainApp" style="display: none;" class="max-w-7xl mx-auto px-4 sm:px-6 py-5">
     <!-- Top bar -->
-    <nav class="flex flex-wrap justify-between items-center gap-3 mb-6 pb-2 border-b border-gray-200">
+    <div class="flex flex-wrap justify-between items-center gap-3 mb-6 pb-2 border-b border-gray-200">
         <div class="text-2xl font-black italic text-blue-900">Kevs<span class="text-green-600">Digital</span><span class="text-xs font-normal text-gray-400 ml-2 align-middle">BI</span></div>
         <div class="flex items-center gap-4">
-            <div class="flex items-center gap-2 bg-white shadow-sm rounded-full px-3 py-1.5"><span class="live-dot w-2 h-2 rounded-full bg-green-500"></span><span id="headerUser" class="text-xs font-mono text-gray-600">—</span></div>
+            <div class="flex items-center gap-2 bg-white shadow-sm rounded-full px-3 py-1.5"><span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span><span id="headerUser" class="text-xs font-mono text-gray-600">—</span></div>
             <button id="logoutBtn" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-1.5 rounded-full transition font-medium">Logout</button>
         </div>
-    </nav>
+    </div>
 
-    <!-- Intelligence Engine Card -->
-    <div class="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
-        <div class="bg-blue-900 px-5 py-3 flex items-center justify-between">
-            <div class="flex items-center gap-3"><span class="live-dot w-2 h-2 bg-green-400 rounded-full"></span><span class="text-xs font-black text-white uppercase tracking-widest">Intelligence Engine</span></div>
-            <span id="modelBadge" class="text-xs text-white/50 font-mono">gemini-2.0</span>
-        </div>
-        <!-- Tabs -->
-        <div class="flex bg-white border-b border-blue-100 px-4">
-            <button onclick="Portal.switchTab('analysis')" id="tabAnalysis" class="tab-btn tab-active text-sm font-medium text-gray-600 py-3 mr-5">📊 Analysis</button>
-            <button onclick="Portal.switchTab('history')" id="tabHistory" class="tab-btn text-sm font-medium text-gray-500 py-3 mr-5">📜 History</button>
-            <button onclick="Portal.switchTab('profile')" id="tabProfile" class="tab-btn text-sm font-medium text-gray-500 py-3">👤 Profile</button>
-        </div>
+    <!-- Tabs -->
+    <div class="border-b border-gray-200 mb-6 overflow-x-auto">
+        <nav class="flex space-x-4">
+            <button data-tab="leads" class="tab-btn px-4 py-2 text-sm font-medium text-gray-600">📋 Leads</button>
+            <button data-tab="metrics" class="tab-btn px-4 py-2 text-sm font-medium text-gray-600">📊 Metrics</button>
+            <button data-tab="chat" class="tab-btn px-4 py-2 text-sm font-medium text-gray-600">🤖 AI Chat</button>
+            <button data-tab="cac" class="tab-btn px-4 py-2 text-sm font-medium text-gray-600">🎯 CAC Target</button>
+            <button data-tab="forecast" class="tab-btn px-4 py-2 text-sm font-medium text-gray-600">📈 Forecast</button>
+            <button data-tab="org" class="tab-btn px-4 py-2 text-sm font-medium text-gray-600">⚙️ Organisation</button>
+        </nav>
+    </div>
 
-        <!-- ANALYSIS PANEL -->
-        <div id="panelAnalysis">
-            <!-- Pillar selector -->
-            <div class="p-4 border-b border-blue-100 bg-white/70">
-                <p class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">🧠 Analysis Pillar</p>
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    <button onclick="Portal.setPillar(1)" id="pillar1Btn" class="pillar-btn pillar-inactive px-3 py-2 rounded-lg text-xs font-bold text-left">👥 Customer</button>
-                    <button onclick="Portal.setPillar(2)" id="pillar2Btn" class="pillar-btn pillar-inactive px-3 py-2 rounded-lg text-xs font-bold text-left">🏪 Market</button>
-                    <button onclick="Portal.setPillar(3)" id="pillar3Btn" class="pillar-btn pillar-active px-3 py-2 rounded-lg text-xs font-bold text-left">⚙️ Capability</button>
-                    <button onclick="Portal.setPillar(4)" id="pillar4Btn" class="pillar-btn pillar-inactive px-3 py-2 rounded-lg text-xs font-bold text-left">📈 Growth</button>
-                </div>
-                <div class="mt-3"><p class="text-xs text-gray-400 mb-1">Active Frameworks:</p><div id="frameworkTags" class="flex flex-wrap gap-1"><span class="framework-tag">VRIO</span><span class="framework-tag">Core Competencies</span></div></div>
+    <!-- Leads Tab -->
+    <div id="tab-leads" class="tab-content">
+        <div class="flex justify-between items-center flex-wrap gap-3 mb-5">
+            <h2 class="text-xl font-semibold">Lead Management</h2>
+            <div class="flex gap-2">
+                <select id="lead-status-filter" class="border rounded-lg p-2 text-sm bg-white"><option value="">All status</option><option value="cold">Cold</option><option value="warm">Warm</option><option value="converted">Converted</option></select>
+                <select id="lead-source-filter" class="border rounded-lg p-2 text-sm bg-white"><option value="">All sources</option></select>
+                <button id="add-lead-btn" class="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm"><i class="fas fa-plus"></i> Add Lead</button>
+                <label class="bg-gray-200 px-4 py-2 rounded-lg text-sm cursor-pointer"><i class="fas fa-upload"></i> CSV Upload <input type="file" id="csv-upload" accept=".csv" class="hidden"></label>
             </div>
-            <!-- Usage bar -->
-            <div class="px-4 pt-3 pb-1 bg-white/40">
-                <div class="flex justify-between items-center mb-1"><span class="text-xs text-gray-400">Free analyses</span><span id="usageLabel" class="text-xs font-bold font-mono text-gray-700">— / 15</span></div>
-                <div class="h-1.5 bg-gray-200 rounded-full overflow-hidden"><div id="usageBarFill" style="width:0%; background:#22c55e;"></div></div>
-                <div class="flex justify-between items-center mt-2"><p class="text-xs text-gray-400">Engine: <span id="engineMode" class="font-bold text-blue-900">CAPABILITY_AUDIT</span></p><p id="dataStatus" class="text-xs text-green-600 font-medium">✅ Ready</p></div>
-                <div id="upgradeBanner" class="hidden mt-3 p-3 bg-blue-900 text-white rounded-xl text-center"><p class="text-xs font-bold">🚀 Upgrade for unlimited analyses</p></div>
-            </div>
-            <!-- Chat messages -->
-            <div class="chat-messages flex flex-col gap-3 p-4 overflow-y-auto bg-gray-50/30" id="chatMessages" style="height: 360px;">
-                <div class="msg-ai self-start max-w-xs text-sm px-4 py-3 rounded-xl rounded-bl-sm fade-in">Welcome to Kevs Digital BI. Select a pillar or ask any strategic question.</div>
-            </div>
-            <!-- Quick prompts -->
-            <div class="flex gap-2 px-4 pb-3 flex-wrap">
-                <button onclick="Portal.quickAsk('Who are our most valuable customers and why?')" class="text-xs bg-white border border-blue-200 text-blue-800 px-3 py-1.5 rounded-full hover:bg-blue-50">👥 Customer insights</button>
-                <button onclick="Portal.quickAsk('How do we outperform competitors in our market?')" class="text-xs bg-white border border-blue-200 text-blue-800 px-3 py-1.5 rounded-full hover:bg-blue-50">🏪 Competitive edge</button>
-                <button onclick="Portal.quickAsk('What internal capability gives us sustainable advantage?')" class="text-xs bg-white border border-blue-200 text-blue-800 px-3 py-1.5 rounded-full hover:bg-blue-50">⚙️ Capability audit</button>
-                <button onclick="Portal.quickAsk('How to improve unit economics and scale profitably?')" class="text-xs bg-white border border-blue-200 text-blue-800 px-3 py-1.5 rounded-full hover:bg-blue-50">📈 Growth levers</button>
-            </div>
-            <!-- Input -->
-            <div class="flex gap-2 px-4 pb-4"><input type="text" id="chatInput" placeholder="Ask the intelligence engine..." class="flex-1 px-4 py-3 rounded-xl border border-blue-200 bg-white text-sm outline-none focus:ring-2 focus:ring-blue-400" onkeydown="if(event.key==='Enter') Portal.sendMessage()"><button onclick="Portal.sendMessage()" id="sendBtn" class="bg-blue-900 text-white font-bold px-5 py-3 rounded-xl hover:bg-black transition-all text-sm">Send</button></div>
         </div>
-
-        <!-- HISTORY PANEL -->
-        <div id="panelHistory" class="hidden p-4">
-            <div class="flex justify-between items-center mb-4"><p class="text-sm font-bold text-gray-700">Past Analyses</p><button onclick="Portal.loadHistory()" class="text-xs text-blue-900 font-bold hover:underline">Refresh</button></div>
-            <div id="historyList" class="overflow-y-auto rounded-xl border border-blue-100 bg-white" style="max-height: 360px;"><p class="text-xs text-gray-400 text-center py-10">No history yet.</p></div>
+        <div id="leads-loading" class="hidden text-center py-10"><div class="loading-spinner mx-auto"></div><p class="mt-2">Loading leads...</p></div>
+        <div class="overflow-x-auto bg-white rounded-xl shadow">
+            <table class="min-w-full"><thead class="bg-gray-50"><tr><th class="px-5 py-3 text-left text-xs">Name</th><th>Email</th><th>Source</th><th>Status</th><th>Deal (₦)</th><th>Ad Spend</th><th>Actions</th></tr></thead><tbody id="leads-table-body"></tbody></table>
         </div>
+        <div class="mt-4 flex justify-between items-center"><button id="prev-page" class="px-3 py-1 border rounded disabled:opacity-50">Prev</button><span id="page-info"></span><button id="next-page" class="px-3 py-1 border rounded disabled:opacity-50">Next</button></div>
+    </div>
 
-        <!-- PROFILE PANEL -->
-        <div id="panelProfile" class="hidden p-4">
-            <p class="text-sm font-bold text-gray-700 mb-4">Your Business Context</p>
-            <div class="space-y-3 max-w-md">
-                <div><label class="text-xs font-bold text-gray-500 uppercase">Location</label><input id="profLocation" type="text" placeholder="e.g. Lagos, Nigeria" class="mt-1 w-full p-3 bg-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-blue-900 text-sm"></div>
-                <div><label class="text-xs font-bold text-gray-500 uppercase">Industry / Niche</label><input id="profNiche" type="text" placeholder="e.g. retail, fintech, logistics" class="mt-1 w-full p-3 bg-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-blue-900 text-sm"></div>
-                <div><label class="text-xs font-bold text-gray-500 uppercase">Monthly Budget (₦)</label><input id="profBudget" type="number" placeholder="e.g. 500000" class="mt-1 w-full p-3 bg-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-blue-900 text-sm"></div>
-                <button onclick="Portal.saveProfile()" class="w-full bg-blue-900 text-white font-bold py-3 rounded-xl hover:bg-black transition-all text-sm">Save Context</button>
-                <div id="profileMsg" class="hidden text-center text-xs text-green-600 font-bold pt-1"></div>
+    <!-- Metrics Tab -->
+    <div id="tab-metrics" class="tab-content hidden">
+        <div id="metrics-loading" class="hidden text-center py-10"><div class="loading-spinner mx-auto"></div></div>
+        <div id="metrics-content" class="hidden">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Total Leads</div><div id="metric-total-leads" class="text-2xl font-bold">-</div></div>
+                <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Conversion Rate</div><div id="metric-conversion-rate" class="text-2xl font-bold">-</div></div>
+                <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Actual CAC (₦)</div><div id="metric-cac" class="text-2xl font-bold">-</div></div>
+                <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">ROI (%)</div><div id="metric-roi" class="text-2xl font-bold">-</div></div>
+                <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Pipeline Value (₦)</div><div id="metric-pipeline" class="text-2xl font-bold">-</div></div>
+                <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Data Quality</div><div id="metric-dq" class="text-2xl font-bold">-</div></div>
+            </div>
+            <div class="bg-white p-5 rounded-xl shadow-sm"><h3 class="font-semibold mb-3">🏆 Top Lead Sources</h3><div id="top-sources-list"></div></div>
+            <button id="refresh-metrics" class="mt-4 bg-blue-500 text-white px-4 py-2 rounded-lg text-sm"><i class="fas fa-sync-alt"></i> Refresh Metrics</button>
+        </div>
+    </div>
+
+    <!-- AI Chat Tab -->
+    <div id="tab-chat" class="tab-content hidden">
+        <div class="bg-white rounded-xl shadow-md p-5">
+            <div class="flex flex-wrap gap-3 mb-4">
+                <select id="chat-mode" class="border rounded-lg p-2 text-sm"><option value="chat">💬 Chat</option><option value="report">📄 Report</option><option value="dashboard">📊 Dashboard</option></select>
+                <input type="number" id="force-pillar" placeholder="Force pillar 1-4" class="border rounded-lg p-2 text-sm w-32">
+                <button id="clear-chat" class="text-gray-500 text-sm"><i class="fas fa-trash-alt"></i> Clear chat</button>
+            </div>
+            <div id="chat-messages" class="h-96 overflow-y-auto border rounded-xl p-3 bg-gray-50 mb-3 space-y-2"></div>
+            <div class="flex gap-2"><input type="text" id="chat-input" placeholder="Ask a strategic question..." class="flex-1 border rounded-lg p-3"><button id="send-chat" class="bg-blue-600 text-white px-5 rounded-lg">Send</button></div>
+            <div id="chat-usage" class="text-xs text-gray-400 mt-2"></div>
+        </div>
+    </div>
+
+    <!-- CAC Target Tab -->
+    <div id="tab-cac" class="tab-content hidden">
+        <div class="bg-white p-6 rounded-xl shadow-md">
+            <h2 class="text-xl font-semibold mb-4">CAC Target & Leads Needed</h2>
+            <div class="grid md:grid-cols-3 gap-4 mb-4">
+                <div><label class="block text-sm font-medium">Target CAC (₦)</label><input type="number" id="target-cac" class="border rounded-lg w-full p-2"></div>
+                <div><label class="block text-sm font-medium">Target Revenue (₦)</label><input type="number" id="target-rev" class="border rounded-lg w-full p-2"></div>
+                <div><label class="block text-sm font-medium">Budget available (₦)</label><input type="number" id="target-budget" class="border rounded-lg w-full p-2"></div>
+            </div>
+            <button id="run-cac" class="bg-purple-600 text-white px-5 py-2 rounded-lg">Calculate & Advise</button>
+            <div id="cac-result" class="mt-5 p-4 bg-gray-50 rounded-lg hidden"></div>
+        </div>
+    </div>
+
+    <!-- Forecast Tab -->
+    <div id="tab-forecast" class="tab-content hidden">
+        <div class="bg-white p-6 rounded-xl shadow-md">
+            <h2 class="text-xl font-semibold mb-4">Revenue Forecast</h2>
+            <div class="grid md:grid-cols-3 gap-4 mb-5">
+                <div><label class="text-sm">Months</label><input type="number" id="forecast-months" value="6" class="border rounded-lg w-full p-2"></div>
+                <div><label class="text-sm">Monthly growth (%)</label><input type="number" id="forecast-growth" step="0.5" class="border rounded-lg w-full p-2"></div>
+                <div><label class="text-sm">Extra ad spend (₦)</label><input type="number" id="forecast-add-spend" class="border rounded-lg w-full p-2"></div>
+            </div>
+            <button id="run-forecast" class="bg-green-600 text-white px-5 py-2 rounded-lg">Generate forecast</button>
+            <div id="forecast-loading" class="hidden text-center py-4"><div class="loading-spinner mx-auto"></div></div>
+            <div class="mt-6"><canvas id="forecastChart" height="200"></canvas></div>
+            <div id="forecast-table" class="mt-5 overflow-x-auto"></div>
+        </div>
+    </div>
+
+    <!-- Organisation Tab -->
+    <div id="tab-org" class="tab-content hidden">
+        <div class="bg-white p-6 rounded-xl shadow-md">
+            <h2 class="text-xl font-semibold mb-4">Organisation Profile</h2>
+            <form id="org-profile-form" class="space-y-3">
+                <input type="text" id="org-name-field" placeholder="Org Name" class="border rounded-lg w-full p-2">
+                <input type="text" id="org-location" placeholder="Location" class="border rounded-lg w-full p-2">
+                <input type="text" id="org-niche" placeholder="Niche" class="border rounded-lg w-full p-2">
+                <input type="number" id="org-budget" placeholder="Budget" class="border rounded-lg w-full p-2">
+                <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg">Update Profile</button>
+            </form>
+            <hr class="my-6">
+            <h3 class="font-semibold">👥 Team Members</h3>
+            <div id="members-list" class="mt-4 text-sm space-y-2"></div>
+            <div class="mt-4" id="invite-section">
+                <label class="block text-sm font-medium">Invite new member</label>
+                <div class="flex flex-wrap gap-2 mt-1"><input type="email" id="invite-email" placeholder="Email" class="border rounded-lg p-2 flex-1"><select id="invite-role" class="border rounded-lg p-2"><option>analyst</option><option>viewer</option></select><button id="invite-btn" class="bg-gray-800 text-white px-4 rounded-lg">Invite</button></div>
             </div>
         </div>
     </div>
 </div>
 
+<!-- Delete confirmation modal -->
+<div id="delete-modal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50"><div class="bg-white rounded-xl p-6 max-w-sm"><h3 class="text-lg font-bold">Confirm delete</h3><p>Delete this lead?</p><div class="flex justify-end gap-3 mt-5"><button id="cancel-delete" class="px-3 py-1 border rounded">Cancel</button><button id="confirm-delete" class="bg-red-600 text-white px-3 py-1 rounded">Delete</button></div></div></div>
+
+<!-- Lead Modal -->
+<div id="lead-modal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50">
+    <div class="bg-white rounded-2xl p-6 w-full max-w-md">
+        <h3 id="modal-title" class="text-xl font-bold mb-3">Add Lead</h3>
+        <form id="lead-form">
+            <input type="hidden" id="lead-id">
+            <input id="lead-name" placeholder="Name*" class="w-full border p-2 rounded mb-2" required>
+            <input id="lead-email" placeholder="Email" class="w-full border p-2 rounded mb-2">
+            <input id="lead-phone" placeholder="Phone" class="w-full border p-2 rounded mb-2">
+            <input id="lead-source" placeholder="Source" class="w-full border p-2 rounded mb-2">
+            <select id="lead-status" class="w-full border p-2 rounded mb-2"><option value="cold">Cold</option><option value="warm">Warm</option><option value="converted">Converted</option></select>
+            <input id="lead-deal" placeholder="Deal Value (₦)" class="w-full border p-2 rounded mb-2">
+            <input id="lead-spend" placeholder="Ad Spend (₦)" class="w-full border p-2 rounded mb-2">
+            <input id="lead-acquired" type="date" class="w-full border p-2 rounded mb-2">
+            <input id="lead-converted" type="date" class="w-full border p-2 rounded mb-2">
+            <textarea id="lead-notes" rows="2" placeholder="Notes" class="w-full border p-2 rounded mb-3"></textarea>
+            <div class="flex justify-end gap-2"><button type="button" id="close-modal" class="px-3 py-1 border rounded">Cancel</button><button type="submit" class="px-3 py-1 bg-blue-600 text-white rounded">Save</button></div>
+        </form>
+    </div>
+</div>
+
 <script>
-    // ----------------------------- BACKEND CONFIGURATION -----------------------------
-    // Replace with your actual backend URL (Supabase functions, Netlify, or custom API)
-    const API_BASE = 'https://your-backend-url.com';   // e.g., your Netlify function endpoint or custom API
-    const AI_URL = `${API_BASE}/bi/chat`;              // expects POST with { message, history, user_id, location, niche, budget, force_pillar }
-    const HISTORY_URL = `${API_BASE}/bi/history`;
-    const PROFILE_URL = `${API_BASE}/bi/profile`;
-    const AUTH_URL = `${API_BASE}/auth`;
+    // ==================== CONFIGURATION ====================
+    const BACKEND_URL = 'https://kevsono-kevs-digital-business-intelligencev2.hf.space';
+    let token = localStorage.getItem('access_token');
+    let currentRole = 'viewer';
+    let leadsCache = [];
+    let leadsPage = 0, limit = 20;
+    let pendingDeleteId = null;
+    let chatHistory = [];
+    let forecastChart = null;
 
-    let authToken = localStorage.getItem('auth_token');
-    let userId = localStorage.getItem('user_id');
-
-    // ---------- AUTH HANDLERS (calls your Supabase‑aware backend) ----------
-    async function handleLogin() {
-        const email = document.getElementById('loginEmail').value.trim();
-        const password = document.getElementById('loginPassword').value;
-        if (!email || !password) return showAuthMessage('Email and password required');
-        const btn = document.getElementById('doLoginBtn');
-        btn.disabled = true; btn.innerText = 'Logging...';
-        try {
-            const res = await fetch(`${AUTH_URL}/login`, { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({email, password}) });
-            const data = await res.json();
-            if(!res.ok) throw new Error(data.detail || 'Login failed');
-            authToken = data.access_token; userId = data.user_id;
-            localStorage.setItem('auth_token', authToken); localStorage.setItem('user_id', userId);
-            document.getElementById('authModal').style.display = 'none';
-            document.getElementById('mainApp').style.display = 'block';
-            Portal.initSession();
-        } catch(err) { showAuthMessage(err.message); }
-        finally { btn.disabled=false; btn.innerText='Login'; }
+    // Helper functions
+    function showToast(msg, type='success') {
+        const container = document.getElementById('toast-container') || (() => { const d=document.createElement('div'); d.id='toast-container'; d.className='fixed top-20 right-4 z-50 space-y-2 w-80'; document.body.appendChild(d); return d; })();
+        const toast = document.createElement('div');
+        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type==='success'?'bg-green-600':'bg-red-600'} transition-smooth mb-2 text-sm`;
+        toast.innerText = msg;
+        container.appendChild(toast);
+        setTimeout(() => toast.remove(), 3500);
     }
 
-    async function handleSignup() {
-        const firstName = document.getElementById('signupFirstName').value.trim();
-        const lastName = document.getElementById('signupLastName').value.trim();
-        const email = document.getElementById('signupEmail').value.trim();
-        const phone = document.getElementById('signupPhone').value.trim();
-        const password = document.getElementById('signupPassword').value;
-        if (!firstName || !lastName || !email || !password) return showAuthMessage('All required fields');
-        const btn = document.getElementById('doSignupBtn');
-        btn.disabled=true; btn.innerText='Creating...';
-        try {
-            const regRes = await fetch(`${AUTH_URL}/register`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({email, password}) });
-            if(!regRes.ok) throw new Error((await regRes.json()).detail);
-            const loginRes = await fetch(`${AUTH_URL}/login`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({email, password}) });
-            const loginData = await loginRes.json();
-            if(!loginRes.ok) throw new Error('Auto-login failed');
-            authToken = loginData.access_token; userId = loginData.user_id;
-            await fetch(PROFILE_URL, { method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${authToken}`}, body: JSON.stringify({first_name:firstName, last_name:lastName, phone:phone||null}) });
-            localStorage.setItem('auth_token', authToken); localStorage.setItem('user_id', userId);
-            document.getElementById('authModal').style.display = 'none';
-            document.getElementById('mainApp').style.display = 'block';
-            Portal.initSession();
-            showAuthMessage('Account created!', false);
-        } catch(err) { showAuthMessage(err.message); }
-        finally { btn.disabled=false; btn.innerText='Create Account'; }
+    async function apiCall(endpoint, method='GET', body=null) {
+        const headers = { 'Content-Type': 'application/json' };
+        if(token) headers['Authorization'] = `Bearer ${token}`;
+        const opts = { method, headers };
+        if(body) opts.body = JSON.stringify(body);
+        const res = await fetch(`${BACKEND_URL}${endpoint}`, opts);
+        if(res.status === 401) { logout(); throw new Error('Session expired'); }
+        if(!res.ok) { const err = await res.json().catch(()=>({detail:'Error'})); throw new Error(err.detail || 'API error'); }
+        return res.json();
     }
 
-    function showAuthMessage(msg, isError=true) { const d=document.getElementById('authMessage'); d.innerText=msg; d.style.color=isError?'#dc2626':'#10b981'; setTimeout(()=>{if(d.innerText===msg) d.innerText='';},4000); }
-    async function handleLogout() { if(authToken) await fetch(`${AUTH_URL}/logout`,{method:'POST',headers:{'Authorization':`Bearer ${authToken}`}}).catch(e=>null); localStorage.clear(); location.reload(); }
+    // Authentication
+    async function login(email, password) {
+        const data = await apiCall('/auth/login', 'POST', { email, password });
+        token = data.access_token;
+        localStorage.setItem('access_token', token);
+        await loadOrgContext();
+        showDashboard();
+        showToast('Login successful');
+    }
 
-    document.getElementById('forgotPasswordLink')?.addEventListener('click', async(e)=>{
-        e.preventDefault(); const email=document.getElementById('loginEmail').value.trim(); if(!email) return showAuthMessage('Enter email');
-        try{ const res=await fetch(`${AUTH_URL}/reset-password`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})}); if(!res.ok)throw new Error(); showAuthMessage('Reset email sent',false); }catch(err){ showAuthMessage('Failed to send'); }
+    async function registerOrg(data) {
+        await apiCall('/auth/register', 'POST', data);
+        showToast('Registration successful! Please verify email (if required) and login.');
+    }
+
+    async function resetPassword(email) {
+        await apiCall('/auth/reset-password', 'POST', { email });
+        showToast('Reset email sent. Check your inbox.');
+    }
+
+    async function logout() {
+        if(token) {
+            try { await apiCall('/auth/logout', 'POST'); } catch(e) {}
+        }
+        localStorage.removeItem('access_token');
+        token = null;
+        document.getElementById('mainApp').style.display = 'none';
+        document.getElementById('authModal').style.display = 'flex';
+        showToast('Logged out');
+    }
+
+    async function loadOrgContext() {
+        try {
+            const me = await apiCall('/auth/me');
+            currentRole = me.role;
+            document.getElementById('headerUser').innerHTML = me.email || me.user_id.slice(0,10);
+            const profile = await apiCall('/org/profile');
+            document.getElementById('org-name-field').value = profile.org_name || '';
+            document.getElementById('org-location').value = profile.location || 'Lagos, Nigeria';
+            document.getElementById('org-niche').value = profile.niche || 'general business';
+            document.getElementById('org-budget').value = profile.budget || 500000;
+            const usage = await apiCall('/org/usage');
+            const remaining = usage.remaining === -1 ? 'Unlimited' : usage.remaining;
+            document.getElementById('chat-usage').innerHTML = `📊 Usage: ${usage.plan} · ${usage.request_count}/${usage.limit} used · ${remaining} left`;
+            return true;
+        } catch(e) { console.error(e); return false; }
+    }
+
+    async function showDashboard() {
+        document.getElementById('authModal').style.display = 'none';
+        document.getElementById('mainApp').style.display = 'block';
+        await loadOrgContext();
+        await loadLeads();
+        await loadMetrics();
+        await loadSourceFilter();
+        await loadMembers();
+        await loadChatHistory();
+        switchTab('leads');
+    }
+
+    // Leads CRUD
+    async function loadLeads() {
+        const loading = document.getElementById('leads-loading');
+        const tableContainer = document.querySelector('#tab-leads .overflow-x-auto');
+        loading.classList.remove('hidden');
+        tableContainer.classList.add('hidden');
+        try {
+            let url = `/leads?limit=${limit}&offset=${leadsPage*limit}`;
+            const statusFilter = document.getElementById('lead-status-filter').value;
+            const sourceFilter = document.getElementById('lead-source-filter').value;
+            if(statusFilter) url += `&status=${statusFilter}`;
+            if(sourceFilter) url += `&source=${encodeURIComponent(sourceFilter)}`;
+            const res = await apiCall(url);
+            leadsCache = res.leads;
+            const tbody = document.getElementById('leads-table-body');
+            tbody.innerHTML = '';
+            for(let l of leadsCache) {
+                const row = tbody.insertRow();
+                row.insertCell(0).innerHTML = `<div class="font-medium">${escapeHtml(l.name)}</div>`;
+                row.insertCell(1).innerHTML = l.email || '-';
+                row.insertCell(2).innerHTML = l.source || '-';
+                row.insertCell(3).innerHTML = `<span class="px-2 py-1 rounded-full text-xs ${l.status==='converted'?'bg-green-100 text-green-800':l.status==='warm'?'bg-yellow-100':'bg-gray-200'}">${l.status}</span>`;
+                row.insertCell(4).innerHTML = l.deal_value ? `₦${l.deal_value.toLocaleString()}` : '-';
+                row.insertCell(5).innerHTML = l.ad_spend ? `₦${l.ad_spend.toLocaleString()}` : '-';
+                row.insertCell(6).innerHTML = `<button class="text-blue-600 mr-2 edit-lead" data-id="${l.id}"><i class="fas fa-edit"></i></button><button class="text-red-600 delete-lead-btn" data-id="${l.id}"><i class="fas fa-trash"></i></button>`;
+            }
+            document.getElementById('page-info').innerText = `Page ${leadsPage+1}`;
+            document.getElementById('prev-page').disabled = leadsPage===0;
+            attachLeadActions();
+        } catch(e) { showToast(e.message, 'error'); } finally {
+            loading.classList.add('hidden');
+            tableContainer.classList.remove('hidden');
+        }
+    }
+
+    function attachLeadActions() {
+        document.querySelectorAll('.edit-lead').forEach(btn => btn.onclick = () => editLeadById(btn.dataset.id));
+        document.querySelectorAll('.delete-lead-btn').forEach(btn => btn.onclick = () => { pendingDeleteId = btn.dataset.id; document.getElementById('delete-modal').classList.remove('hidden'); document.getElementById('delete-modal').classList.add('flex'); });
+    }
+
+    function editLeadById(id) {
+        const lead = leadsCache.find(l => l.id == id);
+        if(lead) openLeadModal(lead);
+        else showToast('Lead not found', 'error');
+    }
+
+    async function saveLead() {
+        const id = document.getElementById('lead-id').value;
+        const data = {
+            name: document.getElementById('lead-name').value,
+            email: document.getElementById('lead-email').value || null,
+            phone: document.getElementById('lead-phone').value || null,
+            source: document.getElementById('lead-source').value || null,
+            status: document.getElementById('lead-status').value,
+            deal_value: parseFloat(document.getElementById('lead-deal').value) || null,
+            ad_spend: parseFloat(document.getElementById('lead-spend').value) || null,
+            acquired_date: document.getElementById('lead-acquired').value || null,
+            conversion_date: document.getElementById('lead-converted').value || null,
+            notes: document.getElementById('lead-notes').value || null
+        };
+        if(id) await apiCall(`/leads/${id}`, 'PATCH', data);
+        else await apiCall('/leads', 'POST', data);
+        document.getElementById('lead-modal').classList.add('hidden');
+        loadLeads();
+        showToast('Lead saved');
+        if(!document.getElementById('tab-metrics').classList.contains('hidden')) loadMetrics();
+    }
+
+    function openLeadModal(lead=null) {
+        const modal = document.getElementById('lead-modal');
+        document.getElementById('modal-title').innerText = lead ? 'Edit Lead' : 'Add Lead';
+        if(lead) {
+            document.getElementById('lead-id').value = lead.id;
+            document.getElementById('lead-name').value = lead.name;
+            document.getElementById('lead-email').value = lead.email || '';
+            document.getElementById('lead-phone').value = lead.phone || '';
+            document.getElementById('lead-source').value = lead.source || '';
+            document.getElementById('lead-status').value = lead.status;
+            document.getElementById('lead-deal').value = lead.deal_value || '';
+            document.getElementById('lead-spend').value = lead.ad_spend || '';
+            document.getElementById('lead-acquired').value = lead.acquired_date?.split('T')[0] || '';
+            document.getElementById('lead-converted').value = lead.conversion_date?.split('T')[0] || '';
+            document.getElementById('lead-notes').value = lead.notes || '';
+        } else document.getElementById('lead-form').reset();
+        modal.classList.remove('hidden'); modal.classList.add('flex');
+    }
+
+    async function deleteLead() {
+        if(pendingDeleteId) {
+            await apiCall(`/leads/${pendingDeleteId}`, 'DELETE');
+            loadLeads();
+            showToast('Lead deleted');
+        }
+        closeDeleteModal();
+    }
+    function closeDeleteModal() { document.getElementById('delete-modal').classList.add('hidden'); pendingDeleteId=null; }
+
+    async function loadSourceFilter() {
+        const leads = await apiCall('/leads?limit=1000');
+        const sources = [...new Set(leads.leads.map(l=>l.source).filter(Boolean))];
+        const select = document.getElementById('lead-source-filter');
+        select.innerHTML = '<option value="">All sources</option>' + sources.map(s=>`<option value="${s}">${s}</option>`).join('');
+    }
+
+    // Metrics
+    async function loadMetrics() {
+        const loading = document.getElementById('metrics-loading');
+        const content = document.getElementById('metrics-content');
+        loading.classList.remove('hidden');
+        content.classList.add('hidden');
+        try {
+            const data = await apiCall('/leads/metrics');
+            const m = data.metrics;
+            document.getElementById('metric-total-leads').innerText = m.total_leads;
+            document.getElementById('metric-conversion-rate').innerText = `${m.conversion_rate}%`;
+            document.getElementById('metric-cac').innerText = `₦${m.actual_cac.toLocaleString()}`;
+            document.getElementById('metric-roi').innerText = `${m.roi}%`;
+            document.getElementById('metric-pipeline').innerText = `₦${m.pipeline_value.toLocaleString()}`;
+            document.getElementById('metric-dq').innerText = m.data_quality;
+            document.getElementById('top-sources-list').innerHTML = m.top_sources.map(s => `<div class="flex justify-between border-b py-1"><span>${s.source}</span><span>${s.converted}/${s.total} (${s.conv_rate}%)</span></div>`).join('');
+        } catch(e) { showToast(e.message, 'error'); } finally {
+            loading.classList.add('hidden');
+            content.classList.remove('hidden');
+        }
+    }
+
+    // Chat
+    async function loadChatHistory() {
+        try {
+            const hist = await apiCall('/intelligence/history?limit=20');
+            const container = document.getElementById('chat-messages');
+            container.innerHTML = '';
+            chatHistory = [];
+            for(let h of hist.history.slice().reverse()) {
+                appendMessage('user', h.query);
+                appendMessage('assistant', h.response);
+                chatHistory.push({role:'user', content:h.query}, {role:'assistant', content:h.response});
+            }
+            if(chatHistory.length===0) appendMessage('assistant', 'Hello! Ask me anything about your leads & strategy.');
+        } catch(e) { appendMessage('assistant', 'Welcome! Ask me anything.'); }
+    }
+
+    function appendMessage(role, content) {
+        const div = document.createElement('div');
+        div.className = `p-2 rounded-lg ${role==='user'?'bg-blue-100 text-right ml-8':'bg-gray-100 mr-8'}`;
+        div.innerHTML = `<strong class="text-sm">${role==='user'?'You':'Kevs AI'}</strong><div class="text-sm mt-1">${escapeHtml(content).replace(/\n/g,'<br/>')}</div>`;
+        document.getElementById('chat-messages').appendChild(div);
+        document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;
+    }
+
+    async function sendChat() {
+        const input = document.getElementById('chat-input');
+        const msg = input.value.trim();
+        if(!msg) return;
+        appendMessage('user', msg);
+        input.value = '';
+        const btn = document.getElementById('send-chat');
+        btn.disabled = true;
+        try {
+            const body = {
+                message: msg,
+                history: chatHistory.slice(-10),
+                report_mode: document.getElementById('chat-mode').value,
+                force_pillar: parseInt(document.getElementById('force-pillar').value) || null
+            };
+            const res = await apiCall('/intelligence/chat', 'POST', body);
+            appendMessage('assistant', res.response);
+            if(res.usage) document.getElementById('chat-usage').innerHTML = `📊 Usage: ${res.usage.plan} · ${res.usage.requests_used}/${res.usage.limit} used · ${res.usage.remaining === -1 ? 'unlimited' : res.usage.remaining+' left'}`;
+            chatHistory.push({role:'user', content:msg}, {role:'assistant', content:res.response});
+        } catch(e) { showToast(e.message, 'error'); } finally { btn.disabled = false; }
+    }
+
+    // CAC
+    async function runCac() {
+        const target_cac = parseFloat(document.getElementById('target-cac').value);
+        if(!target_cac) return showToast('Enter target CAC', 'error');
+        const body = {
+            target_cac,
+            target_revenue: parseFloat(document.getElementById('target-rev').value) || null,
+            available_budget: parseFloat(document.getElementById('target-budget').value) || null
+        };
+        const res = await apiCall('/leads/cac-target', 'POST', body);
+        const resultDiv = document.getElementById('cac-result');
+        resultDiv.classList.remove('hidden');
+        resultDiv.innerHTML = `
+            <div class="space-y-3">
+                <div class="bg-white p-3 rounded shadow"><strong>📊 Current CAC:</strong> ₦${res.analysis.current_cac?.toLocaleString()} &nbsp;| <strong>Target:</strong> ₦${res.analysis.target_cac?.toLocaleString()}</div>
+                ${res.analysis.budget_scenario ? `<div class="bg-blue-50 p-3 rounded"><strong>💰 Budget scenario:</strong><br/>Leads to acquire: ${res.analysis.budget_scenario.leads_to_acquire}<br/>Expected conversions: ${res.analysis.budget_scenario.expected_conversions}<br/>Expected revenue: ₦${res.analysis.budget_scenario.expected_revenue?.toLocaleString()}</div>` : ''}
+                ${res.analysis.revenue_scenario ? `<div class="bg-green-50 p-3 rounded"><strong>🎯 Revenue scenario:</strong><br/>Conversions needed: ${res.analysis.revenue_scenario.conversions_needed}<br/>Leads needed: ${res.analysis.revenue_scenario.leads_needed}</div>` : ''}
+                <div class="bg-gray-100 p-3 rounded">${res.advisory}</div>
+            </div>`;
+    }
+
+    // Forecast
+    async function runForecast() {
+        const months = parseInt(document.getElementById('forecast-months').value);
+        const growth = parseFloat(document.getElementById('forecast-growth').value) || null;
+        const addSpend = parseFloat(document.getElementById('forecast-add-spend').value) || null;
+        const loadingDiv = document.getElementById('forecast-loading');
+        const chartCanvas = document.getElementById('forecastChart');
+        const tableDiv = document.getElementById('forecast-table');
+        loadingDiv.classList.remove('hidden');
+        chartCanvas.classList.add('hidden');
+        tableDiv.innerHTML = '';
+        try {
+            const res = await apiCall('/analytics/forecast', 'POST', { months, target_growth_rate: growth, additional_ad_spend: addSpend });
+            const labels = res.forecast.map(f => `M${f.month}`);
+            const revenues = res.forecast.map(f => f.revenue);
+            if(forecastChart) forecastChart.destroy();
+            const ctx = chartCanvas.getContext('2d');
+            forecastChart = new Chart(ctx, { type: 'line', data: { labels, datasets: [{ label: 'Monthly Revenue (₦)', data: revenues, borderColor: '#f97316', fill: false }] } });
+            let html = '<table class="min-w-full text-sm"><thead><tr><th>Month</th><th>Leads</th><th>Conversions</th><th>Revenue</th><th>Cumulative</th></tr></thead><tbody>';
+            res.forecast.forEach(f => { html += `<tr><td>${f.month}</td><td>${f.leads_generated}</td><td>${f.conversions}</td><td>₦${f.revenue.toFixed(0)}</td><td>₦${f.cumulative_revenue.toFixed(0)}</td></tr>`; });
+            html += '</tbody></table>';
+            tableDiv.innerHTML = html;
+            chartCanvas.classList.remove('hidden');
+        } catch(e) { showToast(`Forecast failed: ${e.message}`, 'error'); } finally { loadingDiv.classList.add('hidden'); }
+    }
+
+    // Organisation
+    async function loadMembers() {
+        const res = await apiCall('/org/members');
+        const container = document.getElementById('members-list');
+        container.innerHTML = '';
+        for(let m of res.members) {
+            const div = document.createElement('div');
+            div.className = 'flex justify-between items-center border-b py-2';
+            div.innerHTML = `<span class="text-sm">${m.user_id.slice(0,8)}... (${m.role})</span>`;
+            if(currentRole === 'admin') {
+                const select = document.createElement('select');
+                select.className = 'border rounded text-sm p-1';
+                select.innerHTML = `<option value="analyst" ${m.role==='analyst'?'selected':''}>Analyst</option><option value="viewer" ${m.role==='viewer'?'selected':''}>Viewer</option>`;
+                select.onchange = async (e) => {
+                    await apiCall(`/org/members/${m.user_id}?role=${e.target.value}`, 'PATCH');
+                    showToast(`Role updated to ${e.target.value}`);
+                    loadMembers();
+                };
+                div.appendChild(select);
+            }
+            container.appendChild(div);
+        }
+    }
+
+    async function updateProfile(e) {
+        e.preventDefault();
+        await apiCall('/org/profile', 'PATCH', {
+            org_name: document.getElementById('org-name-field').value,
+            location: document.getElementById('org-location').value,
+            niche: document.getElementById('org-niche').value,
+            budget: parseInt(document.getElementById('org-budget').value) || null
+        });
+        showToast('Profile updated');
+        loadOrgContext();
+    }
+
+    async function inviteMember() {
+        const email = document.getElementById('invite-email').value;
+        if(!email) return;
+        await apiCall('/org/invite', 'POST', { email, role: document.getElementById('invite-role').value });
+        showToast(`Invited ${email}`);
+        loadMembers();
+        document.getElementById('invite-email').value = '';
+    }
+
+    // CSV upload
+    document.getElementById('csv-upload')?.addEventListener('change', async (e) => {
+        if(!e.target.files[0]) return;
+        const formData = new FormData();
+        formData.append('file', e.target.files[0]);
+        const res = await fetch(`${BACKEND_URL}/leads/upload`, { method:'POST', headers:{ 'Authorization': `Bearer ${token}` }, body:formData });
+        if(res.ok) { showToast('CSV uploaded'); loadLeads(); } else showToast('Upload failed', 'error');
     });
-    document.getElementById('doLoginBtn').onclick = handleLogin;
-    document.getElementById('doSignupBtn').onclick = handleSignup;
-    document.getElementById('logoutBtn').onclick = handleLogout;
-    let showingLogin=true;
-    document.getElementById('showSignupLink').onclick = () => {
-        showingLogin=!showingLogin;
-        document.getElementById('loginForm').style.display=showingLogin?'block':'none';
-        document.getElementById('signupForm').style.display=showingLogin?'none':'block';
-        document.getElementById('modalTitle').innerText=showingLogin?'Login':'Create Account';
-        document.getElementById('showSignupLink').innerText=showingLogin?"Don't have an account? Sign up":"← Back to Login";
-        document.getElementById('authMessage').innerText='';
-    };
-    document.getElementById('showPasswordLogin').onchange=function(){ document.getElementById('loginPassword').type=this.checked?'text':'password'; };
-    document.getElementById('showPasswordSignup').onchange=function(){ document.getElementById('signupPassword').type=this.checked?'text':'password'; };
-    document.getElementById('modalClose').onclick=()=>document.getElementById('authModal').style.display='none';
-    window.onclick=(e)=>{ if(e.target===document.getElementById('authModal')) document.getElementById('authModal').style.display='none'; };
 
-    // ----------------------------- PORTAL (BI Engine) -----------------------------
-    const Portal = {
-        activePillar: 3,
-        chatHistory: [],
-        userId: null,
-        location: "Lagos, Nigeria",
-        niche: "general business",
-        budget: 500000,
-        currentTab: "analysis",
+    // Google OAuth
+    document.getElementById('googleLoginBtn')?.addEventListener('click', () => {
+        window.location.href = `${BACKEND_URL}/auth/google`;
+    });
 
-        initSession() {
-            this.userId = userId || localStorage.getItem('user_id') || "guest";
-            document.getElementById("headerUser").innerText = this.userId.slice(0,10);
-            this.loadProfileFromStorage();
-            this.setPillar(3);
-            this.loadHistory();
-        },
-
-        loadProfileFromStorage() {
-            let saved = localStorage.getItem('kevs_context');
-            if(saved) { let ctx=JSON.parse(saved); this.location=ctx.location||this.location; this.niche=ctx.niche||this.niche; this.budget=ctx.budget||this.budget; }
-            document.getElementById("profLocation").value = this.location;
-            document.getElementById("profNiche").value = this.niche;
-            document.getElementById("profBudget").value = this.budget;
-        },
-
-        saveProfile() {
-            this.location = document.getElementById("profLocation").value.trim() || this.location;
-            this.niche = document.getElementById("profNiche").value.trim() || this.niche;
-            this.budget = parseInt(document.getElementById("profBudget").value) || this.budget;
-            localStorage.setItem('kevs_context', JSON.stringify({location:this.location, niche:this.niche, budget:this.budget}));
-            const msgDiv=document.getElementById("profileMsg");
-            if(authToken) fetch(PROFILE_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${authToken}`},body:JSON.stringify({location:this.location,niche:this.niche,budget:this.budget})}).catch(e=>console.warn);
-            msgDiv.textContent="✅ Context saved."; msgDiv.classList.remove("hidden"); setTimeout(()=>msgDiv.classList.add("hidden"),2500);
-        },
-
-        setPillar(num) {
-            this.activePillar = num;
-            const pillarMap = {1:"CUSTOMER_INTELLIGENCE",2:"MARKET_COMPETITION",3:"CAPABILITY_AUDIT",4:"FINANCIAL_GROWTH"};
-            const frameworksMap = {1:["Audience Segmentation","JTBD","Value Prop"],2:["SWOT","PESTLE","Five Forces"],3:["VRIO","Core Competencies","Value Chain"],4:["Unit Economics","TAM-SAM-SOM","Balanced Scorecard"]};
-            document.getElementById('engineMode').innerText = pillarMap[num];
-            const tags = frameworksMap[num] || ["VRIO"];
-            document.getElementById('frameworkTags').innerHTML = tags.map(t=>`<span class="framework-tag">${t}</span>`).join('');
-            for(let i=1;i<=4;i++) document.getElementById(`pillar${i}Btn`).className = `pillar-btn ${i===num?'pillar-active':'pillar-inactive'} px-3 py-2 rounded-lg text-xs font-bold text-left`;
-        },
-
-        switchTab(tab) {
-            this.currentTab=tab;
-            document.getElementById("panelAnalysis").classList.toggle("hidden", tab!=="analysis");
-            document.getElementById("panelHistory").classList.toggle("hidden", tab!=="history");
-            document.getElementById("panelProfile").classList.toggle("hidden", tab!=="profile");
-            document.getElementById("tabAnalysis").classList.toggle("tab-active", tab==="analysis");
-            document.getElementById("tabHistory").classList.toggle("tab-active", tab==="history");
-            document.getElementById("tabProfile").classList.toggle("tab-active", tab==="profile");
-            if(tab==="history") this.loadHistory();
-        },
-
-        updateUsage(usage) { if(!usage) return; const {requests_used,limit,is_premium}=usage; if(is_premium){document.getElementById("usageLabel").innerHTML="∞ Premium";return;} const pct=Math.min(100,Math.round((requests_used/limit)*100)); document.getElementById("usageLabel").innerHTML=`${requests_used||0}/${limit||15}`; const bar=document.getElementById("usageBarFill"); bar.style.width=`${pct}%`; bar.style.background=pct>=80?"#EF4444":(pct>=60?"#F59E0B":"#22C55E"); if(pct>=80) document.getElementById("upgradeBanner").classList.remove("hidden"); else document.getElementById("upgradeBanner").classList.add("hidden"); },
-
-        addMessage(text,role) { const container=document.getElementById("chatMessages"); const div=document.createElement("div"); div.className=role==="user"?"msg-user self-end max-w-xs text-sm px-4 py-3 rounded-xl rounded-br-sm fade-in":"msg-ai self-start max-w-xs text-sm px-4 py-3 rounded-xl rounded-bl-sm fade-in"; div.textContent=text; container.appendChild(div); container.scrollTop=container.scrollHeight; },
-        addTyping() { const div=document.createElement("div"); div.id="typingIndicator"; div.className="msg-ai self-start px-4 py-3 rounded-xl rounded-bl-sm text-blue-400 text-sm italic"; div.innerHTML='<span class="typing-dot">●</span><span class="typing-dot">●</span><span class="typing-dot">●</span>'; document.getElementById("chatMessages").appendChild(div); document.getElementById("chatMessages").scrollTop=document.getElementById("chatMessages").scrollHeight; },
-        removeTyping() { const el=document.getElementById("typingIndicator"); if(el) el.remove(); },
-        quickAsk(text) { document.getElementById("chatInput").value=text; this.sendMessage(); },
-
-        async sendMessage() {
-            const input=document.getElementById("chatInput"); const text=input.value.trim(); if(!text) return; input.value="";
-            this.addMessage(text,"user"); this.chatHistory.push({role:"user",content:text}); this.addTyping(); document.getElementById("sendBtn").disabled=true;
+    // Handle OAuth callback
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    if(code) {
+        (async () => {
             try {
-                const payload={ message:text, history:this.chatHistory.slice(-6), user_id:this.userId, location:this.location, niche:this.niche, budget:this.budget, force_pillar:this.activePillar };
-                const res=await fetch(AI_URL,{method:"POST",headers:{'Content-Type':'application/json','Authorization':authToken?`Bearer ${authToken}`:''},body:JSON.stringify(payload)});
-                this.removeTyping();
-                if(res.status===402) throw new Error("Free analyses used up. Upgrade to continue.");
-                if(!res.ok) throw new Error(`Service error (${res.status})`);
-                const data=await res.json();
-                if(data.meta?.model) document.getElementById("modelBadge").innerText=data.meta.model;
-                if(data.active_frameworks?.length) document.getElementById("frameworkTags").innerHTML=data.active_frameworks.map(f=>`<span class="framework-tag live">${f}</span>`).join('');
-                if(data.framework_used) document.getElementById("engineMode").innerText=data.framework_used;
-                if(data.usage) this.updateUsage(data.usage);
-                this.addMessage(data.response || "Analysis complete.","ai");
-                this.chatHistory.push({role:"assistant",content:data.response});
-            } catch(err) { this.removeTyping(); this.addMessage(`⚠️ ${err.message}`,"ai"); }
-            document.getElementById("sendBtn").disabled=false;
-            if(this.chatHistory.length>20) this.chatHistory=this.chatHistory.slice(-20);
-        },
-
-        async loadHistory() {
-            if(!userId && !this.userId) return;
-            const list=document.getElementById("historyList"); list.innerHTML='<p class="text-xs text-gray-400 text-center py-6">Loading...</p>';
-            try {
-                const res=await fetch(`${HISTORY_URL}?user_id=${encodeURIComponent(this.userId)}`,{headers:{'Content-Type':'application/json','Authorization':authToken?`Bearer ${authToken}`:''}});
-                if(!res.ok) throw new Error();
-                const data=await res.json();
-                if(!data.history?.length) { list.innerHTML='<p class="text-xs text-gray-400 text-center py-10">No history yet.</p>'; return; }
-                const pillarMap={1:"👥 Customer",2:"🏪 Market",3:"⚙️ Capability",4:"📈 Growth"};
-                list.innerHTML=data.history.map(h=>`<div class="history-item p-4 cursor-pointer hover:bg-blue-50" onclick="Portal.replayHistory('${encodeURIComponent(h.query)}')"><div class="flex justify-between"><span class="text-xs font-bold text-blue-900">${pillarMap[h.pillar]||"🔗"}</span><span class="text-xs text-gray-400">${new Date(h.timestamp).toLocaleString()}</span></div><p class="text-xs font-medium text-gray-700 mt-1 truncate">${escapeHtml(h.query)}</p><p class="text-xs text-gray-400">${escapeHtml(h.response?.substring(0,100))}...</p></div>`).join('');
-            } catch(e){ list.innerHTML='<p class="text-xs text-red-400 text-center py-6">Could not load history</p>'; }
-        },
-
-        replayHistory(encodedQuery) { this.switchTab("analysis"); document.getElementById("chatInput").value=decodeURIComponent(encodedQuery); this.sendMessage(); }
-    };
+                const data = await apiCall(`/auth/google/callback?code=${code}`, 'POST');
+                token = data.access_token;
+                localStorage.setItem('access_token', token);
+                await loadOrgContext();
+                showDashboard();
+                window.history.replaceState({}, document.title, window.location.pathname);
+            } catch(e) { showToast('OAuth login failed', 'error'); }
+        })();
+    }
 
     function escapeHtml(str) { if(!str) return ''; return str.replace(/[&<>]/g, function(m){ if(m==='&') return '&amp;'; if(m==='<') return '&lt;'; if(m==='>') return '&gt;'; return m;}); }
-    window.Portal = Portal;
 
-    // Restore session
-    (async function initApp() {
-        const token = localStorage.getItem('auth_token');
-        const uid = localStorage.getItem('user_id');
-        if(token && uid) {
-            try {
-                const res = await fetch(`${AUTH_URL}/me`, { headers: { 'Authorization': `Bearer ${token}` } });
-                if(res.ok) { authToken=token; userId=uid; document.getElementById('authModal').style.display='none'; document.getElementById('mainApp').style.display='block'; Portal.initSession(); return; }
-                else throw new Error();
-            } catch(e) { localStorage.removeItem('auth_token'); localStorage.removeItem('user_id'); }
+    // Tab switching
+    function switchTab(tabId) {
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+        document.getElementById(`tab-${tabId}`).classList.remove('hidden');
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('tab-active'));
+        document.querySelector(`.tab-btn[data-tab="${tabId}"]`).classList.add('tab-active');
+        if(tabId === 'leads') loadLeads();
+        if(tabId === 'metrics') loadMetrics();
+    }
+
+    // Event listeners
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+    document.getElementById('add-lead-btn')?.addEventListener('click', () => openLeadModal(null));
+    document.getElementById('refresh-metrics')?.addEventListener('click', loadMetrics);
+    document.getElementById('run-cac')?.addEventListener('click', runCac);
+    document.getElementById('run-forecast')?.addEventListener('click', runForecast);
+    document.getElementById('send-chat')?.addEventListener('click', sendChat);
+    document.getElementById('clear-chat')?.addEventListener('click', () => { document.getElementById('chat-messages').innerHTML = ''; chatHistory = []; appendMessage('assistant', 'Chat cleared. Ask me anything!'); });
+    document.getElementById('chat-input')?.addEventListener('keypress', (e) => { if(e.key === 'Enter') sendChat(); });
+    document.getElementById('org-profile-form')?.addEventListener('submit', updateProfile);
+    document.getElementById('invite-btn')?.addEventListener('click', inviteMember);
+    document.getElementById('logoutBtn')?.addEventListener('click', logout);
+    document.getElementById('confirm-delete')?.addEventListener('click', deleteLead);
+    document.getElementById('cancel-delete')?.addEventListener('click', closeDeleteModal);
+    document.getElementById('prev-page')?.addEventListener('click', () => { if(leadsPage>0){ leadsPage--; loadLeads(); } });
+    document.getElementById('next-page')?.addEventListener('click', () => { leadsPage++; loadLeads(); });
+    document.getElementById('lead-status-filter')?.addEventListener('change', () => { leadsPage=0; loadLeads(); });
+    document.getElementById('lead-source-filter')?.addEventListener('change', () => { leadsPage=0; loadLeads(); });
+    document.getElementById('close-modal')?.addEventListener('click', () => document.getElementById('lead-modal').classList.add('hidden'));
+    document.getElementById('lead-form')?.addEventListener('submit', (e) => { e.preventDefault(); saveLead(); });
+
+    // Auth UI
+    document.getElementById('doLoginBtn').onclick = async () => { await login(document.getElementById('loginEmail').value, document.getElementById('loginPassword').value); };
+    document.getElementById('doSignupBtn').onclick = async () => {
+        const orgData = {
+            org_name: document.getElementById('signupOrgName').value,
+            location: document.getElementById('signupLocation').value,
+            niche: document.getElementById('signupNiche').value,
+            budget: parseInt(document.getElementById('signupBudget').value),
+            email: document.getElementById('signupEmail').value,
+            password: document.getElementById('signupPassword').value
+        };
+        if(!orgData.org_name || !orgData.location || !orgData.niche || !orgData.budget || !orgData.email || !orgData.password) {
+            showToast('All fields required', 'error');
+            return;
         }
-        document.getElementById('authModal').style.display='flex'; document.getElementById('mainApp').style.display='none';
+        await registerOrg(orgData);
+    };
+    document.getElementById('forgotPasswordLink').onclick = async (e) => { e.preventDefault(); const email = document.getElementById('loginEmail').value; if(!email) { showToast('Enter email first', 'error'); return; } await resetPassword(email); };
+    document.getElementById('showSignupLink').onclick = () => {
+        const showing = document.getElementById('signupForm').style.display !== 'block';
+        document.getElementById('loginForm').style.display = showing ? 'none' : 'block';
+        document.getElementById('signupForm').style.display = showing ? 'block' : 'none';
+        document.getElementById('modalTitle').innerText = showing ? 'Create Account' : 'Login';
+        document.getElementById('showSignupLink').innerText = showing ? '← Back to Login' : "Don't have an account? Sign up";
+    };
+    document.getElementById('modalClose').onclick = () => { if(!token) document.getElementById('authModal').style.display = 'none'; };
+    document.getElementById('showPasswordLogin').onchange = function() { document.getElementById('loginPassword').type = this.checked ? 'text' : 'password'; };
+    document.getElementById('showPasswordSignup').onchange = function() { document.getElementById('signupPassword').type = this.checked ? 'text' : 'password'; };
+
+    // Initial load
+    (async () => {
+        if(localStorage.getItem('access_token')) {
+            try { await loadOrgContext(); showDashboard(); } catch(e) { document.getElementById('authModal').style.display = 'flex'; }
+        } else { document.getElementById('authModal').style.display = 'flex'; }
     })();
 </script>
+<!-- Font Awesome for icons -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/js/all.min.js"></script>
 </body>
 </html>
