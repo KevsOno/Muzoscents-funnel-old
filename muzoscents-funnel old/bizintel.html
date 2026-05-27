@@ -3,205 +3,126 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kevs Digital BI – Dashboard</title>
+    <title>Kevs Digital BI – Sign In</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         :root { --kevs-orange: #f97316; --kevs-blue: #3b82f6; --kevs-cream: #fef9e6; }
         body { background-color: var(--kevs-cream); font-family: system-ui, -apple-system, sans-serif; }
-        .loading-spinner { border: 2px solid #e5e7eb; border-top: 2px solid var(--kevs-blue); border-radius: 50%; width: 24px; height: 24px; animation: spin 0.8s linear infinite; display: inline-block; }
+        .loading-spinner { border: 2px solid #e5e7eb; border-top: 2px solid var(--kevs-blue); border-radius: 50%; width: 20px; height: 20px; animation: spin 0.6s linear infinite; display: inline-block; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .tab-active { border-bottom: 2px solid #1E3A5F; color: #1E3A5F; font-weight: 700; }
-        .msg-ai { background: white; border: 1px solid #BFDBFE; color: #1E3A5F; align-self: flex-start; border-bottom-left-radius: 3px; }
-        .msg-user { background: #1E3A5F; color: white; align-self: flex-end; border-bottom-right-radius: 3px; }
-        .btn-loading { opacity: 0.6; pointer-events: none; }
-        .transition-smooth { transition: all 0.2s ease; }
+        .debug-panel { background: #1e1e1e; color: #0f0; font-family: monospace; font-size: 11px; padding: 10px; margin-top: 20px; border-radius: 8px; max-height: 200px; overflow: auto; white-space: pre-wrap; word-break: break-all; display: none; }
     </style>
 </head>
-<body class="font-sans antialiased">
+<body class="font-sans antialiased min-h-screen flex items-center justify-center p-4">
 
-<!-- Toast container -->
 <div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
 
-<!-- Main dashboard container (shown only after token validation) -->
-<div id="dashboard" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-    <!-- Top bar -->
-    <div class="bg-white rounded-2xl shadow-sm p-5 mb-6 flex flex-wrap justify-between items-center border-l-8 border-orange-500">
-        <div>
-            <h1 id="org-name" class="text-2xl font-bold text-gray-800"></h1>
-            <p id="org-meta" class="text-gray-600 text-sm mt-1"></p>
-            <p class="text-xs text-gray-500 mt-1"><i class="fas fa-user-tag"></i> Role: <span id="user-role" class="font-semibold"></span></p>
-        </div>
-        <div class="text-right">
-            <div id="usage-badge" class="bg-gray-100 px-3 py-1.5 rounded-full text-sm flex items-center gap-2"><i class="fas fa-chart-line"></i> <span>—</span></div>
-            <button id="logout-btn" class="mt-2 text-red-500 text-sm hover:text-red-700"><i class="fas fa-sign-out-alt"></i> Logout</button>
-        </div>
+<div class="max-w-md w-full bg-white rounded-2xl shadow-xl p-8">
+    <div class="text-center mb-6">
+        <span class="text-3xl font-bold text-orange-500">Kevs</span>
+        <span class="text-2xl font-semibold text-gray-800">BI</span>
+        <p class="text-xs text-gray-400 mt-1">Intelligence dashboard</p>
     </div>
 
-    <!-- Tabs navigation -->
-    <div class="border-b border-gray-200 mb-6 overflow-x-auto">
-        <nav class="flex space-x-1">
-            <button data-tab="leads" class="tab-btn px-5 py-2.5 text-sm font-medium rounded-t-lg bg-orange-50 text-orange-700">📋 Leads</button>
-            <button data-tab="metrics" class="tab-btn px-5 py-2.5 text-sm font-medium text-gray-600">📊 Metrics</button>
-            <button data-tab="chat" class="tab-btn px-5 py-2.5 text-sm font-medium text-gray-600">🤖 AI Chat</button>
-            <button data-tab="cac" class="tab-btn px-5 py-2.5 text-sm font-medium text-gray-600">🎯 CAC Target</button>
-            <button data-tab="forecast" class="tab-btn px-5 py-2.5 text-sm font-medium text-gray-600">📈 Forecast</button>
-            <button data-tab="org" class="tab-btn px-5 py-2.5 text-sm font-medium text-gray-600">⚙️ Org</button>
-        </nav>
+    <div class="flex border-b mb-6">
+        <button id="login-tab" class="flex-1 py-2 font-medium text-blue-600 border-b-2 border-blue-600">Login</button>
+        <button id="register-tab" class="flex-1 py-2 font-medium text-gray-500">Register</button>
     </div>
 
-    <!-- Leads Tab -->
-    <div id="tab-leads" class="tab-content">
-        <div class="flex justify-between items-center flex-wrap gap-3 mb-5">
-            <h2 class="text-xl font-semibold">Lead Management</h2>
-            <div class="flex gap-2">
-                <select id="lead-status-filter" class="border rounded-lg p-2 text-sm bg-white"><option value="">All status</option><option value="cold">Cold</option><option value="warm">Warm</option><option value="converted">Converted</option></select>
-                <select id="lead-source-filter" class="border rounded-lg p-2 text-sm bg-white"><option value="">All sources</option></select>
-                <button id="add-lead-btn" class="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm hidden role-analyst role-admin"><i class="fas fa-plus"></i> Add Lead</button>
-                <label class="bg-gray-200 px-4 py-2 rounded-lg text-sm cursor-pointer hidden role-analyst role-admin"><i class="fas fa-upload"></i> CSV Upload <input type="file" id="csv-upload" accept=".csv" class="hidden"></label>
-            </div>
+    <form id="login-form">
+        <input type="email" id="login-email" placeholder="Email" class="w-full mb-3 p-3 border rounded-lg" required>
+        <input type="password" id="login-password" placeholder="Password" class="w-full mb-2 p-3 border rounded-lg" required>
+        <div class="text-right mb-4">
+            <button type="button" id="forgot-pwd-btn" class="text-xs text-blue-500 hover:underline">Forgot password?</button>
         </div>
-        <div id="leads-loading" class="hidden text-center py-10"><div class="loading-spinner mx-auto"></div><p class="mt-2">Loading leads...</p></div>
-        <div class="overflow-x-auto bg-white rounded-xl shadow">
-            <table class="min-w-full"><thead class="bg-gray-50"><tr><th class="px-5 py-3 text-left text-xs">Name</th><th>Email</th><th>Source</th><th>Status</th><th>Deal (₦)</th><th>Ad Spend</th><th class="role-analyst role-admin">Actions</th></tr></thead><tbody id="leads-table-body"></tbody></table>
-        </div>
-        <div class="mt-4 flex justify-between items-center"><button id="prev-page" class="px-3 py-1 border rounded disabled:opacity-50">Prev</button><span id="page-info"></span><button id="next-page" class="px-3 py-1 border rounded disabled:opacity-50">Next</button></div>
-    </div>
+        <button type="submit" class="w-full bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700">Login</button>
+        <button type="button" id="google-btn" class="w-full mt-3 border border-gray-300 py-2 rounded-lg flex items-center justify-center gap-2 hover:bg-gray-50"><i class="fab fa-google text-red-500"></i> Sign in with Google</button>
+    </form>
 
-    <!-- Metrics Tab -->
-    <div id="tab-metrics" class="tab-content hidden">
-        <div id="metrics-loading" class="hidden text-center py-10"><div class="loading-spinner mx-auto"></div></div>
-        <div id="metrics-content" class="hidden">
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Total Leads</div><div id="metric-total-leads" class="text-2xl font-bold">-</div></div>
-                <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Conversion Rate</div><div id="metric-conversion-rate" class="text-2xl font-bold">-</div></div>
-                <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Actual CAC (₦)</div><div id="metric-cac" class="text-2xl font-bold">-</div></div>
-                <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">ROI (%)</div><div id="metric-roi" class="text-2xl font-bold">-</div></div>
-                <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Pipeline Value (₦)</div><div id="metric-pipeline" class="text-2xl font-bold">-</div></div>
-                <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Data Quality</div><div id="metric-dq" class="text-2xl font-bold">-</div></div>
-            </div>
-            <div class="bg-white p-5 rounded-xl shadow-sm"><h3 class="font-semibold mb-3">🏆 Top Lead Sources</h3><div id="top-sources-list"></div></div>
-            <button id="refresh-metrics" class="mt-4 bg-blue-500 text-white px-4 py-2 rounded-lg text-sm"><i class="fas fa-sync-alt"></i> Refresh Metrics</button>
-        </div>
-    </div>
+    <form id="register-form" class="hidden">
+        <input type="text" id="reg-org-name" placeholder="Organisation Name" class="w-full mb-2 p-3 border rounded-lg" required>
+        <input type="text" id="reg-location" placeholder="Location (e.g., Lagos)" class="w-full mb-2 p-3 border rounded-lg" required>
+        <input type="text" id="reg-niche" placeholder="Niche" class="w-full mb-2 p-3 border rounded-lg" required>
+        <input type="number" id="reg-budget" placeholder="Monthly Budget (₦)" class="w-full mb-2 p-3 border rounded-lg" required>
+        <input type="email" id="reg-email" placeholder="Email" class="w-full mb-2 p-3 border rounded-lg" required>
+        <input type="password" id="reg-password" placeholder="Password" class="w-full mb-4 p-3 border rounded-lg" required>
+        <button type="submit" class="w-full bg-green-600 text-white py-2.5 rounded-lg">Register Organisation</button>
+    </form>
 
-    <!-- AI Chat Tab -->
-    <div id="tab-chat" class="tab-content hidden">
-        <div class="bg-white rounded-xl shadow-md p-5">
-            <div class="flex flex-wrap gap-3 mb-4">
-                <select id="chat-mode" class="border rounded-lg p-2 text-sm"><option value="chat">💬 Chat</option><option value="report">📄 Report</option><option value="dashboard">📊 Dashboard</option></select>
-                <input type="number" id="force-pillar" placeholder="Force pillar 1-4" class="border rounded-lg p-2 text-sm w-32">
-                <button id="clear-chat" class="text-gray-500 text-sm"><i class="fas fa-trash-alt"></i> Clear chat</button>
-            </div>
-            <div id="chat-messages" class="h-96 overflow-y-auto border rounded-xl p-3 bg-gray-50 mb-3 space-y-2"></div>
-            <div class="flex gap-2"><input type="text" id="chat-input" placeholder="Ask a strategic question..." class="flex-1 border rounded-lg p-3"><button id="send-chat" class="bg-blue-600 text-white px-5 rounded-lg">Send</button></div>
-            <div id="chat-usage" class="text-xs text-gray-400 mt-2"></div>
-        </div>
-    </div>
-
-    <!-- CAC Target Tab -->
-    <div id="tab-cac" class="tab-content hidden">
-        <div class="bg-white p-6 rounded-xl shadow-md">
-            <h2 class="text-xl font-semibold mb-4">CAC Target & Leads Needed</h2>
-            <div class="grid md:grid-cols-3 gap-4 mb-4">
-                <div><label class="block text-sm font-medium">Target CAC (₦)</label><input type="number" id="target-cac" class="border rounded-lg w-full p-2"></div>
-                <div><label class="block text-sm font-medium">Target Revenue (₦)</label><input type="number" id="target-rev" class="border rounded-lg w-full p-2"></div>
-                <div><label class="block text-sm font-medium">Budget available (₦)</label><input type="number" id="target-budget" class="border rounded-lg w-full p-2"></div>
-            </div>
-            <button id="run-cac" class="bg-purple-600 text-white px-5 py-2 rounded-lg">Calculate & Advise</button>
-            <div id="cac-result" class="mt-5 p-4 bg-gray-50 rounded-lg hidden"></div>
-        </div>
-    </div>
-
-    <!-- Forecast Tab -->
-    <div id="tab-forecast" class="tab-content hidden">
-        <div class="bg-white p-6 rounded-xl shadow-md">
-            <h2 class="text-xl font-semibold mb-4">Revenue Forecast</h2>
-            <div class="grid md:grid-cols-3 gap-4 mb-5">
-                <div><label class="text-sm">Months</label><input type="number" id="forecast-months" value="6" class="border rounded-lg w-full p-2"></div>
-                <div><label class="text-sm">Monthly growth (%)</label><input type="number" id="forecast-growth" step="0.5" class="border rounded-lg w-full p-2"></div>
-                <div><label class="text-sm">Extra ad spend (₦)</label><input type="number" id="forecast-add-spend" class="border rounded-lg w-full p-2"></div>
-            </div>
-            <button id="run-forecast" class="bg-green-600 text-white px-5 py-2 rounded-lg">Generate forecast</button>
-            <div id="forecast-loading" class="hidden text-center py-4"><div class="loading-spinner mx-auto"></div></div>
-            <div class="mt-6"><canvas id="forecastChart" height="200"></canvas></div>
-            <div id="forecast-table" class="mt-5 overflow-x-auto"></div>
-        </div>
-    </div>
-
-    <!-- Organisation Tab -->
-    <div id="tab-org" class="tab-content hidden">
-        <div class="bg-white p-6 rounded-xl shadow-md">
-            <h2 class="text-xl font-semibold mb-4">Organisation Profile</h2>
-            <form id="org-profile-form" class="space-y-3">
-                <input type="text" id="org-name-field" placeholder="Org Name" class="border rounded-lg w-full p-2">
-                <input type="text" id="org-location" placeholder="Location" class="border rounded-lg w-full p-2">
-                <input type="text" id="org-niche" placeholder="Niche" class="border rounded-lg w-full p-2">
-                <input type="number" id="org-budget" placeholder="Budget" class="border rounded-lg w-full p-2">
-                <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg hidden role-admin">Update Profile</button>
-            </form>
-            <hr class="my-6">
-            <h3 class="font-semibold">👥 Team Members</h3>
-            <div id="members-list" class="mt-4 text-sm space-y-2"></div>
-            <div class="mt-4 hidden role-admin" id="invite-section">
-                <label class="block text-sm font-medium">Invite new member</label>
-                <div class="flex flex-wrap gap-2 mt-1"><input type="email" id="invite-email" placeholder="Email" class="border rounded-lg p-2 flex-1"><select id="invite-role" class="border rounded-lg p-2"><option>analyst</option><option>viewer</option></select><button id="invite-btn" class="bg-gray-800 text-white px-4 rounded-lg">Invite</button></div>
-            </div>
-        </div>
-    </div>
+    <div id="auth-message" class="text-xs text-center mt-4 text-red-500 hidden"></div>
 </div>
 
-<!-- Delete confirmation modal -->
-<div id="delete-modal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50"><div class="bg-white rounded-xl p-6 max-w-sm"><h3 class="text-lg font-bold">Confirm delete</h3><p>Delete this lead?</p><div class="flex justify-end gap-3 mt-5"><button id="cancel-delete" class="px-3 py-1 border rounded">Cancel</button><button id="confirm-delete" class="bg-red-600 text-white px-3 py-1 rounded">Delete</button></div></div></div>
-
-<!-- Lead modal -->
-<div id="lead-modal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50">
-    <div class="bg-white rounded-2xl p-6 w-full max-w-md">
-        <h3 id="modal-title" class="text-xl font-bold mb-3">Add Lead</h3>
-        <form id="lead-form">
-            <input type="hidden" id="lead-id">
-            <input id="lead-name" placeholder="Name*" class="w-full border p-2 rounded mb-2" required>
-            <input id="lead-email" placeholder="Email" class="w-full border p-2 rounded mb-2">
-            <input id="lead-phone" placeholder="Phone" class="w-full border p-2 rounded mb-2">
-            <input id="lead-source" placeholder="Source" class="w-full border p-2 rounded mb-2">
-            <select id="lead-status" class="w-full border p-2 rounded mb-2"><option value="cold">Cold</option><option value="warm">Warm</option><option value="converted">Converted</option></select>
-            <input id="lead-deal" placeholder="Deal Value (₦)" class="w-full border p-2 rounded mb-2">
-            <input id="lead-spend" placeholder="Ad Spend (₦)" class="w-full border p-2 rounded mb-2">
-            <input id="lead-acquired" type="date" class="w-full border p-2 rounded mb-2">
-            <input id="lead-converted" type="date" class="w-full border p-2 rounded mb-2">
-            <textarea id="lead-notes" rows="2" placeholder="Notes" class="w-full border p-2 rounded mb-3"></textarea>
-            <div class="flex justify-end gap-2"><button type="button" id="close-modal" class="px-3 py-1 border rounded">Cancel</button><button type="submit" class="px-3 py-1 bg-blue-600 text-white rounded">Save</button></div>
-        </form>
-    </div>
-</div>
+<!-- Debug panel -->
+<div id="debug-panel" class="debug-panel mx-auto max-w-md"></div>
 
 <script>
-    // ==================== TOKEN CHECK ALERT ====================
-    const token = localStorage.getItem('access_token');
-    alert('📋 Dashboard loaded, token = ' + (token ? token.substring(0, 10) + '…' : 'null'));
+    const BACKEND_URL = 'https://kevsono-kevs-digital-business-intelligencev2.hf.space';
+    const DASHBOARD_URL = '/bizintel';
 
-    // If no token, redirect to login
-    if (!token) {
-        window.location.href = '/bisignin';
+    function debugLog(msg) {
+        const panel = document.getElementById('debug-panel');
+        panel.style.display = 'block';
+        panel.innerHTML += new Date().toLocaleTimeString() + ': ' + msg + '\n';
+        panel.scrollTop = panel.scrollHeight;
+        console.log(msg);
     }
 
-    // ==================== CONFIGURATION ====================
-    const BACKEND_URL = 'https://kevsono-kevs-digital-business-intelligencev2.hf.space';
-    const LOGIN_URL = '/bisignin';   // relative path to your login page
+    // ========== OAuth HANDLER – WITH FULL DEBUGGING ==========
+    (async function handleOAuth() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const code = urlParams.get('code');
+        const error = urlParams.get('error');
+        
+        if (error) {
+            debugLog('❌ OAuth error from Google: ' + error);
+            alert('Google login error: ' + error);
+            return;
+        }
+        
+        if (code) {
+            debugLog('🔑 Code found: ' + code.substring(0, 20) + '...');
+            
+            // Show processing UI
+            document.body.innerHTML = '<div class="flex items-center justify-center min-h-screen"><div class="text-center"><div class="loading-spinner mx-auto mb-4"></div><p class="text-gray-600">Completing Google sign-in...</p><div id="debug-inline" class="text-xs text-gray-400 mt-4 max-w-md"></div></div></div>';
+            
+            try {
+                debugLog('📡 Fetching: ' + BACKEND_URL + '/auth/google/callback?code=' + code.substring(0, 20) + '...');
+                
+                const response = await fetch(`${BACKEND_URL}/auth/google/callback?code=${code}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                debugLog('📡 Response status: ' + response.status);
+                
+                const data = await response.json();
+                debugLog('📡 Response data: ' + JSON.stringify(data, null, 2));
+                
+                if (response.ok && data.access_token) {
+                    localStorage.setItem('access_token', data.access_token);
+                    localStorage.setItem('user_id', data.user_id);
+                    debugLog('✅ Token saved! Redirecting to ' + DASHBOARD_URL);
+                    window.location.href = DASHBOARD_URL;
+                } else {
+                    debugLog('❌ No access_token in response. Error: ' + (data.detail || 'Unknown'));
+                    alert('Login failed: ' + (data.detail || 'No access_token received'));
+                    window.location.href = '/bisignin';
+                }
+            } catch (err) {
+                debugLog('💥 Fetch exception: ' + err.message);
+                alert('Network error: ' + err.message);
+                window.location.href = '/bisignin';
+            }
+        }
+    })();
+    // =========================================================
 
-    let currentRole = 'viewer';
-    let leadsCache = [];
-    let leadsPage = 0, limit = 20;
-    let pendingDeleteId = null;
-    let chatHistory = [];
-    let forecastChart = null;
-
-    // Helper functions
     function showToast(msg, type='success') {
         const container = document.getElementById('toast-container');
+        if (!container) return;
         const toast = document.createElement('div');
-        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type==='success'?'bg-green-600':'bg-red-600'} transition-smooth mb-2 text-sm`;
+        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type==='success'?'bg-green-600':'bg-red-600'} mb-2 text-sm`;
         toast.innerText = msg;
         container.appendChild(toast);
         setTimeout(() => toast.remove(), 3500);
@@ -209,393 +130,75 @@
 
     async function apiCall(endpoint, method='GET', body=null) {
         const headers = { 'Content-Type': 'application/json' };
-        if(token) headers['Authorization'] = `Bearer ${token}`;
-        const opts = { method, headers };
-        if(body) opts.body = JSON.stringify(body);
-        const res = await fetch(`${BACKEND_URL}${endpoint}`, opts);
-        if(res.status === 401) { redirectToLogin(); throw new Error('Session expired'); }
+        const res = await fetch(`${BACKEND_URL}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
         if(!res.ok) { const err = await res.json().catch(()=>({detail:'Error'})); throw new Error(err.detail || 'API error'); }
         return res.json();
     }
 
-    function redirectToLogin() {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('user_id');
-        window.location.href = LOGIN_URL;
+    async function login(email, password) {
+        const data = await apiCall('/auth/login', 'POST', { email, password });
+        localStorage.setItem('access_token', data.access_token);
+        localStorage.setItem('user_id', data.user_id);
+        showToast('Login successful, redirecting...');
+        setTimeout(() => { window.location.href = DASHBOARD_URL; }, 1000);
     }
 
-    async function logout() {
-        if(token) {
-            try { await apiCall('/auth/logout', 'POST'); } catch(e) {}
-        }
-        redirectToLogin();
+    async function registerOrg(data) {
+        await apiCall('/auth/register', 'POST', data);
+        showToast('Registration successful! Please verify email (if required) and then login.');
+        document.getElementById('login-tab').click();
     }
 
-    function updateRoleUI() {
-        const isAdmin = currentRole === 'admin';
-        const isAnalyst = currentRole === 'analyst' || isAdmin;
-        document.querySelectorAll('.role-analyst').forEach(el => el.classList.toggle('hidden', !isAnalyst));
-        document.querySelectorAll('.role-admin').forEach(el => el.classList.toggle('hidden', !isAdmin));
-        const inviteSection = document.getElementById('invite-section');
-        if(inviteSection) inviteSection.classList.toggle('hidden', !isAdmin);
-        const updateBtn = document.querySelector('#org-profile-form button');
-        if(updateBtn) updateBtn.classList.toggle('hidden', !isAdmin);
+    async function resetPassword(email) {
+        await apiCall('/auth/reset-password', 'POST', { email });
+        showToast('Password reset email sent. Check your inbox.');
     }
 
-    async function loadOrgContext() {
-        try {
-            const me = await apiCall('/auth/me');
-            currentRole = me.role;
-            document.getElementById('user-role').innerText = currentRole;
-            const profile = await apiCall('/org/profile');
-            document.getElementById('org-name').innerText = profile.org_name || me.org_name;
-            document.getElementById('org-meta').innerHTML = `${profile.location || '-'} | ${profile.niche || '-'} | ₦${(profile.budget || 0).toLocaleString()}`;
-            const usage = await apiCall('/org/usage');
-            const remaining = usage.remaining === -1 ? 'Unlimited' : usage.remaining;
-            document.getElementById('usage-badge').innerHTML = `<i class="fas fa-chart-line"></i> ${usage.plan} · ${usage.request_count}/${usage.limit || '∞'} used · ${remaining} left`;
-            updateRoleUI();
-            return true;
-        } catch(e) { console.error(e); redirectToLogin(); return false; }
-    }
-
-    // --- Leads ---
-    async function loadLeads() {
-        const loadingDiv = document.getElementById('leads-loading');
-        const tableDiv = document.querySelector('#tab-leads .overflow-x-auto');
-        loadingDiv.classList.remove('hidden');
-        tableDiv.classList.add('hidden');
-        try {
-            let url = `/leads?limit=${limit}&offset=${leadsPage*limit}`;
-            const statusFilter = document.getElementById('lead-status-filter').value;
-            const sourceFilter = document.getElementById('lead-source-filter').value;
-            if(statusFilter) url += `&status=${statusFilter}`;
-            if(sourceFilter) url += `&source=${encodeURIComponent(sourceFilter)}`;
-            const res = await apiCall(url);
-            leadsCache = res.leads;
-            const tbody = document.getElementById('leads-table-body');
-            tbody.innerHTML = '';
-            for(let l of leadsCache) {
-                const row = tbody.insertRow();
-                row.insertCell(0).innerHTML = `<div class="font-medium">${escapeHtml(l.name)}</div>`;
-                row.insertCell(1).innerHTML = l.email || '-';
-                row.insertCell(2).innerHTML = l.source || '-';
-                row.insertCell(3).innerHTML = `<span class="px-2 py-1 rounded-full text-xs ${l.status==='converted'?'bg-green-100 text-green-800':l.status==='warm'?'bg-yellow-100':'bg-gray-200'}">${l.status}</span>`;
-                row.insertCell(4).innerHTML = l.deal_value ? `₦${l.deal_value.toLocaleString()}` : '-';
-                row.insertCell(5).innerHTML = l.ad_spend ? `₦${l.ad_spend.toLocaleString()}` : '-';
-                if(currentRole !== 'viewer') {
-                    row.insertCell(6).innerHTML = `<button class="text-blue-600 mr-2 edit-lead" data-id="${l.id}"><i class="fas fa-edit"></i></button><button class="text-red-600 delete-lead-btn" data-id="${l.id}"><i class="fas fa-trash"></i></button>`;
-                } else {
-                    row.insertCell(6).innerHTML = '';
-                }
-            }
-            document.getElementById('page-info').innerText = `Page ${leadsPage+1}`;
-            document.getElementById('prev-page').disabled = leadsPage===0;
-            attachLeadActions();
-        } catch(e) { showToast(e.message, 'error'); } finally {
-            loadingDiv.classList.add('hidden');
-            tableDiv.classList.remove('hidden');
-        }
-    }
-
-    function attachLeadActions() {
-        document.querySelectorAll('.edit-lead').forEach(btn => btn.onclick = () => editLeadById(btn.dataset.id));
-        document.querySelectorAll('.delete-lead-btn').forEach(btn => btn.onclick = () => { pendingDeleteId = btn.dataset.id; document.getElementById('delete-modal').classList.remove('hidden'); document.getElementById('delete-modal').classList.add('flex'); });
-    }
-
-    function editLeadById(id) {
-        const lead = leadsCache.find(l => l.id == id);
-        if(lead) openLeadModal(lead);
-        else showToast('Lead not found', 'error');
-    }
-
-    function ensureLeadModal() {
-        if(document.getElementById('lead-modal')) return;
-        const modalHtml = `<div id="lead-modal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50"><div class="bg-white rounded-2xl p-6 w-full max-w-md"><h3 id="modal-title" class="text-xl font-bold mb-3">Lead</h3><form id="lead-form"><input type="hidden" id="lead-id"><input id="lead-name" placeholder="Name*" class="w-full border p-2 rounded mb-2" required><input id="lead-email" placeholder="Email" class="w-full border p-2 rounded mb-2"><input id="lead-phone" placeholder="Phone" class="w-full border p-2 rounded mb-2"><input id="lead-source" placeholder="Source" class="w-full border p-2 rounded mb-2"><select id="lead-status" class="w-full border p-2 rounded mb-2"><option value="cold">Cold</option><option value="warm">Warm</option><option value="converted">Converted</option></select><input id="lead-deal" placeholder="Deal Value (₦)" class="w-full border p-2 rounded mb-2"><input id="lead-spend" placeholder="Ad Spend (₦)" class="w-full border p-2 rounded mb-2"><input id="lead-acquired" type="date" class="w-full border p-2 rounded mb-2"><input id="lead-converted" type="date" class="w-full border p-2 rounded mb-2"><textarea id="lead-notes" rows="2" placeholder="Notes" class="w-full border p-2 rounded mb-3"></textarea><div class="flex justify-end gap-2"><button type="button" id="close-modal" class="px-3 py-1 border rounded">Cancel</button><button type="submit" class="px-3 py-1 bg-blue-600 text-white rounded">Save</button></div></form></div></div>`;
-        document.body.insertAdjacentHTML('beforeend', modalHtml);
-        document.getElementById('lead-form').addEventListener('submit', async (e) => { e.preventDefault(); await saveLead(); });
-        document.getElementById('close-modal').onclick = () => document.getElementById('lead-modal').classList.add('hidden');
-    }
-
-    async function saveLead() {
-        const id = document.getElementById('lead-id').value;
-        const data = {
-            name: document.getElementById('lead-name').value,
-            email: document.getElementById('lead-email').value||null,
-            phone: document.getElementById('lead-phone').value||null,
-            source: document.getElementById('lead-source').value||null,
-            status: document.getElementById('lead-status').value,
-            deal_value: parseFloat(document.getElementById('lead-deal').value)||null,
-            ad_spend: parseFloat(document.getElementById('lead-spend').value)||null,
-            acquired_date: document.getElementById('lead-acquired').value||null,
-            conversion_date: document.getElementById('lead-converted').value||null,
-            notes: document.getElementById('lead-notes').value||null
-        };
-        if(id) await apiCall(`/leads/${id}`, 'PATCH', data);
-        else await apiCall('/leads', 'POST', data);
-        document.getElementById('lead-modal').classList.add('hidden');
-        loadLeads();
-        showToast('Lead saved');
-        if(!document.getElementById('tab-metrics').classList.contains('hidden')) loadMetrics();
-    }
-
-    function openLeadModal(lead=null) {
-        ensureLeadModal();
-        const modal = document.getElementById('lead-modal');
-        document.getElementById('modal-title').innerText = lead ? 'Edit Lead' : 'Add Lead';
-        if(lead) {
-            document.getElementById('lead-id').value = lead.id;
-            document.getElementById('lead-name').value = lead.name;
-            document.getElementById('lead-email').value = lead.email || '';
-            document.getElementById('lead-phone').value = lead.phone || '';
-            document.getElementById('lead-source').value = lead.source || '';
-            document.getElementById('lead-status').value = lead.status;
-            document.getElementById('lead-deal').value = lead.deal_value || '';
-            document.getElementById('lead-spend').value = lead.ad_spend || '';
-            document.getElementById('lead-acquired').value = lead.acquired_date?.split('T')[0] || '';
-            document.getElementById('lead-converted').value = lead.conversion_date?.split('T')[0] || '';
-            document.getElementById('lead-notes').value = lead.notes || '';
-        } else document.getElementById('lead-form').reset();
-        modal.classList.remove('hidden'); modal.classList.add('flex');
-    }
-
-    async function deleteLead() {
-        if(pendingDeleteId) {
-            await apiCall(`/leads/${pendingDeleteId}`, 'DELETE');
-            loadLeads();
-            showToast('Lead deleted');
-        }
-        closeDeleteModal();
-    }
-    function closeDeleteModal() { document.getElementById('delete-modal').classList.add('hidden'); pendingDeleteId=null; }
-
-    async function loadSourceFilter() {
-        const leads = await apiCall('/leads?limit=1000');
-        const sources = [...new Set(leads.leads.map(l=>l.source).filter(Boolean))];
-        const select = document.getElementById('lead-source-filter');
-        select.innerHTML = '<option value="">All sources</option>' + sources.map(s=>`<option value="${s}">${s}</option>`).join('');
-    }
-
-    // --- Metrics ---
-    async function loadMetrics() {
-        const loading = document.getElementById('metrics-loading');
-        const content = document.getElementById('metrics-content');
-        loading.classList.remove('hidden');
-        content.classList.add('hidden');
-        try {
-            const data = await apiCall('/leads/metrics');
-            const m = data.metrics;
-            document.getElementById('metric-total-leads').innerText = m.total_leads;
-            document.getElementById('metric-conversion-rate').innerText = `${m.conversion_rate}%`;
-            document.getElementById('metric-cac').innerText = `₦${m.actual_cac.toLocaleString()}`;
-            document.getElementById('metric-roi').innerText = `${m.roi}%`;
-            document.getElementById('metric-pipeline').innerText = `₦${m.pipeline_value.toLocaleString()}`;
-            document.getElementById('metric-dq').innerText = m.data_quality;
-            document.getElementById('top-sources-list').innerHTML = m.top_sources.map(s => `<div class="flex justify-between border-b py-1"><span>${s.source}</span><span>${s.converted}/${s.total} (${s.conv_rate}%)</span></div>`).join('');
-        } catch(e) { showToast(e.message, 'error'); } finally {
-            loading.classList.add('hidden');
-            content.classList.remove('hidden');
-        }
-    }
-
-    // --- Chat ---
-    async function loadChatHistoryFromBackend() {
-        try {
-            const hist = await apiCall('/intelligence/history?limit=20');
-            const container = document.getElementById('chat-messages');
-            container.innerHTML = '';
-            chatHistory = [];
-            for(let h of hist.history.slice().reverse()) {
-                appendMessage('user', h.query);
-                appendMessage('assistant', h.response);
-                chatHistory.push({role:'user', content:h.query}, {role:'assistant', content:h.response});
-            }
-            if(chatHistory.length===0) appendMessage('assistant', 'Hello! Ask me anything about your leads & strategy.');
-        } catch(e) { console.warn(e); appendMessage('assistant', 'Welcome! Ask me anything about your leads & strategy.'); }
-    }
-
-    function appendMessage(role, content) {
-        const div = document.createElement('div');
-        div.className = `p-2 rounded-lg ${role==='user'?'bg-blue-100 text-right ml-8':'bg-gray-100 mr-8'}`;
-        div.innerHTML = `<strong class="text-sm">${role==='user'?'You':'Kevs AI'}</strong><div class="text-sm mt-1">${escapeHtml(content).replace(/\n/g,'<br/>')}</div>`;
-        document.getElementById('chat-messages').appendChild(div);
-        document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;
-    }
-
-    async function sendChat() {
-        const input = document.getElementById('chat-input');
-        const msg = input.value.trim();
-        if(!msg) return;
-        appendMessage('user', msg);
-        input.value = '';
-        const btn = document.getElementById('send-chat');
-        btn.disabled = true;
-        try {
-            const body = {
-                message: msg,
-                history: chatHistory.slice(-10),
-                report_mode: document.getElementById('chat-mode').value,
-                force_pillar: parseInt(document.getElementById('force-pillar').value) || null
-            };
-            const res = await apiCall('/intelligence/chat', 'POST', body);
-            appendMessage('assistant', res.response);
-            if(res.usage) document.getElementById('chat-usage').innerHTML = `<i class="fas fa-chart-simple"></i> Used: ${res.usage.requests_used}/${res.usage.limit} (${res.usage.remaining === -1 ? 'unlimited' : res.usage.remaining+' left'})`;
-            chatHistory.push({role:'user', content:msg}, {role:'assistant', content:res.response});
-        } catch(e) { showToast(e.message, 'error'); } finally { btn.disabled = false; }
-    }
-
-    // CAC formatted display
-    function formatCacResult(analysis, advisory) {
-        let html = `<div class="space-y-3"><div class="bg-white p-3 rounded shadow"><strong>📊 Current CAC:</strong> ₦${analysis.current_cac?.toLocaleString()} &nbsp;| <strong>Target:</strong> ₦${analysis.target_cac?.toLocaleString()} &nbsp;| <strong>Gap:</strong> ₦${analysis.cac_interpretation?.gap?.toLocaleString()}</div>`;
-        if(analysis.budget_scenario) {
-            html += `<div class="bg-blue-50 p-3 rounded"><strong>💰 Budget scenario:</strong><br/>Available budget: ₦${analysis.budget_scenario.available_budget?.toLocaleString()}<br/>Leads to acquire: ${analysis.budget_scenario.leads_to_acquire}<br/>Expected conversions: ${analysis.budget_scenario.expected_conversions}<br/>Expected revenue: ₦${analysis.budget_scenario.expected_revenue?.toLocaleString()}</div>`;
-        }
-        if(analysis.revenue_scenario) {
-            html += `<div class="bg-green-50 p-3 rounded"><strong>🎯 Revenue scenario:</strong><br/>Target revenue: ₦${analysis.revenue_scenario.target_revenue?.toLocaleString()}<br/>Conversions needed: ${analysis.revenue_scenario.conversions_needed}<br/>Leads needed: ${analysis.revenue_scenario.leads_needed}</div>`;
-        }
-        html += `<div class="bg-gray-100 p-3 rounded">${advisory}</div></div>`;
-        return html;
-    }
-
-    // --- Org & Members ---
-    async function loadProfile() {
-        const p = await apiCall('/org/profile');
-        document.getElementById('org-name-field').value = p.org_name || '';
-        document.getElementById('org-location').value = p.location || '';
-        document.getElementById('org-niche').value = p.niche || '';
-        document.getElementById('org-budget').value = p.budget || '';
-    }
-
-    async function loadMembers() {
-        const res = await apiCall('/org/members');
-        const container = document.getElementById('members-list');
-        container.innerHTML = '';
-        for(let m of res.members) {
-            const div = document.createElement('div');
-            div.className = 'flex justify-between items-center border-b py-2';
-            div.innerHTML = `<span class="text-sm">${m.user_id.slice(0,8)}... (${m.role})</span>`;
-            if(currentRole === 'admin') {
-                const select = document.createElement('select');
-                select.className = 'border rounded text-sm p-1';
-                select.innerHTML = `<option value="analyst" ${m.role==='analyst'?'selected':''}>Analyst</option><option value="viewer" ${m.role==='viewer'?'selected':''}>Viewer</option>`;
-                select.onchange = async (e) => {
-                    const newRole = e.target.value;
-                    await apiCall(`/org/members/${m.user_id}?role=${newRole}`, 'PATCH');
-                    showToast(`Role updated to ${newRole}`);
-                    loadMembers();
-                };
-                div.appendChild(select);
-            }
-            container.appendChild(div);
-        }
-    }
-
-    // --- Forecast ---
-    async function runForecast() {
-        const months = parseInt(document.getElementById('forecast-months').value);
-        const growth = parseFloat(document.getElementById('forecast-growth').value)||null;
-        const addSpend = parseFloat(document.getElementById('forecast-add-spend').value)||null;
-        const loadingDiv = document.getElementById('forecast-loading');
-        const chartCanvas = document.getElementById('forecastChart');
-        const tableDiv = document.getElementById('forecast-table');
-        loadingDiv.classList.remove('hidden');
-        chartCanvas.classList.add('hidden');
-        tableDiv.innerHTML = '';
-        try {
-            const res = await apiCall('/analytics/forecast', 'POST', { months, target_growth_rate: growth, additional_ad_spend: addSpend });
-            const labels = res.forecast.map(f => `M${f.month}`);
-            const revenues = res.forecast.map(f => f.revenue);
-            if(forecastChart) forecastChart.destroy();
-            const ctx = chartCanvas.getContext('2d');
-            forecastChart = new Chart(ctx, { type: 'line', data: { labels, datasets: [{ label: 'Monthly Revenue (₦)', data: revenues, borderColor: '#f97316', fill: false }] } });
-            let html = '<table class="min-w-full text-sm"><thead><tr><th>Month</th><th>Leads</th><th>Conversions</th><th>Revenue</th><th>Cumulative</th></tr></thead><tbody>';
-            res.forecast.forEach(f => { html += `<tr><td>${f.month}</td><td>${f.leads_generated}</td><td>${f.conversions}</td><td>₦${f.revenue.toFixed(0)}</td><td>₦${f.cumulative_revenue.toFixed(0)}</td></tr>`; });
-            html += '</tbody></table>';
-            tableDiv.innerHTML = html;
-            chartCanvas.classList.remove('hidden');
-        } catch(e) { showToast(`Forecast failed: ${e.message}`, 'error'); } finally {
-            loadingDiv.classList.add('hidden');
-        }
-    }
-
-    function escapeHtml(str) { if(!str) return ''; return str.replace(/[&<>]/g, function(m){if(m==='&') return '&amp;'; if(m==='<') return '&lt;'; if(m==='>') return '&gt;'; return m;}); }
-
-    // Tab switching
-    function switchTab(tabId) {
-        document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
-        document.getElementById(`tab-${tabId}`).classList.remove('hidden');
-        document.querySelectorAll('.tab-btn').forEach(btn => { btn.classList.remove('bg-orange-50', 'text-orange-700'); btn.classList.add('text-gray-600'); });
-        const activeBtn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
-        if(activeBtn) activeBtn.classList.add('bg-orange-50', 'text-orange-700');
-        if(tabId === 'leads') loadLeads();
-        if(tabId === 'metrics') loadMetrics();
-    }
-
-    // Event listeners
-    document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
-    document.getElementById('add-lead-btn')?.addEventListener('click', () => openLeadModal(null));
-    document.getElementById('csv-upload')?.addEventListener('change', async (e) => {
-        if(!e.target.files[0]) return;
-        const formData = new FormData();
-        formData.append('file', e.target.files[0]);
-        const res = await fetch(`${BACKEND_URL}/leads/upload`, { method:'POST', headers:{ 'Authorization': `Bearer ${token}` }, body:formData });
-        if(res.ok) { showToast('CSV uploaded'); loadLeads(); } else showToast('Upload failed', 'error');
+    document.getElementById('google-btn')?.addEventListener('click', () => {
+        debugLog('Google button clicked, redirecting to ' + BACKEND_URL + '/auth/google');
+        window.location.href = `${BACKEND_URL}/auth/google`;
     });
-    document.getElementById('refresh-metrics')?.addEventListener('click', loadMetrics);
-    document.getElementById('run-cac')?.addEventListener('click', async () => {
-        const target_cac = parseFloat(document.getElementById('target-cac').value);
-        if(!target_cac) return showToast('Enter target CAC', 'error');
-        const body = { target_cac, target_revenue: parseFloat(document.getElementById('target-rev').value)||null, available_budget: parseFloat(document.getElementById('target-budget').value)||null };
-        const res = await apiCall('/leads/cac-target', 'POST', body);
-        const resultDiv = document.getElementById('cac-result');
-        resultDiv.classList.remove('hidden');
-        resultDiv.innerHTML = formatCacResult(res.analysis, res.advisory);
-    });
-    document.getElementById('run-forecast')?.addEventListener('click', runForecast);
-    document.getElementById('send-chat')?.addEventListener('click', sendChat);
-    document.getElementById('chat-input')?.addEventListener('keypress', (e) => { if(e.key === 'Enter') sendChat(); });
-    document.getElementById('clear-chat')?.addEventListener('click', () => { document.getElementById('chat-messages').innerHTML = ''; chatHistory = []; appendMessage('assistant', 'Chat cleared. Ask me anything!'); });
-    document.getElementById('org-profile-form')?.addEventListener('submit', async (e) => {
+
+    document.getElementById('login-form')?.addEventListener('submit', async (e) => {
         e.preventDefault();
-        await apiCall('/org/profile', 'PATCH', {
-            org_name: document.getElementById('org-name-field').value,
-            location: document.getElementById('org-location').value,
-            niche: document.getElementById('org-niche').value,
-            budget: parseInt(document.getElementById('org-budget').value)||null
-        });
-        showToast('Profile updated');
-        loadOrgContext();
+        const email = document.getElementById('login-email').value;
+        const pwd = document.getElementById('login-password').value;
+        try { await login(email, pwd); } catch(err) { showToast(err.message, 'error'); }
     });
-    document.getElementById('invite-btn')?.addEventListener('click', async () => {
-        const email = document.getElementById('invite-email').value;
-        if(!email) return;
-        await apiCall('/org/invite', 'POST', { email, role: document.getElementById('invite-role').value });
-        showToast(`Invited ${email}`);
-        loadMembers();
-    });
-    document.getElementById('logout-btn')?.addEventListener('click', logout);
-    document.getElementById('confirm-delete')?.addEventListener('click', deleteLead);
-    document.getElementById('cancel-delete')?.addEventListener('click', closeDeleteModal);
-    document.getElementById('prev-page')?.addEventListener('click', () => { if(leadsPage>0){ leadsPage--; loadLeads(); } });
-    document.getElementById('next-page')?.addEventListener('click', () => { leadsPage++; loadLeads(); });
-    document.getElementById('lead-status-filter')?.addEventListener('change', () => { leadsPage=0; loadLeads(); });
-    document.getElementById('lead-source-filter')?.addEventListener('change', () => { leadsPage=0; loadLeads(); });
 
-    // Initial load: verify token and load dashboard
-    (async () => {
-        try {
-            await loadOrgContext();
-            await loadLeads();
-            await loadMetrics();
-            await loadSourceFilter();
-            await loadMembers();
-            await loadProfile();
-            await loadChatHistoryFromBackend();
-            switchTab('leads');
-        } catch(e) {
-            console.error('Initialisation failed', e);
-            redirectToLogin();
-        }
-    })();
+    document.getElementById('register-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const orgData = {
+            org_name: document.getElementById('reg-org-name').value,
+            location: document.getElementById('reg-location').value,
+            niche: document.getElementById('reg-niche').value,
+            budget: parseInt(document.getElementById('reg-budget').value),
+            email: document.getElementById('reg-email').value,
+            password: document.getElementById('reg-password').value
+        };
+        try { await registerOrg(orgData); } catch(err) { showToast(err.message, 'error'); }
+    });
+
+    document.getElementById('forgot-pwd-btn')?.addEventListener('click', async () => {
+        const email = document.getElementById('login-email').value;
+        if(!email) { showToast('Enter your email first', 'error'); return; }
+        try { await resetPassword(email); } catch(err) { showToast(err.message, 'error'); }
+    });
+
+    document.getElementById('login-tab')?.addEventListener('click', () => {
+        document.getElementById('login-form').classList.remove('hidden');
+        document.getElementById('register-form').classList.add('hidden');
+        document.getElementById('login-tab').classList.add('border-blue-600', 'text-blue-600');
+        document.getElementById('register-tab').classList.remove('border-blue-600', 'text-blue-600');
+        document.getElementById('register-tab').classList.add('text-gray-500');
+    });
+    document.getElementById('register-tab')?.addEventListener('click', () => {
+        document.getElementById('login-form').classList.add('hidden');
+        document.getElementById('register-form').classList.remove('hidden');
+        document.getElementById('register-tab').classList.add('border-blue-600', 'text-blue-600');
+        document.getElementById('login-tab').classList.remove('border-blue-600', 'text-blue-600');
+        document.getElementById('login-tab').classList.add('text-gray-500');
+    });
 </script>
 </body>
 </html>
