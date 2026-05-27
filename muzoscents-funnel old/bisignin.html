@@ -56,7 +56,40 @@
 
 <script>
     const BACKEND_URL = 'https://kevsono-kevs-digital-business-intelligencev2.hf.space';
-    const DASHBOARD_URL = '/bizintel';  // CORRECTED: now points to the actual dashboard location
+    const DASHBOARD_URL = '/bizintel';
+
+    // ========== OAuth HANDLER – MUST RUN FIRST ==========
+    (function handleOAuth() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const code = urlParams.get('code');
+        
+        if (code) {
+            // Show processing state
+            document.body.innerHTML = '<div class="flex items-center justify-center min-h-screen"><div class="text-center"><div class="loading-spinner mx-auto mb-4"></div><p class="text-gray-600">Completing Google sign-in...</p></div></div>';
+            
+            // Exchange code for token
+            fetch(`${BACKEND_URL}/auth/google/callback?code=${code}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.access_token) {
+                    localStorage.setItem('access_token', data.access_token);
+                    localStorage.setItem('user_id', data.user_id);
+                    window.location.href = DASHBOARD_URL;
+                } else {
+                    alert('Login failed: ' + (data.detail || 'Unknown error'));
+                    window.location.href = '/bisignin';
+                }
+            })
+            .catch(err => {
+                alert('Network error: ' + err.message);
+                window.location.href = '/bisignin';
+            });
+        }
+    })();
+    // ===================================================
 
     function showToast(msg, type='success') {
         const container = document.getElementById('toast-container');
@@ -93,44 +126,10 @@
         showToast('Password reset email sent. Check your inbox.');
     }
 
-    // Google OAuth: redirect to backend, which will return a RedirectResponse
     document.getElementById('google-btn')?.addEventListener('click', () => {
         window.location.href = `${BACKEND_URL}/auth/google`;
     });
 
-    // ========== OAuth CALLBACK WITH DEBUG ALERTS ==========
-    const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
-    if (code) {
-        alert('🔍 Code found: ' + code);
-        (async () => {
-            try {
-                // Direct fetch with POST method (no apiCall wrapper for clarity)
-                const response = await fetch(`${BACKEND_URL}/auth/google/callback?code=${code}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                });
-                alert('📡 Response status: ' + response.status);
-                
-                const data = await response.json();
-                if (response.ok) {
-                    localStorage.setItem('access_token', data.access_token);
-                    localStorage.setItem('user_id', data.user_id);
-                    alert('✅ Token saved, redirecting to ' + DASHBOARD_URL);
-                    window.location.href = DASHBOARD_URL;
-                } else {
-                    alert('❌ Error from backend: ' + (data.detail || 'Unknown error'));
-                    showToast('Google login failed: ' + (data.detail || 'Unknown error'), 'error');
-                }
-            } catch (err) {
-                alert('💥 Fetch error: ' + err.message);
-                showToast('Google login error: ' + err.message, 'error');
-            }
-        })();
-    }
-    // =====================================================
-
-    // Form handlers
     document.getElementById('login-form')?.addEventListener('submit', async (e) => {
         e.preventDefault();
         const email = document.getElementById('login-email').value;
@@ -157,7 +156,6 @@
         try { await resetPassword(email); } catch(err) { showToast(err.message, 'error'); }
     });
 
-    // Tabs
     document.getElementById('login-tab')?.addEventListener('click', () => {
         document.getElementById('login-form').classList.remove('hidden');
         document.getElementById('register-form').classList.add('hidden');
