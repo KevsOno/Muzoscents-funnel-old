@@ -177,11 +177,19 @@
 </div>
 
 <script>
+    // ==================== TOKEN CHECK ALERT ====================
+    const token = localStorage.getItem('access_token');
+    alert('📋 Dashboard loaded, token = ' + (token ? token.substring(0, 10) + '…' : 'null'));
+
+    // If no token, redirect to login
+    if (!token) {
+        window.location.href = '/bisignin';
+    }
+
     // ==================== CONFIGURATION ====================
     const BACKEND_URL = 'https://kevsono-kevs-digital-business-intelligencev2.hf.space';
     const LOGIN_URL = '/bisignin';   // relative path to your login page
 
-    let token = localStorage.getItem('access_token');
     let currentRole = 'viewer';
     let leadsCache = [];
     let leadsPage = 0, limit = 20;
@@ -574,7 +582,6 @@
 
     // Initial load: verify token and load dashboard
     (async () => {
-        if(!token) { redirectToLogin(); return; }
         try {
             await loadOrgContext();
             await loadLeads();
