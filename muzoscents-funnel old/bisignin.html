@@ -85,7 +85,6 @@
     async function registerOrg(data) {
         await apiCall('/auth/register', 'POST', data);
         showToast('Registration successful! Please verify email (if required) and then login.');
-        // switch back to login tab
         document.getElementById('login-tab').click();
     }
 
@@ -99,20 +98,37 @@
         window.location.href = `${BACKEND_URL}/auth/google`;
     });
 
-    // Handle OAuth callback (when ?code= is present)
+    // ========== OAuth CALLBACK WITH DEBUG ALERTS ==========
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('code');
-    if(code) {
+    if (code) {
+        alert('🔍 Code found: ' + code);
         (async () => {
             try {
-                const data = await apiCall(`/auth/google/callback?code=${code}`, 'POST');
-                localStorage.setItem('access_token', data.access_token);
-                localStorage.setItem('user_id', data.user_id);
-                showToast('Google sign-in successful, redirecting...');
-                setTimeout(() => { window.location.href = DASHBOARD_URL; }, 1000);
-            } catch(e) { showToast('Google login failed: ' + e.message, 'error'); }
+                // Direct fetch with POST method (no apiCall wrapper for clarity)
+                const response = await fetch(`${BACKEND_URL}/auth/google/callback?code=${code}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                alert('📡 Response status: ' + response.status);
+                
+                const data = await response.json();
+                if (response.ok) {
+                    localStorage.setItem('access_token', data.access_token);
+                    localStorage.setItem('user_id', data.user_id);
+                    alert('✅ Token saved, redirecting to ' + DASHBOARD_URL);
+                    window.location.href = DASHBOARD_URL;
+                } else {
+                    alert('❌ Error from backend: ' + (data.detail || 'Unknown error'));
+                    showToast('Google login failed: ' + (data.detail || 'Unknown error'), 'error');
+                }
+            } catch (err) {
+                alert('💥 Fetch error: ' + err.message);
+                showToast('Google login error: ' + err.message, 'error');
+            }
         })();
     }
+    // =====================================================
 
     // Form handlers
     document.getElementById('login-form')?.addEventListener('submit', async (e) => {
