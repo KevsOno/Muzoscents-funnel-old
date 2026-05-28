@@ -13,8 +13,6 @@
         .loading-spinner { border: 2px solid #e5e7eb; border-top: 2px solid var(--kevs-blue); border-radius: 50%; width: 24px; height: 24px; animation: spin 0.8s linear infinite; display: inline-block; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .tab-active { border-bottom: 2px solid #1E3A5F; color: #1E3A5F; font-weight: 700; }
-        .msg-ai { background: white; border: 1px solid #BFDBFE; color: #1E3A5F; align-self: flex-start; border-bottom-left-radius: 3px; }
-        .msg-user { background: #1E3A5F; color: white; align-self: flex-end; border-bottom-right-radius: 3px; }
     </style>
 </head>
 <body class="font-sans antialiased">
@@ -57,7 +55,20 @@
         </div>
         <div id="leads-loading" class="hidden text-center py-10"><div class="loading-spinner mx-auto"></div><p class="mt-2">Loading leads...</p></div>
         <div class="overflow-x-auto bg-white rounded-xl shadow">
-            <table class="min-w-full"><thead class="bg-gray-50"><tr><th class="px-5 py-3 text-left text-xs">Name</th><th>Email</th><th>Source</th><th>Status</th><th>Deal (₦)</th><th>Ad Spend</th><th>Actions</th></tr></thead><tbody id="leads-table-body"></tbody>能有
+            <table class="min-w-full">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
+                        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Deal (₦)</th>
+                        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ad Spend</th>
+                        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="leads-table-body"></tbody>
+            </table>
         </div>
         <div class="mt-4 flex justify-between items-center"><button id="prev-page" class="px-3 py-1 border rounded disabled:opacity-50">Prev</button><span id="page-info"></span><button id="next-page" class="px-3 py-1 border rounded disabled:opacity-50">Next</button></div>
     </div>
@@ -79,7 +90,7 @@
         </div>
     </div>
 
-    <!-- Chat Tab (Improved) -->
+    <!-- Chat Tab (Improved with pillar label) -->
     <div id="tab-chat" class="tab-content hidden">
         <div class="bg-white rounded-xl shadow-md p-5">
             <div class="flex flex-wrap gap-3 mb-4 items-center">
@@ -88,15 +99,11 @@
                     <option value="report">📄 Report</option>
                     <option value="dashboard">📊 Dashboard</option>
                 </select>
-
-                <!-- Improved force pillar input with label -->
                 <div class="flex items-center gap-2">
                     <label class="text-sm font-medium text-gray-700">🎯 Strategic lens:</label>
-                    <input type="number" id="force-pillar" min="1" max="4" step="1" value=""
-                           class="border rounded-lg p-2 text-sm w-20 text-center">
+                    <input type="number" id="force-pillar" min="1" max="4" step="1" value="" class="border rounded-lg p-2 text-sm w-20 text-center">
                     <span id="pillar-label" class="text-xs text-gray-500 italic">(auto)</span>
                 </div>
-
                 <button id="clear-chat" class="text-gray-500 text-sm"><i class="fas fa-trash-alt"></i> Clear chat</button>
             </div>
             <div id="chat-messages" class="h-96 overflow-y-auto border rounded-xl p-3 bg-gray-50 mb-3 space-y-2"></div>
@@ -175,7 +182,7 @@
     let leadsCache = [];
     let leadsPage = 0, limit = 20;
     let pendingDeleteId = null;
-    let chatHistory = [];       // stores { role, content, pillar? }
+    let chatHistory = [];
     let forecastChart = null;
 
     // Pillar name mapping
@@ -186,29 +193,43 @@
         4: 'Growth economics'
     };
 
-    function showToast(msg, type='success') {
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    function showToast(msg, type = 'success') {
         const container = document.getElementById('toast-container');
         const toast = document.createElement('div');
-        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type==='success'?'bg-green-600':'bg-red-600'} mb-2 text-sm`;
+        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} mb-2 text-sm`;
         toast.innerText = msg;
         container.appendChild(toast);
         setTimeout(() => toast.remove(), 3500);
     }
 
-    async function apiCall(endpoint, method='GET', body=null) {
+    async function apiCall(endpoint, method = 'GET', body = null) {
         const headers = { 'Content-Type': 'application/json' };
-        if(token) headers['Authorization'] = `Bearer ${token}`;
+        if (token) headers['Authorization'] = `Bearer ${token}`;
         const opts = { method, headers };
-        if(body) opts.body = JSON.stringify(body);
+        if (body) opts.body = JSON.stringify(body);
         const res = await fetch(`${BACKEND_URL}${endpoint}`, opts);
-        if(res.status === 401) {
+        if (res.status === 401) {
             showToast('Session expired. Please login again.', 'error');
             throw new Error('Unauthorized');
         }
-        if(!res.ok) { const err = await res.json().catch(()=>({detail:'Error'})); throw new Error(err.detail || 'API error'); }
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({ detail: 'API error' }));
+            throw new Error(err.detail || 'API error');
+        }
         return res.json();
     }
 
+    // --- Organisation Context ---
     async function loadOrgContext() {
         try {
             const me = await apiCall('/auth/me');
@@ -218,41 +239,47 @@
             document.getElementById('org-meta').innerHTML = `${profile.location || '-'} | ${profile.niche || '-'} | ₦${(profile.budget || 0).toLocaleString()}`;
             const usage = await apiCall('/org/usage');
             const remaining = usage.remaining === -1 ? 'Unlimited' : usage.remaining;
-            document.getElementById('usage-badge').innerHTML = `<i class="fas fa-chart-line"></i> ${usage.plan} · ${usage.request_count}/${usage.limit || '∞'} used · ${remaining} left`;
+            const limit = usage.limit === -1 ? '∞' : usage.limit;
+            document.getElementById('usage-badge').innerHTML = `<i class="fas fa-chart-line"></i> ${usage.plan} · ${usage.request_count}/${limit} used · ${remaining} left`;
             return true;
-        } catch(e) { console.error(e); return false; }
+        } catch (e) {
+            console.error(e);
+            return false;
+        }
     }
 
-    // --- Leads --- (unchanged)
+    // --- Leads ---
     async function loadLeads() {
         const loadingDiv = document.getElementById('leads-loading');
         const tableDiv = document.querySelector('#tab-leads .overflow-x-auto');
         loadingDiv.classList.remove('hidden');
         tableDiv.classList.add('hidden');
         try {
-            let url = `/leads?limit=${limit}&offset=${leadsPage*limit}`;
+            let url = `/leads?limit=${limit}&offset=${leadsPage * limit}`;
             const statusFilter = document.getElementById('lead-status-filter').value;
             const sourceFilter = document.getElementById('lead-source-filter').value;
-            if(statusFilter) url += `&status=${statusFilter}`;
-            if(sourceFilter) url += `&source=${encodeURIComponent(sourceFilter)}`;
+            if (statusFilter) url += `&status=${statusFilter}`;
+            if (sourceFilter) url += `&source=${encodeURIComponent(sourceFilter)}`;
             const res = await apiCall(url);
             leadsCache = res.leads;
             const tbody = document.getElementById('leads-table-body');
             tbody.innerHTML = '';
-            for(let l of leadsCache) {
+            for (let l of leadsCache) {
                 const row = tbody.insertRow();
                 row.insertCell(0).innerHTML = `<div class="font-medium">${escapeHtml(l.name)}</div>`;
                 row.insertCell(1).innerHTML = l.email || '-';
                 row.insertCell(2).innerHTML = l.source || '-';
-                row.insertCell(3).innerHTML = `<span class="px-2 py-1 rounded-full text-xs ${l.status==='converted'?'bg-green-100 text-green-800':l.status==='warm'?'bg-yellow-100':'bg-gray-200'}">${l.status}</span>`;
+                row.insertCell(3).innerHTML = `<span class="px-2 py-1 rounded-full text-xs ${l.status === 'converted' ? 'bg-green-100 text-green-800' : l.status === 'warm' ? 'bg-yellow-100' : 'bg-gray-200'}">${l.status}</span>`;
                 row.insertCell(4).innerHTML = l.deal_value ? `₦${l.deal_value.toLocaleString()}` : '-';
                 row.insertCell(5).innerHTML = l.ad_spend ? `₦${l.ad_spend.toLocaleString()}` : '-';
                 row.insertCell(6).innerHTML = `<button class="text-blue-600 mr-2 edit-lead" data-id="${l.id}"><i class="fas fa-edit"></i></button><button class="text-red-600 delete-lead-btn" data-id="${l.id}"><i class="fas fa-trash"></i></button>`;
             }
-            document.getElementById('page-info').innerText = `Page ${leadsPage+1}`;
-            document.getElementById('prev-page').disabled = leadsPage===0;
+            document.getElementById('page-info').innerText = `Page ${leadsPage + 1}`;
+            document.getElementById('prev-page').disabled = leadsPage === 0;
             attachLeadActions();
-        } catch(e) { showToast(e.message, 'error'); } finally {
+        } catch (e) {
+            showToast(e.message, 'error');
+        } finally {
             loadingDiv.classList.add('hidden');
             tableDiv.classList.remove('hidden');
         }
@@ -260,12 +287,16 @@
 
     function attachLeadActions() {
         document.querySelectorAll('.edit-lead').forEach(btn => btn.onclick = () => editLeadById(btn.dataset.id));
-        document.querySelectorAll('.delete-lead-btn').forEach(btn => btn.onclick = () => { pendingDeleteId = btn.dataset.id; document.getElementById('delete-modal').classList.remove('hidden'); document.getElementById('delete-modal').classList.add('flex'); });
+        document.querySelectorAll('.delete-lead-btn').forEach(btn => btn.onclick = () => {
+            pendingDeleteId = btn.dataset.id;
+            document.getElementById('delete-modal').classList.remove('hidden');
+            document.getElementById('delete-modal').classList.add('flex');
+        });
     }
 
     function editLeadById(id) {
         const lead = leadsCache.find(l => l.id == id);
-        if(lead) openLeadModal(lead);
+        if (lead) openLeadModal(lead);
         else showToast('Lead not found', 'error');
     }
 
@@ -273,28 +304,28 @@
         const id = document.getElementById('lead-id').value;
         const data = {
             name: document.getElementById('lead-name').value,
-            email: document.getElementById('lead-email').value||null,
-            phone: document.getElementById('lead-phone').value||null,
-            source: document.getElementById('lead-source').value||null,
+            email: document.getElementById('lead-email').value || null,
+            phone: document.getElementById('lead-phone').value || null,
+            source: document.getElementById('lead-source').value || null,
             status: document.getElementById('lead-status').value,
-            deal_value: parseFloat(document.getElementById('lead-deal').value)||null,
-            ad_spend: parseFloat(document.getElementById('lead-spend').value)||null,
-            acquired_date: document.getElementById('lead-acquired').value||null,
-            conversion_date: document.getElementById('lead-converted').value||null,
-            notes: document.getElementById('lead-notes').value||null
+            deal_value: parseFloat(document.getElementById('lead-deal').value) || null,
+            ad_spend: parseFloat(document.getElementById('lead-spend').value) || null,
+            acquired_date: document.getElementById('lead-acquired').value || null,
+            conversion_date: document.getElementById('lead-converted').value || null,
+            notes: document.getElementById('lead-notes').value || null
         };
-        if(id) await apiCall(`/leads/${id}`, 'PATCH', data);
+        if (id) await apiCall(`/leads/${id}`, 'PATCH', data);
         else await apiCall('/leads', 'POST', data);
         document.getElementById('lead-modal').classList.add('hidden');
         loadLeads();
         showToast('Lead saved');
-        if(!document.getElementById('tab-metrics').classList.contains('hidden')) loadMetrics();
+        if (!document.getElementById('tab-metrics').classList.contains('hidden')) loadMetrics();
     }
 
-    function openLeadModal(lead=null) {
+    function openLeadModal(lead = null) {
         const modal = document.getElementById('lead-modal');
         document.getElementById('modal-title').innerText = lead ? 'Edit Lead' : 'Add Lead';
-        if(lead) {
+        if (lead) {
             document.getElementById('lead-id').value = lead.id;
             document.getElementById('lead-name').value = lead.name;
             document.getElementById('lead-email').value = lead.email || '';
@@ -307,29 +338,33 @@
             document.getElementById('lead-converted').value = lead.conversion_date?.split('T')[0] || '';
             document.getElementById('lead-notes').value = lead.notes || '';
         } else document.getElementById('lead-form').reset();
-        modal.classList.remove('hidden'); modal.classList.add('flex');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
     }
 
     async function deleteLead() {
-        if(pendingDeleteId) {
+        if (pendingDeleteId) {
             await apiCall(`/leads/${pendingDeleteId}`, 'DELETE');
             loadLeads();
             showToast('Lead deleted');
         }
         closeDeleteModal();
     }
-    function closeDeleteModal() { document.getElementById('delete-modal').classList.add('hidden'); pendingDeleteId=null; }
+    function closeDeleteModal() {
+        document.getElementById('delete-modal').classList.add('hidden');
+        pendingDeleteId = null;
+    }
 
     async function loadSourceFilter() {
         try {
             const leads = await apiCall('/leads?limit=1000');
-            const sources = [...new Set(leads.leads.map(l=>l.source).filter(Boolean))];
+            const sources = [...new Set(leads.leads.map(l => l.source).filter(Boolean))];
             const select = document.getElementById('lead-source-filter');
-            select.innerHTML = '<option value="">All sources</option>' + sources.map(s=>`<option value="${s}">${s}</option>`).join('');
-        } catch(e) {}
+            select.innerHTML = '<option value="">All sources</option>' + sources.map(s => `<option value="${s}">${s}</option>`).join('');
+        } catch (e) { console.warn(e); }
     }
 
-    // --- Metrics --- (unchanged)
+    // --- Metrics ---
     async function loadMetrics() {
         const loading = document.getElementById('metrics-loading');
         const content = document.getElementById('metrics-content');
@@ -344,8 +379,11 @@
             document.getElementById('metric-roi').innerText = `${m.roi}%`;
             document.getElementById('metric-pipeline').innerText = `₦${m.pipeline_value.toLocaleString()}`;
             document.getElementById('metric-dq').innerText = m.data_quality;
-            document.getElementById('top-sources-list').innerHTML = m.top_sources.map(s => `<div class="flex justify-between border-b py-1"><span>${s.source}</span><span>${s.converted}/${s.total} (${s.conv_rate}%)</span></div>`).join('');
-        } catch(e) { showToast(e.message, 'error'); } finally {
+            const topSources = m.top_sources || [];
+            document.getElementById('top-sources-list').innerHTML = topSources.map(s => `<div class="flex justify-between border-b py-1"><span>${s.source}</span><span>${s.converted}/${s.total} (${s.conv_rate}%)</span></div>`).join('');
+        } catch (e) {
+            showToast(e.message, 'error');
+        } finally {
             loading.classList.add('hidden');
             content.classList.remove('hidden');
         }
@@ -358,7 +396,6 @@
             const container = document.getElementById('chat-messages');
             container.innerHTML = '';
             chatHistory = [];
-            // Backend now returns { id, query, response, created_at, pillar }
             for (let item of (hist.history || []).slice().reverse()) {
                 if (item.query) {
                     appendMessage('user', item.query);
@@ -379,18 +416,14 @@
         }
     }
 
-    // Enhanced appendMessage with optional pillar info
     function appendMessage(role, content, pillarInfo = null) {
         if (!content) content = '(empty message)';
         const div = document.createElement('div');
         div.className = `p-2 rounded-lg ${role === 'user' ? 'bg-blue-100 text-right ml-8' : 'bg-gray-100 mr-8'}`;
         let html = `<strong class="text-sm">${role === 'user' ? 'You' : 'Kevs AI'}</strong>
                     <div class="text-sm mt-1">${escapeHtml(content).replace(/\n/g, '<br/>')}</div>`;
-        if (role === 'assistant' && pillarInfo) {
-            const lensName = pillarInfo.pillar_name || (pillarInfo.pillar ? pillarNames[pillarInfo.pillar] : '');
-            if (lensName) {
-                html += `<div class="text-xs text-gray-400 mt-1 pt-1 border-t border-gray-200">🧠 Lens: ${lensName}</div>`;
-            }
+        if (role === 'assistant' && pillarInfo && pillarInfo.pillar_name) {
+            html += `<div class="text-xs text-gray-400 mt-1 pt-1 border-t border-gray-200">🧠 Lens: ${pillarInfo.pillar_name}</div>`;
         }
         div.innerHTML = html;
         document.getElementById('chat-messages').appendChild(div);
@@ -426,23 +459,42 @@
         }
     }
 
+    // --- CAC Target ---
+    async function runCac() {
+        const targetCac = parseFloat(document.getElementById('target-cac').value);
+        if (!targetCac) return showToast('Enter target CAC', 'error');
+        const body = {
+            target_cac: targetCac,
+            target_revenue: parseFloat(document.getElementById('target-rev').value) || null,
+            available_budget: parseFloat(document.getElementById('target-budget').value) || null
+        };
+        try {
+            const res = await apiCall('/leads/cac-target', 'POST', body);
+            const resultDiv = document.getElementById('cac-result');
+            resultDiv.classList.remove('hidden');
+            resultDiv.innerHTML = formatCacResult(res.analysis, res.advisory);
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    }
+
     function formatCacResult(analysis, advisory) {
         let html = `<div class="space-y-3"><div class="bg-white p-3 rounded shadow"><strong>📊 Current CAC:</strong> ₦${analysis.current_cac?.toLocaleString()} &nbsp;| <strong>Target:</strong> ₦${analysis.target_cac?.toLocaleString()}</div>`;
-        if(analysis.budget_scenario) {
+        if (analysis.budget_scenario) {
             html += `<div class="bg-blue-50 p-3 rounded"><strong>💰 Budget scenario:</strong><br/>Leads to acquire: ${analysis.budget_scenario.leads_to_acquire}<br/>Expected revenue: ₦${analysis.budget_scenario.expected_revenue?.toLocaleString()}</div>`;
         }
-        if(analysis.revenue_scenario) {
+        if (analysis.revenue_scenario) {
             html += `<div class="bg-green-50 p-3 rounded"><strong>🎯 Revenue scenario:</strong><br/>Conversions needed: ${analysis.revenue_scenario.conversions_needed}<br/>Leads needed: ${analysis.revenue_scenario.leads_needed}</div>`;
         }
         html += `<div class="bg-gray-100 p-3 rounded">${advisory}</div></div>`;
         return html;
     }
 
-    // --- Forecast --- (unchanged)
+    // --- Forecast ---
     async function runForecast() {
         const months = parseInt(document.getElementById('forecast-months').value);
-        const growth = parseFloat(document.getElementById('forecast-growth').value)||null;
-        const addSpend = parseFloat(document.getElementById('forecast-add-spend').value)||null;
+        const growth = parseFloat(document.getElementById('forecast-growth').value) || null;
+        const addSpend = parseFloat(document.getElementById('forecast-add-spend').value) || null;
         const loadingDiv = document.getElementById('forecast-loading');
         const chartCanvas = document.getElementById('forecastChart');
         const tableDiv = document.getElementById('forecast-table');
@@ -453,79 +505,86 @@
             const res = await apiCall('/analytics/forecast', 'POST', { months, target_growth_rate: growth, additional_ad_spend: addSpend });
             const labels = res.forecast.map(f => `M${f.month}`);
             const revenues = res.forecast.map(f => f.revenue);
-            if(forecastChart) forecastChart.destroy();
+            if (forecastChart) forecastChart.destroy();
             const ctx = chartCanvas.getContext('2d');
-            forecastChart = new Chart(ctx, { type: 'line', data: { labels, datasets: [{ label: 'Monthly Revenue (₦)', data: revenues, borderColor: '#f97316', fill: false }] } });
+            forecastChart = new Chart(ctx, {
+                type: 'line',
+                data: { labels, datasets: [{ label: 'Monthly Revenue (₦)', data: revenues, borderColor: '#f97316', fill: false }] }
+            });
             let html = '<table class="min-w-full text-sm"><thead><tr><th>Month</th><th>Leads</th><th>Conversions</th><th>Revenue</th><th>Cumulative</th></tr></thead><tbody>';
-            res.forecast.forEach(f => { html += `<tr><td>${f.month}</td><td>${f.leads_generated}</td><td>${f.conversions}</td><td>₦${f.revenue.toFixed(0)}</td><td>₦${f.cumulative_revenue.toFixed(0)}</td></tr>`; });
+            res.forecast.forEach(f => {
+                html += `<tr><td>${f.month}</td><td>${f.leads_generated}</td><td>${f.conversions}</td><td>₦${f.revenue.toFixed(0)}</td><td>₦${f.cumulative_revenue.toFixed(0)}</td></tr>`;
+            });
             html += '</tbody></table>';
             tableDiv.innerHTML = html;
             chartCanvas.classList.remove('hidden');
-        } catch(e) { showToast(`Forecast failed: ${e.message}`, 'error'); } finally {
+        } catch (e) {
+            showToast(`Forecast failed: ${e.message}`, 'error');
+        } finally {
             loadingDiv.classList.add('hidden');
         }
     }
 
-    function escapeHtml(str) { if(!str) return ''; return str.replace(/[&<>]/g, function(m){if(m==='&') return '&amp;'; if(m==='<') return '&lt;'; if(m==='>') return '&gt;'; return m;}); }
-
+    // Tab switching
     function switchTab(tabId) {
         document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
         document.getElementById(`tab-${tabId}`).classList.remove('hidden');
-        document.querySelectorAll('.tab-btn').forEach(btn => { btn.classList.remove('bg-orange-50', 'text-orange-700'); btn.classList.add('text-gray-600'); });
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.classList.remove('bg-orange-50', 'text-orange-700');
+            btn.classList.add('text-gray-600');
+        });
         const activeBtn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
-        if(activeBtn) activeBtn.classList.add('bg-orange-50', 'text-orange-700');
-        if(tabId === 'leads') loadLeads();
-        if(tabId === 'metrics') loadMetrics();
+        if (activeBtn) activeBtn.classList.add('bg-orange-50', 'text-orange-700');
+        if (tabId === 'leads') loadLeads();
+        if (tabId === 'metrics') loadMetrics();
     }
 
-    // Pillar input live label
+    // Pillar input label update
     const pillarInput = document.getElementById('force-pillar');
     const pillarLabel = document.getElementById('pillar-label');
-    pillarInput.addEventListener('input', () => {
-        const val = parseInt(pillarInput.value);
-        if (val >= 1 && val <= 4) {
-            pillarLabel.innerText = `(${pillarNames[val]})`;
-        } else {
-            pillarLabel.innerText = '(auto)';
-        }
-    });
+    if (pillarInput) {
+        pillarInput.addEventListener('input', () => {
+            const val = parseInt(pillarInput.value);
+            if (val >= 1 && val <= 4) {
+                pillarLabel.innerText = `(${pillarNames[val]})`;
+            } else {
+                pillarLabel.innerText = '(auto)';
+            }
+        });
+    }
 
     // Event listeners
     document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
     document.getElementById('add-lead-btn')?.addEventListener('click', () => openLeadModal(null));
     document.getElementById('csv-upload')?.addEventListener('change', async (e) => {
-        if(!e.target.files[0]) return;
+        if (!e.target.files[0]) return;
         const formData = new FormData();
         formData.append('file', e.target.files[0]);
-        const res = await fetch(`${BACKEND_URL}/leads/upload`, { method:'POST', headers:{ 'Authorization': `Bearer ${token}` }, body:formData });
-        if(res.ok) { showToast('CSV uploaded'); loadLeads(); } else showToast('Upload failed', 'error');
+        const res = await fetch(`${BACKEND_URL}/leads/upload`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: formData });
+        if (res.ok) { showToast('CSV uploaded'); loadLeads(); } else showToast('Upload failed', 'error');
     });
     document.getElementById('refresh-metrics')?.addEventListener('click', loadMetrics);
-    document.getElementById('run-cac')?.addEventListener('click', async () => {
-        const target_cac = parseFloat(document.getElementById('target-cac').value);
-        if(!target_cac) return showToast('Enter target CAC', 'error');
-        const body = { target_cac, target_revenue: parseFloat(document.getElementById('target-rev').value)||null, available_budget: parseFloat(document.getElementById('target-budget').value)||null };
-        const res = await apiCall('/leads/cac-target', 'POST', body);
-        const resultDiv = document.getElementById('cac-result');
-        resultDiv.classList.remove('hidden');
-        resultDiv.innerHTML = formatCacResult(res.analysis, res.advisory);
-    });
+    document.getElementById('run-cac')?.addEventListener('click', runCac);
     document.getElementById('run-forecast')?.addEventListener('click', runForecast);
     document.getElementById('send-chat')?.addEventListener('click', sendChat);
-    document.getElementById('chat-input')?.addEventListener('keypress', (e) => { if(e.key === 'Enter') sendChat(); });
-    document.getElementById('clear-chat')?.addEventListener('click', () => { document.getElementById('chat-messages').innerHTML = ''; chatHistory = []; appendMessage('assistant', 'Chat cleared. Ask me anything!'); });
+    document.getElementById('chat-input')?.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendChat(); });
+    document.getElementById('clear-chat')?.addEventListener('click', () => {
+        document.getElementById('chat-messages').innerHTML = '';
+        chatHistory = [];
+        appendMessage('assistant', 'Chat cleared. Ask me anything!');
+    });
     document.getElementById('confirm-delete')?.addEventListener('click', deleteLead);
     document.getElementById('cancel-delete')?.addEventListener('click', closeDeleteModal);
-    document.getElementById('prev-page')?.addEventListener('click', () => { if(leadsPage>0){ leadsPage--; loadLeads(); } });
+    document.getElementById('prev-page')?.addEventListener('click', () => { if (leadsPage > 0) { leadsPage--; loadLeads(); } });
     document.getElementById('next-page')?.addEventListener('click', () => { leadsPage++; loadLeads(); });
-    document.getElementById('lead-status-filter')?.addEventListener('change', () => { leadsPage=0; loadLeads(); });
-    document.getElementById('lead-source-filter')?.addEventListener('change', () => { leadsPage=0; loadLeads(); });
+    document.getElementById('lead-status-filter')?.addEventListener('change', () => { leadsPage = 0; loadLeads(); });
+    document.getElementById('lead-source-filter')?.addEventListener('change', () => { leadsPage = 0; loadLeads(); });
     document.getElementById('close-modal')?.addEventListener('click', () => document.getElementById('lead-modal').classList.add('hidden'));
     document.getElementById('lead-form')?.addEventListener('submit', (e) => { e.preventDefault(); saveLead(); });
 
     // Initialize
     (async () => {
-        if(token) {
+        if (token) {
             try {
                 await loadOrgContext();
                 await loadLeads();
@@ -533,7 +592,7 @@
                 await loadSourceFilter();
                 await loadChatHistoryFromBackend();
                 switchTab('leads');
-            } catch(e) {
+            } catch (e) {
                 showToast('Failed to load data. Please check your token.', 'error');
             }
         }
