@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kevs Digital BI – Dashboard (No Auth)</title>
+    <title>Kevs Digital BI – Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -21,9 +21,8 @@
 
 <div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
 
-<!-- Dashboard -->
 <div id="dashboard" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-    <!-- Top bar (simplified, no auth) -->
+    <!-- Top bar -->
     <div class="bg-white rounded-2xl shadow-sm p-5 mb-6 flex flex-wrap justify-between items-center border-l-8 border-orange-500">
         <div>
             <h1 id="org-name" class="text-2xl font-bold text-gray-800">Kevs Digital BI</h1>
@@ -152,25 +151,15 @@
 <script>
     // ==================== CONFIGURATION ====================
     const BACKEND_URL = 'https://kevsono-kevs-digital-business-intelligencev2.hf.space';
-    
-    // Hardcoded test values (replace with your actual org_id and token after login works)
-    // For now, we'll use a test approach – but this will only work if your backend allows public access
-    // Since your backend requires authentication, we need a token.
-    
-    // TEMPORARY: You'll need to get a token manually first
-    // Run this in console after logging in via email/password to get token:
-    // localStorage.getItem('access_token')
-    
     let token = localStorage.getItem('access_token');
-    
-    // If no token, show instructions
+
     if (!token) {
         document.getElementById('org-meta').innerHTML = '⚠️ Not authenticated. Please login first.';
         document.getElementById('usage-badge').innerHTML = 'Login required';
         showToast('Please login using email/password first to get a token', 'error');
     }
-    
-    let currentRole = 'admin'; // Assume admin for testing
+
+    let currentRole = 'admin';
     let leadsCache = [];
     let leadsPage = 0, limit = 20;
     let pendingDeleteId = null;
@@ -342,26 +331,38 @@
         }
     }
 
-    // --- Chat ---
+    // --- Chat (FIXED) ---
     async function loadChatHistoryFromBackend() {
         try {
             const hist = await apiCall('/intelligence/history?limit=20');
             const container = document.getElementById('chat-messages');
             container.innerHTML = '';
             chatHistory = [];
-            for(let h of hist.history.slice().reverse()) {
-                appendMessage('user', h.query);
-                appendMessage('assistant', h.response);
-                chatHistory.push({role:'user', content:h.query}, {role:'assistant', content:h.response});
+            // Backend now returns { id, query, response, created_at }
+            for (let item of (hist.history || []).slice().reverse()) {
+                if (item.query) {
+                    appendMessage('user', item.query);
+                    chatHistory.push({ role: 'user', content: item.query });
+                }
+                if (item.response) {
+                    appendMessage('assistant', item.response);
+                    chatHistory.push({ role: 'assistant', content: item.response });
+                }
             }
-            if(chatHistory.length===0) appendMessage('assistant', 'Hello! Ask me anything about your leads & strategy.');
-        } catch(e) { console.warn(e); appendMessage('assistant', 'Welcome! Ask me anything about your leads & strategy.'); }
+            if (chatHistory.length === 0) {
+                appendMessage('assistant', 'Hello! Ask me anything about your leads & strategy.');
+            }
+        } catch (e) {
+            console.warn(e);
+            appendMessage('assistant', 'Welcome! Ask me anything about your leads & strategy.');
+        }
     }
 
     function appendMessage(role, content) {
+        if (!content) content = '(empty message)';
         const div = document.createElement('div');
-        div.className = `p-2 rounded-lg ${role==='user'?'bg-blue-100 text-right ml-8':'bg-gray-100 mr-8'}`;
-        div.innerHTML = `<strong class="text-sm">${role==='user'?'You':'Kevs AI'}</strong><div class="text-sm mt-1">${escapeHtml(content).replace(/\n/g,'<br/>')}</div>`;
+        div.className = `p-2 rounded-lg ${role === 'user' ? 'bg-blue-100 text-right ml-8' : 'bg-gray-100 mr-8'}`;
+        div.innerHTML = `<strong class="text-sm">${role === 'user' ? 'You' : 'Kevs AI'}</strong><div class="text-sm mt-1">${escapeHtml(content).replace(/\n/g, '<br/>')}</div>`;
         document.getElementById('chat-messages').appendChild(div);
         document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;
     }
@@ -369,7 +370,7 @@
     async function sendChat() {
         const input = document.getElementById('chat-input');
         const msg = input.value.trim();
-        if(!msg) return;
+        if (!msg) return;
         appendMessage('user', msg);
         input.value = '';
         const btn = document.getElementById('send-chat');
@@ -383,9 +384,15 @@
             };
             const res = await apiCall('/intelligence/chat', 'POST', body);
             appendMessage('assistant', res.response);
-            if(res.usage) document.getElementById('chat-usage').innerHTML = `<i class="fas fa-chart-simple"></i> Used: ${res.usage.requests_used}/${res.usage.limit} (${res.usage.remaining === -1 ? 'unlimited' : res.usage.remaining+' left'})`;
-            chatHistory.push({role:'user', content:msg}, {role:'assistant', content:res.response});
-        } catch(e) { showToast(e.message, 'error'); } finally { btn.disabled = false; }
+            if (res.usage) {
+                document.getElementById('chat-usage').innerHTML = `<i class="fas fa-chart-simple"></i> Used: ${res.usage.requests_used}/${res.usage.limit} (${res.usage.remaining === -1 ? 'unlimited' : res.usage.remaining + ' left'})`;
+            }
+            chatHistory.push({ role: 'user', content: msg }, { role: 'assistant', content: res.response });
+        } catch (e) {
+            showToast(e.message, 'error');
+        } finally {
+            btn.disabled = false;
+        }
     }
 
     function formatCacResult(analysis, advisory) {
