@@ -90,7 +90,7 @@
         </div>
     </div>
 
-    <!-- Chat Tab (Improved with pillar label) -->
+    <!-- Chat Tab (Improved with pillar dropdown) -->
     <div id="tab-chat" class="tab-content hidden">
         <div class="bg-white rounded-xl shadow-md p-5">
             <div class="flex flex-wrap gap-3 mb-4 items-center">
@@ -101,8 +101,13 @@
                 </select>
                 <div class="flex items-center gap-2">
                     <label class="text-sm font-medium text-gray-700">🎯 Strategic lens:</label>
-                    <input type="number" id="force-pillar" min="1" max="4" step="1" value="" class="border rounded-lg p-2 text-sm w-20 text-center">
-                    <span id="pillar-label" class="text-xs text-gray-500 italic">(auto)</span>
+                    <select id="force-pillar" class="border rounded-lg p-2 text-sm">
+                        <option value="">Auto (detect from question)</option>
+                        <option value="1">1 – Customer intelligence</option>
+                        <option value="2">2 – Market & competitive</option>
+                        <option value="3">3 – Operations & capabilities</option>
+                        <option value="4">4 – Growth economics</option>
+                    </select>
                 </div>
                 <button id="clear-chat" class="text-gray-500 text-sm"><i class="fas fa-trash-alt"></i> Clear chat</button>
             </div>
@@ -439,11 +444,13 @@
         const btn = document.getElementById('send-chat');
         btn.disabled = true;
         try {
+            const pillarSelect = document.getElementById('force-pillar');
+            const forcePillar = pillarSelect ? (pillarSelect.value ? parseInt(pillarSelect.value) : null) : null;
             const body = {
                 message: msg,
                 history: chatHistory.slice(-10).map(h => ({ role: h.role, content: h.content })),
                 report_mode: document.getElementById('chat-mode').value,
-                force_pillar: parseInt(document.getElementById('force-pillar').value) || null
+                force_pillar: forcePillar
             };
             const res = await apiCall('/intelligence/chat', 'POST', body);
             const pillarInfo = res.meta?.pillar ? { pillar: res.meta.pillar, pillar_name: pillarNames[res.meta.pillar] } : null;
@@ -537,20 +544,6 @@
         if (activeBtn) activeBtn.classList.add('bg-orange-50', 'text-orange-700');
         if (tabId === 'leads') loadLeads();
         if (tabId === 'metrics') loadMetrics();
-    }
-
-    // Pillar input label update
-    const pillarInput = document.getElementById('force-pillar');
-    const pillarLabel = document.getElementById('pillar-label');
-    if (pillarInput) {
-        pillarInput.addEventListener('input', () => {
-            const val = parseInt(pillarInput.value);
-            if (val >= 1 && val <= 4) {
-                pillarLabel.innerText = `(${pillarNames[val]})`;
-            } else {
-                pillarLabel.innerText = '(auto)';
-            }
-        });
     }
 
     // Event listeners
