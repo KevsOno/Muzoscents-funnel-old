@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kevs Digital BI – Dashboard</title>
+    <title>Kevs Digital BI – Dashboard (No Auth)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -15,31 +15,26 @@
         .tab-active { border-bottom: 2px solid #1E3A5F; color: #1E3A5F; font-weight: 700; }
         .msg-ai { background: white; border: 1px solid #BFDBFE; color: #1E3A5F; align-self: flex-start; border-bottom-left-radius: 3px; }
         .msg-user { background: #1E3A5F; color: white; align-self: flex-end; border-bottom-right-radius: 3px; }
-        .btn-loading { opacity: 0.6; pointer-events: none; }
-        .transition-smooth { transition: all 0.2s ease; }
     </style>
 </head>
 <body class="font-sans antialiased">
 
-<!-- Toast container -->
 <div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
 
-<!-- Main dashboard container (shown only after token validation) -->
+<!-- Dashboard -->
 <div id="dashboard" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-    <!-- Top bar -->
+    <!-- Top bar (simplified, no auth) -->
     <div class="bg-white rounded-2xl shadow-sm p-5 mb-6 flex flex-wrap justify-between items-center border-l-8 border-orange-500">
         <div>
-            <h1 id="org-name" class="text-2xl font-bold text-gray-800"></h1>
-            <p id="org-meta" class="text-gray-600 text-sm mt-1"></p>
-            <p class="text-xs text-gray-500 mt-1"><i class="fas fa-user-tag"></i> Role: <span id="user-role" class="font-semibold"></span></p>
+            <h1 id="org-name" class="text-2xl font-bold text-gray-800">Kevs Digital BI</h1>
+            <p id="org-meta" class="text-gray-600 text-sm mt-1">Loading organisation data...</p>
         </div>
         <div class="text-right">
-            <div id="usage-badge" class="bg-gray-100 px-3 py-1.5 rounded-full text-sm flex items-center gap-2"><i class="fas fa-chart-line"></i> <span>—</span></div>
-            <button id="logout-btn" class="mt-2 text-red-500 text-sm hover:text-red-700"><i class="fas fa-sign-out-alt"></i> Logout</button>
+            <div id="usage-badge" class="bg-gray-100 px-3 py-1.5 rounded-full text-sm">Loading...</div>
         </div>
     </div>
 
-    <!-- Tabs navigation -->
+    <!-- Tabs -->
     <div class="border-b border-gray-200 mb-6 overflow-x-auto">
         <nav class="flex space-x-1">
             <button data-tab="leads" class="tab-btn px-5 py-2.5 text-sm font-medium rounded-t-lg bg-orange-50 text-orange-700">📋 Leads</button>
@@ -47,7 +42,6 @@
             <button data-tab="chat" class="tab-btn px-5 py-2.5 text-sm font-medium text-gray-600">🤖 AI Chat</button>
             <button data-tab="cac" class="tab-btn px-5 py-2.5 text-sm font-medium text-gray-600">🎯 CAC Target</button>
             <button data-tab="forecast" class="tab-btn px-5 py-2.5 text-sm font-medium text-gray-600">📈 Forecast</button>
-            <button data-tab="org" class="tab-btn px-5 py-2.5 text-sm font-medium text-gray-600">⚙️ Org</button>
         </nav>
     </div>
 
@@ -58,13 +52,13 @@
             <div class="flex gap-2">
                 <select id="lead-status-filter" class="border rounded-lg p-2 text-sm bg-white"><option value="">All status</option><option value="cold">Cold</option><option value="warm">Warm</option><option value="converted">Converted</option></select>
                 <select id="lead-source-filter" class="border rounded-lg p-2 text-sm bg-white"><option value="">All sources</option></select>
-                <button id="add-lead-btn" class="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm hidden role-analyst role-admin"><i class="fas fa-plus"></i> Add Lead</button>
-                <label class="bg-gray-200 px-4 py-2 rounded-lg text-sm cursor-pointer hidden role-analyst role-admin"><i class="fas fa-upload"></i> CSV Upload <input type="file" id="csv-upload" accept=".csv" class="hidden"></label>
+                <button id="add-lead-btn" class="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm"><i class="fas fa-plus"></i> Add Lead</button>
+                <label class="bg-gray-200 px-4 py-2 rounded-lg text-sm cursor-pointer"><i class="fas fa-upload"></i> CSV Upload <input type="file" id="csv-upload" accept=".csv" class="hidden"></label>
             </div>
         </div>
         <div id="leads-loading" class="hidden text-center py-10"><div class="loading-spinner mx-auto"></div><p class="mt-2">Loading leads...</p></div>
         <div class="overflow-x-auto bg-white rounded-xl shadow">
-            <table class="min-w-full"><thead class="bg-gray-50"><tr><th class="px-5 py-3 text-left text-xs">Name</th><th>Email</th><th>Source</th><th>Status</th><th>Deal (₦)</th><th>Ad Spend</th><th class="role-analyst role-admin">Actions</th></tr></thead><tbody id="leads-table-body"></tbody></table>
+            <table class="min-w-full"><thead class="bg-gray-50"><tr><th class="px-5 py-3 text-left text-xs">Name</th><th>Email</th><th>Source</th><th>Status</th><th>Deal (₦)</th><th>Ad Spend</th><th>Actions</th></tr></thead><tbody id="leads-table-body"></tbody></table>
         </div>
         <div class="mt-4 flex justify-between items-center"><button id="prev-page" class="px-3 py-1 border rounded disabled:opacity-50">Prev</button><span id="page-info"></span><button id="next-page" class="px-3 py-1 border rounded disabled:opacity-50">Next</button></div>
     </div>
@@ -86,7 +80,7 @@
         </div>
     </div>
 
-    <!-- AI Chat Tab -->
+    <!-- Chat Tab -->
     <div id="tab-chat" class="tab-content hidden">
         <div class="bg-white rounded-xl shadow-md p-5">
             <div class="flex flex-wrap gap-3 mb-4">
@@ -100,7 +94,7 @@
         </div>
     </div>
 
-    <!-- CAC Target Tab -->
+    <!-- CAC Tab -->
     <div id="tab-cac" class="tab-content hidden">
         <div class="bg-white p-6 rounded-xl shadow-md">
             <h2 class="text-xl font-semibold mb-4">CAC Target & Leads Needed</h2>
@@ -129,33 +123,9 @@
             <div id="forecast-table" class="mt-5 overflow-x-auto"></div>
         </div>
     </div>
-
-    <!-- Organisation Tab -->
-    <div id="tab-org" class="tab-content hidden">
-        <div class="bg-white p-6 rounded-xl shadow-md">
-            <h2 class="text-xl font-semibold mb-4">Organisation Profile</h2>
-            <form id="org-profile-form" class="space-y-3">
-                <input type="text" id="org-name-field" placeholder="Org Name" class="border rounded-lg w-full p-2">
-                <input type="text" id="org-location" placeholder="Location" class="border rounded-lg w-full p-2">
-                <input type="text" id="org-niche" placeholder="Niche" class="border rounded-lg w-full p-2">
-                <input type="number" id="org-budget" placeholder="Budget" class="border rounded-lg w-full p-2">
-                <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg hidden role-admin">Update Profile</button>
-            </form>
-            <hr class="my-6">
-            <h3 class="font-semibold">👥 Team Members</h3>
-            <div id="members-list" class="mt-4 text-sm space-y-2"></div>
-            <div class="mt-4 hidden role-admin" id="invite-section">
-                <label class="block text-sm font-medium">Invite new member</label>
-                <div class="flex flex-wrap gap-2 mt-1"><input type="email" id="invite-email" placeholder="Email" class="border rounded-lg p-2 flex-1"><select id="invite-role" class="border rounded-lg p-2"><option>analyst</option><option>viewer</option></select><button id="invite-btn" class="bg-gray-800 text-white px-4 rounded-lg">Invite</button></div>
-            </div>
-        </div>
-    </div>
 </div>
 
-<!-- Delete confirmation modal -->
-<div id="delete-modal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50"><div class="bg-white rounded-xl p-6 max-w-sm"><h3 class="text-lg font-bold">Confirm delete</h3><p>Delete this lead?</p><div class="flex justify-end gap-3 mt-5"><button id="cancel-delete" class="px-3 py-1 border rounded">Cancel</button><button id="confirm-delete" class="bg-red-600 text-white px-3 py-1 rounded">Delete</button></div></div></div>
-
-<!-- Lead modal -->
+<!-- Lead Modal -->
 <div id="lead-modal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50">
     <div class="bg-white rounded-2xl p-6 w-full max-w-md">
         <h3 id="modal-title" class="text-xl font-bold mb-3">Add Lead</h3>
@@ -176,30 +146,41 @@
     </div>
 </div>
 
-<script>
-    // ==================== TOKEN CHECK - MUST BE FIRST ====================
-    const token = localStorage.getItem('access_token');
-    if (!token) {
-        window.location.href = '/bisignin';
-    }
-    // ====================================================================
+<!-- Delete modal -->
+<div id="delete-modal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50"><div class="bg-white rounded-xl p-6 max-w-sm"><h3 class="text-lg font-bold">Confirm delete</h3><p>Delete this lead?</p><div class="flex justify-end gap-3 mt-5"><button id="cancel-delete" class="px-3 py-1 border rounded">Cancel</button><button id="confirm-delete" class="bg-red-600 text-white px-3 py-1 rounded">Delete</button></div></div></div>
 
+<script>
     // ==================== CONFIGURATION ====================
     const BACKEND_URL = 'https://kevsono-kevs-digital-business-intelligencev2.hf.space';
-    const LOGIN_URL = '/bisignin';
-
-    let currentRole = 'viewer';
+    
+    // Hardcoded test values (replace with your actual org_id and token after login works)
+    // For now, we'll use a test approach – but this will only work if your backend allows public access
+    // Since your backend requires authentication, we need a token.
+    
+    // TEMPORARY: You'll need to get a token manually first
+    // Run this in console after logging in via email/password to get token:
+    // localStorage.getItem('access_token')
+    
+    let token = localStorage.getItem('access_token');
+    
+    // If no token, show instructions
+    if (!token) {
+        document.getElementById('org-meta').innerHTML = '⚠️ Not authenticated. Please login first.';
+        document.getElementById('usage-badge').innerHTML = 'Login required';
+        showToast('Please login using email/password first to get a token', 'error');
+    }
+    
+    let currentRole = 'admin'; // Assume admin for testing
     let leadsCache = [];
     let leadsPage = 0, limit = 20;
     let pendingDeleteId = null;
     let chatHistory = [];
     let forecastChart = null;
 
-    // Helper functions
     function showToast(msg, type='success') {
         const container = document.getElementById('toast-container');
         const toast = document.createElement('div');
-        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type==='success'?'bg-green-600':'bg-red-600'} transition-smooth mb-2 text-sm`;
+        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type==='success'?'bg-green-600':'bg-red-600'} mb-2 text-sm`;
         toast.innerText = msg;
         container.appendChild(toast);
         setTimeout(() => toast.remove(), 3500);
@@ -211,49 +192,26 @@
         const opts = { method, headers };
         if(body) opts.body = JSON.stringify(body);
         const res = await fetch(`${BACKEND_URL}${endpoint}`, opts);
-        if(res.status === 401) { redirectToLogin(); throw new Error('Session expired'); }
+        if(res.status === 401) {
+            showToast('Session expired. Please login again.', 'error');
+            throw new Error('Unauthorized');
+        }
         if(!res.ok) { const err = await res.json().catch(()=>({detail:'Error'})); throw new Error(err.detail || 'API error'); }
         return res.json();
-    }
-
-    function redirectToLogin() {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('user_id');
-        window.location.href = LOGIN_URL;
-    }
-
-    async function logout() {
-        if(token) {
-            try { await apiCall('/auth/logout', 'POST'); } catch(e) {}
-        }
-        redirectToLogin();
-    }
-
-    function updateRoleUI() {
-        const isAdmin = currentRole === 'admin';
-        const isAnalyst = currentRole === 'analyst' || isAdmin;
-        document.querySelectorAll('.role-analyst').forEach(el => el.classList.toggle('hidden', !isAnalyst));
-        document.querySelectorAll('.role-admin').forEach(el => el.classList.toggle('hidden', !isAdmin));
-        const inviteSection = document.getElementById('invite-section');
-        if(inviteSection) inviteSection.classList.toggle('hidden', !isAdmin);
-        const updateBtn = document.querySelector('#org-profile-form button');
-        if(updateBtn) updateBtn.classList.toggle('hidden', !isAdmin);
     }
 
     async function loadOrgContext() {
         try {
             const me = await apiCall('/auth/me');
             currentRole = me.role;
-            document.getElementById('user-role').innerText = currentRole;
             const profile = await apiCall('/org/profile');
             document.getElementById('org-name').innerText = profile.org_name || me.org_name;
             document.getElementById('org-meta').innerHTML = `${profile.location || '-'} | ${profile.niche || '-'} | ₦${(profile.budget || 0).toLocaleString()}`;
             const usage = await apiCall('/org/usage');
             const remaining = usage.remaining === -1 ? 'Unlimited' : usage.remaining;
             document.getElementById('usage-badge').innerHTML = `<i class="fas fa-chart-line"></i> ${usage.plan} · ${usage.request_count}/${usage.limit || '∞'} used · ${remaining} left`;
-            updateRoleUI();
             return true;
-        } catch(e) { console.error(e); redirectToLogin(); return false; }
+        } catch(e) { console.error(e); return false; }
     }
 
     // --- Leads ---
@@ -280,11 +238,7 @@
                 row.insertCell(3).innerHTML = `<span class="px-2 py-1 rounded-full text-xs ${l.status==='converted'?'bg-green-100 text-green-800':l.status==='warm'?'bg-yellow-100':'bg-gray-200'}">${l.status}</span>`;
                 row.insertCell(4).innerHTML = l.deal_value ? `₦${l.deal_value.toLocaleString()}` : '-';
                 row.insertCell(5).innerHTML = l.ad_spend ? `₦${l.ad_spend.toLocaleString()}` : '-';
-                if(currentRole !== 'viewer') {
-                    row.insertCell(6).innerHTML = `<button class="text-blue-600 mr-2 edit-lead" data-id="${l.id}"><i class="fas fa-edit"></i></button><button class="text-red-600 delete-lead-btn" data-id="${l.id}"><i class="fas fa-trash"></i></button>`;
-                } else {
-                    row.insertCell(6).innerHTML = '';
-                }
+                row.insertCell(6).innerHTML = `<button class="text-blue-600 mr-2 edit-lead" data-id="${l.id}"><i class="fas fa-edit"></i></button><button class="text-red-600 delete-lead-btn" data-id="${l.id}"><i class="fas fa-trash"></i></button>`;
             }
             document.getElementById('page-info').innerText = `Page ${leadsPage+1}`;
             document.getElementById('prev-page').disabled = leadsPage===0;
@@ -304,14 +258,6 @@
         const lead = leadsCache.find(l => l.id == id);
         if(lead) openLeadModal(lead);
         else showToast('Lead not found', 'error');
-    }
-
-    function ensureLeadModal() {
-        if(document.getElementById('lead-modal')) return;
-        const modalHtml = `<div id="lead-modal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50"><div class="bg-white rounded-2xl p-6 w-full max-w-md"><h3 id="modal-title" class="text-xl font-bold mb-3">Lead</h3><form id="lead-form"><input type="hidden" id="lead-id"><input id="lead-name" placeholder="Name*" class="w-full border p-2 rounded mb-2" required><input id="lead-email" placeholder="Email" class="w-full border p-2 rounded mb-2"><input id="lead-phone" placeholder="Phone" class="w-full border p-2 rounded mb-2"><input id="lead-source" placeholder="Source" class="w-full border p-2 rounded mb-2"><select id="lead-status" class="w-full border p-2 rounded mb-2"><option value="cold">Cold</option><option value="warm">Warm</option><option value="converted">Converted</option></select><input id="lead-deal" placeholder="Deal Value (₦)" class="w-full border p-2 rounded mb-2"><input id="lead-spend" placeholder="Ad Spend (₦)" class="w-full border p-2 rounded mb-2"><input id="lead-acquired" type="date" class="w-full border p-2 rounded mb-2"><input id="lead-converted" type="date" class="w-full border p-2 rounded mb-2"><textarea id="lead-notes" rows="2" placeholder="Notes" class="w-full border p-2 rounded mb-3"></textarea><div class="flex justify-end gap-2"><button type="button" id="close-modal" class="px-3 py-1 border rounded">Cancel</button><button type="submit" class="px-3 py-1 bg-blue-600 text-white rounded">Save</button></div></form></div></div>`;
-        document.body.insertAdjacentHTML('beforeend', modalHtml);
-        document.getElementById('lead-form').addEventListener('submit', async (e) => { e.preventDefault(); await saveLead(); });
-        document.getElementById('close-modal').onclick = () => document.getElementById('lead-modal').classList.add('hidden');
     }
 
     async function saveLead() {
@@ -337,7 +283,6 @@
     }
 
     function openLeadModal(lead=null) {
-        ensureLeadModal();
         const modal = document.getElementById('lead-modal');
         document.getElementById('modal-title').innerText = lead ? 'Edit Lead' : 'Add Lead';
         if(lead) {
@@ -367,10 +312,12 @@
     function closeDeleteModal() { document.getElementById('delete-modal').classList.add('hidden'); pendingDeleteId=null; }
 
     async function loadSourceFilter() {
-        const leads = await apiCall('/leads?limit=1000');
-        const sources = [...new Set(leads.leads.map(l=>l.source).filter(Boolean))];
-        const select = document.getElementById('lead-source-filter');
-        select.innerHTML = '<option value="">All sources</option>' + sources.map(s=>`<option value="${s}">${s}</option>`).join('');
+        try {
+            const leads = await apiCall('/leads?limit=1000');
+            const sources = [...new Set(leads.leads.map(l=>l.source).filter(Boolean))];
+            const select = document.getElementById('lead-source-filter');
+            select.innerHTML = '<option value="">All sources</option>' + sources.map(s=>`<option value="${s}">${s}</option>`).join('');
+        } catch(e) {}
     }
 
     // --- Metrics ---
@@ -441,50 +388,16 @@
         } catch(e) { showToast(e.message, 'error'); } finally { btn.disabled = false; }
     }
 
-    // CAC formatted display
     function formatCacResult(analysis, advisory) {
-        let html = `<div class="space-y-3"><div class="bg-white p-3 rounded shadow"><strong>📊 Current CAC:</strong> ₦${analysis.current_cac?.toLocaleString()} &nbsp;| <strong>Target:</strong> ₦${analysis.target_cac?.toLocaleString()} &nbsp;| <strong>Gap:</strong> ₦${analysis.cac_interpretation?.gap?.toLocaleString()}</div>`;
+        let html = `<div class="space-y-3"><div class="bg-white p-3 rounded shadow"><strong>📊 Current CAC:</strong> ₦${analysis.current_cac?.toLocaleString()} &nbsp;| <strong>Target:</strong> ₦${analysis.target_cac?.toLocaleString()}</div>`;
         if(analysis.budget_scenario) {
-            html += `<div class="bg-blue-50 p-3 rounded"><strong>💰 Budget scenario:</strong><br/>Available budget: ₦${analysis.budget_scenario.available_budget?.toLocaleString()}<br/>Leads to acquire: ${analysis.budget_scenario.leads_to_acquire}<br/>Expected conversions: ${analysis.budget_scenario.expected_conversions}<br/>Expected revenue: ₦${analysis.budget_scenario.expected_revenue?.toLocaleString()}</div>`;
+            html += `<div class="bg-blue-50 p-3 rounded"><strong>💰 Budget scenario:</strong><br/>Leads to acquire: ${analysis.budget_scenario.leads_to_acquire}<br/>Expected revenue: ₦${analysis.budget_scenario.expected_revenue?.toLocaleString()}</div>`;
         }
         if(analysis.revenue_scenario) {
-            html += `<div class="bg-green-50 p-3 rounded"><strong>🎯 Revenue scenario:</strong><br/>Target revenue: ₦${analysis.revenue_scenario.target_revenue?.toLocaleString()}<br/>Conversions needed: ${analysis.revenue_scenario.conversions_needed}<br/>Leads needed: ${analysis.revenue_scenario.leads_needed}</div>`;
+            html += `<div class="bg-green-50 p-3 rounded"><strong>🎯 Revenue scenario:</strong><br/>Conversions needed: ${analysis.revenue_scenario.conversions_needed}<br/>Leads needed: ${analysis.revenue_scenario.leads_needed}</div>`;
         }
         html += `<div class="bg-gray-100 p-3 rounded">${advisory}</div></div>`;
         return html;
-    }
-
-    // --- Org & Members ---
-    async function loadProfile() {
-        const p = await apiCall('/org/profile');
-        document.getElementById('org-name-field').value = p.org_name || '';
-        document.getElementById('org-location').value = p.location || '';
-        document.getElementById('org-niche').value = p.niche || '';
-        document.getElementById('org-budget').value = p.budget || '';
-    }
-
-    async function loadMembers() {
-        const res = await apiCall('/org/members');
-        const container = document.getElementById('members-list');
-        container.innerHTML = '';
-        for(let m of res.members) {
-            const div = document.createElement('div');
-            div.className = 'flex justify-between items-center border-b py-2';
-            div.innerHTML = `<span class="text-sm">${m.user_id.slice(0,8)}... (${m.role})</span>`;
-            if(currentRole === 'admin') {
-                const select = document.createElement('select');
-                select.className = 'border rounded text-sm p-1';
-                select.innerHTML = `<option value="analyst" ${m.role==='analyst'?'selected':''}>Analyst</option><option value="viewer" ${m.role==='viewer'?'selected':''}>Viewer</option>`;
-                select.onchange = async (e) => {
-                    const newRole = e.target.value;
-                    await apiCall(`/org/members/${m.user_id}?role=${newRole}`, 'PATCH');
-                    showToast(`Role updated to ${newRole}`);
-                    loadMembers();
-                };
-                div.appendChild(select);
-            }
-            container.appendChild(div);
-        }
     }
 
     // --- Forecast ---
@@ -517,7 +430,6 @@
 
     function escapeHtml(str) { if(!str) return ''; return str.replace(/[&<>]/g, function(m){if(m==='&') return '&amp;'; if(m==='<') return '&lt;'; if(m==='>') return '&gt;'; return m;}); }
 
-    // Tab switching
     function switchTab(tabId) {
         document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
         document.getElementById(`tab-${tabId}`).classList.remove('hidden');
@@ -552,46 +464,28 @@
     document.getElementById('send-chat')?.addEventListener('click', sendChat);
     document.getElementById('chat-input')?.addEventListener('keypress', (e) => { if(e.key === 'Enter') sendChat(); });
     document.getElementById('clear-chat')?.addEventListener('click', () => { document.getElementById('chat-messages').innerHTML = ''; chatHistory = []; appendMessage('assistant', 'Chat cleared. Ask me anything!'); });
-    document.getElementById('org-profile-form')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        await apiCall('/org/profile', 'PATCH', {
-            org_name: document.getElementById('org-name-field').value,
-            location: document.getElementById('org-location').value,
-            niche: document.getElementById('org-niche').value,
-            budget: parseInt(document.getElementById('org-budget').value)||null
-        });
-        showToast('Profile updated');
-        loadOrgContext();
-    });
-    document.getElementById('invite-btn')?.addEventListener('click', async () => {
-        const email = document.getElementById('invite-email').value;
-        if(!email) return;
-        await apiCall('/org/invite', 'POST', { email, role: document.getElementById('invite-role').value });
-        showToast(`Invited ${email}`);
-        loadMembers();
-    });
-    document.getElementById('logout-btn')?.addEventListener('click', logout);
     document.getElementById('confirm-delete')?.addEventListener('click', deleteLead);
     document.getElementById('cancel-delete')?.addEventListener('click', closeDeleteModal);
     document.getElementById('prev-page')?.addEventListener('click', () => { if(leadsPage>0){ leadsPage--; loadLeads(); } });
     document.getElementById('next-page')?.addEventListener('click', () => { leadsPage++; loadLeads(); });
     document.getElementById('lead-status-filter')?.addEventListener('change', () => { leadsPage=0; loadLeads(); });
     document.getElementById('lead-source-filter')?.addEventListener('change', () => { leadsPage=0; loadLeads(); });
+    document.getElementById('close-modal')?.addEventListener('click', () => document.getElementById('lead-modal').classList.add('hidden'));
+    document.getElementById('lead-form')?.addEventListener('submit', (e) => { e.preventDefault(); saveLead(); });
 
-    // Initial load: verify token and load dashboard
+    // Initialize
     (async () => {
-        try {
-            await loadOrgContext();
-            await loadLeads();
-            await loadMetrics();
-            await loadSourceFilter();
-            await loadMembers();
-            await loadProfile();
-            await loadChatHistoryFromBackend();
-            switchTab('leads');
-        } catch(e) {
-            console.error('Initialisation failed', e);
-            redirectToLogin();
+        if(token) {
+            try {
+                await loadOrgContext();
+                await loadLeads();
+                await loadMetrics();
+                await loadSourceFilter();
+                await loadChatHistoryFromBackend();
+                switchTab('leads');
+            } catch(e) {
+                showToast('Failed to load data. Please check your token.', 'error');
+            }
         }
     })();
 </script>
