@@ -56,19 +56,14 @@
     const BACKEND_URL = 'https://kevsono-kevs-digital-business-intelligencev2.hf.space';
     const DASHBOARD_URL = '/bizintel';
 
-    // OAuth handler - runs immediately
-    (async function() {
+    // ========== OAuth HANDLER – MUST RUN FIRST ==========
+    (async function handleOAuth() {
         const urlParams = new URLSearchParams(window.location.search);
         const code = urlParams.get('code');
         
         if (code) {
-            // Show loading state
-            document.getElementById('app-container').innerHTML = `
-                <div class="text-center py-8">
-                    <div class="loading-spinner mx-auto mb-4"></div>
-                    <p class="text-gray-600">Completing Google sign-in...</p>
-                </div>
-            `;
+            // Show processing state
+            document.body.innerHTML = '<div class="flex items-center justify-center min-h-screen"><div class="text-center"><div class="loading-spinner mx-auto mb-4"></div><p class="text-gray-600">Completing Google sign-in...</p></div></div>';
             
             try {
                 const response = await fetch(`${BACKEND_URL}/auth/google/callback?code=${code}`, {
@@ -92,6 +87,7 @@
             }
         }
     })();
+    // ===================================================
 
     function showToast(msg, type='success') {
         const container = document.getElementById('toast-container');
@@ -119,16 +115,15 @@
 
     async function registerOrg(data) {
         await apiCall('/auth/register', 'POST', data);
-        showToast('Registration successful! Please login.');
+        showToast('Registration successful! Please verify email (if required) and then login.');
         document.getElementById('login-tab').click();
     }
 
     async function resetPassword(email) {
         await apiCall('/auth/reset-password', 'POST', { email });
-        showToast('Reset email sent. Check your inbox.');
+        showToast('Password reset email sent. Check your inbox.');
     }
 
-    // Event listeners
     document.getElementById('google-btn')?.addEventListener('click', () => {
         window.location.href = `${BACKEND_URL}/auth/google`;
     });
