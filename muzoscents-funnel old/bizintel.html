@@ -57,7 +57,7 @@
         </div>
         <div id="leads-loading" class="hidden text-center py-10"><div class="loading-spinner mx-auto"></div><p class="mt-2">Loading leads...</p></div>
         <div class="overflow-x-auto bg-white rounded-xl shadow">
-            <table class="min-w-full"><thead class="bg-gray-50"><tr><th class="px-5 py-3 text-left text-xs">Name</th><th>Email</th><th>Source</th><th>Status</th><th>Deal (₦)</th><th>Ad Spend</th><th>Actions</th></tr></thead><tbody id="leads-table-body"></tbody></table>
+            <table class="min-w-full"><thead class="bg-gray-50"><tr><th class="px-5 py-3 text-left text-xs">Name</th><th>Email</th><th>Source</th><th>Status</th><th>Deal (₦)</th><th>Ad Spend</th><th>Actions</th></tr></thead><tbody id="leads-table-body"></tbody>能有
         </div>
         <div class="mt-4 flex justify-between items-center"><button id="prev-page" class="px-3 py-1 border rounded disabled:opacity-50">Prev</button><span id="page-info"></span><button id="next-page" class="px-3 py-1 border rounded disabled:opacity-50">Next</button></div>
     </div>
@@ -79,12 +79,24 @@
         </div>
     </div>
 
-    <!-- Chat Tab -->
+    <!-- Chat Tab (Improved) -->
     <div id="tab-chat" class="tab-content hidden">
         <div class="bg-white rounded-xl shadow-md p-5">
-            <div class="flex flex-wrap gap-3 mb-4">
-                <select id="chat-mode" class="border rounded-lg p-2 text-sm"><option value="chat">💬 Chat</option><option value="report">📄 Report</option><option value="dashboard">📊 Dashboard</option></select>
-                <input type="number" id="force-pillar" placeholder="Force pillar 1-4" class="border rounded-lg p-2 text-sm w-32">
+            <div class="flex flex-wrap gap-3 mb-4 items-center">
+                <select id="chat-mode" class="border rounded-lg p-2 text-sm">
+                    <option value="chat">💬 Chat</option>
+                    <option value="report">📄 Report</option>
+                    <option value="dashboard">📊 Dashboard</option>
+                </select>
+
+                <!-- Improved force pillar input with label -->
+                <div class="flex items-center gap-2">
+                    <label class="text-sm font-medium text-gray-700">🎯 Strategic lens:</label>
+                    <input type="number" id="force-pillar" min="1" max="4" step="1" value=""
+                           class="border rounded-lg p-2 text-sm w-20 text-center">
+                    <span id="pillar-label" class="text-xs text-gray-500 italic">(auto)</span>
+                </div>
+
                 <button id="clear-chat" class="text-gray-500 text-sm"><i class="fas fa-trash-alt"></i> Clear chat</button>
             </div>
             <div id="chat-messages" class="h-96 overflow-y-auto border rounded-xl p-3 bg-gray-50 mb-3 space-y-2"></div>
@@ -163,8 +175,16 @@
     let leadsCache = [];
     let leadsPage = 0, limit = 20;
     let pendingDeleteId = null;
-    let chatHistory = [];
+    let chatHistory = [];       // stores { role, content, pillar? }
     let forecastChart = null;
+
+    // Pillar name mapping
+    const pillarNames = {
+        1: 'Customer intelligence',
+        2: 'Market & competitive',
+        3: 'Operations & capabilities',
+        4: 'Growth economics'
+    };
 
     function showToast(msg, type='success') {
         const container = document.getElementById('toast-container');
@@ -203,7 +223,7 @@
         } catch(e) { console.error(e); return false; }
     }
 
-    // --- Leads ---
+    // --- Leads --- (unchanged)
     async function loadLeads() {
         const loadingDiv = document.getElementById('leads-loading');
         const tableDiv = document.querySelector('#tab-leads .overflow-x-auto');
@@ -309,7 +329,7 @@
         } catch(e) {}
     }
 
-    // --- Metrics ---
+    // --- Metrics --- (unchanged)
     async function loadMetrics() {
         const loading = document.getElementById('metrics-loading');
         const content = document.getElementById('metrics-content');
@@ -331,22 +351,23 @@
         }
     }
 
-    // --- Chat (FIXED) ---
+    // --- Chat (with pillar support) ---
     async function loadChatHistoryFromBackend() {
         try {
             const hist = await apiCall('/intelligence/history?limit=20');
             const container = document.getElementById('chat-messages');
             container.innerHTML = '';
             chatHistory = [];
-            // Backend now returns { id, query, response, created_at }
+            // Backend now returns { id, query, response, created_at, pillar }
             for (let item of (hist.history || []).slice().reverse()) {
                 if (item.query) {
                     appendMessage('user', item.query);
                     chatHistory.push({ role: 'user', content: item.query });
                 }
                 if (item.response) {
-                    appendMessage('assistant', item.response);
-                    chatHistory.push({ role: 'assistant', content: item.response });
+                    const pillarInfo = item.pillar ? { pillar: item.pillar, pillar_name: pillarNames[item.pillar] } : null;
+                    appendMessage('assistant', item.response, pillarInfo);
+                    chatHistory.push({ role: 'assistant', content: item.response, pillar: item.pillar });
                 }
             }
             if (chatHistory.length === 0) {
@@ -358,11 +379,20 @@
         }
     }
 
-    function appendMessage(role, content) {
+    // Enhanced appendMessage with optional pillar info
+    function appendMessage(role, content, pillarInfo = null) {
         if (!content) content = '(empty message)';
         const div = document.createElement('div');
         div.className = `p-2 rounded-lg ${role === 'user' ? 'bg-blue-100 text-right ml-8' : 'bg-gray-100 mr-8'}`;
-        div.innerHTML = `<strong class="text-sm">${role === 'user' ? 'You' : 'Kevs AI'}</strong><div class="text-sm mt-1">${escapeHtml(content).replace(/\n/g, '<br/>')}</div>`;
+        let html = `<strong class="text-sm">${role === 'user' ? 'You' : 'Kevs AI'}</strong>
+                    <div class="text-sm mt-1">${escapeHtml(content).replace(/\n/g, '<br/>')}</div>`;
+        if (role === 'assistant' && pillarInfo) {
+            const lensName = pillarInfo.pillar_name || (pillarInfo.pillar ? pillarNames[pillarInfo.pillar] : '');
+            if (lensName) {
+                html += `<div class="text-xs text-gray-400 mt-1 pt-1 border-t border-gray-200">🧠 Lens: ${lensName}</div>`;
+            }
+        }
+        div.innerHTML = html;
         document.getElementById('chat-messages').appendChild(div);
         document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;
     }
@@ -378,16 +408,17 @@
         try {
             const body = {
                 message: msg,
-                history: chatHistory.slice(-10),
+                history: chatHistory.slice(-10).map(h => ({ role: h.role, content: h.content })),
                 report_mode: document.getElementById('chat-mode').value,
                 force_pillar: parseInt(document.getElementById('force-pillar').value) || null
             };
             const res = await apiCall('/intelligence/chat', 'POST', body);
-            appendMessage('assistant', res.response);
+            const pillarInfo = res.meta?.pillar ? { pillar: res.meta.pillar, pillar_name: pillarNames[res.meta.pillar] } : null;
+            appendMessage('assistant', res.response, pillarInfo);
             if (res.usage) {
                 document.getElementById('chat-usage').innerHTML = `<i class="fas fa-chart-simple"></i> Used: ${res.usage.requests_used}/${res.usage.limit} (${res.usage.remaining === -1 ? 'unlimited' : res.usage.remaining + ' left'})`;
             }
-            chatHistory.push({ role: 'user', content: msg }, { role: 'assistant', content: res.response });
+            chatHistory.push({ role: 'user', content: msg }, { role: 'assistant', content: res.response, pillar: res.meta?.pillar });
         } catch (e) {
             showToast(e.message, 'error');
         } finally {
@@ -407,7 +438,7 @@
         return html;
     }
 
-    // --- Forecast ---
+    // --- Forecast --- (unchanged)
     async function runForecast() {
         const months = parseInt(document.getElementById('forecast-months').value);
         const growth = parseFloat(document.getElementById('forecast-growth').value)||null;
@@ -446,6 +477,18 @@
         if(tabId === 'leads') loadLeads();
         if(tabId === 'metrics') loadMetrics();
     }
+
+    // Pillar input live label
+    const pillarInput = document.getElementById('force-pillar');
+    const pillarLabel = document.getElementById('pillar-label');
+    pillarInput.addEventListener('input', () => {
+        const val = parseInt(pillarInput.value);
+        if (val >= 1 && val <= 4) {
+            pillarLabel.innerText = `(${pillarNames[val]})`;
+        } else {
+            pillarLabel.innerText = '(auto)';
+        }
+    });
 
     // Event listeners
     document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
