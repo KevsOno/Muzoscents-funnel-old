@@ -2,683 +2,296 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Kevs Digital Business Intelligence v5</title>
-    <script src="https://cdn.tailwindcss.com/3.4.1"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kevs Digital Customer Concierge</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
-        * { font-family: 'Inter', system-ui, sans-serif; }
-        body { background: #F8FAFE; }
-        .chat-messages::-webkit-scrollbar { width: 4px; }
-        .chat-messages::-webkit-scrollbar-track { background: #E2E8F0; border-radius: 10px; }
-        .chat-messages::-webkit-scrollbar-thumb { background: #94A3B8; border-radius: 10px; }
-        .msg-ai { background: white; border: 1px solid #BFDBFE; color: #1E3A5F; align-self: flex-start; border-bottom-left-radius: 3px; }
-        .msg-user { background: #1E3A5F; color: white; align-self: flex-end; border-bottom-right-radius: 3px; }
-        @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
-        .fade-in { animation: fadeIn 0.25s ease forwards; }
-        .loading-spinner { border: 2px solid #e5e7eb; border-top: 2px solid #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 0.8s linear infinite; display: inline-block; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .tab-active { border-bottom: 2px solid #1E3A5F; color: #1E3A5F; font-weight: 700; }
-        .pillar-btn { transition: all 0.2s; }
-        .pillar-active { background: #1E3A5F; color: white; }
-        .pillar-inactive { background: #EFF6FF; color: #1E3A5F; border: 1px solid #BFDBFE; }
-        .pillar-inactive:hover { background: #DBEAFE; }
+        :root { --brand-blue: #1E3A5F; --brand-emerald: #059669; --brand-cream: #F8FAFC; }
+        body { background-color: #0F172A; font-family: system-ui, -apple-system, sans-serif; }
+        
+        /* Smooth Custom Scrollbar for Chat Windows */
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 10px; }
+        
+        /* Shimmer Loading Animations for Vector Searching States */
+        .shimmer {
+            background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+        }
+        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
     </style>
 </head>
-<body class="min-h-screen p-4">
+<body class="antialiased min-h-screen flex items-center justify-end p-6">
 
-<!-- AUTH MODAL -->
-<div id="authModal" class="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
-        <div class="flex justify-between items-center p-5 border-b border-gray-100">
-            <div class="flex items-center gap-2">
-                <div class="text-xl font-black text-blue-900 italic">Kevs<span class="text-green-600">Digital</span></div>
-                <div class="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium">BI</div>
-            </div>
-            <button id="modalClose" class="text-gray-400 hover:text-gray-600 text-2xl leading-5">&times;</button>
-        </div>
-        <div class="px-6 pt-2 pb-1">
-            <h3 id="modalTitle" class="text-2xl font-bold text-slate-800 tracking-tight">Login</h3>
-            <p class="text-xs text-gray-400 mt-0.5">Access your intelligence dashboard</p>
-        </div>
-        <!-- Login Form -->
-        <div id="loginForm" class="px-6 pb-2">
-            <div class="space-y-4">
-                <div><label class="block text-xs font-medium text-gray-600 mb-1">Email address</label><input type="email" id="loginEmail" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-300 outline-none" placeholder="you@company.com"></div>
-                <div><label class="block text-xs font-medium text-gray-600 mb-1">Password</label><input type="password" id="loginPassword" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-300 outline-none" placeholder="••••••••"></div>
-                <div class="flex items-center justify-between flex-wrap gap-2">
-                    <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer"><input type="checkbox" id="showPasswordLogin" class="rounded border-gray-300"> <span class="text-xs">Show Password</span></label>
-                    <a href="#" id="forgotPasswordLink" class="text-xs text-blue-700 hover:text-blue-900 font-medium">Forgot password?</a>
+<div id="concierge-widget" class="w-full max-w-md bg-slate-50 h-[650px] rounded-3xl shadow-2xl border border-slate-200/80 flex flex-col overflow-hidden transition-all duration-300 transform scale-100">
+    
+    <div class="bg-[#1E3A5F] p-5 text-white shadow-md relative shrink-0">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="relative">
+                    <div class="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center border border-white/20">
+                        <i id="bot-icon" class="fa-solid fa-robot text-emerald-400 text-lg transition-all"></i>
+                    </div>
+                    <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-[#1E3A5F] rounded-full animate-pulse"></span>
                 </div>
-                <button id="doLoginBtn" class="w-full bg-blue-900 hover:bg-blue-800 text-white font-semibold py-2.5 rounded-xl transition text-sm">Login</button>
-                <button id="googleLoginBtn" class="w-full border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium py-2.5 rounded-xl transition text-sm flex items-center justify-center gap-2"><i class="fab fa-google text-red-500"></i> Sign in with Google</button>
+                <div>
+                    <h3 id="concierge-title" class="font-semibold text-sm tracking-wide">Penafort Core AI</h3>
+                    <p id="concierge-status" class="text-xs text-slate-300 flex items-center gap-1.5">
+                        <span class="inline-block w-1.5 h-1.5 bg-emerald-400 rounded-full"></span> System Autonomous
+                    </p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="minimize-widget" class="w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center transition text-slate-300 hover:text-white">
+                    <i class="fa-solid fa-minus"></i>
+                </button>
             </div>
         </div>
-        <!-- Signup Form -->
-        <div id="signupForm" style="display: none;" class="px-6 pb-2">
-            <div class="space-y-3">
-                <input type="text" id="signupOrgName" placeholder="Organisation Name *" class="w-full border rounded-xl px-4 py-2.5 text-sm">
-                <input type="text" id="signupLocation" placeholder="Location (e.g., Lagos, Nigeria) *" class="w-full border rounded-xl px-4 py-2.5 text-sm">
-                <input type="text" id="signupNiche" placeholder="Niche (e.g., E-commerce, SaaS) *" class="w-full border rounded-xl px-4 py-2.5 text-sm">
-                <input type="number" id="signupBudget" placeholder="Monthly Budget (₦) *" class="w-full border rounded-xl px-4 py-2.5 text-sm">
-                <input type="email" id="signupEmail" placeholder="Email address *" class="w-full border rounded-xl px-4 py-2.5 text-sm">
-                <input type="password" id="signupPassword" placeholder="Password *" class="w-full border rounded-xl px-4 py-2.5 text-sm">
-                <label class="flex items-center gap-2"><input type="checkbox" id="showPasswordSignup"> <span class="text-xs">Show password</span></label>
-                <button id="doSignupBtn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-xl transition text-sm">Create Organisation & Account</button>
+
+        <div id="loyalty-banner" class="mt-4 bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/10 flex items-center justify-between hidden">
+            <div class="flex items-center gap-2.5">
+                <i class="fa-solid fa-crown text-amber-400 text-sm"></i>
+                <div>
+                    <p class="text-[10px] uppercase tracking-wider text-slate-300 font-medium">Value Rewards Tier</p>
+                    <p id="loyalty-tier-name" class="text-xs font-bold text-white">Loading Account...</p>
+                </div>
             </div>
-        </div>
-        <div class="px-6 pb-5 pt-1 text-center border-t border-gray-100 mt-1">
-            <div><a id="showSignupLink" class="text-blue-700 text-sm font-medium hover:underline cursor-pointer">Don't have an account? Sign up</a></div>
-            <div id="authMessage" class="text-xs mt-2 text-center font-medium"></div>
-        </div>
-    </div>
-</div>
-
-<!-- MAIN DASHBOARD -->
-<div id="mainApp" style="display: none;" class="max-w-7xl mx-auto px-4 sm:px-6 py-5">
-    <!-- Top bar -->
-    <div class="flex flex-wrap justify-between items-center gap-3 mb-6 pb-2 border-b border-gray-200">
-        <div class="text-2xl font-black italic text-blue-900">Kevs<span class="text-green-600">Digital</span><span class="text-xs font-normal text-gray-400 ml-2 align-middle">BI</span></div>
-        <div class="flex items-center gap-4">
-            <div class="flex items-center gap-2 bg-white shadow-sm rounded-full px-3 py-1.5"><span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span><span id="headerUser" class="text-xs font-mono text-gray-600">—</span></div>
-            <button id="logoutBtn" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-1.5 rounded-full transition font-medium">Logout</button>
-        </div>
-    </div>
-
-    <!-- Tabs -->
-    <div class="border-b border-gray-200 mb-6 overflow-x-auto">
-        <nav class="flex space-x-4">
-            <button data-tab="leads" class="tab-btn px-4 py-2 text-sm font-medium text-gray-600">📋 Leads</button>
-            <button data-tab="metrics" class="tab-btn px-4 py-2 text-sm font-medium text-gray-600">📊 Metrics</button>
-            <button data-tab="chat" class="tab-btn px-4 py-2 text-sm font-medium text-gray-600">🤖 AI Chat</button>
-            <button data-tab="cac" class="tab-btn px-4 py-2 text-sm font-medium text-gray-600">🎯 CAC Target</button>
-            <button data-tab="forecast" class="tab-btn px-4 py-2 text-sm font-medium text-gray-600">📈 Forecast</button>
-            <button data-tab="org" class="tab-btn px-4 py-2 text-sm font-medium text-gray-600">⚙️ Organisation</button>
-        </nav>
-    </div>
-
-    <!-- Leads Tab -->
-    <div id="tab-leads" class="tab-content">
-        <div class="flex justify-between items-center flex-wrap gap-3 mb-5">
-            <h2 class="text-xl font-semibold">Lead Management</h2>
-            <div class="flex gap-2">
-                <select id="lead-status-filter" class="border rounded-lg p-2 text-sm bg-white"><option value="">All status</option><option value="cold">Cold</option><option value="warm">Warm</option><option value="converted">Converted</option></select>
-                <select id="lead-source-filter" class="border rounded-lg p-2 text-sm bg-white"><option value="">All sources</option></select>
-                <button id="add-lead-btn" class="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm"><i class="fas fa-plus"></i> Add Lead</button>
-                <label class="bg-gray-200 px-4 py-2 rounded-lg text-sm cursor-pointer"><i class="fas fa-upload"></i> CSV Upload <input type="file" id="csv-upload" accept=".csv" class="hidden"></label>
-            </div>
-        </div>
-        <div id="leads-loading" class="hidden text-center py-10"><div class="loading-spinner mx-auto"></div><p class="mt-2">Loading leads...</p></div>
-        <div class="overflow-x-auto bg-white rounded-xl shadow">
-            <table class="min-w-full"><thead class="bg-gray-50"><tr><th class="px-5 py-3 text-left text-xs">Name</th><th>Email</th><th>Source</th><th>Status</th><th>Deal (₦)</th><th>Ad Spend</th><th>Actions</th></tr></thead><tbody id="leads-table-body"></tbody></table>
-        </div>
-        <div class="mt-4 flex justify-between items-center"><button id="prev-page" class="px-3 py-1 border rounded disabled:opacity-50">Prev</button><span id="page-info"></span><button id="next-page" class="px-3 py-1 border rounded disabled:opacity-50">Next</button></div>
-    </div>
-
-    <!-- Metrics Tab -->
-    <div id="tab-metrics" class="tab-content hidden">
-        <div id="metrics-loading" class="hidden text-center py-10"><div class="loading-spinner mx-auto"></div></div>
-        <div id="metrics-content" class="hidden">
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Total Leads</div><div id="metric-total-leads" class="text-2xl font-bold">-</div></div>
-                <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Conversion Rate</div><div id="metric-conversion-rate" class="text-2xl font-bold">-</div></div>
-                <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Actual CAC (₦)</div><div id="metric-cac" class="text-2xl font-bold">-</div></div>
-                <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">ROI (%)</div><div id="metric-roi" class="text-2xl font-bold">-</div></div>
-                <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Pipeline Value (₦)</div><div id="metric-pipeline" class="text-2xl font-bold">-</div></div>
-                <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Data Quality</div><div id="metric-dq" class="text-2xl font-bold">-</div></div>
-            </div>
-            <div class="bg-white p-5 rounded-xl shadow-sm"><h3 class="font-semibold mb-3">🏆 Top Lead Sources</h3><div id="top-sources-list"></div></div>
-            <button id="refresh-metrics" class="mt-4 bg-blue-500 text-white px-4 py-2 rounded-lg text-sm"><i class="fas fa-sync-alt"></i> Refresh Metrics</button>
-        </div>
-    </div>
-
-    <!-- AI Chat Tab -->
-    <div id="tab-chat" class="tab-content hidden">
-        <div class="bg-white rounded-xl shadow-md p-5">
-            <div class="flex flex-wrap gap-3 mb-4">
-                <select id="chat-mode" class="border rounded-lg p-2 text-sm"><option value="chat">💬 Chat</option><option value="report">📄 Report</option><option value="dashboard">📊 Dashboard</option></select>
-                <input type="number" id="force-pillar" placeholder="Force pillar 1-4" class="border rounded-lg p-2 text-sm w-32">
-                <button id="clear-chat" class="text-gray-500 text-sm"><i class="fas fa-trash-alt"></i> Clear chat</button>
-            </div>
-            <div id="chat-messages" class="h-96 overflow-y-auto border rounded-xl p-3 bg-gray-50 mb-3 space-y-2"></div>
-            <div class="flex gap-2"><input type="text" id="chat-input" placeholder="Ask a strategic question..." class="flex-1 border rounded-lg p-3"><button id="send-chat" class="bg-blue-600 text-white px-5 rounded-lg">Send</button></div>
-            <div id="chat-usage" class="text-xs text-gray-400 mt-2"></div>
-        </div>
-    </div>
-
-    <!-- CAC Target Tab -->
-    <div id="tab-cac" class="tab-content hidden">
-        <div class="bg-white p-6 rounded-xl shadow-md">
-            <h2 class="text-xl font-semibold mb-4">CAC Target & Leads Needed</h2>
-            <div class="grid md:grid-cols-3 gap-4 mb-4">
-                <div><label class="block text-sm font-medium">Target CAC (₦)</label><input type="number" id="target-cac" class="border rounded-lg w-full p-2"></div>
-                <div><label class="block text-sm font-medium">Target Revenue (₦)</label><input type="number" id="target-rev" class="border rounded-lg w-full p-2"></div>
-                <div><label class="block text-sm font-medium">Budget available (₦)</label><input type="number" id="target-budget" class="border rounded-lg w-full p-2"></div>
-            </div>
-            <button id="run-cac" class="bg-purple-600 text-white px-5 py-2 rounded-lg">Calculate & Advise</button>
-            <div id="cac-result" class="mt-5 p-4 bg-gray-50 rounded-lg hidden"></div>
-        </div>
-    </div>
-
-    <!-- Forecast Tab -->
-    <div id="tab-forecast" class="tab-content hidden">
-        <div class="bg-white p-6 rounded-xl shadow-md">
-            <h2 class="text-xl font-semibold mb-4">Revenue Forecast</h2>
-            <div class="grid md:grid-cols-3 gap-4 mb-5">
-                <div><label class="text-sm">Months</label><input type="number" id="forecast-months" value="6" class="border rounded-lg w-full p-2"></div>
-                <div><label class="text-sm">Monthly growth (%)</label><input type="number" id="forecast-growth" step="0.5" class="border rounded-lg w-full p-2"></div>
-                <div><label class="text-sm">Extra ad spend (₦)</label><input type="number" id="forecast-add-spend" class="border rounded-lg w-full p-2"></div>
-            </div>
-            <button id="run-forecast" class="bg-green-600 text-white px-5 py-2 rounded-lg">Generate forecast</button>
-            <div id="forecast-loading" class="hidden text-center py-4"><div class="loading-spinner mx-auto"></div></div>
-            <div class="mt-6"><canvas id="forecastChart" height="200"></canvas></div>
-            <div id="forecast-table" class="mt-5 overflow-x-auto"></div>
-        </div>
-    </div>
-
-    <!-- Organisation Tab -->
-    <div id="tab-org" class="tab-content hidden">
-        <div class="bg-white p-6 rounded-xl shadow-md">
-            <h2 class="text-xl font-semibold mb-4">Organisation Profile</h2>
-            <form id="org-profile-form" class="space-y-3">
-                <input type="text" id="org-name-field" placeholder="Org Name" class="border rounded-lg w-full p-2">
-                <input type="text" id="org-location" placeholder="Location" class="border rounded-lg w-full p-2">
-                <input type="text" id="org-niche" placeholder="Niche" class="border rounded-lg w-full p-2">
-                <input type="number" id="org-budget" placeholder="Budget" class="border rounded-lg w-full p-2">
-                <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg">Update Profile</button>
-            </form>
-            <hr class="my-6">
-            <h3 class="font-semibold">👥 Team Members</h3>
-            <div id="members-list" class="mt-4 text-sm space-y-2"></div>
-            <div class="mt-4" id="invite-section">
-                <label class="block text-sm font-medium">Invite new member</label>
-                <div class="flex flex-wrap gap-2 mt-1"><input type="email" id="invite-email" placeholder="Email" class="border rounded-lg p-2 flex-1"><select id="invite-role" class="border rounded-lg p-2"><option>analyst</option><option>viewer</option></select><button id="invite-btn" class="bg-gray-800 text-white px-4 rounded-lg">Invite</button></div>
+            <div class="text-right">
+                <span id="loyalty-points-count" class="bg-amber-400/20 text-amber-300 text-xs font-bold px-2.5 py-1 rounded-full border border-amber-400/30">0 pts</span>
             </div>
         </div>
     </div>
-</div>
 
-<!-- Delete confirmation modal -->
-<div id="delete-modal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50"><div class="bg-white rounded-xl p-6 max-w-sm"><h3 class="text-lg font-bold">Confirm delete</h3><p>Delete this lead?</p><div class="flex justify-end gap-3 mt-5"><button id="cancel-delete" class="px-3 py-1 border rounded">Cancel</button><button id="confirm-delete" class="bg-red-600 text-white px-3 py-1 rounded">Delete</button></div></div></div>
+    <div id="chat-scroller" class="flex-1 p-4 overflow-y-auto space-y-4 custom-scrollbar bg-slate-50">
+        
+        <div class="flex gap-3 max-w-[85%]">
+            <div class="w-7 h-7 bg-[#1E3A5F] rounded-lg shrink-0 flex items-center justify-center text-white text-xs">
+                <i class="fa-solid fa-robot"></i>
+            </div>
+            <div>
+                <div class="bg-white px-4 py-2.5 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 text-sm text-slate-700 leading-relaxed">
+                    Hello! I am your Penafort Support Assistant. How can I help you accelerate operations today?
+                </div>
+                <span class="text-[10px] text-slate-400 mt-1 block px-1">Just now</span>
+            </div>
+        </div>
 
-<!-- Lead Modal -->
-<div id="lead-modal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50">
-    <div class="bg-white rounded-2xl p-6 w-full max-w-md">
-        <h3 id="modal-title" class="text-xl font-bold mb-3">Add Lead</h3>
-        <form id="lead-form">
-            <input type="hidden" id="lead-id">
-            <input id="lead-name" placeholder="Name*" class="w-full border p-2 rounded mb-2" required>
-            <input id="lead-email" placeholder="Email" class="w-full border p-2 rounded mb-2">
-            <input id="lead-phone" placeholder="Phone" class="w-full border p-2 rounded mb-2">
-            <input id="lead-source" placeholder="Source" class="w-full border p-2 rounded mb-2">
-            <select id="lead-status" class="w-full border p-2 rounded mb-2"><option value="cold">Cold</option><option value="warm">Warm</option><option value="converted">Converted</option></select>
-            <input id="lead-deal" placeholder="Deal Value (₦)" class="w-full border p-2 rounded mb-2">
-            <input id="lead-spend" placeholder="Ad Spend (₦)" class="w-full border p-2 rounded mb-2">
-            <input id="lead-acquired" type="date" class="w-full border p-2 rounded mb-2">
-            <input id="lead-converted" type="date" class="w-full border p-2 rounded mb-2">
-            <textarea id="lead-notes" rows="2" placeholder="Notes" class="w-full border p-2 rounded mb-3"></textarea>
-            <div class="flex justify-end gap-2"><button type="button" id="close-modal" class="px-3 py-1 border rounded">Cancel</button><button type="submit" class="px-3 py-1 bg-blue-600 text-white rounded">Save</button></div>
+        <div id="quick-portal" class="grid grid-cols-2 gap-2 pt-2 animate-fade-in">
+            <button onclick="triggerQuickAction('track_order')" class="p-3 bg-white hover:bg-slate-100 border border-slate-200/60 rounded-xl text-left transition group shadow-sm">
+                <i class="fa-solid fa-box text-blue-500 mb-2 block text-sm"></i>
+                <span class="text-xs font-medium text-slate-800 block">Check Order Status</span>
+                <span class="text-[10px] text-slate-400 block mt-0.5">Track shipping rows</span>
+            </button>
+            <button onclick="triggerQuickAction('check_points')" class="p-3 bg-white hover:bg-slate-100 border border-slate-200/60 rounded-xl text-left transition group shadow-sm">
+                <i class="fa-solid fa-award text-amber-500 mb-2 block text-sm"></i>
+                <span class="text-xs font-medium text-slate-800 block">Loyalty Balance</span>
+                <span class="text-[10px] text-slate-400 block mt-0.5">Verify reward entries</span>
+            </button>
+            <button onclick="triggerQuickAction('product_catalog')" class="p-3 bg-white hover:bg-slate-100 border border-slate-200/60 rounded-xl text-left transition group shadow-sm">
+                <i class="fa-solid fa-tags text-emerald-500 mb-2 block text-sm"></i>
+                <span class="text-xs font-medium text-slate-800 block">Browse Catalog</span>
+                <span class="text-[10px] text-slate-400 block mt-0.5">Check Naira prices</span>
+            </button>
+            <button onclick="triggerQuickAction('human_escalate')" class="p-3 bg-white hover:bg-slate-100 border border-slate-200/60 rounded-xl text-left transition group shadow-sm">
+                <i class="fa-solid fa-headset text-purple-500 mb-2 block text-sm"></i>
+                <span class="text-xs font-medium text-slate-800 block">Talk to Human</span>
+                <span class="text-[10px] text-slate-400 block mt-0.5">Open support ticket</span>
+            </button>
+        </div>
+
+        <div id="dynamic-chat-nodes" class="space-y-4"></div>
+    </div>
+
+    <div id="vector-shimmer" class="p-4 bg-white border-t border-slate-200/60 flex items-center gap-3 hidden">
+        <div class="w-6 h-6 rounded-full shimmer shrink-0"></div>
+        <div class="flex-1 space-y-2">
+            <div class="h-3 shimmer rounded w-3/4"></div>
+            <div class="h-2.5 shimmer rounded w-1/2"></div>
+        </div>
+    </div>
+
+    <div class="p-4 bg-white border-t border-slate-200 shrink-0">
+        <form id="chat-entry-form" class="flex items-center gap-2">
+            <input type="text" id="customer-message-input" placeholder="Ask a question or provide phone..." class="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500 transition" autocomplete="off" required>
+            <button type="submit" class="w-10 id-submit bg-[#1E3A5F] hover:bg-blue-900 text-white h-10 rounded-xl flex items-center justify-center transition shadow-md shrink-0">
+                <i class="fa-solid fa-paper-plane text-xs"></i>
+            </button>
         </form>
+        <div class="flex items-center justify-between mt-2.5 px-1">
+            <span class="text-[10px] text-slate-400 flex items-center gap-1">
+                <i class="fa-solid fa-shield-halved text-slate-300"></i> End-to-end relational sync
+            </span>
+            <button id="clear-widget-session" class="text-[10px] text-slate-400 hover:text-red-500 transition flex items-center gap-1">
+                <i class="fa-solid fa-rotate-left"></i> Reset Chat
+            </button>
+        </div>
     </div>
 </div>
 
 <script>
-    // ==================== CONFIGURATION ====================
     const BACKEND_URL = 'https://kevsono-kevs-digital-business-intelligencev2.hf.space';
-    let token = localStorage.getItem('access_token');
-    let currentRole = 'viewer';
-    let leadsCache = [];
-    let leadsPage = 0, limit = 20;
-    let pendingDeleteId = null;
-    let chatHistory = [];
-    let forecastChart = null;
+    let currentSessionId = crypto.randomUUID();
+    let authenticatedUserPhone = null;
 
-    // Helper functions
-    function showToast(msg, type='success') {
-        const container = document.getElementById('toast-container') || (() => { const d=document.createElement('div'); d.id='toast-container'; d.className='fixed top-20 right-4 z-50 space-y-2 w-80'; document.body.appendChild(d); return d; })();
-        const toast = document.createElement('div');
-        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type==='success'?'bg-green-600':'bg-red-600'} transition-smooth mb-2 text-sm`;
-        toast.innerText = msg;
-        container.appendChild(toast);
-        setTimeout(() => toast.remove(), 3500);
+    // Helper: Build Message Markup Elements
+    function appendChatNode(sender, text) {
+        const targetContainer = document.getElementById('dynamic-chat-nodes');
+        const wrappingNode = document.createElement('div');
+        wrappingNode.className = `flex gap-3 max-w-[85%] ${sender === 'customer' ? 'ml-auto justify-end' : ''}`;
+
+        const botAvatar = `<div class="w-7 h-7 bg-[#1E3A5F] rounded-lg shrink-0 flex items-center justify-center text-white text-xs"><i class="fa-solid fa-robot"></i></div>`;
+        const customerAvatar = `<div class="w-7 h-7 bg-emerald-600 rounded-lg shrink-0 flex items-center justify-center text-white text-xs"><i class="fa-solid fa-user"></i></div>`;
+
+        wrappingNode.innerHTML = `
+            ${sender !== 'customer' ? botAvatar : ''}
+            <div>
+                <div class="${sender === 'customer' ? 'bg-[#1E3A5F] text-white rounded-tr-none' : 'bg-white text-slate-700 border border-slate-100'} px-4 py-2.5 rounded-2xl shadow-sm text-sm leading-relaxed">
+                    ${text}
+                </div>
+                <span class="text-[10px] text-slate-400 mt-1 block px-1 text-${sender === 'customer' ? 'right' : 'left'}">Just now</span>
+            </div>
+            ${sender === 'customer' ? customerAvatar : ''}
+        `;
+        
+        targetContainer.appendChild(wrappingNode);
+        const scroller = document.getElementById('chat-scroller');
+        scroller.scrollTop = scroller.scrollHeight;
     }
 
-    async function apiCall(endpoint, method='GET', body=null) {
-        const headers = { 'Content-Type': 'application/json' };
-        if(token) headers['Authorization'] = `Bearer ${token}`;
-        const opts = { method, headers };
-        if(body) opts.body = JSON.stringify(body);
-        const res = await fetch(`${BACKEND_URL}${endpoint}`, opts);
-        if(res.status === 401) { logout(); throw new Error('Session expired'); }
-        if(!res.ok) { const err = await res.json().catch(()=>({detail:'Error'})); throw new Error(err.detail || 'API error'); }
-        return res.json();
+    // Toggle Vector Shimmer Layer
+    function toggleShimmer(show) {
+        const shimmerNode = document.getElementById('vector-shimmer');
+        if (show) shimmerNode.classList.remove('hidden');
+        else shimmerNode.classList.add('hidden');
     }
 
-    // Authentication
-    async function login(email, password) {
-        const data = await apiCall('/auth/login', 'POST', { email, password });
-        token = data.access_token;
-        localStorage.setItem('access_token', token);
-        await loadOrgContext();
-        showDashboard();
-        showToast('Login successful');
-    }
-
-    async function registerOrg(data) {
-        await apiCall('/auth/register', 'POST', data);
-        showToast('Registration successful! Please verify email (if required) and login.');
-    }
-
-    async function resetPassword(email) {
-        await apiCall('/auth/reset-password', 'POST', { email });
-        showToast('Reset email sent. Check your inbox.');
-    }
-
-    async function logout() {
-        if(token) {
-            try { await apiCall('/auth/logout', 'POST'); } catch(e) {}
-        }
-        localStorage.removeItem('access_token');
-        token = null;
-        document.getElementById('mainApp').style.display = 'none';
-        document.getElementById('authModal').style.display = 'flex';
-        showToast('Logged out');
-    }
-
-    async function loadOrgContext() {
-        try {
-            const me = await apiCall('/auth/me');
-            currentRole = me.role;
-            document.getElementById('headerUser').innerHTML = me.email || me.user_id.slice(0,10);
-            const profile = await apiCall('/org/profile');
-            document.getElementById('org-name-field').value = profile.org_name || '';
-            document.getElementById('org-location').value = profile.location || 'Lagos, Nigeria';
-            document.getElementById('org-niche').value = profile.niche || 'general business';
-            document.getElementById('org-budget').value = profile.budget || 500000;
-            const usage = await apiCall('/org/usage');
-            const remaining = usage.remaining === -1 ? 'Unlimited' : usage.remaining;
-            document.getElementById('chat-usage').innerHTML = `📊 Usage: ${usage.plan} · ${usage.request_count}/${usage.limit} used · ${remaining} left`;
-            return true;
-        } catch(e) { console.error(e); return false; }
-    }
-
-    async function showDashboard() {
-        document.getElementById('authModal').style.display = 'none';
-        document.getElementById('mainApp').style.display = 'block';
-        await loadOrgContext();
-        await loadLeads();
-        await loadMetrics();
-        await loadSourceFilter();
-        await loadMembers();
-        await loadChatHistory();
-        switchTab('leads');
-    }
-
-    // Leads CRUD
-    async function loadLeads() {
-        const loading = document.getElementById('leads-loading');
-        const tableContainer = document.querySelector('#tab-leads .overflow-x-auto');
-        loading.classList.remove('hidden');
-        tableContainer.classList.add('hidden');
-        try {
-            let url = `/leads?limit=${limit}&offset=${leadsPage*limit}`;
-            const statusFilter = document.getElementById('lead-status-filter').value;
-            const sourceFilter = document.getElementById('lead-source-filter').value;
-            if(statusFilter) url += `&status=${statusFilter}`;
-            if(sourceFilter) url += `&source=${encodeURIComponent(sourceFilter)}`;
-            const res = await apiCall(url);
-            leadsCache = res.leads;
-            const tbody = document.getElementById('leads-table-body');
-            tbody.innerHTML = '';
-            for(let l of leadsCache) {
-                const row = tbody.insertRow();
-                row.insertCell(0).innerHTML = `<div class="font-medium">${escapeHtml(l.name)}</div>`;
-                row.insertCell(1).innerHTML = l.email || '-';
-                row.insertCell(2).innerHTML = l.source || '-';
-                row.insertCell(3).innerHTML = `<span class="px-2 py-1 rounded-full text-xs ${l.status==='converted'?'bg-green-100 text-green-800':l.status==='warm'?'bg-yellow-100':'bg-gray-200'}">${l.status}</span>`;
-                row.insertCell(4).innerHTML = l.deal_value ? `₦${l.deal_value.toLocaleString()}` : '-';
-                row.insertCell(5).innerHTML = l.ad_spend ? `₦${l.ad_spend.toLocaleString()}` : '-';
-                row.insertCell(6).innerHTML = `<button class="text-blue-600 mr-2 edit-lead" data-id="${l.id}"><i class="fas fa-edit"></i></button><button class="text-red-600 delete-lead-btn" data-id="${l.id}"><i class="fas fa-trash"></i></button>`;
-            }
-            document.getElementById('page-info').innerText = `Page ${leadsPage+1}`;
-            document.getElementById('prev-page').disabled = leadsPage===0;
-            attachLeadActions();
-        } catch(e) { showToast(e.message, 'error'); } finally {
-            loading.classList.add('hidden');
-            tableContainer.classList.remove('hidden');
-        }
-    }
-
-    function attachLeadActions() {
-        document.querySelectorAll('.edit-lead').forEach(btn => btn.onclick = () => editLeadById(btn.dataset.id));
-        document.querySelectorAll('.delete-lead-btn').forEach(btn => btn.onclick = () => { pendingDeleteId = btn.dataset.id; document.getElementById('delete-modal').classList.remove('hidden'); document.getElementById('delete-modal').classList.add('flex'); });
-    }
-
-    function editLeadById(id) {
-        const lead = leadsCache.find(l => l.id == id);
-        if(lead) openLeadModal(lead);
-        else showToast('Lead not found', 'error');
-    }
-
-    async function saveLead() {
-        const id = document.getElementById('lead-id').value;
-        const data = {
-            name: document.getElementById('lead-name').value,
-            email: document.getElementById('lead-email').value || null,
-            phone: document.getElementById('lead-phone').value || null,
-            source: document.getElementById('lead-source').value || null,
-            status: document.getElementById('lead-status').value,
-            deal_value: parseFloat(document.getElementById('lead-deal').value) || null,
-            ad_spend: parseFloat(document.getElementById('lead-spend').value) || null,
-            acquired_date: document.getElementById('lead-acquired').value || null,
-            conversion_date: document.getElementById('lead-converted').value || null,
-            notes: document.getElementById('lead-notes').value || null
-        };
-        if(id) await apiCall(`/leads/${id}`, 'PATCH', data);
-        else await apiCall('/leads', 'POST', data);
-        document.getElementById('lead-modal').classList.add('hidden');
-        loadLeads();
-        showToast('Lead saved');
-        if(!document.getElementById('tab-metrics').classList.contains('hidden')) loadMetrics();
-    }
-
-    function openLeadModal(lead=null) {
-        const modal = document.getElementById('lead-modal');
-        document.getElementById('modal-title').innerText = lead ? 'Edit Lead' : 'Add Lead';
-        if(lead) {
-            document.getElementById('lead-id').value = lead.id;
-            document.getElementById('lead-name').value = lead.name;
-            document.getElementById('lead-email').value = lead.email || '';
-            document.getElementById('lead-phone').value = lead.phone || '';
-            document.getElementById('lead-source').value = lead.source || '';
-            document.getElementById('lead-status').value = lead.status;
-            document.getElementById('lead-deal').value = lead.deal_value || '';
-            document.getElementById('lead-spend').value = lead.ad_spend || '';
-            document.getElementById('lead-acquired').value = lead.acquired_date?.split('T')[0] || '';
-            document.getElementById('lead-converted').value = lead.conversion_date?.split('T')[0] || '';
-            document.getElementById('lead-notes').value = lead.notes || '';
-        } else document.getElementById('lead-form').reset();
-        modal.classList.remove('hidden'); modal.classList.add('flex');
-    }
-
-    async function deleteLead() {
-        if(pendingDeleteId) {
-            await apiCall(`/leads/${pendingDeleteId}`, 'DELETE');
-            loadLeads();
-            showToast('Lead deleted');
-        }
-        closeDeleteModal();
-    }
-    function closeDeleteModal() { document.getElementById('delete-modal').classList.add('hidden'); pendingDeleteId=null; }
-
-    async function loadSourceFilter() {
-        const leads = await apiCall('/leads?limit=1000');
-        const sources = [...new Set(leads.leads.map(l=>l.source).filter(Boolean))];
-        const select = document.getElementById('lead-source-filter');
-        select.innerHTML = '<option value="">All sources</option>' + sources.map(s=>`<option value="${s}">${s}</option>`).join('');
-    }
-
-    // Metrics
-    async function loadMetrics() {
-        const loading = document.getElementById('metrics-loading');
-        const content = document.getElementById('metrics-content');
-        loading.classList.remove('hidden');
-        content.classList.add('hidden');
-        try {
-            const data = await apiCall('/leads/metrics');
-            const m = data.metrics;
-            document.getElementById('metric-total-leads').innerText = m.total_leads;
-            document.getElementById('metric-conversion-rate').innerText = `${m.conversion_rate}%`;
-            document.getElementById('metric-cac').innerText = `₦${m.actual_cac.toLocaleString()}`;
-            document.getElementById('metric-roi').innerText = `${m.roi}%`;
-            document.getElementById('metric-pipeline').innerText = `₦${m.pipeline_value.toLocaleString()}`;
-            document.getElementById('metric-dq').innerText = m.data_quality;
-            document.getElementById('top-sources-list').innerHTML = m.top_sources.map(s => `<div class="flex justify-between border-b py-1"><span>${s.source}</span><span>${s.converted}/${s.total} (${s.conv_rate}%)</span></div>`).join('');
-        } catch(e) { showToast(e.message, 'error'); } finally {
-            loading.classList.add('hidden');
-            content.classList.remove('hidden');
-        }
-    }
-
-    // Chat
-    async function loadChatHistory() {
-        try {
-            const hist = await apiCall('/intelligence/history?limit=20');
-            const container = document.getElementById('chat-messages');
-            container.innerHTML = '';
-            chatHistory = [];
-            for(let h of hist.history.slice().reverse()) {
-                appendMessage('user', h.query);
-                appendMessage('assistant', h.response);
-                chatHistory.push({role:'user', content:h.query}, {role:'assistant', content:h.response});
-            }
-            if(chatHistory.length===0) appendMessage('assistant', 'Hello! Ask me anything about your leads & strategy.');
-        } catch(e) { appendMessage('assistant', 'Welcome! Ask me anything.'); }
-    }
-
-    function appendMessage(role, content) {
-        const div = document.createElement('div');
-        div.className = `p-2 rounded-lg ${role==='user'?'bg-blue-100 text-right ml-8':'bg-gray-100 mr-8'}`;
-        div.innerHTML = `<strong class="text-sm">${role==='user'?'You':'Kevs AI'}</strong><div class="text-sm mt-1">${escapeHtml(content).replace(/\n/g,'<br/>')}</div>`;
-        document.getElementById('chat-messages').appendChild(div);
-        document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;
-    }
-
-    async function sendChat() {
-        const input = document.getElementById('chat-input');
-        const msg = input.value.trim();
-        if(!msg) return;
-        appendMessage('user', msg);
-        input.value = '';
-        const btn = document.getElementById('send-chat');
-        btn.disabled = true;
-        try {
-            const body = {
-                message: msg,
-                history: chatHistory.slice(-10),
-                report_mode: document.getElementById('chat-mode').value,
-                force_pillar: parseInt(document.getElementById('force-pillar').value) || null
-            };
-            const res = await apiCall('/intelligence/chat', 'POST', body);
-            appendMessage('assistant', res.response);
-            if(res.usage) document.getElementById('chat-usage').innerHTML = `📊 Usage: ${res.usage.plan} · ${res.usage.requests_used}/${res.usage.limit} used · ${res.usage.remaining === -1 ? 'unlimited' : res.usage.remaining+' left'}`;
-            chatHistory.push({role:'user', content:msg}, {role:'assistant', content:res.response});
-        } catch(e) { showToast(e.message, 'error'); } finally { btn.disabled = false; }
-    }
-
-    // CAC
-    async function runCac() {
-        const target_cac = parseFloat(document.getElementById('target-cac').value);
-        if(!target_cac) return showToast('Enter target CAC', 'error');
-        const body = {
-            target_cac,
-            target_revenue: parseFloat(document.getElementById('target-rev').value) || null,
-            available_budget: parseFloat(document.getElementById('target-budget').value) || null
-        };
-        const res = await apiCall('/leads/cac-target', 'POST', body);
-        const resultDiv = document.getElementById('cac-result');
-        resultDiv.classList.remove('hidden');
-        resultDiv.innerHTML = `
-            <div class="space-y-3">
-                <div class="bg-white p-3 rounded shadow"><strong>📊 Current CAC:</strong> ₦${res.analysis.current_cac?.toLocaleString()} &nbsp;| <strong>Target:</strong> ₦${res.analysis.target_cac?.toLocaleString()}</div>
-                ${res.analysis.budget_scenario ? `<div class="bg-blue-50 p-3 rounded"><strong>💰 Budget scenario:</strong><br/>Leads to acquire: ${res.analysis.budget_scenario.leads_to_acquire}<br/>Expected conversions: ${res.analysis.budget_scenario.expected_conversions}<br/>Expected revenue: ₦${res.analysis.budget_scenario.expected_revenue?.toLocaleString()}</div>` : ''}
-                ${res.analysis.revenue_scenario ? `<div class="bg-green-50 p-3 rounded"><strong>🎯 Revenue scenario:</strong><br/>Conversions needed: ${res.analysis.revenue_scenario.conversions_needed}<br/>Leads needed: ${res.analysis.revenue_scenario.leads_needed}</div>` : ''}
-                <div class="bg-gray-100 p-3 rounded">${res.advisory}</div>
-            </div>`;
-    }
-
-    // Forecast
-    async function runForecast() {
-        const months = parseInt(document.getElementById('forecast-months').value);
-        const growth = parseFloat(document.getElementById('forecast-growth').value) || null;
-        const addSpend = parseFloat(document.getElementById('forecast-add-spend').value) || null;
-        const loadingDiv = document.getElementById('forecast-loading');
-        const chartCanvas = document.getElementById('forecastChart');
-        const tableDiv = document.getElementById('forecast-table');
-        loadingDiv.classList.remove('hidden');
-        chartCanvas.classList.add('hidden');
-        tableDiv.innerHTML = '';
-        try {
-            const res = await apiCall('/analytics/forecast', 'POST', { months, target_growth_rate: growth, additional_ad_spend: addSpend });
-            const labels = res.forecast.map(f => `M${f.month}`);
-            const revenues = res.forecast.map(f => f.revenue);
-            if(forecastChart) forecastChart.destroy();
-            const ctx = chartCanvas.getContext('2d');
-            forecastChart = new Chart(ctx, { type: 'line', data: { labels, datasets: [{ label: 'Monthly Revenue (₦)', data: revenues, borderColor: '#f97316', fill: false }] } });
-            let html = '<table class="min-w-full text-sm"><thead><tr><th>Month</th><th>Leads</th><th>Conversions</th><th>Revenue</th><th>Cumulative</th></tr></thead><tbody>';
-            res.forecast.forEach(f => { html += `<tr><td>${f.month}</td><td>${f.leads_generated}</td><td>${f.conversions}</td><td>₦${f.revenue.toFixed(0)}</td><td>₦${f.cumulative_revenue.toFixed(0)}</td></tr>`; });
-            html += '</tbody></table>';
-            tableDiv.innerHTML = html;
-            chartCanvas.classList.remove('hidden');
-        } catch(e) { showToast(`Forecast failed: ${e.message}`, 'error'); } finally { loadingDiv.classList.add('hidden'); }
-    }
-
-    // Organisation
-    async function loadMembers() {
-        const res = await apiCall('/org/members');
-        const container = document.getElementById('members-list');
-        container.innerHTML = '';
-        for(let m of res.members) {
-            const div = document.createElement('div');
-            div.className = 'flex justify-between items-center border-b py-2';
-            div.innerHTML = `<span class="text-sm">${m.user_id.slice(0,8)}... (${m.role})</span>`;
-            if(currentRole === 'admin') {
-                const select = document.createElement('select');
-                select.className = 'border rounded text-sm p-1';
-                select.innerHTML = `<option value="analyst" ${m.role==='analyst'?'selected':''}>Analyst</option><option value="viewer" ${m.role==='viewer'?'selected':''}>Viewer</option>`;
-                select.onchange = async (e) => {
-                    await apiCall(`/org/members/${m.user_id}?role=${e.target.value}`, 'PATCH');
-                    showToast(`Role updated to ${e.target.value}`);
-                    loadMembers();
-                };
-                div.appendChild(select);
-            }
-            container.appendChild(div);
-        }
-    }
-
-    async function updateProfile(e) {
-        e.preventDefault();
-        await apiCall('/org/profile', 'PATCH', {
-            org_name: document.getElementById('org-name-field').value,
-            location: document.getElementById('org-location').value,
-            niche: document.getElementById('org-niche').value,
-            budget: parseInt(document.getElementById('org-budget').value) || null
-        });
-        showToast('Profile updated');
-        loadOrgContext();
-    }
-
-    async function inviteMember() {
-        const email = document.getElementById('invite-email').value;
-        if(!email) return;
-        await apiCall('/org/invite', 'POST', { email, role: document.getElementById('invite-role').value });
-        showToast(`Invited ${email}`);
-        loadMembers();
-        document.getElementById('invite-email').value = '';
-    }
-
-    // CSV upload
-    document.getElementById('csv-upload')?.addEventListener('change', async (e) => {
-        if(!e.target.files[0]) return;
-        const formData = new FormData();
-        formData.append('file', e.target.files[0]);
-        const res = await fetch(`${BACKEND_URL}/leads/upload`, { method:'POST', headers:{ 'Authorization': `Bearer ${token}` }, body:formData });
-        if(res.ok) { showToast('CSV uploaded'); loadLeads(); } else showToast('Upload failed', 'error');
-    });
-
-    // Google OAuth
-    document.getElementById('googleLoginBtn')?.addEventListener('click', () => {
-        window.location.href = `${BACKEND_URL}/auth/google`;
-    });
-
-    // Handle OAuth callback
-    const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
-    if(code) {
-        (async () => {
+    // Context Parsing Action Triggers
+    async function triggerQuickAction(actionType) {
+        if (actionType === 'human_escalate') {
+            appendChatNode('customer', 'Requesting emergency human assistance line.');
+            toggleShimmer(true);
             try {
-                const data = await apiCall(`/auth/google/callback?code=${code}`, 'POST');
-                token = data.access_token;
-                localStorage.setItem('access_token', token);
-                await loadOrgContext();
-                showDashboard();
-                window.history.replaceState({}, document.title, window.location.pathname);
-            } catch(e) { showToast('OAuth login failed', 'error'); }
-        })();
-    }
-
-    function escapeHtml(str) { if(!str) return ''; return str.replace(/[&<>]/g, function(m){ if(m==='&') return '&amp;'; if(m==='<') return '&lt;'; if(m==='>') return '&gt;'; return m;}); }
-
-    // Tab switching
-    function switchTab(tabId) {
-        document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
-        document.getElementById(`tab-${tabId}`).classList.remove('hidden');
-        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('tab-active'));
-        document.querySelector(`.tab-btn[data-tab="${tabId}"]`).classList.add('tab-active');
-        if(tabId === 'leads') loadLeads();
-        if(tabId === 'metrics') loadMetrics();
-    }
-
-    // Event listeners
-    document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
-    document.getElementById('add-lead-btn')?.addEventListener('click', () => openLeadModal(null));
-    document.getElementById('refresh-metrics')?.addEventListener('click', loadMetrics);
-    document.getElementById('run-cac')?.addEventListener('click', runCac);
-    document.getElementById('run-forecast')?.addEventListener('click', runForecast);
-    document.getElementById('send-chat')?.addEventListener('click', sendChat);
-    document.getElementById('clear-chat')?.addEventListener('click', () => { document.getElementById('chat-messages').innerHTML = ''; chatHistory = []; appendMessage('assistant', 'Chat cleared. Ask me anything!'); });
-    document.getElementById('chat-input')?.addEventListener('keypress', (e) => { if(e.key === 'Enter') sendChat(); });
-    document.getElementById('org-profile-form')?.addEventListener('submit', updateProfile);
-    document.getElementById('invite-btn')?.addEventListener('click', inviteMember);
-    document.getElementById('logoutBtn')?.addEventListener('click', logout);
-    document.getElementById('confirm-delete')?.addEventListener('click', deleteLead);
-    document.getElementById('cancel-delete')?.addEventListener('click', closeDeleteModal);
-    document.getElementById('prev-page')?.addEventListener('click', () => { if(leadsPage>0){ leadsPage--; loadLeads(); } });
-    document.getElementById('next-page')?.addEventListener('click', () => { leadsPage++; loadLeads(); });
-    document.getElementById('lead-status-filter')?.addEventListener('change', () => { leadsPage=0; loadLeads(); });
-    document.getElementById('lead-source-filter')?.addEventListener('change', () => { leadsPage=0; loadLeads(); });
-    document.getElementById('close-modal')?.addEventListener('click', () => document.getElementById('lead-modal').classList.add('hidden'));
-    document.getElementById('lead-form')?.addEventListener('submit', (e) => { e.preventDefault(); saveLead(); });
-
-    // Auth UI
-    document.getElementById('doLoginBtn').onclick = async () => { await login(document.getElementById('loginEmail').value, document.getElementById('loginPassword').value); };
-    document.getElementById('doSignupBtn').onclick = async () => {
-        const orgData = {
-            org_name: document.getElementById('signupOrgName').value,
-            location: document.getElementById('signupLocation').value,
-            niche: document.getElementById('signupNiche').value,
-            budget: parseInt(document.getElementById('signupBudget').value),
-            email: document.getElementById('signupEmail').value,
-            password: document.getElementById('signupPassword').value
-        };
-        if(!orgData.org_name || !orgData.location || !orgData.niche || !orgData.budget || !orgData.email || !orgData.password) {
-            showToast('All fields required', 'error');
+                const res = await fetch(`${BACKEND_URL}/support/escalate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: currentSessionId, phone: authenticatedUserPhone, reason: 'Manual widget request' })
+                });
+                const data = await res.json();
+                
+                // Swap Interface Visual Layout Elements to Active Human Routing State
+                document.getElementById('bot-icon').className = 'fa-solid fa-headset text-purple-400 text-lg transition-all';
+                document.getElementById('concierge-title').innerText = 'Support Agent Live';
+                document.getElementById('concierge-status').innerHTML = '<span class="inline-block w-1.5 h-1.5 bg-purple-400 rounded-full"></span> Ticket Routing Active';
+                
+                appendChatNode('assistant', `Your emergency help desk ticket has been logged (${data.ticket_id || 'Pending'}). A live specialist is joining this workspace session.`);
+            } catch (err) {
+                appendChatNode('assistant', 'Routing failed. Please enter your explicit contact phone number below.');
+            } finally {
+                toggleShimmer(false);
+            }
             return;
         }
-        await registerOrg(orgData);
-    };
-    document.getElementById('forgotPasswordLink').onclick = async (e) => { e.preventDefault(); const email = document.getElementById('loginEmail').value; if(!email) { showToast('Enter email first', 'error'); return; } await resetPassword(email); };
-    document.getElementById('showSignupLink').onclick = () => {
-        const showing = document.getElementById('signupForm').style.display !== 'block';
-        document.getElementById('loginForm').style.display = showing ? 'none' : 'block';
-        document.getElementById('signupForm').style.display = showing ? 'block' : 'none';
-        document.getElementById('modalTitle').innerText = showing ? 'Create Account' : 'Login';
-        document.getElementById('showSignupLink').innerText = showing ? '← Back to Login' : "Don't have an account? Sign up";
-    };
-    document.getElementById('modalClose').onclick = () => { if(!token) document.getElementById('authModal').style.display = 'none'; };
-    document.getElementById('showPasswordLogin').onchange = function() { document.getElementById('loginPassword').type = this.checked ? 'text' : 'password'; };
-    document.getElementById('showPasswordSignup').onchange = function() { document.getElementById('signupPassword').type = this.checked ? 'text' : 'password'; };
 
-    // Initial load
-    (async () => {
-        if(localStorage.getItem('access_token')) {
-            try { await loadOrgContext(); showDashboard(); } catch(e) { document.getElementById('authModal').style.display = 'flex'; }
-        } else { document.getElementById('authModal').style.display = 'flex'; }
-    })();
+        if (actionType === 'check_points') {
+            if (!authenticatedUserPhone) {
+                appendChatNode('assistant', 'Please input your mobile phone number in the entry bar below to authenticate your Penafort Value Rewards profile.');
+                return;
+            }
+            fetchLoyaltyContext(authenticatedUserPhone);
+        }
+        
+        if (actionType === 'product_catalog') {
+            appendChatNode('customer', 'Requesting warehouse price ledger catalog summaries.');
+            toggleShimmer(true);
+            try {
+                const res = await fetch(`${BACKEND_URL}/inventory/public-list`);
+                const items = await res.get();
+                let productListText = "Current Available Stock Items:<br>";
+                items.slice(0, 3).forEach(i => {
+                    productListText += `• <b>${i.description}</b> - ₦${Number(i.price_naira).toLocaleString()} (${i.current_qty} units left)<br>`;
+                });
+                appendChatNode('assistant', productListText);
+            } catch {
+                appendChatNode('assistant', 'Unable to stream live inventory metrics. Core database offline or processing sync.');
+            } finally {
+                toggleShimmer(false);
+            }
+        }
+    }
+
+    // Relational Lookup: Fetch Loyalty Metadata from Database
+    async function fetchLoyaltyContext(phoneNumber) {
+        toggleShimmer(true);
+        try {
+            const res = await fetch(`${BACKEND_URL}/loyalty/lookup?phone=${phoneNumber}`);
+            if(!res.ok) throw new Error();
+            const data = await res.json();
+            
+            authenticatedUserPhone = phoneNumber;
+            
+            // Render the hidden embedded rewards module card
+            document.getElementById('loyalty-banner').classList.remove('hidden');
+            document.getElementById('loyalty-tier-name').innerText = `${data.first_name || 'Member'} | Tier ${data.tier || 'One'}`;
+            document.getElementById('loyalty-points-count').innerText = `${Math.round(data.current_points || 0)} pts`;
+            
+            appendChatNode('assistant', `Welcome back, ${data.first_name}! Access granted to Penafort Value Rewards account #${data.membership_id}. You have ${data.available_points} points available.`);
+        } catch {
+            appendChatNode('assistant', 'Phone lookup completed. No profile matches found inside this organization instance.');
+        } finally {
+            toggleShimmer(false);
+        }
+    }
+
+    // Intercept Input Submissions
+    document.getElementById('chat-entry-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const inputElement = document.getElementById('customer-message-input');
+        const rawMessage = inputElement.value.trim();
+        if (!rawMessage) return;
+
+        appendChatNode('customer', rawMessage);
+        inputElement.value = '';
+
+        // Strategic Parsing Input Shortcut: Detect Pure Numeric Entries for Fast Phone Relational Sync
+        if (/^\d{7,15}$/.test(rawMessage)) {
+            await fetchLoyaltyContext(rawMessage);
+            return;
+        }
+
+        // Run Semantic Vector Similarity RAG Request over `chat_messages` / `support_faqs`
+        toggleShimmer(true);
+        try {
+            const res = await fetch(`${BACKEND_URL}/support/chat-stream`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    session_id: currentSessionId,
+                    message: rawMessage,
+                    user_id: authenticatedUserPhone || 'anonymous-web-user'
+                })
+            });
+            const data = await res.json();
+            appendChatNode('assistant', data.response || "Context parsed. Processing support ticketing logs.");
+        } catch (err) {
+            appendChatNode('assistant', "Network connection timed out. Recording message array to `api_logs` standard failover.");
+        } finally {
+            toggleShimmer(false);
+        }
+    });
+
+    // Reset Chat State Machine Button
+    document.getElementById('clear-widget-session').addEventListener('click', () => {
+        document.getElementById('dynamic-chat-nodes').innerHTML = '';
+        document.getElementById('loyalty-banner').classList.add('hidden');
+        document.getElementById('bot-icon').className = 'fa-solid fa-robot text-emerald-400 text-lg transition-all';
+        document.getElementById('concierge-title').innerText = 'Penafort Core AI';
+        document.getElementById('concierge-status').innerHTML = '<span class="inline-block w-1.5 h-1.5 bg-emerald-400 rounded-full"></span> System Autonomous';
+        currentSessionId = crypto.randomUUID();
+        authenticatedUserPhone = null;
+    });
 </script>
-<!-- Font Awesome for icons -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/js/all.min.js"></script>
 </body>
 </html>
