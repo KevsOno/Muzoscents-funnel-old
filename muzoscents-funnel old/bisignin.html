@@ -49,20 +49,18 @@
     </form>
 
     <form id="register-form" class="hidden">
-        <input type="text" id="reg-org-name" placeholder="Organisation Name" class="w-full mb-2 p-3 border rounded-lg" required>
-        <input type="text" id="reg-location" placeholder="Location (e.g., Lagos)" class="w-full mb-2 p-3 border rounded-lg" required>
-        <input type="text" id="reg-niche" placeholder="Niche" class="w-full mb-2 p-3 border rounded-lg" required>
-        <input type="number" id="reg-budget" placeholder="Monthly Budget (₦)" class="w-full mb-2 p-3 border rounded-lg" required>
+        <input type="text" id="reg-invite-code" placeholder="Invite Code (e.g. KD001)" class="w-full mb-2 p-3 border rounded-lg" required>
+        <div id="org-name-preview" class="text-xs text-gray-500 mb-2 hidden">Organisation: <span id="preview-org-name"></span></div>
         <input type="email" id="reg-email" placeholder="Email" class="w-full mb-2 p-3 border rounded-lg" required>
         <input type="password" id="reg-password" placeholder="Password" class="w-full mb-4 p-3 border rounded-lg" required>
-        <button type="submit" class="w-full bg-green-600 text-white py-2.5 rounded-lg hover:bg-green-700 transition duration-200">Register Organisation</button>
+        <button type="submit" class="w-full bg-green-600 text-white py-2.5 rounded-lg hover:bg-green-700 transition duration-200">Register</button>
     </form>
 
     <div id="auth-message" class="text-xs text-center mt-4 text-red-500 hidden"></div>
 </div>
 
 <script>
-    const BACKEND_URL = 'https://kevsono-kevs-digital-business-intelligencev2.hf.space';
+    const BACKEND_URL = 'https://kevsono-penafort-concierge.hf.space';
     const DASHBOARD_URL = '/bizintel';
 
     function showToast(msg, type='success') {
@@ -89,9 +87,13 @@
         setTimeout(() => { window.location.href = DASHBOARD_URL; }, 1000);
     }
 
-    async function registerOrg(data) {
-        await apiCall('/auth/register', 'POST', data);
-        showToast('Registration successful! Please verify email (if required) and then login.');
+    async function registerUser(inviteCode, email, password) {
+        const data = await apiCall('/auth/register', 'POST', {
+            invite_code: inviteCode,
+            email: email,
+            password: password
+        });
+        showToast('Registration successful! Please verify email and then login.');
         document.getElementById('login-tab').click();
     }
 
@@ -100,40 +102,51 @@
         showToast('Password reset email sent. Check your inbox.');
     }
 
-    // ========== ONE-CLICK DEMO AUTH HANDLER ==========
+    // Preview organisation name when user types invite code
+    let previewTimeout;
+    document.getElementById('reg-invite-code')?.addEventListener('input', async (e) => {
+        const code = e.target.value.trim();
+        const previewDiv = document.getElementById('org-name-preview');
+        const previewSpan = document.getElementById('preview-org-name');
+        if (code.length >= 3) {
+            clearTimeout(previewTimeout);
+            previewTimeout = setTimeout(async () => {
+                try {
+                    const data = await apiCall(`/public/org-info?invite_code=${code}`);
+                    previewSpan.innerText = data.org_name;
+                    previewDiv.classList.remove('hidden');
+                } catch (err) {
+                    previewDiv.classList.add('hidden');
+                }
+            }, 500);
+        } else {
+            previewDiv.classList.add('hidden');
+        }
+    });
+
+    // Demo login handler
     document.getElementById('demo-login-btn')?.addEventListener('click', async () => {
         const demoBtn = document.getElementById('demo-login-btn');
         const originalContent = demoBtn.innerHTML;
-        
-        // Immediate visual loading indication
         demoBtn.innerHTML = `<i class="fa-solid fa-circle-notch animate-spin"></i> Authenticating Sandbox...`;
         demoBtn.disabled = true;
         demoBtn.classList.add('opacity-75', 'cursor-not-allowed');
-
         try {
             const data = await apiCall('/auth/login', 'POST', {
                 email: 'demo@kevsdigital.com',
                 password: 'KevsDemo2026!'
             });
-
             localStorage.setItem('access_token', data.access_token);
             localStorage.setItem('user_id', data.user_id);
-            
             showToast('Sandbox authenticated. Launching dashboard...');
-            
-            setTimeout(() => { 
-                window.location.href = DASHBOARD_URL; 
-            }, 1000);
-
+            setTimeout(() => { window.location.href = DASHBOARD_URL; }, 1000);
         } catch (err) {
             showToast('Demo access failed: ' + err.message, 'error');
-            // Revert state machines on connection error
             demoBtn.innerHTML = originalContent;
             demoBtn.disabled = false;
             demoBtn.classList.remove('opacity-75', 'cursor-not-allowed');
         }
     });
-    // ===================================================
 
     document.getElementById('login-form')?.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -144,15 +157,10 @@
 
     document.getElementById('register-form')?.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const orgData = {
-            org_name: document.getElementById('reg-org-name').value,
-            location: document.getElementById('reg-location').value,
-            niche: document.getElementById('reg-niche').value,
-            budget: parseInt(document.getElementById('reg-budget').value),
-            email: document.getElementById('reg-email').value,
-            password: document.getElementById('reg-password').value
-        };
-        try { await registerOrg(orgData); } catch(err) { showToast(err.message, 'error'); }
+        const inviteCode = document.getElementById('reg-invite-code').value.trim();
+        const email = document.getElementById('reg-email').value;
+        const password = document.getElementById('reg-password').value;
+        try { await registerUser(inviteCode, email, password); } catch(err) { showToast(err.message, 'error'); }
     });
 
     document.getElementById('forgot-pwd-btn')?.addEventListener('click', async () => {
