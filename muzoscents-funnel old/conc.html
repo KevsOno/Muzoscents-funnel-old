@@ -57,23 +57,18 @@
 
     <!-- Main content area (visible after login) -->
     <div id="main-area" class="flex-1 flex flex-col hidden overflow-hidden">
-        <!-- Scrollable content area where dynamic panels appear -->
         <div id="dynamic-panel" class="flex-1 overflow-y-auto p-4 space-y-4">
-            <!-- Chat messages appear here when on Chat tab -->
             <div id="chat-container" class="space-y-4"></div>
-            <!-- Other panels (loyalty, catalog, tickets) will replace content -->
         </div>
-        <!-- Input bar (only for chat) -->
         <div id="input-bar" class="bg-white border-t p-3 shrink-0 hidden">
             <form id="chat-form" class="flex gap-2">
-                <input id="chat-input" class="flex-1 border rounded-xl px-3 py-2 text-sm" placeholder="Ask a question or enter phone...">
+                <input id="chat-input" class="flex-1 border rounded-xl px-3 py-2 text-sm" placeholder="Ask a question...">
                 <button type="submit" class="bg-[#1E3A5F] text-white px-4 py-2 rounded-xl"><i class="fa-regular fa-paper-plane"></i></button>
             </form>
             <button id="reset-chat" class="text-[10px] text-slate-400 mt-2 w-full text-center">Reset Chat</button>
         </div>
     </div>
 
-    <!-- Debug panel -->
     <div class="debug-panel shrink-0">
         <div class="text-white text-xs mb-1">🔍 DEBUG</div>
         <div id="debug"></div>
@@ -84,6 +79,7 @@
     const BACKEND = 'https://kevsono-penafort-concierge.hf.space';
     let sessionId = crypto.randomUUID();
     let currentTab = 'chat';
+    let userProfile = null;
 
     function log(endpoint, method, status, data, err) {
         const div = document.getElementById('debug');
@@ -120,8 +116,28 @@
         }
     }
 
+    async function loadUserProfile(userId) {
+        try {
+            const data = await call(`/support/customer-context?user_id=${userId}`);
+            if (data.profile) {
+                userProfile = data.profile;
+                // Show loyalty banner
+                const points = data.loyalty?.current_points ?? data.profile.current_points ?? 0;
+                const tier = data.loyalty?.tier ?? data.profile.tier ?? 'Standard';
+                document.getElementById('loyalty-banner').classList.remove('hidden');
+                document.getElementById('loyalty-name').innerHTML = `${data.profile.first_name} | ${tier}`;
+                document.getElementById('loyalty-points').innerHTML = `${Math.round(points)} pts`;
+                return data.profile;
+            }
+        } catch (err) {
+            log('/support/customer-context', 'GET', null, null, err.message);
+        }
+        return null;
+    }
+
     function addChatMessage(role, text) {
         const container = document.getElementById('chat-container');
+        if (!container) return;
         const div = document.createElement('div');
         div.className = `flex gap-2 fade-in ${role === 'user' ? 'justify-end' : ''}`;
         div.innerHTML = `
@@ -130,34 +146,17 @@
             ${role === 'user' ? '<div class="w-8 h-8 bg-emerald-600 rounded-full flex items-center justify-center text-white text-xs shrink-0">Me</div>' : ''}
         `;
         container.appendChild(div);
-        document.getElementById('dynamic-panel').scrollTop = document.getElementById('dynamic-panel').scrollHeight;
+        const panel = document.getElementById('dynamic-panel');
+        if (panel) panel.scrollTop = panel.scrollHeight;
     }
 
     async function sendChatMessage(msg) {
         addChatMessage('user', msg);
-        if (/^\d{7,15}$/.test(msg)) {
-            await fetchLoyalty(msg);
-            return;
-        }
         try {
             const data = await call('/support/chat-stream', 'POST', { session_id: sessionId, message: msg });
             addChatMessage('assistant', data.response || 'No response');
         } catch (err) {
             addChatMessage('assistant', `❌ Error: ${err.message}`);
-        }
-    }
-
-    async function fetchLoyalty(phone) {
-        try {
-            const data = await call(`/loyalty/lookup?phone=${phone}`);
-            document.getElementById('loyalty-banner').classList.remove('hidden');
-            document.getElementById('loyalty-name').innerHTML = `${data.first_name} | ${data.tier}`;
-            document.getElementById('loyalty-points').innerHTML = `${Math.round(data.current_points)} pts`;
-            addChatMessage('assistant', `🏆 Welcome ${data.first_name}! Points: ${data.current_points}, Tier: ${data.tier}`);
-            // Also show in loyalty panel if active
-            if (currentTab === 'loyalty') showLoyaltyPanel(phone);
-        } catch (err) {
-            addChatMessage('assistant', `❌ Loyalty lookup failed: ${err.message}`);
         }
     }
 
@@ -253,18 +252,34 @@
         const inputBar = document.getElementById('input-bar');
         if (tab === 'chat') {
             inputBar.classList.remove('hidden');
-            panel.innerHTML = '<div id="chat-container" class="space-y-4"></div>';
-            // restore chat history
-            if (window.chatHistory) {
-                document.getElementById('chat-container').innerHTML = window.chatHistory;
+            if (!document.getElementById('chat-container')) {
+                panel.innerHTML = '<div id="chat-container" class="space-y-4"></div>';
+                if (userProfile) {
+                    addChatMessage('assistant', `Welcome back, ${userProfile.first_name}! How can I help you today?`);
+                } else {
+                    addChatMessage('assistant', 'Chat ready. Ask me anything.');
+                }
             } else {
-                addChatMessage('assistant', 'Chat ready. Ask me anything or enter a phone number for loyalty.');
+                // restore existing messages
+                const oldContainer = document.getElementById('chat-container');
+                if (oldContainer && oldContainer.children.length) {
+                    panel.innerHTML = '<div id="chat-container" class="space-y-4"></div>';
+                    const newContainer = document.getElementById('chat-container');
+                    while (oldContainer.firstChild) newContainer.appendChild(oldContainer.firstChild);
+                } else if (userProfile) {
+                    panel.innerHTML = '<div id="chat-container" class="space-y-4"></div>';
+                    addChatMessage('assistant', `Welcome back, ${userProfile.first_name}! How can I help you today?`);
+                } else {
+                    panel.innerHTML = '<div id="chat-container" class="space-y-4"></div>';
+                    addChatMessage('assistant', 'Chat ready. Ask me anything.');
+                }
             }
         } else {
             inputBar.classList.add('hidden');
             if (tab === 'loyalty') {
-                const phone = prompt('Enter phone number for loyalty lookup:', '07012345678');
+                const phone = prompt('Enter phone number for loyalty lookup:', userProfile?.phone || '07012345678');
                 if (phone) showLoyaltyPanel(phone);
+                else if (userProfile?.phone) showLoyaltyPanel(userProfile.phone);
                 else showLoyaltyPanel('07012345678');
             } else if (tab === 'catalog') showCatalogPanel();
             else if (tab === 'tickets') showTicketsPanel();
@@ -274,10 +289,13 @@
     async function init() {
         const valid = await validateToken();
         if (valid) {
+            const userId = localStorage.getItem('user_id');
+            if (userId) {
+                await loadUserProfile(userId);
+            }
             document.getElementById('login-area').classList.add('hidden');
             document.getElementById('main-area').classList.remove('hidden');
-            document.getElementById('auth-status').innerHTML = '✅ Authenticated';
-            // start with chat tab
+            document.getElementById('auth-status').innerHTML = `✅ Welcome, ${userProfile?.first_name || 'User'}`;
             switchTab('chat');
         } else {
             document.getElementById('login-area').classList.remove('hidden');
@@ -316,12 +334,6 @@
         el.addEventListener('click', () => switchTab(el.dataset.tab));
     });
 
-    // Store chat history for persistence when switching tabs (simple)
-    window.saveChatHistory = () => {
-        const container = document.getElementById('chat-container');
-        if (container) window.chatHistory = container.innerHTML;
-    };
-    setInterval(window.saveChatHistory, 500);
     init();
 </script>
 </body>
