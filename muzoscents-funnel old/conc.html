@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kevs Digital Customer Concierge (Debug)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root { --brand-blue: #1E3A5F; --brand-emerald: #059669; --brand-cream: #F8FAFC; }
+        body { background-color: #0F172A; font-family: system-ui, -apple-system, sans-serif; }
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 10px; }
+        .shimmer {
+            background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+        }
+        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+        .debug-panel {
+            background: #1e1e2f;
+            color: #00ffcc;
+            font-family: monospace;
+            font-size: 11px;
+            border-top: 2px solid #ff6600;
+            max-height: 150px;
+            overflow-y: auto;
+            padding: 8px;
+        }
+        .debug-log {
+            border-bottom: 1px solid #333;
+            margin-bottom: 4px;
+            padding-bottom: 4px;
+        }
+    </style>
+</head>
+<body class="antialiased min-h-screen flex items-center justify-end p-6">
+
+<div id="concierge-widget" class="w-full max-w-md bg-slate-50 h-[700px] rounded-3xl shadow-2xl border border-slate-200/80 flex flex-col overflow-hidden">
+    
+    <div class="bg-[#1E3A5F] p-5 text-white shadow-md relative shrink-0">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="relative">
+                    <div class="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center border border-white/20">
+                        <i id="bot-icon" class="fa-solid fa-robot text-emerald-400 text-lg transition-all"></i>
+                    </div>
+                    <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-[#1E3A5F] rounded-full animate-pulse"></span>
+                </div>
+                <div>
+                    <h3 id="concierge-title" class="font-semibold text-sm tracking-wide">Kevs Digital (Debug Mode)</h3>
+                    <p id="concierge-status" class="text-xs text-slate-300 flex items-center gap-1.5">
+                        <span class="inline-block w-1.5 h-1.5 bg-emerald-400 rounded-full"></span> System Autonomous
+                    </p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="minimize-widget" class="w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center transition text-slate-300 hover:text-white">
+                    <i class="fa-solid fa-minus"></i>
+                </button>
+            </div>
+        </div>
+        <div id="loyalty-banner" class="mt-4 bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/10 flex items-center justify-between hidden">
+            <div class="flex items-center gap-2.5">
+                <i class="fa-solid fa-crown text-amber-400 text-sm"></i>
+                <div>
+                    <p class="text-[10px] uppercase tracking-wider text-slate-300 font-medium">Value Rewards Tier</p>
+                    <p id="loyalty-tier-name" class="text-xs font-bold text-white">Loading...</p>
+                </div>
+            </div>
+            <div class="text-right">
+                <span id="loyalty-points-count" class="bg-amber-400/20 text-amber-300 text-xs font-bold px-2.5 py-1 rounded-full">0 pts</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="chat-scroller" class="flex-1 p-4 overflow-y-auto space-y-4 custom-scrollbar bg-slate-50">
+        <div class="flex gap-3 max-w-[85%]">
+            <div class="w-7 h-7 bg-[#1E3A5F] rounded-lg shrink-0 flex items-center justify-center text-white text-xs">
+                <i class="fa-solid fa-robot"></i>
+            </div>
+            <div>
+                <div class="bg-white px-4 py-2.5 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 text-sm text-slate-700 leading-relaxed">
+                    Hello! Debug mode active. Check the bottom panel for API logs.
+                </div>
+            </div>
+        </div>
+        <div id="quick-portal" class="grid grid-cols-2 gap-2 pt-2">
+            <button onclick="triggerQuickAction('check_points')" class="p-3 bg-white hover:bg-slate-100 border rounded-xl text-left transition shadow-sm">
+                <i class="fa-solid fa-award text-amber-500 mb-2 block text-sm"></i>
+                <span class="text-xs font-medium">Loyalty Balance</span>
+            </button>
+            <button onclick="triggerQuickAction('product_catalog')" class="p-3 bg-white hover:bg-slate-100 border rounded-xl text-left transition shadow-sm">
+                <i class="fa-solid fa-tags text-emerald-500 mb-2 block text-sm"></i>
+                <span class="text-xs font-medium">Browse Catalog</span>
+            </button>
+            <button onclick="triggerQuickAction('human_escalate')" class="p-3 bg-white hover:bg-slate-100 border rounded-xl text-left transition shadow-sm">
+                <i class="fa-solid fa-headset text-purple-500 mb-2 block text-sm"></i>
+                <span class="text-xs font-medium">Talk to Human</span>
+            </button>
+        </div>
+        <div id="dynamic-chat-nodes" class="space-y-4"></div>
+    </div>
+
+    <div id="vector-shimmer" class="p-4 bg-white border-t border-slate-200/60 flex items-center gap-3 hidden">
+        <div class="w-6 h-6 rounded-full shimmer shrink-0"></div>
+        <div class="flex-1 space-y-2">
+            <div class="h-3 shimmer rounded w-3/4"></div>
+            <div class="h-2.5 shimmer rounded w-1/2"></div>
+        </div>
+    </div>
+
+    <div class="p-4 bg-white border-t border-slate-200 shrink-0">
+        <form id="chat-entry-form" class="flex items-center gap-2">
+            <input type="text" id="customer-message-input" placeholder="Ask or enter phone..." class="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm" autocomplete="off" required>
+            <button type="submit" class="w-10 bg-[#1E3A5F] hover:bg-blue-900 text-white h-10 rounded-xl flex items-center justify-center shadow-md">
+                <i class="fa-solid fa-paper-plane text-xs"></i>
+            </button>
+        </form>
+        <button id="clear-widget-session" class="text-[10px] text-slate-400 hover:text-red-500 mt-2 block text-center w-full">Reset Chat</button>
+    </div>
+
+    <!-- Debug Panel -->
+    <div class="debug-panel" id="debug-panel">
+        <div class="text-xs text-white mb-1">🔍 API DEBUG LOGS</div>
+        <div id="debug-logs"></div>
+    </div>
+</div>
+
+<script>
+    const BACKEND_URL = 'https://kevsono-penafort-concierge.hf.space';
+    let currentSessionId = crypto.randomUUID();
+    let authenticatedUserPhone = null;
+
+    function addDebugLog(endpoint, method, status, responseText, error=null) {
+        const logsDiv = document.getElementById('debug-logs');
+        const entry = document.createElement('div');
+        entry.className = 'debug-log text-xs';
+        const timestamp = new Date().toLocaleTimeString();
+        let color = status >= 200 && status < 300 ? '#00cc88' : (status ? '#ff8888' : '#ffaa44');
+        let statusText = status ? status : 'NETWORK ERROR';
+        entry.innerHTML = `<span style="color:#aaa">[${timestamp}]</span> <span style="color:${color}">${method} ${endpoint}</span> → ${statusText}<br>${error ? `❌ ${error}` : `📦 ${responseText?.substring(0, 200) || '(empty)'}`}`;
+        logsDiv.appendChild(entry);
+        logsDiv.scrollTop = logsDiv.scrollHeight;
+        console.log(`[DEBUG] ${method} ${endpoint}`, status, responseText, error);
+    }
+
+    async function apiCall(endpoint, method='GET', body=null, auth=true) {
+        const url = `${BACKEND_URL}${endpoint}`;
+        const headers = { 'Content-Type': 'application/json' };
+        if (auth) {
+            const token = localStorage.getItem('access_token');
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+        }
+        try {
+            const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
+            let responseData;
+            const contentType = res.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+                responseData = await res.json();
+            } else {
+                responseData = { raw: await res.text() };
+            }
+            addDebugLog(endpoint, method, res.status, JSON.stringify(responseData).substring(0, 300));
+            if (!res.ok) throw new Error(`HTTP ${res.status}: ${JSON.stringify(responseData)}`);
+            return responseData;
+        } catch (err) {
+            addDebugLog(endpoint, method, null, null, err.message);
+            throw err;
+        }
+    }
+
+    function appendChatNode(sender, text) {
+        const targetContainer = document.getElementById('dynamic-chat-nodes');
+        const wrappingNode = document.createElement('div');
+        wrappingNode.className = `flex gap-3 max-w-[85%] ${sender === 'customer' ? 'ml-auto justify-end' : ''}`;
+        const botAvatar = `<div class="w-7 h-7 bg-[#1E3A5F] rounded-lg shrink-0 flex items-center justify-center text-white text-xs"><i class="fa-solid fa-robot"></i></div>`;
+        const customerAvatar = `<div class="w-7 h-7 bg-emerald-600 rounded-lg shrink-0 flex items-center justify-center text-white text-xs"><i class="fa-solid fa-user"></i></div>`;
+        wrappingNode.innerHTML = `
+            ${sender !== 'customer' ? botAvatar : ''}
+            <div>
+                <div class="${sender === 'customer' ? 'bg-[#1E3A5F] text-white rounded-tr-none' : 'bg-white text-slate-700 border border-slate-100'} px-4 py-2.5 rounded-2xl shadow-sm text-sm leading-relaxed">
+                    ${text}
+                </div>
+                <span class="text-[10px] text-slate-400 mt-1 block px-1 text-${sender === 'customer' ? 'right' : 'left'}">Just now</span>
+            </div>
+            ${sender === 'customer' ? customerAvatar : ''}
+        `;
+        targetContainer.appendChild(wrappingNode);
+        const scroller = document.getElementById('chat-scroller');
+        scroller.scrollTop = scroller.scrollHeight;
+    }
+
+    function toggleShimmer(show) {
+        const shimmerNode = document.getElementById('vector-shimmer');
+        if (show) shimmerNode.classList.remove('hidden');
+        else shimmerNode.classList.add('hidden');
+    }
+
+    async function triggerQuickAction(actionType) {
+        if (actionType === 'human_escalate') {
+            appendChatNode('customer', 'Requesting human assistance...');
+            toggleShimmer(true);
+            try {
+                const data = await apiCall('/support/escalate', 'POST', { session_id: currentSessionId, phone: authenticatedUserPhone, reason: 'Manual widget request' });
+                appendChatNode('assistant', `✅ Escalation ticket created: ${data.ticket_id}`);
+            } catch (err) {
+                appendChatNode('assistant', `❌ Escalation failed: ${err.message}`);
+            } finally {
+                toggleShimmer(false);
+            }
+            return;
+        }
+        if (actionType === 'check_points') {
+            if (!authenticatedUserPhone) {
+                appendChatNode('assistant', 'Please enter your phone number first (e.g., 07012345678)');
+                return;
+            }
+            await fetchLoyaltyContext(authenticatedUserPhone);
+        }
+        if (actionType === 'product_catalog') {
+            appendChatNode('customer', 'Fetching product catalog...');
+            toggleShimmer(true);
+            try {
+                const items = await apiCall('/inventory/public-list', 'GET', null, true);
+                let productListText = "Current Stock:<br>";
+                items.forEach(i => {
+                    productListText += `• ${i.description} - ₦${Number(i.price_naira).toLocaleString()} (${i.current_qty} left)<br>`;
+                });
+                appendChatNode('assistant', productListText || "No products found");
+            } catch (err) {
+                appendChatNode('assistant', `❌ Catalog error: ${err.message}`);
+            } finally {
+                toggleShimmer(false);
+            }
+        }
+    }
+
+    async function fetchLoyaltyContext(phoneNumber) {
+        toggleShimmer(true);
+        try {
+            const data = await apiCall(`/loyalty/lookup?phone=${phoneNumber}`, 'GET', null, true);
+            authenticatedUserPhone = phoneNumber;
+            document.getElementById('loyalty-banner').classList.remove('hidden');
+            document.getElementById('loyalty-tier-name').innerText = `${data.first_name} | Tier ${data.tier}`;
+            document.getElementById('loyalty-points-count').innerText = `${Math.round(data.current_points)} pts`;
+            appendChatNode('assistant', `Welcome back ${data.first_name}! Points: ${data.current_points}, Tier: ${data.tier}`);
+        } catch (err) {
+            appendChatNode('assistant', `❌ Loyalty lookup failed: ${err.message}`);
+        } finally {
+            toggleShimmer(false);
+        }
+    }
+
+    document.getElementById('chat-entry-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const input = document.getElementById('customer-message-input');
+        const rawMessage = input.value.trim();
+        if (!rawMessage) return;
+        appendChatNode('customer', rawMessage);
+        input.value = '';
+        if (/^\d{7,15}$/.test(rawMessage)) {
+            await fetchLoyaltyContext(rawMessage);
+            return;
+        }
+        toggleShimmer(true);
+        try {
+            const data = await apiCall('/support/chat-stream', 'POST', { session_id: currentSessionId, message: rawMessage }, true);
+            appendChatNode('assistant', data.response || "No response from AI");
+        } catch (err) {
+            appendChatNode('assistant', `❌ Chat error: ${err.message}`);
+        } finally {
+            toggleShimmer(false);
+        }
+    });
+
+    document.getElementById('clear-widget-session').addEventListener('click', () => {
+        document.getElementById('dynamic-chat-nodes').innerHTML = '';
+        document.getElementById('loyalty-banner').classList.add('hidden');
+        currentSessionId = crypto.randomUUID();
+        authenticatedUserPhone = null;
+        appendChatNode('assistant', 'Session reset. You can start over.');
+    });
+
+    // On load, show token status
+    window.addEventListener('load', () => {
+        const token = localStorage.getItem('access_token');
+        if (token) {
+            appendChatNode('assistant', `🔐 Authenticated. Token present.`);
+        } else {
+            appendChatNode('assistant', `⚠️ No authentication token. Please login first via the BI login page.`);
+        }
+        appendChatNode('assistant', `Backend URL: ${BACKEND_URL}`);
+    });
+</script>
+</body>
+</html>
