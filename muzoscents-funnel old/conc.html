@@ -15,10 +15,35 @@
         .message-bubble { max-width: 85%; }
         .fade-in { animation: fadeIn 0.2s ease-in; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        /* Typing indicator (three dots) */
+        .typing-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: #e5e7eb;
+            padding: 10px 16px;
+            border-radius: 20px;
+            border-top-left-radius: 4px;
+        }
+        .typing-indicator span {
+            width: 8px;
+            height: 8px;
+            background: #6b7280;
+            border-radius: 50%;
+            display: inline-block;
+            animation: typing 1.4s infinite ease-in-out both;
+        }
+        .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+        .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes typing {
+            0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
+            40% { transform: scale(1.2); opacity: 1; }
+        }
     </style>
 </head>
 <body class="min-h-screen flex items-center justify-end p-6">
 <div id="widget" class="w-full max-w-md bg-slate-50 h-[750px] rounded-3xl shadow-2xl flex flex-col overflow-hidden">
+    <!-- Header -->
     <div class="bg-[#1E3A5F] text-white p-4 shrink-0">
         <div class="flex justify-between items-center">
             <div>
@@ -32,6 +57,7 @@
         </div>
     </div>
 
+    <!-- Tabs -->
     <div class="bg-white border-b border-slate-200 px-3 py-2 flex gap-2 overflow-x-auto shrink-0">
         <div data-tab="chat" class="nav-tab active"><i class="fa-regular fa-comment mr-1"></i> Chat</div>
         <div data-tab="loyalty" class="nav-tab"><i class="fa-solid fa-award mr-1"></i> Loyalty</div>
@@ -39,15 +65,13 @@
         <div data-tab="tickets" class="nav-tab"><i class="fa-solid fa-ticket mr-1"></i> My Tickets</div>
     </div>
 
-    <!-- Login / Register Area (shown if not authenticated) -->
+    <!-- Login area (shown if not authenticated) -->
     <div id="login-area" class="flex-1 flex flex-col items-center justify-center p-6">
         <div class="bg-white p-6 rounded-2xl shadow w-full max-w-xs">
-            <!-- Tab buttons -->
             <div class="flex border-b mb-4">
                 <button id="show-login-tab" class="flex-1 py-2 text-blue-600 border-b-2 border-blue-600 font-medium">Login</button>
                 <button id="show-register-tab" class="flex-1 py-2 text-gray-500 font-medium">Register</button>
             </div>
-            <!-- Login Form -->
             <div id="login-panel">
                 <button id="demo-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-lg font-bold mb-3 flex items-center justify-center gap-2">
                     <i class="fa-solid fa-bolt"></i> One-Click Demo
@@ -58,7 +82,6 @@
                 <button id="login-btn" class="w-full bg-blue-600 text-white py-2 rounded-lg">Login</button>
                 <div id="login-error" class="text-red-500 text-xs mt-2 hidden"></div>
             </div>
-            <!-- Register Form (hidden initially) -->
             <div id="register-panel" class="hidden">
                 <input id="reg-invite-code" type="text" placeholder="Invite Code (e.g. KD001)" class="w-full border p-2 rounded mb-2">
                 <div id="org-name-preview" class="text-xs text-gray-500 mb-2 hidden">Organisation: <span id="preview-org-name"></span></div>
@@ -84,6 +107,7 @@
         </div>
     </div>
 
+    <!-- Debug panel (optional, can be hidden) -->
     <div class="debug-panel shrink-0">
         <div class="text-white text-xs mb-1">🔍 DEBUG</div>
         <div id="debug"></div>
@@ -96,6 +120,7 @@
     let currentTab = 'chat';
     let userProfile = null;
     let previewTimeout;
+    let typingIndicatorElement = null;
 
     function log(endpoint, method, status, data, err) {
         const div = document.getElementById('debug');
@@ -151,27 +176,59 @@
         return null;
     }
 
-    function addChatMessage(role, text) {
+    function addChatMessage(role, text, isLoading = false) {
         const container = document.getElementById('chat-container');
         if (!container) return;
         const div = document.createElement('div');
         div.className = `flex gap-2 fade-in ${role === 'user' ? 'justify-end' : ''}`;
-        div.innerHTML = `
-            ${role !== 'user' ? '<div class="w-8 h-8 bg-[#1E3A5F] rounded-full flex items-center justify-center text-white text-xs shrink-0">AI</div>' : ''}
-            <div class="message-bubble bg-white p-3 rounded-2xl shadow-sm text-sm">${text}</div>
-            ${role === 'user' ? '<div class="w-8 h-8 bg-emerald-600 rounded-full flex items-center justify-center text-white text-xs shrink-0">Me</div>' : ''}
-        `;
+        if (role === 'assistant' && isLoading) {
+            div.innerHTML = `
+                <div class="w-8 h-8 bg-[#1E3A5F] rounded-full flex items-center justify-center text-white text-xs shrink-0">AI</div>
+                <div class="typing-indicator"><span></span><span></span><span></span></div>
+            `;
+        } else {
+            div.innerHTML = `
+                ${role !== 'user' ? '<div class="w-8 h-8 bg-[#1E3A5F] rounded-full flex items-center justify-center text-white text-xs shrink-0">AI</div>' : ''}
+                <div class="message-bubble bg-white p-3 rounded-2xl shadow-sm text-sm">${text}</div>
+                ${role === 'user' ? '<div class="w-8 h-8 bg-emerald-600 rounded-full flex items-center justify-center text-white text-xs shrink-0">Me</div>' : ''}
+            `;
+        }
         container.appendChild(div);
+        const panel = document.getElementById('dynamic-panel');
+        if (panel) panel.scrollTop = panel.scrollHeight;
+        return div;
+    }
+
+    function showTyping() {
+        // Remove any existing typing indicator before adding a new one
+        removeTyping();
+        const container = document.getElementById('chat-container');
+        const typingDiv = document.createElement('div');
+        typingDiv.className = 'flex gap-2 fade-in';
+        typingDiv.id = 'typing-indicator';
+        typingDiv.innerHTML = `
+            <div class="w-8 h-8 bg-[#1E3A5F] rounded-full flex items-center justify-center text-white text-xs shrink-0">AI</div>
+            <div class="typing-indicator"><span></span><span></span><span></span></div>
+        `;
+        container.appendChild(typingDiv);
         const panel = document.getElementById('dynamic-panel');
         if (panel) panel.scrollTop = panel.scrollHeight;
     }
 
+    function removeTyping() {
+        const existing = document.getElementById('typing-indicator');
+        if (existing) existing.remove();
+    }
+
     async function sendChatMessage(msg) {
         addChatMessage('user', msg);
+        showTyping();
         try {
             const data = await call('/support/chat-stream', 'POST', { session_id: sessionId, message: msg });
+            removeTyping();
             addChatMessage('assistant', data.response || 'No response');
         } catch (err) {
+            removeTyping();
             addChatMessage('assistant', `❌ Error: ${err.message}`);
         }
     }
@@ -271,7 +328,6 @@
         }
     }
 
-    // Preview organisation name on invite code input
     document.getElementById('reg-invite-code')?.addEventListener('input', async (e) => {
         const code = e.target.value.trim();
         const previewDiv = document.getElementById('org-name-preview');
@@ -351,7 +407,6 @@
         }
     }
 
-    // Toggle between login and register panels
     document.getElementById('show-login-tab')?.addEventListener('click', () => {
         document.getElementById('login-panel').classList.remove('hidden');
         document.getElementById('register-panel').classList.add('hidden');
@@ -369,7 +424,6 @@
         document.getElementById('show-login-tab').classList.add('text-gray-500');
     });
 
-    // Event listeners
     document.getElementById('demo-btn')?.addEventListener('click', demoLogin);
     document.getElementById('login-btn')?.addEventListener('click', async () => {
         const email = document.getElementById('login-email').value;
@@ -393,7 +447,7 @@
         const ok = await doRegister(inviteCode, email, pwd);
         if (ok) {
             alert('Registration successful! Please check your email to verify, then login.');
-            document.getElementById('show-login-tab').click(); // switch to login
+            document.getElementById('show-login-tab').click();
             document.getElementById('reg-invite-code').value = '';
             document.getElementById('reg-email').value = '';
             document.getElementById('reg-password').value = '';
