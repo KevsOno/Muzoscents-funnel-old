@@ -3,15 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kevs BI – Operational Support Desk</title>
+    <title>Kevs BI – Support Desk (Debug)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         :root { --kevs-blue: #1E3A5F; --kevs-cream: #F8FAFC; }
-        body { background-color: #F1F5F9; font-family: system-ui, -apple-system, sans-serif; }
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 10px; }
+        body { background-color: #F1F5F9; font-family: system-ui, sans-serif; }
+        .debug-panel {
+            background: #1e1e2f;
+            color: #00ffcc;
+            font-family: monospace;
+            font-size: 10px;
+            height: 120px;
+            overflow-y: auto;
+            padding: 6px;
+            border-top: 2px solid #ff6600;
+        }
+        .debug-log { border-bottom: 1px solid #333; margin-bottom: 3px; }
         .ticket-active { background-color: #F1F5F9; border-left: 4px solid #3b82f6; }
     </style>
 </head>
@@ -22,335 +30,184 @@
 <header class="bg-[#1E3A5F] text-white px-6 py-4 flex items-center justify-between shrink-0 shadow-md">
     <div class="flex items-center gap-3">
         <div class="font-bold text-xl tracking-tight"><span class="text-orange-500">Kevs</span>BI</div>
-        <div class="h-4 w-[1px] bg-white/20"></div>
-        <div class="text-xs text-slate-300 font-medium uppercase tracking-wider bg-white/10 px-2.5 py-1 rounded-full border border-white/10">
-            <i class="fa-solid fa-headset text-purple-400 mr-1"></i> Customer Ops Workspace
-        </div>
+        <div class="text-xs bg-white/10 px-2.5 py-1 rounded-full">Support Desk (Debug)</div>
     </div>
     <div class="flex items-center gap-4">
-        <div class="text-right">
-            <p class="text-xs font-semibold">Support Agent Panel</p>
-            <p class="text-[10px] text-slate-400">ID: agent_node_01</p>
-        </div>
-        <button onclick="window.location.href='/bizintel'" class="text-xs bg-white/10 hover:bg-white/20 text-white font-medium py-2 px-3 rounded-lg border border-white/10 transition">
-            <i class="fa-solid fa-chart-pie mr-1"></i> Marketing Dashboard
-        </button>
+        <div class="text-right text-xs">Agent Panel</div>
+        <button onclick="window.location.href='/bizintel'" class="text-xs bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg transition">Marketing Dashboard</button>
     </div>
 </header>
 
 <main class="flex-1 flex overflow-hidden">
-
+    <!-- Left sidebar (ticket list) -->
     <section class="w-80 bg-white border-r border-slate-200 flex flex-col shrink-0 overflow-hidden">
-        <div class="p-4 border-b border-slate-100 shrink-0 bg-slate-50">
-            <div class="relative mb-3">
-                <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400 text-xs"></i>
-                <input type="text" id="ticket-search" placeholder="Search ticket payloads..." class="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs focus:outline-none focus:border-blue-500 transition">
-            </div>
-            <div class="flex gap-1">
-                <select id="queue-status-filter" class="flex-1 bg-white border border-slate-200 rounded-lg p-1.5 text-[11px] font-medium text-slate-600 focus:outline-none">
-                    <option value="open">🟢 Open Tickets</option>
-                    <option value="pending">🟡 Escalated</option>
-                    <option value="resolved">⚫ Resolved</option>
-                </select>
-            </div>
+        <div class="p-4 border-b bg-slate-50">
+            <select id="queue-status-filter" class="w-full border rounded-lg p-1.5 text-xs">
+                <option value="open">🟢 Open Tickets</option>
+                <option value="pending">🟡 Escalated</option>
+                <option value="resolved">⚫ Resolved</option>
+            </select>
         </div>
-
-        <div id="ticket-feed" class="flex-1 overflow-y-auto custom-scrollbar divide-y divide-slate-100">
-            <div class="p-8 text-center text-xs text-slate-400">
-                <i class="fa-solid fa-circle-notch animate-spin text-blue-500 text-lg mb-2 block"></i>
-                Streaming Supabase queues...
-            </div>
+        <div id="ticket-feed" class="flex-1 overflow-y-auto divide-y divide-slate-100">
+            <div class="p-8 text-center text-xs">Loading tickets...</div>
         </div>
     </section>
 
+    <!-- Center: ticket detail & messages -->
     <section class="flex-1 bg-slate-50 flex flex-col overflow-hidden relative">
-        <div id="no-ticket-selected" class="absolute inset-0 bg-slate-50 z-10 flex flex-center flex-col items-center justify-center p-6 text-center">
-            <div class="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-slate-300 shadow-sm border border-slate-100 mb-3">
-                <i class="fa-solid fa-inbox text-2xl"></i>
-            </div>
-            <h4 class="text-sm font-semibold text-slate-700">No Ticket Selected</h4>
-            <p class="text-xs text-slate-400 max-w-xs mt-1">Select an active support ticket or human handoff node from the queue queue to initialize dialogue telemetry.</p>
+        <div id="no-ticket-selected" class="absolute inset-0 bg-slate-50 z-10 flex items-center justify-center p-6 text-center">
+            <div><i class="fa-solid fa-inbox text-3xl text-slate-300 mb-2"></i><p class="text-sm">Select a ticket</p></div>
         </div>
-
-        <div class="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shrink-0">
-            <div>
-                <h2 id="active-ticket-subject" class="font-semibold text-slate-800 text-sm">Loading Workspace...</h2>
-                <p id="active-ticket-meta" class="text-xs text-slate-400 mt-0.5">Session UUID: --</p>
-            </div>
-            <div class="flex items-center gap-2">
-                <span id="active-sentiment-badge" class="text-[11px] font-bold px-2.5 py-1 rounded-full">AI: Neutral</span>
-            </div>
+        <div class="bg-white border-b px-6 py-3 shrink-0">
+            <h2 id="active-ticket-subject" class="font-semibold">-</h2>
+            <p id="active-ticket-meta" class="text-xs text-slate-400">-</p>
         </div>
-
-        <div id="message-flow-area" class="flex-1 p-6 overflow-y-auto custom-scrollbar space-y-4"></div>
-
-        <div class="bg-white border-t border-slate-200 p-4 shrink-0">
-            <form id="agent-reply-form" class="flex items-center gap-2">
-                <input type="text" id="agent-response-input" placeholder="Type a professional message string to client node..." class="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-blue-500 transition" autocomplete="off" required>
-                <button type="submit" class="bg-[#1E3A5F] hover:bg-blue-900 text-white font-medium px-4 py-2.5 rounded-xl text-xs transition flex items-center gap-1.5 shadow-sm">
-                    <i class="fa-solid fa-reply"></i> Send Message
-                </button>
+        <div id="message-flow-area" class="flex-1 p-6 overflow-y-auto space-y-4"></div>
+        <div class="bg-white border-t p-4 shrink-0">
+            <form id="agent-reply-form" class="flex gap-2">
+                <input id="agent-response-input" placeholder="Type reply..." class="flex-1 border rounded-xl px-4 py-2 text-sm" required>
+                <button type="submit" class="bg-[#1E3A5F] text-white px-4 py-2 rounded-xl">Send</button>
             </form>
         </div>
     </section>
 
-    <section id="context-pane" class="w-80 bg-white border-l border-slate-200 flex flex-col shrink-0 overflow-y-auto custom-scrollbar p-5 space-y-6">
-        <div>
-            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Customer Relational Profile</h3>
-            <div class="bg-slate-50 border border-slate-200/60 rounded-xl p-4 space-y-3">
-                <div class="flex items-center gap-3">
-                    <div class="w-9 h-9 bg-slate-200 rounded-xl flex items-center justify-center text-slate-600 font-bold text-sm" id="customer-avatar-initials">--</div>
-                    <div>
-                        <h4 id="profile-name" class="font-semibold text-slate-800 text-xs">Anonymous Client</h4>
-                        <p id="profile-phone" class="text-[11px] text-slate-400 mt-0.5">No Linked Phone</p>
-                    </div>
-                </div>
-                <div class="border-t border-slate-200/60 pt-2.5 text-[11px] space-y-1.5 text-slate-600">
-                    <p class="flex justify-between"><span class="text-slate-400">Niche Segment:</span> <b id="profile-niche">--</b></p>
-                    <p class="flex justify-between"><span class="text-slate-400">Geographic Node:</span> <b id="profile-location">--</b></p>
-                </div>
-            </div>
-        </div>
-
-        <div>
-            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Loyalty Ledger Program</h3>
-            <div class="bg-amber-500/5 border border-amber-500/10 rounded-xl p-4 text-[11px] space-y-2.5 text-slate-700">
-                <div class="flex items-center justify-between">
-                    <span class="font-semibold text-amber-800 flex items-center gap-1"><i class="fa-solid fa-crown text-amber-500"></i> Penafort Rewards</span>
-                    <span id="loyalty-status-badge" class="bg-slate-200 text-slate-700 font-bold px-2 py-0.5 rounded text-[9px] uppercase">Inactive</span>
-                </div>
-                <p class="flex justify-between"><span class="text-slate-400">Account ID:</span> <b id="loyalty-id">--</b></p>
-                <p class="flex justify-between"><span class="text-slate-400">Current Balance:</span> <b id="loyalty-points" class="text-amber-600 text-xs">0.00 pts</b></p>
-            </div>
-        </div>
-
-        <div class="pt-2 border-t border-slate-100 flex-1 flex flex-col justify-end">
-            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Resolution Controls</h3>
-            <div class="space-y-3">
-                <div>
-                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Administrative Close-out Notes</label>
-                    <textarea id="ticket-resolution-notes" rows="3" placeholder="Input resolution artifacts or case notes..." class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs focus:outline-none focus:border-blue-500 transition resize-none"></textarea>
-                </div>
-                <button id="resolve-ticket-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-sm">
-                    <i class="fa-solid fa-check-double"></i> Finalize & Close Ticket
-                </button>
-            </div>
-        </div>
+    <!-- Right panel: customer context -->
+    <section class="w-80 bg-white border-l border-slate-200 flex flex-col shrink-0 overflow-y-auto p-5 space-y-6">
+        <div><h3 class="text-xs font-bold uppercase">Customer Profile</h3><div id="profile-display" class="text-xs mt-2">-</div></div>
+        <div><h3 class="text-xs font-bold uppercase">Loyalty</h3><div id="loyalty-display" class="text-xs mt-2">-</div></div>
+        <textarea id="ticket-resolution-notes" rows="3" placeholder="Resolution notes" class="border rounded-lg p-2 text-xs"></textarea>
+        <button id="resolve-ticket-btn" class="bg-emerald-600 text-white py-2 rounded-lg text-xs">Resolve Ticket</button>
     </section>
 </main>
 
+<!-- Debug panel -->
+<div class="debug-panel" id="debug-panel">
+    <div class="text-white text-xs mb-1">🔍 API DEBUG LOGS</div>
+    <div id="debug-logs"></div>
+</div>
+
 <script>
-    const BACKEND_URL = 'https://kevsono-kevs-digital-business-intelligencev2.hf.space';
-    const token = localStorage.getItem('access_token');
-
+    const BACKEND_URL = 'https://kevsono-penafort-concierge.hf.space';
+    let token = localStorage.getItem('access_token');
     let activeTicketId = null;
-    let currentTicketData = null;
 
-    function showToast(msg, type='success') {
-        const container = document.getElementById('toast-container');
-        const toast = document.createElement('div');
-        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type==='success'?'bg-green-600':'bg-red-600'} mb-2 text-sm transition-all duration-300`;
-        toast.innerText = msg;
-        container.appendChild(toast);
-        setTimeout(() => toast.remove(), 3500);
+    function addDebugLog(endpoint, method, status, responseText, error=null) {
+        const logsDiv = document.getElementById('debug-logs');
+        const entry = document.createElement('div');
+        entry.className = 'debug-log text-xs';
+        const timestamp = new Date().toLocaleTimeString();
+        let color = status >= 200 && status < 300 ? '#00cc88' : (status ? '#ff8888' : '#ffaa44');
+        entry.innerHTML = `<span style="color:#aaa">[${timestamp}]</span> <span style="color:${color}">${method} ${endpoint}</span> → ${status || 'NETWORK ERROR'}<br>${error ? `❌ ${error}` : `📦 ${responseText?.substring(0, 150) || ''}`}`;
+        logsDiv.appendChild(entry);
+        logsDiv.scrollTop = logsDiv.scrollHeight;
+        console.log(`[DEBUG] ${method} ${endpoint}`, status, responseText, error);
     }
 
     async function req(endpoint, method='GET', body=null) {
+        const url = `${BACKEND_URL}${endpoint}`;
         const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
-        const res = await fetch(`${BACKEND_URL}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
-        if(!res.ok) throw new Error('Network API request exception logged.');
-        return res.json();
-    }
-
-    // Load Ticket Feed from Supabase Data Views
-    async function loadTickets() {
-        const status = document.getElementById('queue-status-filter').value;
-        const feedContainer = document.getElementById('ticket-feed');
-        
         try {
-            const data = await req(`/support/tickets?status=${status}`);
-            feedContainer.innerHTML = '';
-            
-            if(data.tickets.length === 0) {
-                feedContainer.innerHTML = `<div class="p-8 text-center text-xs text-slate-400">No active ${status} cases in queue loop.</div>`;
-                return;
-            }
-
-            data.tickets.forEach(t => {
-                const item = document.createElement('div');
-                item.className = `p-4 cursor-pointer hover:bg-slate-50 transition relative ${activeTicketId === t.id ? 'ticket-active' : ''}`;
-                item.onclick = () => selectTicket(t.id);
-                
-                // Color Code AI Sentiment Indicators
-                let sentimentColor = 'bg-slate-100 text-slate-600';
-                if(t.sentiment_score < -0.3) sentimentColor = 'bg-red-100 text-red-700 font-semibold';
-                else if(t.sentiment_score > 0.3) sentimentColor = 'bg-green-100 text-green-700';
-
-                item.innerHTML = `
-                    <div class="flex justify-between items-start gap-2">
-                        <span class="text-xs font-semibold text-slate-800 truncate block max-w-[150px]">${t.subject || 'Autonomous Chat Thread'}</span>
-                        <span class="text-[9px] px-1.5 py-0.5 rounded ${sentimentColor}">Score: ${t.sentiment_score || '0.0'}</span>
-                    </div>
-                    <p class="text-[11px] text-slate-400 truncate mt-1">User ID: ${t.user_id}</p>
-                    <div class="flex justify-between items-center mt-2.5 text-[10px] text-slate-400">
-                        <span>Channel: <b class="uppercase">${t.channel || 'web'}</b></span>
-                        <span>${new Date(t.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                    </div>
-                `;
-                feedContainer.appendChild(item);
-            });
-        } catch {
-            feedContainer.innerHTML = `<div class="p-8 text-center text-xs text-red-500">Error sync mapping live ticket streams.</div>`;
+            const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
+            let responseData;
+            try { responseData = await res.json(); } catch(e) { responseData = { raw: await res.text() }; }
+            addDebugLog(endpoint, method, res.status, JSON.stringify(responseData).substring(0, 300));
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return responseData;
+        } catch (err) {
+            addDebugLog(endpoint, method, null, null, err.message);
+            throw err;
         }
     }
 
-    // Select Active Ticket Row View
+    async function loadTickets() {
+        const status = document.getElementById('queue-status-filter').value;
+        try {
+            const data = await req(`/support/tickets?status=${status}`);
+            const feed = document.getElementById('ticket-feed');
+            feed.innerHTML = '';
+            if (!data.tickets || data.tickets.length === 0) {
+                feed.innerHTML = '<div class="p-8 text-center text-xs">No tickets found</div>';
+                return;
+            }
+            data.tickets.forEach(t => {
+                const div = document.createElement('div');
+                div.className = `p-4 cursor-pointer hover:bg-slate-50 ${activeTicketId === t.id ? 'ticket-active' : ''}`;
+                div.onclick = () => selectTicket(t.id);
+                div.innerHTML = `<div class="font-semibold text-sm">${t.subject}</div><div class="text-xs text-slate-500">${t.status} | ${new Date(t.created_at).toLocaleString()}</div>`;
+                feed.appendChild(div);
+            });
+        } catch (err) {
+            document.getElementById('ticket-feed').innerHTML = `<div class="p-8 text-center text-red-500">Error: ${err.message}</div>`;
+        }
+    }
+
     async function selectTicket(ticketId) {
         activeTicketId = ticketId;
         document.getElementById('no-ticket-selected').classList.add('hidden');
-        
-        // Visual Refresh Loop on Queue Left Columns
-        document.querySelectorAll('#ticket-feed > div').forEach(el => el.classList.remove('ticket-active'));
-        
         try {
             const data = await req(`/support/tickets/${ticketId}`);
-            currentTicketData = data.ticket;
-            
-            // Map Dialogue Frame Headers
-            document.getElementById('active-ticket-subject').innerText = currentTicketData.subject || 'Autonomous Support Session';
-            document.getElementById('active-ticket-meta').innerText = `Ticket UUID: ${currentTicketData.id}`;
-            
-            const sentimentBadge = document.getElementById('active-sentiment-badge');
-            sentimentBadge.innerText = `AI Sentiment Context: ${currentTicketData.sentiment_score || '0.0'}`;
-            sentimentBadge.className = `text-[11px] font-bold px-2.5 py-1 rounded-full ${currentTicketData.sentiment_score < -0.3 ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'}`;
-
-            document.getElementById('ticket-resolution-notes').value = currentTicketData.resolution_notes || '';
-
-            // Map CRM Context Panels (Right Column)
-            mapCustomerPanel(currentTicketData.user_id);
-            
-            // Output Message Arrays
-            renderMessages(data.messages);
-            loadTickets(); // Refresh active sidebar highlight class markers
-        } catch {
-            showToast('Unable to parse active session rows.', 'error');
+            document.getElementById('active-ticket-subject').innerText = data.ticket.subject;
+            document.getElementById('active-ticket-meta').innerText = `ID: ${data.ticket.id}`;
+            const container = document.getElementById('message-flow-area');
+            container.innerHTML = '';
+            (data.messages || []).forEach(m => {
+                const msgDiv = document.createElement('div');
+                msgDiv.className = `p-2 rounded-lg ${m.sender_type === 'agent' ? 'bg-blue-100 text-right' : 'bg-gray-100'}`;
+                msgDiv.innerText = `${m.sender_type}: ${m.message}`;
+                container.appendChild(msgDiv);
+            });
+            await loadCustomerContext(data.ticket.user_id);
+            loadTickets();
+        } catch (err) {
+            alert('Failed to load ticket: ' + err.message);
         }
     }
 
-    // Map Relational CRM/Loyalty Framework Metadata
-    async function mapCustomerPanel(userId) {
+    async function loadCustomerContext(userId) {
         try {
             const data = await req(`/support/customer-context?user_id=${userId}`);
-            
-            // Map Identity Data Cards
-            const initials = data.profile ? `${data.profile.first_name?.[0] || ''}${data.profile.last_name?.[0] || ''}` : '??';
-            document.getElementById('customer-avatar-initials').innerText = initials || '??';
-            document.getElementById('profile-name').innerText = data.profile ? `${data.profile.first_name} ${data.profile.last_name}` : 'Unlinked Account Record';
-            document.getElementById('profile-phone').innerText = data.profile?.phone || 'No Linked Phone Line';
-            document.getElementById('profile-niche').innerText = data.profile?.niche || '--';
-            document.getElementById('profile-location').innerText = data.profile?.location || '--';
-
-            // Map Loyalty Balance Subnetworks
-            if(data.loyalty) {
-                document.getElementById('loyalty-status-badge').className = 'bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded text-[9px] uppercase';
-                document.getElementById('loyalty-status-badge').innerText = data.loyalty.status || 'Active';
-                document.getElementById('loyalty-id').innerText = data.loyalty.membership_id;
-                document.getElementById('loyalty-points').innerText = `${Number(data.loyalty.current_points).toLocaleString()} pts`;
-            } else {
-                resetLoyaltyPanel();
-            }
-        } catch {
-            resetLoyaltyPanel();
+            document.getElementById('profile-display').innerHTML = data.profile ? `${data.profile.first_name} ${data.profile.last_name}<br>${data.profile.phone || '-'}` : 'No profile';
+            document.getElementById('loyalty-display').innerHTML = data.loyalty ? `Points: ${data.loyalty.current_points}<br>Tier: ${data.loyalty.tier}` : 'No loyalty data';
+        } catch (err) {
+            document.getElementById('profile-display').innerHTML = `Error: ${err.message}`;
         }
     }
 
-    function resetLoyaltyPanel() {
-        document.getElementById('loyalty-status-badge').className = 'bg-slate-100 text-slate-500 font-bold px-2 py-0.5 rounded text-[9px] uppercase';
-        document.getElementById('loyalty-status-badge').innerText = 'Inactive';
-        document.getElementById('loyalty-id').innerText = '--';
-        document.getElementById('loyalty-points').innerText = '0.00 pts';
-    }
-
-    // Render Message Nodes into Conversation Core Flow
-    function renderMessages(messages) {
-        const container = document.getElementById('message-flow-area');
-        container.innerHTML = '';
-        
-        messages.forEach(m => {
-            const wrap = document.createElement('div');
-            const isAgent = m.sender_type === 'agent';
-            wrap.className = `flex gap-3 max-w-[80%] ${isAgent ? 'ml-auto justify-end' : ''}`;
-            
-            wrap.innerHTML = `
-                ${!isAgent ? '<div class="w-7 h-7 bg-slate-300 text-slate-700 rounded-lg shrink-0 flex items-center justify-center text-xs font-bold"><i class="fa-solid fa-user"></i></div>' : ''}
-                <div>
-                    <div class="${isAgent ? 'bg-[#1E3A5F] text-white rounded-tr-none' : 'bg-white text-slate-700 border border-slate-200/60 rounded-tl-none'} px-4 py-2.5 rounded-2xl shadow-sm text-xs leading-relaxed">
-                        ${m.message}
-                    </div>
-                    <span class="text-[9px] text-slate-400 mt-1 block px-1 text-${isAgent ? 'right' : 'left'}">${new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
-                </div>
-            `;
-            container.appendChild(wrap);
-        });
-        container.scrollTop = container.scrollHeight;
-    }
-
-    // Event Listener: Intercept Agent Messages Submissions
     document.getElementById('agent-reply-form').addEventListener('submit', async (e) => {
         e.preventDefault();
-        if(!activeTicketId) return;
-
-        const input = document.getElementById('agent-response-input');
-        const textPayload = input.value.trim();
-        if(!textPayload) return;
-
+        if (!activeTicketId) return;
+        const msg = document.getElementById('agent-response-input').value.trim();
+        if (!msg) return;
         try {
-            const data = await req(`/support/tickets/${activeTicketId}/message`, 'POST', { message: textPayload });
-            renderMessages(data.messages); // Appends the fresh message list array
-            input.value = '';
-        } catch {
-            showToast('Failed to deploy reply transmission to remote client node.', 'error');
+            const data = await req(`/support/tickets/${activeTicketId}/message`, 'POST', { message: msg });
+            selectTicket(activeTicketId); // refresh messages
+            document.getElementById('agent-response-input').value = '';
+        } catch (err) {
+            alert('Failed to send: ' + err.message);
         }
     });
 
-    // Event Listener: Terminate and Finalize Case Records
     document.getElementById('resolve-ticket-btn').addEventListener('click', async () => {
-        if(!activeTicketId) return;
+        if (!activeTicketId) return;
         const notes = document.getElementById('ticket-resolution-notes').value;
-
         try {
             await req(`/support/tickets/${activeTicketId}/resolve`, 'POST', { resolution_notes: notes });
-            showToast('Ticket closed out successfully. Database rows committed.');
-            
-            // Clean up workspace variables and reset screen states
+            alert('Ticket resolved');
             activeTicketId = null;
-            currentTicketData = null;
             document.getElementById('no-ticket-selected').classList.remove('hidden');
             loadTickets();
-        } catch {
-            showToast('Failed to commit operational resolution logs.', 'error');
+        } catch (err) {
+            alert('Resolve failed: ' + err.message);
         }
     });
 
-    // Watcher Hooks for Live Feed Refreshes
     document.getElementById('queue-status-filter').addEventListener('change', loadTickets);
-    document.getElementById('ticket-search').addEventListener('input', (e) => {
-        const query = e.target.value.toLowerCase();
-        document.querySelectorAll('#ticket-feed > div').forEach(row => {
-            const content = row.innerText.toLowerCase();
-            if(content.includes(query)) row.classList.remove('hidden');
-            else row.classList.add('hidden');
-        });
-    });
 
-    // Onboarding Initialize Security Check
-    (() => {
-        if (!token) {
-            window.location.href = '/bisignin';
-        } else {
-            loadTickets();
-        }
-    })();
+    if (!token) {
+        window.location.href = '/bisignin';
+    } else {
+        loadTickets();
+    }
 </script>
 </body>
 </html>
