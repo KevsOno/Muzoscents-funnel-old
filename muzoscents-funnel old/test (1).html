@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kevs Digital Customer Concierge</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root { --brand-blue: #1E3A5F; --brand-emerald: #059669; --brand-cream: #F8FAFC; }
+        body { background-color: #0F172A; font-family: system-ui, -apple-system, sans-serif; }
+        
+        /* Smooth Custom Scrollbar for Chat Windows */
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 10px; }
+        
+        /* Shimmer Loading Animations for Vector Searching States */
+        .shimmer {
+            background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+        }
+        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+    </style>
+</head>
+<body class="antialiased min-h-screen flex items-center justify-end p-6">
+
+<div id="concierge-widget" class="w-full max-w-md bg-slate-50 h-[650px] rounded-3xl shadow-2xl border border-slate-200/80 flex flex-col overflow-hidden transition-all duration-300 transform scale-100">
+    
+    <div class="bg-[#1E3A5F] p-5 text-white shadow-md relative shrink-0">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="relative">
+                    <div class="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center border border-white/20">
+                        <i id="bot-icon" class="fa-solid fa-robot text-emerald-400 text-lg transition-all"></i>
+                    </div>
+                    <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-[#1E3A5F] rounded-full animate-pulse"></span>
+                </div>
+                <div>
+                    <h3 id="concierge-title" class="font-semibold text-sm tracking-wide">Kevs Digital E-Commerce Core AI</h3>
+                    <p id="concierge-status" class="text-xs text-slate-300 flex items-center gap-1.5">
+                        <span class="inline-block w-1.5 h-1.5 bg-emerald-400 rounded-full"></span> System Autonomous
+                    </p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="minimize-widget" class="w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center transition text-slate-300 hover:text-white">
+                    <i class="fa-solid fa-minus"></i>
+                </button>
+            </div>
+        </div>
+
+        <div id="loyalty-banner" class="mt-4 bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/10 flex items-center justify-between hidden">
+            <div class="flex items-center gap-2.5">
+                <i class="fa-solid fa-crown text-amber-400 text-sm"></i>
+                <div>
+                    <p class="text-[10px] uppercase tracking-wider text-slate-300 font-medium">Value Rewards Tier</p>
+                    <p id="loyalty-tier-name" class="text-xs font-bold text-white">Loading Account...</p>
+                </div>
+            </div>
+            <div class="text-right">
+                <span id="loyalty-points-count" class="bg-amber-400/20 text-amber-300 text-xs font-bold px-2.5 py-1 rounded-full border border-amber-400/30">0 pts</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="chat-scroller" class="flex-1 p-4 overflow-y-auto space-y-4 custom-scrollbar bg-slate-50">
+        
+        <div class="flex gap-3 max-w-[85%]">
+            <div class="w-7 h-7 bg-[#1E3A5F] rounded-lg shrink-0 flex items-center justify-center text-white text-xs">
+                <i class="fa-solid fa-robot"></i>
+            </div>
+            <div>
+                <div class="bg-white px-4 py-2.5 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 text-sm text-slate-700 leading-relaxed">
+                    Hello! I am your Kevs Digital Commercial Support Assistant. How can I help you accelerate operations today?
+                </div>
+                <span class="text-[10px] text-slate-400 mt-1 block px-1">Just now</span>
+            </div>
+        </div>
+
+        <div id="quick-portal" class="grid grid-cols-2 gap-2 pt-2 animate-fade-in">
+            <button onclick="triggerQuickAction('track_order')" class="p-3 bg-white hover:bg-slate-100 border border-slate-200/60 rounded-xl text-left transition group shadow-sm">
+                <i class="fa-solid fa-box text-blue-500 mb-2 block text-sm"></i>
+                <span class="text-xs font-medium text-slate-800 block">Check Order Status</span>
+                <span class="text-[10px] text-slate-400 block mt-0.5">Track shipping rows</span>
+            </button>
+            <button onclick="triggerQuickAction('check_points')" class="p-3 bg-white hover:bg-slate-100 border border-slate-200/60 rounded-xl text-left transition group shadow-sm">
+                <i class="fa-solid fa-award text-amber-500 mb-2 block text-sm"></i>
+                <span class="text-xs font-medium text-slate-800 block">Loyalty Balance</span>
+                <span class="text-[10px] text-slate-400 block mt-0.5">Verify reward entries</span>
+            </button>
+            <button onclick="triggerQuickAction('product_catalog')" class="p-3 bg-white hover:bg-slate-100 border border-slate-200/60 rounded-xl text-left transition group shadow-sm">
+                <i class="fa-solid fa-tags text-emerald-500 mb-2 block text-sm"></i>
+                <span class="text-xs font-medium text-slate-800 block">Browse Catalog</span>
+                <span class="text-[10px] text-slate-400 block mt-0.5">Check Naira prices</span>
+            </button>
+            <button onclick="triggerQuickAction('human_escalate')" class="p-3 bg-white hover:bg-slate-100 border border-slate-200/60 rounded-xl text-left transition group shadow-sm">
+                <i class="fa-solid fa-headset text-purple-500 mb-2 block text-sm"></i>
+                <span class="text-xs font-medium text-slate-800 block">Talk to Human</span>
+                <span class="text-[10px] text-slate-400 block mt-0.5">Open support ticket</span>
+            </button>
+        </div>
+
+        <div id="dynamic-chat-nodes" class="space-y-4"></div>
+    </div>
+
+    <div id="vector-shimmer" class="p-4 bg-white border-t border-slate-200/60 flex items-center gap-3 hidden">
+        <div class="w-6 h-6 rounded-full shimmer shrink-0"></div>
+        <div class="flex-1 space-y-2">
+            <div class="h-3 shimmer rounded w-3/4"></div>
+            <div class="h-2.5 shimmer rounded w-1/2"></div>
+        </div>
+    </div>
+
+    <div class="p-4 bg-white border-t border-slate-200 shrink-0">
+        <form id="chat-entry-form" class="flex items-center gap-2">
+            <input type="text" id="customer-message-input" placeholder="Ask a question or provide phone..." class="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500 transition" autocomplete="off" required>
+            <button type="submit" class="w-10 id-submit bg-[#1E3A5F] hover:bg-blue-900 text-white h-10 rounded-xl flex items-center justify-center transition shadow-md shrink-0">
+                <i class="fa-solid fa-paper-plane text-xs"></i>
+            </button>
+        </form>
+        <div class="flex items-center justify-between mt-2.5 px-1">
+            <span class="text-[10px] text-slate-400 flex items-center gap-1">
+                <i class="fa-solid fa-shield-halved text-slate-300"></i> End-to-end relational sync
+            </span>
+            <button id="clear-widget-session" class="text-[10px] text-slate-400 hover:text-red-500 transition flex items-center gap-1">
+                <i class="fa-solid fa-rotate-left"></i> Reset Chat
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const BACKEND_URL = 'https://kevsono-kevs-digital-business-intelligencev2.hf.space';
+    let currentSessionId = crypto.randomUUID();
+    let authenticatedUserPhone = null;
+
+    // Helper: Build Message Markup Elements
+    function appendChatNode(sender, text) {
+        const targetContainer = document.getElementById('dynamic-chat-nodes');
+        const wrappingNode = document.createElement('div');
+        wrappingNode.className = `flex gap-3 max-w-[85%] ${sender === 'customer' ? 'ml-auto justify-end' : ''}`;
+
+        const botAvatar = `<div class="w-7 h-7 bg-[#1E3A5F] rounded-lg shrink-0 flex items-center justify-center text-white text-xs"><i class="fa-solid fa-robot"></i></div>`;
+        const customerAvatar = `<div class="w-7 h-7 bg-emerald-600 rounded-lg shrink-0 flex items-center justify-center text-white text-xs"><i class="fa-solid fa-user"></i></div>`;
+
+        wrappingNode.innerHTML = `
+            ${sender !== 'customer' ? botAvatar : ''}
+            <div>
+                <div class="${sender === 'customer' ? 'bg-[#1E3A5F] text-white rounded-tr-none' : 'bg-white text-slate-700 border border-slate-100'} px-4 py-2.5 rounded-2xl shadow-sm text-sm leading-relaxed">
+                    ${text}
+                </div>
+                <span class="text-[10px] text-slate-400 mt-1 block px-1 text-${sender === 'customer' ? 'right' : 'left'}">Just now</span>
+            </div>
+            ${sender === 'customer' ? customerAvatar : ''}
+        `;
+        
+        targetContainer.appendChild(wrappingNode);
+        const scroller = document.getElementById('chat-scroller');
+        scroller.scrollTop = scroller.scrollHeight;
+    }
+
+    // Toggle Vector Shimmer Layer
+    function toggleShimmer(show) {
+        const shimmerNode = document.getElementById('vector-shimmer');
+        if (show) shimmerNode.classList.remove('hidden');
+        else shimmerNode.classList.add('hidden');
+    }
+
+    // Context Parsing Action Triggers
+    async function triggerQuickAction(actionType) {
+        if (actionType === 'human_escalate') {
+            appendChatNode('customer', 'Requesting emergency human assistance line.');
+            toggleShimmer(true);
+            try {
+                const res = await fetch(`${BACKEND_URL}/support/escalate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: currentSessionId, phone: authenticatedUserPhone, reason: 'Manual widget request' })
+                });
+                const data = await res.json();
+                
+                // Swap Interface Visual Layout Elements to Active Human Routing State
+                document.getElementById('bot-icon').className = 'fa-solid fa-headset text-purple-400 text-lg transition-all';
+                document.getElementById('concierge-title').innerText = 'Support Agent Live';
+                document.getElementById('concierge-status').innerHTML = '<span class="inline-block w-1.5 h-1.5 bg-purple-400 rounded-full"></span> Ticket Routing Active';
+                
+                appendChatNode('assistant', `Your emergency help desk ticket has been logged (${data.ticket_id || 'Pending'}). A live specialist is joining this workspace session.`);
+            } catch (err) {
+                appendChatNode('assistant', 'Routing failed. Please enter your explicit contact phone number below.');
+            } finally {
+                toggleShimmer(false);
+            }
+            return;
+        }
+
+        if (actionType === 'check_points') {
+            if (!authenticatedUserPhone) {
+                appendChatNode('assistant', 'Please input your mobile phone number in the entry bar below to authenticate your Penafort Value Rewards profile.');
+                return;
+            }
+            fetchLoyaltyContext(authenticatedUserPhone);
+        }
+        
+        if (actionType === 'product_catalog') {
+            appendChatNode('customer', 'Requesting warehouse price ledger catalog summaries.');
+            toggleShimmer(true);
+            try {
+                const res = await fetch(`${BACKEND_URL}/inventory/public-list`);
+                const items = await res.get();
+                let productListText = "Current Available Stock Items:<br>";
+                items.slice(0, 3).forEach(i => {
+                    productListText += `• <b>${i.description}</b> - ₦${Number(i.price_naira).toLocaleString()} (${i.current_qty} units left)<br>`;
+                });
+                appendChatNode('assistant', productListText);
+            } catch {
+                appendChatNode('assistant', 'Unable to stream live inventory metrics. Core database offline or processing sync.');
+            } finally {
+                toggleShimmer(false);
+            }
+        }
+    }
+
+    // Relational Lookup: Fetch Loyalty Metadata from Database
+    async function fetchLoyaltyContext(phoneNumber) {
+        toggleShimmer(true);
+        try {
+            const res = await fetch(`${BACKEND_URL}/loyalty/lookup?phone=${phoneNumber}`);
+            if(!res.ok) throw new Error();
+            const data = await res.json();
+            
+            authenticatedUserPhone = phoneNumber;
+            
+            // Render the hidden embedded rewards module card
+            document.getElementById('loyalty-banner').classList.remove('hidden');
+            document.getElementById('loyalty-tier-name').innerText = `${data.first_name || 'Member'} | Tier ${data.tier || 'One'}`;
+            document.getElementById('loyalty-points-count').innerText = `${Math.round(data.current_points || 0)} pts`;
+            
+            appendChatNode('assistant', `Welcome back, ${data.first_name}! Access granted to Penafort Value Rewards account #${data.membership_id}. You have ${data.available_points} points available.`);
+        } catch {
+            appendChatNode('assistant', 'Phone lookup completed. No profile matches found inside this organization instance.');
+        } finally {
+            toggleShimmer(false);
+        }
+    }
+
+    // Intercept Input Submissions
+    document.getElementById('chat-entry-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const inputElement = document.getElementById('customer-message-input');
+        const rawMessage = inputElement.value.trim();
+        if (!rawMessage) return;
+
+        appendChatNode('customer', rawMessage);
+        inputElement.value = '';
+
+        // Strategic Parsing Input Shortcut: Detect Pure Numeric Entries for Fast Phone Relational Sync
+        if (/^\d{7,15}$/.test(rawMessage)) {
+            await fetchLoyaltyContext(rawMessage);
+            return;
+        }
+
+        // Run Semantic Vector Similarity RAG Request over `chat_messages` / `support_faqs`
+        toggleShimmer(true);
+        try {
+            const res = await fetch(`${BACKEND_URL}/support/chat-stream`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    session_id: currentSessionId,
+                    message: rawMessage,
+                    user_id: authenticatedUserPhone || 'anonymous-web-user'
+                })
+            });
+            const data = await res.json();
+            appendChatNode('assistant', data.response || "Context parsed. Processing support ticketing logs.");
+        } catch (err) {
+            appendChatNode('assistant', "Network connection timed out. Recording message array to `api_logs` standard failover.");
+        } finally {
+            toggleShimmer(false);
+        }
+    });
+
+    // Reset Chat State Machine Button
+    document.getElementById('clear-widget-session').addEventListener('click', () => {
+        document.getElementById('dynamic-chat-nodes').innerHTML = '';
+        document.getElementById('loyalty-banner').classList.add('hidden');
+        document.getElementById('bot-icon').className = 'fa-solid fa-robot text-emerald-400 text-lg transition-all';
+        document.getElementById('concierge-title').innerText = 'Penafort Core AI';
+        document.getElementById('concierge-status').innerHTML = '<span class="inline-block w-1.5 h-1.5 bg-emerald-400 rounded-full"></span> System Autonomous';
+        currentSessionId = crypto.randomUUID();
+        authenticatedUserPhone = null;
+    });
+</script>
+</body>
+</html>
