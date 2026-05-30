@@ -19,7 +19,6 @@
 </head>
 <body class="min-h-screen flex items-center justify-end p-6">
 <div id="widget" class="w-full max-w-md bg-slate-50 h-[750px] rounded-3xl shadow-2xl flex flex-col overflow-hidden">
-    <!-- Fixed header -->
     <div class="bg-[#1E3A5F] text-white p-4 shrink-0">
         <div class="flex justify-between items-center">
             <div>
@@ -33,7 +32,6 @@
         </div>
     </div>
 
-    <!-- Fixed navigation tabs -->
     <div class="bg-white border-b border-slate-200 px-3 py-2 flex gap-2 overflow-x-auto shrink-0">
         <div data-tab="chat" class="nav-tab active"><i class="fa-regular fa-comment mr-1"></i> Chat</div>
         <div data-tab="loyalty" class="nav-tab"><i class="fa-solid fa-award mr-1"></i> Loyalty</div>
@@ -41,7 +39,6 @@
         <div data-tab="tickets" class="nav-tab"><i class="fa-solid fa-ticket mr-1"></i> My Tickets</div>
     </div>
 
-    <!-- Login area (shown if not authenticated) -->
     <div id="login-area" class="flex-1 flex flex-col items-center justify-center p-6">
         <div class="bg-white p-6 rounded-2xl shadow w-full max-w-xs">
             <button id="demo-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-lg font-bold mb-3 flex items-center justify-center gap-2">
@@ -55,7 +52,6 @@
         </div>
     </div>
 
-    <!-- Main content area (visible after login) -->
     <div id="main-area" class="flex-1 flex flex-col hidden overflow-hidden">
         <div id="dynamic-panel" class="flex-1 overflow-y-auto p-4 space-y-4">
             <div id="chat-container" class="space-y-4"></div>
@@ -118,10 +114,10 @@
 
     async function loadUserProfile(userId) {
         try {
-            const data = await call(`/support/customer-context?user_id=${userId}`);
+            const endpoint = userId ? `/support/customer-context?target_user_id=${userId}` : '/support/customer-context';
+            const data = await call(endpoint);
             if (data.profile) {
                 userProfile = data.profile;
-                // Show loyalty banner
                 const points = data.loyalty?.current_points ?? data.profile.current_points ?? 0;
                 const tier = data.loyalty?.tier ?? data.profile.tier ?? 'Standard';
                 document.getElementById('loyalty-banner').classList.remove('hidden');
@@ -260,7 +256,6 @@
                     addChatMessage('assistant', 'Chat ready. Ask me anything.');
                 }
             } else {
-                // restore existing messages
                 const oldContainer = document.getElementById('chat-container');
                 if (oldContainer && oldContainer.children.length) {
                     panel.innerHTML = '<div id="chat-container" class="space-y-4"></div>';
@@ -304,7 +299,6 @@
         }
     }
 
-    // Event listeners
     document.getElementById('demo-btn')?.addEventListener('click', demoLogin);
     document.getElementById('login-btn')?.addEventListener('click', async () => {
         const email = document.getElementById('login-email').value;
