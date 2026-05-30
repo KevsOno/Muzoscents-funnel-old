@@ -39,19 +39,38 @@
         <div data-tab="tickets" class="nav-tab"><i class="fa-solid fa-ticket mr-1"></i> My Tickets</div>
     </div>
 
+    <!-- Login / Register Area (shown if not authenticated) -->
     <div id="login-area" class="flex-1 flex flex-col items-center justify-center p-6">
         <div class="bg-white p-6 rounded-2xl shadow w-full max-w-xs">
-            <button id="demo-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-lg font-bold mb-3 flex items-center justify-center gap-2">
-                <i class="fa-solid fa-bolt"></i> One-Click Demo
-            </button>
-            <div class="text-center text-xs text-gray-400 my-2">OR</div>
-            <input id="login-email" type="email" placeholder="Email" class="w-full border p-2 rounded mb-2">
-            <input id="login-password" type="password" placeholder="Password" class="w-full border p-2 rounded mb-3">
-            <button id="login-btn" class="w-full bg-blue-600 text-white py-2 rounded-lg">Login</button>
-            <div id="login-error" class="text-red-500 text-xs mt-2 hidden"></div>
+            <!-- Tab buttons -->
+            <div class="flex border-b mb-4">
+                <button id="show-login-tab" class="flex-1 py-2 text-blue-600 border-b-2 border-blue-600 font-medium">Login</button>
+                <button id="show-register-tab" class="flex-1 py-2 text-gray-500 font-medium">Register</button>
+            </div>
+            <!-- Login Form -->
+            <div id="login-panel">
+                <button id="demo-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-lg font-bold mb-3 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-bolt"></i> One-Click Demo
+                </button>
+                <div class="text-center text-xs text-gray-400 my-2">OR</div>
+                <input id="login-email" type="email" placeholder="Email" class="w-full border p-2 rounded mb-2">
+                <input id="login-password" type="password" placeholder="Password" class="w-full border p-2 rounded mb-3">
+                <button id="login-btn" class="w-full bg-blue-600 text-white py-2 rounded-lg">Login</button>
+                <div id="login-error" class="text-red-500 text-xs mt-2 hidden"></div>
+            </div>
+            <!-- Register Form (hidden initially) -->
+            <div id="register-panel" class="hidden">
+                <input id="reg-invite-code" type="text" placeholder="Invite Code (e.g. KD001)" class="w-full border p-2 rounded mb-2">
+                <div id="org-name-preview" class="text-xs text-gray-500 mb-2 hidden">Organisation: <span id="preview-org-name"></span></div>
+                <input id="reg-email" type="email" placeholder="Email" class="w-full border p-2 rounded mb-2">
+                <input id="reg-password" type="password" placeholder="Password" class="w-full border p-2 rounded mb-3">
+                <button id="register-btn" class="w-full bg-green-600 text-white py-2 rounded-lg">Register</button>
+                <div id="register-error" class="text-red-500 text-xs mt-2 hidden"></div>
+            </div>
         </div>
     </div>
 
+    <!-- Main content area (visible after login) -->
     <div id="main-area" class="flex-1 flex flex-col hidden overflow-hidden">
         <div id="dynamic-panel" class="flex-1 overflow-y-auto p-4 space-y-4">
             <div id="chat-container" class="space-y-4"></div>
@@ -76,6 +95,7 @@
     let sessionId = crypto.randomUUID();
     let currentTab = 'chat';
     let userProfile = null;
+    let previewTimeout;
 
     function log(endpoint, method, status, data, err) {
         const div = document.getElementById('debug');
@@ -227,6 +247,17 @@
         }
     }
 
+    async function doRegister(inviteCode, email, password) {
+        try {
+            await call('/auth/register', 'POST', { invite_code: inviteCode, email, password });
+            return true;
+        } catch (err) {
+            document.getElementById('register-error').innerText = err.message;
+            document.getElementById('register-error').classList.remove('hidden');
+            return false;
+        }
+    }
+
     async function demoLogin() {
         const btn = document.getElementById('demo-btn');
         const orig = btn.innerHTML;
@@ -239,6 +270,27 @@
             btn.disabled = false;
         }
     }
+
+    // Preview organisation name on invite code input
+    document.getElementById('reg-invite-code')?.addEventListener('input', async (e) => {
+        const code = e.target.value.trim();
+        const previewDiv = document.getElementById('org-name-preview');
+        const previewSpan = document.getElementById('preview-org-name');
+        if (code.length >= 3) {
+            clearTimeout(previewTimeout);
+            previewTimeout = setTimeout(async () => {
+                try {
+                    const data = await call(`/public/org-info?invite_code=${code}`);
+                    previewSpan.innerText = data.org_name;
+                    previewDiv.classList.remove('hidden');
+                } catch (err) {
+                    previewDiv.classList.add('hidden');
+                }
+            }, 500);
+        } else {
+            previewDiv.classList.add('hidden');
+        }
+    });
 
     function switchTab(tab) {
         currentTab = tab;
@@ -299,6 +351,25 @@
         }
     }
 
+    // Toggle between login and register panels
+    document.getElementById('show-login-tab')?.addEventListener('click', () => {
+        document.getElementById('login-panel').classList.remove('hidden');
+        document.getElementById('register-panel').classList.add('hidden');
+        document.getElementById('show-login-tab').classList.add('border-b-2', 'border-blue-600', 'text-blue-600');
+        document.getElementById('show-login-tab').classList.remove('text-gray-500');
+        document.getElementById('show-register-tab').classList.remove('border-b-2', 'border-blue-600', 'text-blue-600');
+        document.getElementById('show-register-tab').classList.add('text-gray-500');
+    });
+    document.getElementById('show-register-tab')?.addEventListener('click', () => {
+        document.getElementById('login-panel').classList.add('hidden');
+        document.getElementById('register-panel').classList.remove('hidden');
+        document.getElementById('show-register-tab').classList.add('border-b-2', 'border-blue-600', 'text-blue-600');
+        document.getElementById('show-register-tab').classList.remove('text-gray-500');
+        document.getElementById('show-login-tab').classList.remove('border-b-2', 'border-blue-600', 'text-blue-600');
+        document.getElementById('show-login-tab').classList.add('text-gray-500');
+    });
+
+    // Event listeners
     document.getElementById('demo-btn')?.addEventListener('click', demoLogin);
     document.getElementById('login-btn')?.addEventListener('click', async () => {
         const email = document.getElementById('login-email').value;
@@ -309,6 +380,24 @@
             return;
         }
         if (await doLogin(email, pwd)) window.location.reload();
+    });
+    document.getElementById('register-btn')?.addEventListener('click', async () => {
+        const inviteCode = document.getElementById('reg-invite-code').value.trim();
+        const email = document.getElementById('reg-email').value;
+        const pwd = document.getElementById('reg-password').value;
+        if (!inviteCode || !email || !pwd) {
+            document.getElementById('register-error').innerText = 'All fields required';
+            document.getElementById('register-error').classList.remove('hidden');
+            return;
+        }
+        const ok = await doRegister(inviteCode, email, pwd);
+        if (ok) {
+            alert('Registration successful! Please check your email to verify, then login.');
+            document.getElementById('show-login-tab').click(); // switch to login
+            document.getElementById('reg-invite-code').value = '';
+            document.getElementById('reg-email').value = '';
+            document.getElementById('reg-password').value = '';
+        }
     });
     document.getElementById('chat-form')?.addEventListener('submit', async (e) => {
         e.preventDefault();
