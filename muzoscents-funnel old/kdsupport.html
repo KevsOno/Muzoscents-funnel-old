@@ -50,7 +50,16 @@
     if (!token) window.location.href = '/bisignin';
     let activeTicketId = null;
 
-    function showToast(msg, type='success') { /* toast */ }
+    function showToast(msg, type='success') {
+        const container = document.getElementById('toast-container');
+        if(!container) return;
+        const toast = document.createElement('div');
+        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type==='success'?'bg-green-600':'bg-red-600'} mb-2 text-sm`;
+        toast.innerText = msg;
+        container.appendChild(toast);
+        setTimeout(() => toast.remove(), 3500);
+    }
+
     function addDebugLog(endpoint, method, status, data, err) {
         const logsDiv = document.getElementById('debug');
         const entry = document.createElement('div'); entry.className = 'text-xs border-b border-gray-700 py-1';
@@ -58,17 +67,29 @@
         entry.innerHTML = `<span class="text-gray-400">[${ts}]</span> <span class="${status>=200&&status<300?'text-green-400':'text-red-400'}">${method} ${endpoint}</span> → ${status||'ERR'}<br>${err?`❌ ${err}`:(data?JSON.stringify(data).substring(0,150):'')}`;
         logsDiv.appendChild(entry); logsDiv.scrollTop = logsDiv.scrollHeight;
     }
+
+    // ======================== ROBUST REQUEST ========================
     async function req(endpoint, method='GET', body=null) {
         const url = `${BACKEND_URL}${endpoint}`;
-        const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
+        const token = localStorage.getItem('access_token');
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        let res;
         try {
-            const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
+            res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
             let data; try { data = await res.json(); } catch(e) { data = { raw: await res.text() }; }
             addDebugLog(endpoint, method, res.status, data);
+            if (res.status === 401) {
+                localStorage.removeItem('access_token');
+                window.location.href = '/bisignin';
+                throw new Error('Session expired');
+            }
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             return data;
-        } catch (err) { addDebugLog(endpoint, method, null, null, err.message); throw err; }
+        } catch (err) { addDebugLog(endpoint, method, res?.status || null, null, err.message); throw err; }
     }
+    // ================================================================
+
     async function loadTickets() {
         const status = document.getElementById('queue-status-filter').value;
         try {

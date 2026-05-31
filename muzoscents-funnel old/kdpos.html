@@ -44,12 +44,28 @@
     let cart = [];
     let products = [];
 
+    // ======================== ROBUST API CALL ========================
     async function call(endpoint, method='GET', body=null) {
-        const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
-        const res = await fetch(`${BACKEND}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
-        if (!res.ok) { const err = await res.json().catch(()=>({detail:'Error'})); throw new Error(err.detail || 'API error'); }
+        const token = localStorage.getItem('access_token');
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const res = await fetch(`${BACKEND}${endpoint}`, {
+            method,
+            headers,
+            body: body ? JSON.stringify(body) : undefined
+        });
+        if (res.status === 401) {
+            localStorage.removeItem('access_token');
+            window.location.href = '/bisignin';
+            throw new Error('Session expired');
+        }
+        if (!res.ok) {
+            const err = await res.json().catch(()=>({detail:'Error'}));
+            throw new Error(err.detail || 'API error');
+        }
         return res.json();
     }
+    // ================================================================
 
     async function loadProducts() {
         try {
@@ -107,7 +123,9 @@
     }
 
     async function logout() {
-        await call('/auth/logout', 'POST');
+        try {
+            await call('/auth/logout', 'POST');
+        } catch(e) {}
         localStorage.removeItem('access_token');
         window.location.href = '/bisignin';
     }

@@ -112,12 +112,28 @@
         setTimeout(() => toast.remove(), 3500);
     }
 
+    // ======================== ROBUST API CALL ========================
     async function apiCall(endpoint, method='GET', body=null) {
-        const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
-        const res = await fetch(`${BACKEND_URL}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
-        if (!res.ok) { const err = await res.json().catch(()=>({detail:'Error'})); throw new Error(err.detail || 'API error'); }
+        const token = localStorage.getItem('access_token');
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const res = await fetch(`${BACKEND_URL}${endpoint}`, {
+            method,
+            headers,
+            body: body ? JSON.stringify(body) : undefined
+        });
+        if (res.status === 401) {
+            localStorage.removeItem('access_token');
+            window.location.href = '/bisignin';
+            throw new Error('Session expired');
+        }
+        if (!res.ok) {
+            const err = await res.json().catch(()=>({detail:'Error'}));
+            throw new Error(err.detail || 'API error');
+        }
         return res.json();
     }
+    // ================================================================
 
     async function loadOrgContext() {
         try {
@@ -125,12 +141,10 @@
             const profile = await apiCall(`/support/customer-context?target_user_id=${me.user_id}`);
             document.getElementById('org-name').innerText = profile.profile?.first_name ? `${profile.profile.first_name}'s Dashboard` : 'Kevs Digital BI';
             document.getElementById('org-meta').innerHTML = `${profile.profile?.email || ''} | Points: ${profile.loyalty?.current_points || 0}`;
-            // usage badge
             document.getElementById('usage-badge').innerHTML = `<i class="fas fa-chart-line"></i> Active`;
         } catch(e) { console.error(e); }
     }
 
-    // Leads functions (CRUD, pagination, filters)
     async function loadLeads() {
         const loading = document.getElementById('leads-loading');
         const tableDiv = document.querySelector('#tab-leads .overflow-x-auto');
@@ -196,7 +210,6 @@
     async function deleteLead() { if (pendingDeleteId) { await apiCall(`/leads/${pendingDeleteId}`, 'DELETE'); loadLeads(); showToast('Lead deleted'); } closeDeleteModal(); }
     function closeDeleteModal() { document.getElementById('delete-modal').classList.add('hidden'); pendingDeleteId = null; }
 
-    // Metrics
     async function loadMetrics() {
         const loading = document.getElementById('metrics-loading');
         const content = document.getElementById('metrics-content');
@@ -215,7 +228,6 @@
         } catch(e) { showToast(e.message, 'error'); } finally { loading.classList.add('hidden'); content.classList.remove('hidden'); }
     }
 
-    // CAC Target
     async function runCac() {
         const targetCac = parseFloat(document.getElementById('target-cac').value);
         if (!targetCac) return showToast('Enter target CAC', 'error');
@@ -234,7 +246,6 @@
         return html;
     }
 
-    // Forecast
     async function runForecast() {
         const months = parseInt(document.getElementById('forecast-months').value);
         const growth = parseFloat(document.getElementById('forecast-growth').value) || null;
@@ -250,7 +261,7 @@
             if (forecastChart) forecastChart.destroy();
             const ctx = chartCanvas.getContext('2d');
             forecastChart = new Chart(ctx, { type: 'line', data: { labels, datasets: [{ label: 'Monthly Revenue (₦)', data: revenues, borderColor: '#f97316', fill: false }] } });
-            let html = '<table class="min-w-full text-sm"><thead><tr><th>Month</th><th>Leads</th><th>Conversions</th><th>Revenue</th><th>Cumulative</th></thead><tbody>';
+            let html = '<table class="min-w-full text-sm"><thead><tr><th>Month</th><th>Leads</th><th>Conversions</th><th>Revenue</th><th>Cumulative</th></tr></thead><tbody>';
             res.forecast.forEach(f => { html += `<tr><td>${f.month}</td><td>${f.leads_generated}</td><td>${f.conversions}</td><td>₦${f.revenue.toFixed(0)}</td><td>₦${f.cumulative_revenue.toFixed(0)}</td></tr>`; });
             html += '</tbody></table>';
             tableDiv.innerHTML = html;
@@ -258,7 +269,6 @@
         } catch(e) { showToast(`Forecast failed: ${e.message}`, 'error'); } finally { loadingDiv.classList.add('hidden'); }
     }
 
-    // Tab switching
     function switchTab(tabId) {
         document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
         document.getElementById(`tab-${tabId}`).classList.remove('hidden');
@@ -271,15 +281,28 @@
 
     function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, function(m) { if (m === '&') return '&amp;'; if (m === '<') return '&lt;'; if (m === '>') return '&gt;'; return m; }); }
 
-    // Event listeners
-    document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
-    document.getElementById('add-lead-btn')?.addEventListener('click', () => openLeadModal(null));
+    // CSV upload with 401 handling
     document.getElementById('csv-upload')?.addEventListener('change', async (e) => {
         if (!e.target.files[0]) return;
         const formData = new FormData(); formData.append('file', e.target.files[0]);
-        const res = await fetch(`${BACKEND_URL}/leads/upload`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: formData });
-        if (res.ok) { showToast('CSV uploaded'); loadLeads(); } else showToast('Upload failed', 'error');
+        const token = localStorage.getItem('access_token');
+        const res = await fetch(`${BACKEND_URL}/leads/upload`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+            body: formData
+        });
+        if (res.status === 401) {
+            localStorage.removeItem('access_token');
+            window.location.href = '/bisignin';
+            return;
+        }
+        if (res.ok) { showToast('CSV uploaded'); loadLeads(); }
+        else showToast('Upload failed', 'error');
     });
+
+    // Event listeners
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+    document.getElementById('add-lead-btn')?.addEventListener('click', () => openLeadModal(null));
     document.getElementById('refresh-metrics')?.addEventListener('click', loadMetrics);
     document.getElementById('run-cac')?.addEventListener('click', runCac);
     document.getElementById('run-forecast')?.addEventListener('click', runForecast);
@@ -292,7 +315,6 @@
     document.getElementById('close-modal')?.addEventListener('click', () => document.getElementById('lead-modal').classList.add('hidden'));
     document.getElementById('lead-form')?.addEventListener('submit', (e) => { e.preventDefault(); saveLead(); });
 
-    // Initialise
     (async () => {
         if (token) {
             try {

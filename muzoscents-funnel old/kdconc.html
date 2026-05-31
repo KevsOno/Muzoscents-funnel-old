@@ -101,7 +101,7 @@
 
 <script>
     const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
-    let token = localStorage.getItem('bOS_token') || null;
+    let token = localStorage.getItem('access_token');   // unified token key
     let userProfile = null;
     let currentTab = 'chat';
     let isRegisterMode = false;
@@ -112,22 +112,25 @@
         div.scrollTop = div.scrollHeight;
     }
 
+    // ======================== ROBUST API CALL ========================
     async function call(endpoint, options = {}) {
-        log(`API Request: ${endpoint}`);
         if (!options.headers) options.headers = {};
         options.headers['Content-Type'] = 'application/json';
         if (token) options.headers['Authorization'] = `Bearer ${token}`;
-
-        try {
-            const res = await fetch(`${API_BASE}${endpoint}`, options);
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.detail || 'API operation failed');
-            return data;
-        } catch (err) {
-            log(`API Error: ${err.message}`);
-            throw err;
+        const res = await fetch(`${API_BASE}${endpoint}`, options);
+        if (res.status === 401) {
+            localStorage.removeItem('access_token');
+            token = null;
+            window.location.href = '/bisignin';
+            throw new Error('Session expired');
         }
+        if (!res.ok) {
+            const err = await res.json().catch(()=>({detail:'Error'}));
+            throw new Error(err.detail || 'API operation failed');
+        }
+        return res.json();
     }
+    // ================================================================
 
     function addChatMessage(sender, text) {
         const container = document.getElementById('chat-container');
@@ -157,13 +160,13 @@
                 html += `
                     <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex justify-between items-center shadow-sm">
                         <div>
-                            <h4 class="font-bold text-white">${p.name}</h4>
-                            <p class="text-xs text-slate-400 mt-0.5">${p.sku || 'General Item'}</p>
-                            <p class="text-blue-400 font-bold text-sm mt-2">₦${p.price.toLocaleString()}</p>
+                            <h4 class="font-bold text-white">${p.description}</h4>
+                            <p class="text-xs text-slate-400 mt-0.5">SKU: ${p.id}</p>
+                            <p class="text-blue-400 font-bold text-sm mt-2">₦${p.price_naira.toLocaleString()}</p>
                         </div>
                         <div class="text-right">
-                            <span class="text-xs px-2 py-1 rounded-full font-medium ${p.stock > 5 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}">
-                                ${p.stock} units left
+                            <span class="text-xs px-2 py-1 rounded-full font-medium ${p.current_qty > 5 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}">
+                                ${p.current_qty} units left
                             </span>
                             <button onclick="alert('Checkout integration triggered')" class="block mt-3 bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded-lg transition">Buy Now</button>
                         </div>
@@ -213,7 +216,7 @@
         
         if (tab === 'chat') {
             inputBar.classList.remove('hidden');
-            panel.innerHTML = '<div id=\"chat-container\" class=\"space-y-4\"></div>';
+            panel.innerHTML = '<div id="chat-container" class="space-y-4"></div>';
             if (userProfile) addChatMessage('assistant', `Welcome back, ${userProfile.first_name}! How can I help you today?`);
             else addChatMessage('assistant', 'Hello! I am your business companion. How can I assist you with products or support?');
         } else if (tab === 'track') {
@@ -267,7 +270,7 @@
         if (token) {
             token = null;
             userProfile = null;
-            localStorage.removeItem('bOS_token');
+            localStorage.removeItem('access_token');
             document.getElementById('auth-status-btn').innerHTML = '<i class="fa-solid fa-user-lock mr-1"></i> Login';
             log("Session explicitly terminated.");
             if(currentTab === 'tickets') loadMyTickets();
@@ -299,35 +302,28 @@
                 const phone = document.getElementById('auth-phone').value.trim();
                 await call('/auth/register', {
                     method: 'POST',
-                    body: JSON.stringify({ email, password, first_name, last_name, phone })
+                    body: JSON.stringify({ email, password, first_name, last_name, phone, invite_code: orgCode })
                 });
                 alert('Registration finalized successfully! Signing in...');
                 isRegisterMode = false;
                 document.getElementById('reg-fields').classList.add('hidden');
             }
 
-            const formData = new URLSearchParams();
-            formData.append('username', email);
-            formData.append('password', password);
-            if(orgCode) formData.append('client_id', orgCode);
-
-            log("Executing secure backend handshake verification...");
-            const res = await fetch(`${API_BASE}/auth/login`, {
+            // Use the unified login endpoint that returns access_token
+            const loginRes = await fetch(`${API_BASE}/auth/login`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: formData
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
             });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.detail || 'Authorization refused');
-
-            token = data.access_token;
-            localStorage.setItem('bOS_token', token);
+            const loginData = await loginRes.json();
+            if (!loginRes.ok) throw new Error(loginData.detail || 'Login failed');
+            token = loginData.access_token;
+            localStorage.setItem('access_token', token);
             authModal.classList.add('hidden');
             
-            // Retrieve account verification profile
             userProfile = await call('/auth/me');
             document.getElementById('auth-status-btn').innerHTML = `<i class="fa-solid fa-circle-user mr-1 text-emerald-400"></i> ${userProfile.first_name}`;
-            log(`Authenticated successfully to Org Code: ${userProfile.org_id}`);
+            log(`Authenticated successfully to Org ID: ${userProfile.org_id}`);
             
             switchTab(currentTab);
         } catch(err) { alert(err.message); }
@@ -343,7 +339,7 @@
         addChatMessage('user', text);
 
         try {
-            const data = await call(`/support/chat-stream?message=${encodeURIComponent(text)}`);
+            const data = await call(`/support/chat-stream?message=${encodeURIComponent(text)}`, { method: 'POST' });
             addChatMessage('assistant', data.response || "No structural feedback returned.");
         } catch (err) { addChatMessage('assistant', `Error processing conversation: ${err.message}`); }
     }
@@ -364,7 +360,7 @@
                 log(`Session active for tenant database ID: ${userProfile.org_id}`);
             } catch(e) {
                 token = null;
-                localStorage.removeItem('bOS_token');
+                localStorage.removeItem('access_token');
             }
         }
         switchTab('chat');
