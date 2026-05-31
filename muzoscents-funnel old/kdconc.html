@@ -101,7 +101,7 @@
 
 <script>
     const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
-    let token = localStorage.getItem('access_token');   // unified token key
+    let token = localStorage.getItem('access_token');
     let userProfile = null;
     let currentTab = 'chat';
     let isRegisterMode = false;
@@ -112,14 +112,30 @@
         div.scrollTop = div.scrollHeight;
     }
 
-    // ======================== ROBUST API CALL ========================
-    async function call(endpoint, options = {}) {
+    // ======================== ROBUST API CALL WITH REFRESH ========================
+    async function call(endpoint, options = {}, retry = true) {
         if (!options.headers) options.headers = {};
         options.headers['Content-Type'] = 'application/json';
         if (token) options.headers['Authorization'] = `Bearer ${token}`;
         const res = await fetch(`${API_BASE}${endpoint}`, options);
-        if (res.status === 401) {
+        if (res.status === 401 && retry) {
+            const refreshToken = localStorage.getItem('refresh_token');
+            if (refreshToken) {
+                const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh_token: refreshToken })
+                });
+                if (refreshRes.ok) {
+                    const { access_token, refresh_token } = await refreshRes.json();
+                    localStorage.setItem('access_token', access_token);
+                    localStorage.setItem('refresh_token', refresh_token);
+                    token = access_token;
+                    return call(endpoint, options, false);
+                }
+            }
             localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
             token = null;
             window.location.href = '/bisignin';
             throw new Error('Session expired');
@@ -271,6 +287,7 @@
             token = null;
             userProfile = null;
             localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
             document.getElementById('auth-status-btn').innerHTML = '<i class="fa-solid fa-user-lock mr-1"></i> Login';
             log("Session explicitly terminated.");
             if(currentTab === 'tickets') loadMyTickets();
@@ -309,7 +326,7 @@
                 document.getElementById('reg-fields').classList.add('hidden');
             }
 
-            // Use the unified login endpoint that returns access_token
+            // Login using fetch directly to capture both tokens
             const loginRes = await fetch(`${API_BASE}/auth/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -319,6 +336,7 @@
             if (!loginRes.ok) throw new Error(loginData.detail || 'Login failed');
             token = loginData.access_token;
             localStorage.setItem('access_token', token);
+            localStorage.setItem('refresh_token', loginData.refresh_token);
             authModal.classList.add('hidden');
             
             userProfile = await call('/auth/me');
@@ -339,7 +357,10 @@
         addChatMessage('user', text);
 
         try {
-            const data = await call(`/support/chat-stream?message=${encodeURIComponent(text)}`, { method: 'POST' });
+            const data = await call(`/support/chat-stream`, {
+                method: 'POST',
+                body: JSON.stringify({ session_id: 'web_' + (localStorage.getItem('pf_session') || 'default'), message: text })
+            });
             addChatMessage('assistant', data.response || "No structural feedback returned.");
         } catch (err) { addChatMessage('assistant', `Error processing conversation: ${err.message}`); }
     }
@@ -361,6 +382,7 @@
             } catch(e) {
                 token = null;
                 localStorage.removeItem('access_token');
+                localStorage.removeItem('refresh_token');
             }
         }
         switchTab('chat');
