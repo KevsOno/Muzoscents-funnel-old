@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kevs Digital – Sign In</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root { --kevs-orange: #f97316; --kevs-blue: #3b82f6; }
+        body { background-color: #fef9e6; font-family: system-ui, sans-serif; }
+        .loading-spinner { border: 2px solid #e5e7eb; border-top: 2px solid var(--kevs-blue); border-radius: 50%; width: 20px; height: 20px; animation: spin 0.6s linear infinite; display: inline-block; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+<div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
+<div class="max-w-md w-full bg-white rounded-2xl shadow-xl p-8">
+    <div class="text-center mb-6">
+        <span class="text-3xl font-bold text-orange-500">Kevs</span><span class="text-2xl font-semibold text-gray-800">BI</span>
+        <p class="text-xs text-gray-400 mt-1">Intelligence dashboard</p>
+    </div>
+    <div class="flex border-b mb-6">
+        <button id="login-tab" class="flex-1 py-2 font-medium text-blue-600 border-b-2 border-blue-600">Login</button>
+        <button id="register-tab" class="flex-1 py-2 font-medium text-gray-500">Register</button>
+    </div>
+
+    <!-- Login form -->
+    <form id="login-form">
+        <input type="email" id="login-email" placeholder="Email" class="w-full mb-3 p-3 border rounded-lg" required>
+        <input type="password" id="login-password" placeholder="Password" class="w-full mb-2 p-3 border rounded-lg" required>
+        <div class="text-right mb-4"><button type="button" id="forgot-pwd-btn" class="text-xs text-blue-500 hover:underline">Forgot password?</button></div>
+        <button type="submit" class="w-full bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 font-medium transition">Login</button>
+        <div class="flex items-center my-4"><div class="flex-1 border-t border-gray-200"></div><span class="px-3 text-xs text-gray-400 uppercase">Or</span><div class="flex-1 border-t border-gray-200"></div></div>
+        <button type="button" id="demo-login-btn" class="w-full bg-emerald-600 text-white py-2.5 rounded-lg hover:bg-emerald-700 font-medium flex items-center justify-center gap-2"><i class="fa-solid fa-bolt"></i> One-Click Demo Access</button>
+    </form>
+
+    <!-- Register form -->
+    <form id="register-form" class="hidden">
+        <input type="text" id="reg-invite-code" placeholder="Invite Code (e.g., KD001)" class="w-full mb-2 p-3 border rounded-lg" required>
+        <div id="org-name-preview" class="text-xs text-gray-500 mb-2 hidden">Organisation: <span id="preview-org-name"></span></div>
+        <input type="email" id="reg-email" placeholder="Email" class="w-full mb-2 p-3 border rounded-lg" required>
+        <input type="password" id="reg-password" placeholder="Password" class="w-full mb-4 p-3 border rounded-lg" required>
+        <button type="submit" class="w-full bg-green-600 text-white py-2.5 rounded-lg hover:bg-green-700 transition">Register</button>
+    </form>
+    <div id="auth-message" class="text-xs text-center mt-4 text-red-500 hidden"></div>
+</div>
+
+<script>
+    const BACKEND_URL = 'https://kevsono-kevs-digital-bos.hf.space';
+    const DASHBOARD_URL = '/bizintel';
+
+    function showToast(msg, type='success') {
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type==='success'?'bg-green-600':'bg-red-600'} mb-2 text-sm`;
+        toast.innerText = msg;
+        container.appendChild(toast);
+        setTimeout(() => toast.remove(), 3500);
+    }
+
+    async function apiCall(endpoint, method='GET', body=null) {
+        const headers = { 'Content-Type': 'application/json' };
+        const res = await fetch(`${BACKEND_URL}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+        if (!res.ok) { const err = await res.json().catch(()=>({detail:'Error'})); throw new Error(err.detail || 'API error'); }
+        return res.json();
+    }
+
+    async function login(email, password) {
+        const data = await apiCall('/auth/login', 'POST', { email, password });
+        localStorage.setItem('access_token', data.access_token);
+        localStorage.setItem('user_id', data.user_id);
+        showToast('Login successful, redirecting...');
+        setTimeout(() => { window.location.href = DASHBOARD_URL; }, 1000);
+    }
+
+    async function register(inviteCode, email, password) {
+        await apiCall('/auth/register', 'POST', { invite_code: inviteCode, email, password });
+        showToast('Registration successful! Please verify email and then login.');
+        document.getElementById('login-tab').click();
+    }
+
+    async function resetPassword(email) {
+        await apiCall('/auth/reset-password', 'POST', { email });
+        showToast('Password reset email sent. Check your inbox.');
+    }
+
+    // Preview organisation name
+    let previewTimeout;
+    document.getElementById('reg-invite-code')?.addEventListener('input', async (e) => {
+        const code = e.target.value.trim();
+        const previewDiv = document.getElementById('org-name-preview');
+        const previewSpan = document.getElementById('preview-org-name');
+        if (code.length >= 3) {
+            clearTimeout(previewTimeout);
+            previewTimeout = setTimeout(async () => {
+                try {
+                    const data = await apiCall(`/public/org-info?invite_code=${code}`);
+                    previewSpan.innerText = data.org_name;
+                    previewDiv.classList.remove('hidden');
+                } catch (err) {
+                    previewDiv.classList.add('hidden');
+                }
+            }, 500);
+        } else {
+            previewDiv.classList.add('hidden');
+        }
+    });
+
+    // Demo login
+    document.getElementById('demo-login-btn')?.addEventListener('click', async () => {
+        const btn = document.getElementById('demo-login-btn');
+        const original = btn.innerHTML;
+        btn.innerHTML = '<i class="fa-solid fa-circle-notch animate-spin"></i> Authenticating...';
+        btn.disabled = true;
+        try {
+            const data = await apiCall('/auth/login', 'POST', { email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' });
+            localStorage.setItem('access_token', data.access_token);
+            localStorage.setItem('user_id', data.user_id);
+            showToast('Demo login successful!');
+            setTimeout(() => window.location.href = DASHBOARD_URL, 1000);
+        } catch (err) {
+            showToast('Demo failed: ' + err.message, 'error');
+            btn.innerHTML = original;
+            btn.disabled = false;
+        }
+    });
+
+    document.getElementById('login-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('login-email').value;
+        const pwd = document.getElementById('login-password').value;
+        try { await login(email, pwd); } catch (err) { showToast(err.message, 'error'); }
+    });
+
+    document.getElementById('register-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const code = document.getElementById('reg-invite-code').value.trim();
+        const email = document.getElementById('reg-email').value;
+        const pwd = document.getElementById('reg-password').value;
+        try { await register(code, email, pwd); } catch (err) { showToast(err.message, 'error'); }
+    });
+
+    document.getElementById('forgot-pwd-btn')?.addEventListener('click', async () => {
+        const email = document.getElementById('login-email').value;
+        if (!email) { showToast('Enter your email first', 'error'); return; }
+        try { await resetPassword(email); } catch (err) { showToast(err.message, 'error'); }
+    });
+
+    document.getElementById('login-tab')?.addEventListener('click', () => {
+        document.getElementById('login-form').classList.remove('hidden');
+        document.getElementById('register-form').classList.add('hidden');
+        document.getElementById('login-tab').classList.add('border-blue-600', 'text-blue-600');
+        document.getElementById('register-tab').classList.remove('border-blue-600', 'text-blue-600');
+        document.getElementById('register-tab').classList.add('text-gray-500');
+    });
+    document.getElementById('register-tab')?.addEventListener('click', () => {
+        document.getElementById('login-form').classList.add('hidden');
+        document.getElementById('register-form').classList.remove('hidden');
+        document.getElementById('register-tab').classList.add('border-blue-600', 'text-blue-600');
+        document.getElementById('login-tab').classList.remove('border-blue-600', 'text-blue-600');
+        document.getElementById('login-tab').classList.add('text-gray-500');
+    });
+</script>
+</body>
+</html>

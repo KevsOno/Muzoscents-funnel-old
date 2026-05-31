@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kevs POS Terminal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body class="bg-gray-100 p-4">
+<div class="max-w-7xl mx-auto">
+    <div class="bg-white rounded-xl shadow-md p-4 mb-4 flex justify-between items-center">
+        <h1 class="text-2xl font-bold">💳 Kevs POS Terminal</h1>
+        <div>
+            <span id="cashier-name" class="text-sm bg-gray-200 px-3 py-1 rounded-full">Cashier</span>
+            <button onclick="logout()" class="ml-3 text-red-500 text-sm">Logout</button>
+        </div>
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Product grid -->
+        <div class="lg:col-span-2 bg-white rounded-xl shadow-md p-4">
+            <h2 class="text-xl font-semibold mb-3">Products</h2>
+            <div id="product-list" class="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[500px] overflow-y-auto"></div>
+        </div>
+        <!-- Cart -->
+        <div class="bg-white rounded-xl shadow-md p-4">
+            <h2 class="text-xl font-semibold mb-3">Current Sale</h2>
+            <div id="cart-items" class="space-y-2 max-h-96 overflow-y-auto"></div>
+            <div class="border-t pt-3 mt-3">
+                <div class="flex justify-between text-lg font-bold"><span>Total:</span><span id="cart-total">₦0</span></div>
+                <div class="mt-3"><label class="block text-sm">Payment Method</label><select id="payment-method" class="w-full border rounded-lg p-2"><option value="cash">Cash</option><option value="card">Card</option><option value="transfer">Bank Transfer</option></select></div>
+                <div class="mt-3"><label class="block text-sm">Customer Name (optional)</label><input id="customer-name" class="w-full border rounded-lg p-2" placeholder="Walk-in Customer"></div>
+                <div class="mt-3"><label class="block text-sm">Customer Phone</label><input id="customer-phone" class="w-full border rounded-lg p-2" placeholder="Optional"></div>
+                <button id="checkout-btn" class="mt-4 w-full bg-green-600 text-white py-2 rounded-lg font-bold">Complete Sale</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
+    let token = localStorage.getItem('access_token');
+    if (!token) window.location.href = '/bisignin';
+    let cart = [];
+    let products = [];
+
+    async function call(endpoint, method='GET', body=null) {
+        const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
+        const res = await fetch(`${BACKEND}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+        if (!res.ok) { const err = await res.json().catch(()=>({detail:'Error'})); throw new Error(err.detail || 'API error'); }
+        return res.json();
+    }
+
+    async function loadProducts() {
+        try {
+            const data = await call('/inventory');
+            products = data;
+            const container = document.getElementById('product-list');
+            container.innerHTML = products.map(p => `
+                <button onclick="addToCart(${p.id}, '${p.description}', ${p.price_naira}, ${p.current_qty})" class="bg-gray-50 p-3 rounded-lg text-left hover:bg-gray-100 border">
+                    <div class="font-semibold">${p.description}</div>
+                    <div class="text-sm">₦${p.price_naira.toLocaleString()}</div>
+                    <div class="text-xs text-gray-500">Stock: ${p.current_qty}</div>
+                </button>
+            `).join('');
+        } catch(err) { alert('Failed to load products'); }
+    }
+
+    function addToCart(id, name, price, stock) {
+        const existing = cart.find(i => i.id === id);
+        if (existing) {
+            if (existing.qty + 1 > stock) { alert('Insufficient stock'); return; }
+            existing.qty++;
+        } else {
+            if (1 > stock) { alert('Out of stock'); return; }
+            cart.push({ id, name, price, qty: 1 });
+        }
+        renderCart();
+    }
+
+    function renderCart() {
+        const container = document.getElementById('cart-items');
+        let total = 0;
+        container.innerHTML = cart.map((item, idx) => {
+            const subtotal = item.price * item.qty;
+            total += subtotal;
+            return `<div class="flex justify-between items-center border-b pb-2"><div>${item.name} x${item.qty}</div><div>₦${subtotal}</div><button onclick="removeFromCart(${idx})" class="text-red-500 text-xs">Remove</button></div>`;
+        }).join('');
+        document.getElementById('cart-total').innerText = `₦${total.toLocaleString()}`;
+    }
+
+    function removeFromCart(idx) { cart.splice(idx,1); renderCart(); }
+
+    async function checkout() {
+        if (cart.length === 0) { alert('Cart empty'); return; }
+        const items = cart.map(i => ({ inventory_id: i.id, quantity: i.qty }));
+        const paymentMethod = document.getElementById('payment-method').value;
+        const customerName = document.getElementById('customer-name').value || null;
+        const customerPhone = document.getElementById('customer-phone').value || null;
+        try {
+            const result = await call('/pos/terminal/checkout', 'POST', { items, payment_method: paymentMethod, customer_name: customerName, customer_phone: customerPhone });
+            alert(`Sale complete!\nReceipt: ${result.receipt_number}\nTotal: ₦${result.total.toLocaleString()}`);
+            cart = [];
+            renderCart();
+            await loadProducts(); // refresh stock
+        } catch(err) { alert('Checkout failed: ' + err.message); }
+    }
+
+    async function logout() {
+        await call('/auth/logout', 'POST');
+        localStorage.removeItem('access_token');
+        window.location.href = '/bisignin';
+    }
+
+    document.getElementById('checkout-btn')?.addEventListener('click', checkout);
+    loadProducts();
+</script>
+</body>
+</html>

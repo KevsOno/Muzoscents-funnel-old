@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kevs Digital Concierge & Shop</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body { background-color: #0F172A; font-family: system-ui, sans-serif; }
+        .debug-panel { background: #1e1e2f; color: #0fc; font-family: monospace; font-size: 10px; max-height: 120px; overflow-y: auto; padding: 6px; }
+        .typing-indicator span { width: 8px; height: 8px; background: #6b7280; border-radius: 50%; display: inline-block; animation: typing 1.4s infinite; margin: 0 2px; }
+        @keyframes typing { 0%,80%,100%{transform:scale(0.8);opacity:0.5} 40%{transform:scale(1.2);opacity:1} }
+        .nav-tab { cursor: pointer; padding: 8px 12px; border-radius: 20px; transition: 0.2s; color: #94A3B8; display: flex; align-items: center; gap: 6px; }
+        .nav-tab.active { background: #1E3A8A; color: #FFFFFF; }
+    </style>
+</head>
+<body class="text-slate-200">
+
+<div class="max-w-md mx-auto min-h-screen flex flex-col bg-slate-900 shadow-2xl relative">
+    <header class="p-4 bg-slate-800 border-b border-slate-700 flex justify-between items-center">
+        <div>
+            <h1 class="font-bold text-lg text-white">Kevs Digital bOS</h1>
+            <p class="text-xs text-slate-400">Omnichannel Customer Concierge</p>
+        </div>
+        <button id="auth-status-btn" class="bg-blue-600 hover:bg-blue-700 text-xs text-white px-3 py-1.5 rounded-lg transition">
+            <i class="fa-solid fa-user-lock mr-1"></i> Login
+        </button>
+    </header>
+
+    <nav class="flex justify-around bg-slate-800/50 p-2 border-b border-slate-700/50 text-sm font-medium">
+        <div data-tab="chat" class="nav-tab active"><i class="fa-solid fa-comments"></i> Chat</div>
+        <div data-tab="shop" class="nav-tab"><i class="fa-solid fa-store"></i> Shop</div>
+        <div data-tab="tickets" class="nav-tab"><i class="fa-solid fa-ticket"></i> Tickets</div>
+        <div data-tab="track" class="nav-tab"><i class="fa-solid fa-truck"></i> Track Order</div>
+    </nav>
+
+    <main id="dynamic-panel" class="flex-1 p-4 overflow-y-auto space-y-4 text-slate-800">
+        <div id="chat-container" class="space-y-4"></div>
+    </main>
+
+    <div id="input-bar" class="p-3 bg-slate-800 border-t border-slate-700 flex gap-2 items-center">
+        <input id="chat-input" type="text" placeholder="Type your message..." class="flex-1 bg-slate-950 text-slate-100 placeholder-slate-500 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+        <button id="chat-send" class="bg-blue-600 hover:bg-blue-700 text-white w-9 h-9 rounded-lg flex items-center justify-center transition">
+            <i class="fa-solid fa-paper-plane"></i>
+        </button>
+    </div>
+
+    <div class="debug-panel">
+        <div class="font-bold border-b border-slate-700 pb-0.5 mb-1 text-slate-400">DEBUG LOGS:</div>
+        <div id="logs-content">System initialized... Ready.</div>
+    </div>
+</div>
+
+<div id="auth-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+    <div class="bg-slate-800 border border-slate-700 p-6 rounded-2xl shadow-xl w-full max-w-sm text-slate-200">
+        <div class="flex justify-between items-center mb-4">
+            <h3 id="modal-title" class="text-lg font-bold text-white">Sign In to Workspace</h3>
+            <button id="close-modal-btn" class="text-slate-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        
+        <div class="space-y-3">
+            <div>
+                <label class="text-xs text-slate-400 block mb-1">Invite/Org Code</label>
+                <input id="auth-org" type="text" placeholder="e.g., KD001 (Leave blank if registering)" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm focus:outline-none focus:border-blue-500">
+            </div>
+            <div>
+                <label class="text-xs text-slate-400 block mb-1">Email Address</label>
+                <input id="auth-email" type="email" placeholder="you@company.com" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm focus:outline-none focus:border-blue-500">
+            </div>
+            <div>
+                <label class="text-xs text-slate-400 block mb-1">Password</label>
+                <input id="auth-password" type="password" placeholder="••••••••" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm focus:outline-none focus:border-blue-500">
+            </div>
+            
+            <div id="reg-fields" class="hidden space-y-3 pt-1 border-t border-slate-700/50 mt-2">
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="text-xs text-slate-400 block mb-1">First Name</label>
+                        <input id="auth-fname" type="text" placeholder="John" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="text-xs text-slate-400 block mb-1">Last Name</label>
+                        <input id="auth-lname" type="text" placeholder="Doe" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm focus:outline-none focus:border-blue-500">
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400 block mb-1">Phone Number</label>
+                    <input id="auth-phone" type="text" placeholder="e.g., +234..." class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm focus:outline-none focus:border-blue-500">
+                </div>
+            </div>
+
+            <button id="modal-submit-btn" class="w-full bg-blue-600 hover:bg-blue-700 font-medium text-white p-2.5 rounded-lg transition text-sm mt-2">Sign In</button>
+            
+            <div class="text-center mt-3">
+                <button id="toggle-auth-mode" class="text-xs text-blue-400 hover:underline">Don't have an account? Register business</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
+    let token = localStorage.getItem('bOS_token') || null;
+    let userProfile = null;
+    let currentTab = 'chat';
+    let isRegisterMode = false;
+
+    function log(msg) {
+        const div = document.getElementById('logs-content');
+        div.innerHTML += `<br>[${new Date().toLocaleTimeString()}] ${msg}`;
+        div.scrollTop = div.scrollHeight;
+    }
+
+    async function call(endpoint, options = {}) {
+        log(`API Request: ${endpoint}`);
+        if (!options.headers) options.headers = {};
+        options.headers['Content-Type'] = 'application/json';
+        if (token) options.headers['Authorization'] = `Bearer ${token}`;
+
+        try {
+            const res = await fetch(`${API_BASE}${endpoint}`, options);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'API operation failed');
+            return data;
+        } catch (err) {
+            log(`API Error: ${err.message}`);
+            throw err;
+        }
+    }
+
+    function addChatMessage(sender, text) {
+        const container = document.getElementById('chat-container');
+        if (!container) return;
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `p-3 rounded-xl max-w-[85%] text-sm shadow-sm ${
+            sender === 'user' 
+                ? 'bg-blue-600 text-white ml-auto rounded-tr-none' 
+                : 'bg-slate-800 text-slate-100 mr-auto rounded-tl-none border border-slate-700'
+        }`;
+        msgDiv.innerText = text;
+        container.appendChild(msgDiv);
+        container.parentElement.scrollTop = container.parentElement.scrollHeight;
+    }
+
+    async function loadProducts() {
+        const panel = document.getElementById('dynamic-panel');
+        panel.innerHTML = '<div class="text-slate-400 text-center py-8"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading catalogue...</div>';
+        try {
+            const items = await call('/inventory/public-list');
+            if(!items || items.length === 0) {
+                panel.innerHTML = '<div class="text-slate-400 text-center py-8">No retail stock items currently visible.</div>';
+                return;
+            }
+            let html = `<div class="grid grid-cols-1 gap-4">`;
+            items.forEach(p => {
+                html += `
+                    <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex justify-between items-center shadow-sm">
+                        <div>
+                            <h4 class="font-bold text-white">${p.name}</h4>
+                            <p class="text-xs text-slate-400 mt-0.5">${p.sku || 'General Item'}</p>
+                            <p class="text-blue-400 font-bold text-sm mt-2">₦${p.price.toLocaleString()}</p>
+                        </div>
+                        <div class="text-right">
+                            <span class="text-xs px-2 py-1 rounded-full font-medium ${p.stock > 5 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}">
+                                ${p.stock} units left
+                            </span>
+                            <button onclick="alert('Checkout integration triggered')" class="block mt-3 bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded-lg transition">Buy Now</button>
+                        </div>
+                    </div>`;
+            });
+            html += `</div>`;
+            panel.innerHTML = html;
+        } catch(err) { panel.innerHTML = `<div class="text-red-400 bg-red-500/10 border border-red-500/20 p-4 rounded-xl text-sm">Catalog failed: ${err.message}</div>`; }
+    }
+
+    async function loadMyTickets() {
+        const panel = document.getElementById('dynamic-panel');
+        if(!token) {
+            panel.innerHTML = '<div class="text-slate-400 text-center py-8"><i class="fa-solid fa-lock mb-2 block text-lg"></i>Please log in to track your operational support tickets.</div>';
+            return;
+        }
+        panel.innerHTML = '<div class="text-slate-400 text-center py-8"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Syncing helpdesk records...</div>';
+        try {
+            const tickets = await call('/support/tickets');
+            if(!tickets || tickets.length === 0) {
+                panel.innerHTML = '<div class="text-slate-400 text-center py-8">No structural support tickets found.</div>';
+                return;
+            }
+            let html = `<div class="space-y-3">`;
+            tickets.forEach(t => {
+                html += `
+                    <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 shadow-sm">
+                        <div class="flex justify-between items-start">
+                            <span class="text-xs font-mono font-bold text-blue-400">#${t.id.slice(0,8).toUpperCase()}</span>
+                            <span class="text-[10px] uppercase font-bold px-2 py-0.5 rounded ${t.status === 'open' ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-700 text-slate-400'}">${t.status}</span>
+                        </div>
+                        <p class="text-sm font-semibold mt-1 text-white">${t.subject || 'Automated Query Case'}</p>
+                        <p class="text-xs text-slate-400 mt-1">Priority: <span class="capitalize text-slate-300">${t.priority}</span></p>
+                    </div>`;
+            });
+            html += `</div>`;
+            panel.innerHTML = html;
+        } catch(err) { panel.innerHTML = `<div class="text-red-400 bg-red-500/10 border border-red-500/20 p-4 rounded-xl text-sm">Failed loading tickets: ${err.message}</div>`; }
+    }
+
+    function switchTab(tab) {
+        currentTab = tab;
+        document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
+        document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+        const panel = document.getElementById('dynamic-panel');
+        const inputBar = document.getElementById('input-bar');
+        
+        if (tab === 'chat') {
+            inputBar.classList.remove('hidden');
+            panel.innerHTML = '<div id=\"chat-container\" class=\"space-y-4\"></div>';
+            if (userProfile) addChatMessage('assistant', `Welcome back, ${userProfile.first_name}! How can I help you today?`);
+            else addChatMessage('assistant', 'Hello! I am your business companion. How can I assist you with products or support?');
+        } else if (tab === 'track') {
+            inputBar.classList.add('hidden');
+            panel.innerHTML = `
+                <div class="bg-slate-800 border border-slate-700 p-5 rounded-2xl shadow-sm text-slate-200">
+                    <h3 class="font-bold text-lg mb-1 text-white flex items-center gap-2"><i class="fa-solid fa-truck text-blue-500"></i> Track Your Order</h3>
+                    <p class="text-xs text-slate-400 mb-4">Monitor real-time retail fulfillment and carrier tracking updates.</p>
+                    <div class="space-y-3">
+                        <input id="track-receipt" type="text" placeholder="Receipt Number (e.g., RCP-...)" class="w-full bg-slate-950 border border-slate-700 p-2.5 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
+                        <input id="track-email" type="email" placeholder="Your Associated Email" class="w-full bg-slate-950 border border-slate-700 p-2.5 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
+                        <button id="track-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2.5 rounded-lg w-full transition text-sm">Query Delivery State</button>
+                    </div>
+                    <div id="track-result" class="mt-4 text-sm"></div>
+                </div>
+            `;
+            document.getElementById('track-btn')?.addEventListener('click', async () => {
+                const receipt = document.getElementById('track-receipt').value.trim();
+                const email = document.getElementById('track-email').value.trim();
+                if (!receipt || !email) { alert('Enter receipt number and email address'); return; }
+                
+                const resultDiv = document.getElementById('track-result');
+                resultDiv.innerHTML = '<div class="text-slate-400 text-center py-2"><i class="fa-solid fa-circle-notch fa-spin mr-2"></i>Checking database registries...</div>';
+                
+                try {
+                    const data = await call(`/track-order?receipt_number=${receipt}&email=${email}`);
+                    const statusMap = { pending: '⏳ Pending Operations', completed: '📦 Order Formulated', shipped: '🚚 Dispatched / Shipped', delivered: '✅ Successfully Delivered', cancelled: '❌ Cancelled' };
+                    resultDiv.innerHTML = `
+                        <div class="bg-slate-950 border border-slate-700/60 p-4 rounded-xl space-y-2 mt-2 text-slate-300 font-sans">
+                            <div class="flex justify-between border-b border-slate-800 pb-1.5"><span class="text-xs text-slate-400">Order Token</span> <span class="font-mono text-white text-xs">${data.receipt_number}</span></div>
+                            <div class="flex justify-between border-b border-slate-800 pb-1.5"><span class="text-xs text-slate-400">Total Charged</span> <span class="text-white font-bold text-xs">₦${data.total_amount.toLocaleString()}</span></div>
+                            <div class="flex justify-between border-b border-slate-800 pb-1.5"><span class="text-xs text-slate-400">Status State</span> <span class="text-blue-400 text-xs font-semibold">${statusMap[data.shipping_status] || data.shipping_status}</span></div>
+                            <div class="flex justify-between border-b border-slate-800 pb-1.5"><span class="text-xs text-slate-400">Logistics Carrier</span> <span class="text-white text-xs">${data.shipping_carrier || 'Awaiting Allocation'}</span></div>
+                            <div class="flex justify-between border-b border-slate-800 pb-1.5"><span class="text-xs text-slate-400">Waybill/Tracking</span> <span class="font-mono text-xs ${data.tracking_number ? 'text-emerald-400' : 'text-slate-500'}">${data.tracking_number || 'N/A'}</span></div>
+                            <div class="flex justify-between border-b border-slate-800 pb-1.5"><span class="text-xs text-slate-400">Estimated Arrival</span> <span class="text-white text-xs">${data.estimated_delivery || 'Processing Logistics'}</span></div>
+                            <div class="text-[10px] text-slate-500 text-right pt-1">Logged: ${new Date(data.created_at).toLocaleString()}</div>
+                        </div>
+                    `;
+                } catch (err) { resultDiv.innerHTML = `<div class="text-red-400 bg-red-500/10 border border-red-500/20 p-3 rounded-lg text-xs mt-2">${err.message}</div>`; }
+            });
+        } else {
+            inputBar.classList.add('hidden');
+            if (tab === 'shop') loadProducts();
+            else if (tab === 'tickets') loadMyTickets();
+        }
+    }
+
+    // Modal Control UI Handlers
+    const authModal = document.getElementById('auth-modal');
+    document.getElementById('auth-status-btn').onclick = () => {
+        if (token) {
+            token = null;
+            userProfile = null;
+            localStorage.removeItem('bOS_token');
+            document.getElementById('auth-status-btn').innerHTML = '<i class="fa-solid fa-user-lock mr-1"></i> Login';
+            log("Session explicitly terminated.");
+            if(currentTab === 'tickets') loadMyTickets();
+        } else {
+            authModal.classList.remove('hidden');
+        }
+    };
+    document.getElementById('close-modal-btn').onclick = () => authModal.classList.add('hidden');
+
+    document.getElementById('toggle-auth-mode').onclick = () => {
+        isRegisterMode = !isRegisterMode;
+        document.getElementById('modal-title').innerText = isRegisterMode ? "Register Organization" : "Sign In to Workspace";
+        document.getElementById('modal-submit-btn').innerText = isRegisterMode ? "Create Business Profile" : "Sign In";
+        document.getElementById('toggle-auth-mode').innerText = isRegisterMode ? "Already operational? Sign In" : "Don't have an account? Register business";
+        document.getElementById('reg-fields').classList.toggle('hidden', !isRegisterMode);
+    };
+
+    document.getElementById('modal-submit-btn').onclick = async () => {
+        const email = document.getElementById('auth-email').value.trim();
+        const password = document.getElementById('auth-password').value.trim();
+        const orgCode = document.getElementById('auth-org').value.trim();
+
+        if (!email || !password) { alert('Fill out credentials fields.'); return; }
+
+        try {
+            if (isRegisterMode) {
+                const first_name = document.getElementById('auth-fname').value.trim();
+                const last_name = document.getElementById('auth-lname').value.trim();
+                const phone = document.getElementById('auth-phone').value.trim();
+                await call('/auth/register', {
+                    method: 'POST',
+                    body: JSON.stringify({ email, password, first_name, last_name, phone })
+                });
+                alert('Registration finalized successfully! Signing in...');
+                isRegisterMode = false;
+                document.getElementById('reg-fields').classList.add('hidden');
+            }
+
+            const formData = new URLSearchParams();
+            formData.append('username', email);
+            formData.append('password', password);
+            if(orgCode) formData.append('client_id', orgCode);
+
+            log("Executing secure backend handshake verification...");
+            const res = await fetch(`${API_BASE}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: formData
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Authorization refused');
+
+            token = data.access_token;
+            localStorage.setItem('bOS_token', token);
+            authModal.classList.add('hidden');
+            
+            // Retrieve account verification profile
+            userProfile = await call('/auth/me');
+            document.getElementById('auth-status-btn').innerHTML = `<i class="fa-solid fa-circle-user mr-1 text-emerald-400"></i> ${userProfile.first_name}`;
+            log(`Authenticated successfully to Org Code: ${userProfile.org_id}`);
+            
+            switchTab(currentTab);
+        } catch(err) { alert(err.message); }
+    };
+
+    // Autonomous Core Messaging Pipeline
+    async function sendMessage() {
+        const input = document.getElementById('chat-input');
+        const text = input.value.trim();
+        if(!text) return;
+        input.value = '';
+
+        addChatMessage('user', text);
+
+        try {
+            const data = await call(`/support/chat-stream?message=${encodeURIComponent(text)}`);
+            addChatMessage('assistant', data.response || "No structural feedback returned.");
+        } catch (err) { addChatMessage('assistant', `Error processing conversation: ${err.message}`); }
+    }
+
+    document.getElementById('chat-send').onclick = sendMessage;
+    document.getElementById('chat-input').onkeypress = (e) => e.key === 'Enter' && sendMessage();
+
+    // Initial Bootstrap
+    async function init() {
+        document.querySelectorAll('.nav-tab').forEach(tab => {
+            tab.onclick = () => switchTab(tab.getAttribute('data-tab'));
+        });
+        
+        if (token) {
+            try {
+                userProfile = await call('/auth/me');
+                document.getElementById('auth-status-btn').innerHTML = `<i class="fa-solid fa-circle-user mr-1 text-emerald-400"></i> ${userProfile.first_name}`;
+                log(`Session active for tenant database ID: ${userProfile.org_id}`);
+            } catch(e) {
+                token = null;
+                localStorage.removeItem('bOS_token');
+            }
+        }
+        switchTab('chat');
+    }
+
+    init();
+</script>
+</body>
+</html>
