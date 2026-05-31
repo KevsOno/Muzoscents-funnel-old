@@ -44,18 +44,33 @@
     let cart = [];
     let products = [];
 
-    // ======================== ROBUST API CALL ========================
-    async function call(endpoint, method='GET', body=null) {
-        const token = localStorage.getItem('access_token');
+    // ======================== ROBUST API CALL WITH REFRESH ========================
+    async function call(endpoint, method='GET', body=null, retry = true) {
+        const accessToken = localStorage.getItem('access_token');
         const headers = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
+        if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
         const res = await fetch(`${BACKEND}${endpoint}`, {
             method,
             headers,
             body: body ? JSON.stringify(body) : undefined
         });
-        if (res.status === 401) {
+        if (res.status === 401 && retry) {
+            const refreshToken = localStorage.getItem('refresh_token');
+            if (refreshToken) {
+                const refreshRes = await fetch(`${BACKEND}/auth/refresh`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh_token: refreshToken })
+                });
+                if (refreshRes.ok) {
+                    const { access_token, refresh_token } = await refreshRes.json();
+                    localStorage.setItem('access_token', access_token);
+                    localStorage.setItem('refresh_token', refresh_token);
+                    return call(endpoint, method, body, false);
+                }
+            }
             localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
             window.location.href = '/bisignin';
             throw new Error('Session expired');
         }
@@ -127,6 +142,7 @@
             await call('/auth/logout', 'POST');
         } catch(e) {}
         localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
         window.location.href = '/bisignin';
     }
 
