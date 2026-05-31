@@ -69,12 +69,6 @@
             headers,
             body: body ? JSON.stringify(body) : undefined
         });
-        // 401 handling – redirect only if not already on signin page
-        if (res.status === 401 && window.location.pathname !== '/bisignin') {
-            localStorage.removeItem('access_token');
-            window.location.href = '/bisignin';
-            throw new Error('Session expired');
-        }
         if (!res.ok) {
             const err = await res.json().catch(()=>({detail:'Error'}));
             throw new Error(err.detail || 'API error');
@@ -86,6 +80,7 @@
     async function login(email, password) {
         const data = await apiCall('/auth/login', 'POST', { email, password });
         localStorage.setItem('access_token', data.access_token);
+        localStorage.setItem('refresh_token', data.refresh_token);
         localStorage.setItem('user_id', data.user_id);
         showToast('Login successful, redirecting...');
         setTimeout(() => { window.location.href = DASHBOARD_URL; }, 1000);
@@ -133,6 +128,7 @@
         try {
             const data = await apiCall('/auth/login', 'POST', { email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' });
             localStorage.setItem('access_token', data.access_token);
+            localStorage.setItem('refresh_token', data.refresh_token);
             localStorage.setItem('user_id', data.user_id);
             showToast('Demo login successful!');
             setTimeout(() => window.location.href = DASHBOARD_URL, 1000);
