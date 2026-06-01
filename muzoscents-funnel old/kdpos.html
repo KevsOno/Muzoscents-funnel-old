@@ -17,12 +17,10 @@
         </div>
     </div>
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <!-- Product grid -->
         <div class="lg:col-span-2 bg-white rounded-xl shadow-md p-4">
             <h2 class="text-xl font-semibold mb-3">Products</h2>
             <div id="product-list" class="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[500px] overflow-y-auto"></div>
         </div>
-        <!-- Cart -->
         <div class="bg-white rounded-xl shadow-md p-4">
             <h2 class="text-xl font-semibold mb-3">Current Sale</h2>
             <div id="cart-items" class="space-y-2 max-h-96 overflow-y-auto"></div>
@@ -39,13 +37,21 @@
 
 <script>
     const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
+
+    function forceLogout() {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        window.location.href = '/bisignin';
+    }
+
+    if (localStorage.getItem('access_token') && !localStorage.getItem('refresh_token')) forceLogout();
     let token = localStorage.getItem('access_token');
-    if (!token) window.location.href = '/bisignin';
+    if (!token) forceLogout();
+
     let cart = [];
     let products = [];
 
-    // ======================== ROBUST API CALL WITH REFRESH ========================
-    async function call(endpoint, method='GET', body=null, retry = true) {
+    async function call(endpoint, method='GET', body=null, retry=true) {
         const accessToken = localStorage.getItem('access_token');
         const headers = { 'Content-Type': 'application/json' };
         if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
@@ -54,9 +60,9 @@
             headers,
             body: body ? JSON.stringify(body) : undefined
         });
-        if (res.status === 401 && retry) {
+        if (res.status === 401) {
             const refreshToken = localStorage.getItem('refresh_token');
-            if (refreshToken) {
+            if (refreshToken && retry) {
                 const refreshRes = await fetch(`${BACKEND}/auth/refresh`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -69,9 +75,7 @@
                     return call(endpoint, method, body, false);
                 }
             }
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('refresh_token');
-            window.location.href = '/bisignin';
+            forceLogout();
             throw new Error('Session expired');
         }
         if (!res.ok) {
@@ -80,7 +84,6 @@
         }
         return res.json();
     }
-    // ================================================================
 
     async function loadProducts() {
         try {
@@ -133,7 +136,7 @@
             alert(`Sale complete!\nReceipt: ${result.receipt_number}\nTotal: ₦${result.total.toLocaleString()}`);
             cart = [];
             renderCart();
-            await loadProducts(); // refresh stock
+            await loadProducts();
         } catch(err) { alert('Checkout failed: ' + err.message); }
     }
 
@@ -141,9 +144,7 @@
         try {
             await call('/auth/logout', 'POST');
         } catch(e) {}
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        window.location.href = '/bisignin';
+        forceLogout();
     }
 
     document.getElementById('checkout-btn')?.addEventListener('click', checkout);
