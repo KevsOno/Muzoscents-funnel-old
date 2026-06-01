@@ -97,18 +97,13 @@
 <script>
     const BACKEND_URL = 'https://kevsono-kevs-digital-bos.hf.space';
 
-    // Helper: force logout and redirect
     function forceLogout() {
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
-        window.location.href = '/bisignin';
+        window.location.href = '/kdsiginin';
     }
 
-    // On load, if we have access_token but no refresh_token, force fresh login
-    if (localStorage.getItem('access_token') && !localStorage.getItem('refresh_token')) {
-        forceLogout();
-    }
-
+    if (localStorage.getItem('access_token') && !localStorage.getItem('refresh_token')) forceLogout();
     let token = localStorage.getItem('access_token');
     if (!token) forceLogout();
 
@@ -125,7 +120,6 @@
         setTimeout(() => toast.remove(), 3500);
     }
 
-    // ======================== API CALL WITH REFRESH (fixed) ========================
     async function apiCall(endpoint, method='GET', body=null, retry=true) {
         const accessToken = localStorage.getItem('access_token');
         const headers = { 'Content-Type': 'application/json' };
@@ -139,7 +133,6 @@
 
         if (res.status === 401) {
             const refreshToken = localStorage.getItem('refresh_token');
-            // If we have a refresh token and we haven't retried yet, try to refresh
             if (refreshToken && retry) {
                 try {
                     const refreshRes = await fetch(`${BACKEND_URL}/auth/refresh`, {
@@ -151,14 +144,10 @@
                         const { access_token, refresh_token } = await refreshRes.json();
                         localStorage.setItem('access_token', access_token);
                         localStorage.setItem('refresh_token', refresh_token);
-                        // Retry the original request once
                         return apiCall(endpoint, method, body, false);
                     }
-                } catch (e) {
-                    console.error('Refresh failed', e);
-                }
+                } catch (e) {}
             }
-            // No refresh token or refresh failed – logout
             forceLogout();
             throw new Error('Session expired');
         }
@@ -169,7 +158,6 @@
         }
         return res.json();
     }
-    // ================================================================
 
     async function loadOrgContext() {
         try {
@@ -317,7 +305,6 @@
 
     function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, function(m) { if (m === '&') return '&amp;'; if (m === '<') return '&lt;'; if (m === '>') return '&gt;'; return m; }); }
 
-    // CSV upload
     document.getElementById('csv-upload')?.addEventListener('change', async (e) => {
         if (!e.target.files[0]) return;
         const formData = new FormData(); formData.append('file', e.target.files[0]);
@@ -356,7 +343,6 @@
         else showToast('Upload failed', 'error');
     });
 
-    // Event listeners
     document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
     document.getElementById('add-lead-btn')?.addEventListener('click', () => openLeadModal(null));
     document.getElementById('refresh-metrics')?.addEventListener('click', loadMetrics);
