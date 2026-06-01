@@ -96,8 +96,21 @@
 
 <script>
     const BACKEND_URL = 'https://kevsono-kevs-digital-bos.hf.space';
+
+    // Helper: force logout and redirect
+    function forceLogout() {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        window.location.href = '/bisignin';
+    }
+
+    // On load, if we have access_token but no refresh_token, force fresh login
+    if (localStorage.getItem('access_token') && !localStorage.getItem('refresh_token')) {
+        forceLogout();
+    }
+
     let token = localStorage.getItem('access_token');
-    if (!token) { window.location.href = '/bisignin'; }
+    if (!token) forceLogout();
 
     let leadsCache = [], leadsPage = 0, limit = 20;
     let pendingDeleteId = null;
@@ -112,36 +125,44 @@
         setTimeout(() => toast.remove(), 3500);
     }
 
-    // ======================== ROBUST API CALL WITH REFRESH ========================
+    // ======================== API CALL WITH REFRESH (fixed) ========================
     async function apiCall(endpoint, method='GET', body=null, retry=true) {
         const accessToken = localStorage.getItem('access_token');
         const headers = { 'Content-Type': 'application/json' };
         if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+
         const res = await fetch(`${BACKEND_URL}${endpoint}`, {
             method,
             headers,
             body: body ? JSON.stringify(body) : undefined
         });
-        if (res.status === 401 && retry) {
+
+        if (res.status === 401) {
             const refreshToken = localStorage.getItem('refresh_token');
-            if (refreshToken) {
-                const refreshRes = await fetch(`${BACKEND_URL}/auth/refresh`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ refresh_token: refreshToken })
-                });
-                if (refreshRes.ok) {
-                    const { access_token, refresh_token } = await refreshRes.json();
-                    localStorage.setItem('access_token', access_token);
-                    localStorage.setItem('refresh_token', refresh_token);
-                    return apiCall(endpoint, method, body, false);
+            // If we have a refresh token and we haven't retried yet, try to refresh
+            if (refreshToken && retry) {
+                try {
+                    const refreshRes = await fetch(`${BACKEND_URL}/auth/refresh`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ refresh_token: refreshToken })
+                    });
+                    if (refreshRes.ok) {
+                        const { access_token, refresh_token } = await refreshRes.json();
+                        localStorage.setItem('access_token', access_token);
+                        localStorage.setItem('refresh_token', refresh_token);
+                        // Retry the original request once
+                        return apiCall(endpoint, method, body, false);
+                    }
+                } catch (e) {
+                    console.error('Refresh failed', e);
                 }
             }
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('refresh_token');
-            window.location.href = '/bisignin';
+            // No refresh token or refresh failed – logout
+            forceLogout();
             throw new Error('Session expired');
         }
+
         if (!res.ok) {
             const err = await res.json().catch(()=>({detail:'Error'}));
             throw new Error(err.detail || 'API error');
@@ -296,7 +317,7 @@
 
     function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, function(m) { if (m === '&') return '&amp;'; if (m === '<') return '&lt;'; if (m === '>') return '&gt;'; return m; }); }
 
-    // CSV upload with 401 handling
+    // CSV upload
     document.getElementById('csv-upload')?.addEventListener('change', async (e) => {
         if (!e.target.files[0]) return;
         const formData = new FormData(); formData.append('file', e.target.files[0]);
@@ -307,7 +328,6 @@
             body: formData
         });
         if (res.status === 401) {
-            // attempt refresh
             const refreshToken = localStorage.getItem('refresh_token');
             if (refreshToken) {
                 const refreshRes = await fetch(`${BACKEND_URL}/auth/refresh`, {
@@ -319,7 +339,6 @@
                     const { access_token, refresh_token } = await refreshRes.json();
                     localStorage.setItem('access_token', access_token);
                     localStorage.setItem('refresh_token', refresh_token);
-                    // retry upload
                     const retryRes = await fetch(`${BACKEND_URL}/leads/upload`, {
                         method: 'POST',
                         headers: { 'Authorization': `Bearer ${access_token}` },
@@ -330,9 +349,7 @@
                     return;
                 }
             }
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('refresh_token');
-            window.location.href = '/bisignin';
+            forceLogout();
             return;
         }
         if (res.ok) { showToast('CSV uploaded'); loadLeads(); }
@@ -355,14 +372,12 @@
     document.getElementById('lead-form')?.addEventListener('submit', (e) => { e.preventDefault(); saveLead(); });
 
     (async () => {
-        if (token) {
-            try {
-                await loadOrgContext();
-                await loadLeads();
-                await loadMetrics();
-                switchTab('leads');
-            } catch(e) { showToast('Failed to load data. Please login again.', 'error'); }
-        } else { window.location.href = '/bisignin'; }
+        try {
+            await loadOrgContext();
+            await loadLeads();
+            await loadMetrics();
+            switchTab('leads');
+        } catch(e) { console.error(e); }
     })();
 </script>
 </body>
