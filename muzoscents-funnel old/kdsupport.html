@@ -46,8 +46,17 @@
 
 <script>
     const BACKEND_URL = 'https://kevsono-kevs-digital-bos.hf.space';
+
+    function forceLogout() {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        window.location.href = '/bisignin';
+    }
+
+    if (localStorage.getItem('access_token') && !localStorage.getItem('refresh_token')) forceLogout();
     let token = localStorage.getItem('access_token');
-    if (!token) window.location.href = '/bisignin';
+    if (!token) forceLogout();
+
     let activeTicketId = null;
 
     function showToast(msg, type='success') {
@@ -68,23 +77,18 @@
         logsDiv.appendChild(entry); logsDiv.scrollTop = logsDiv.scrollHeight;
     }
 
-    // ======================== ROBUST REQUEST WITH REFRESH ========================
-    async function req(endpoint, method='GET', body=null, retry = true) {
+    async function req(endpoint, method='GET', body=null, retry=true) {
         const accessToken = localStorage.getItem('access_token');
         const headers = { 'Content-Type': 'application/json' };
         if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
         let res;
         try {
-            res = await fetch(`${BACKEND_URL}${endpoint}`, {
-                method,
-                headers,
-                body: body ? JSON.stringify(body) : undefined
-            });
+            res = await fetch(`${BACKEND_URL}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
             let data; try { data = await res.json(); } catch(e) { data = { raw: await res.text() }; }
             addDebugLog(endpoint, method, res.status, data);
-            if (res.status === 401 && retry) {
+            if (res.status === 401) {
                 const refreshToken = localStorage.getItem('refresh_token');
-                if (refreshToken) {
+                if (refreshToken && retry) {
                     const refreshRes = await fetch(`${BACKEND_URL}/auth/refresh`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -94,20 +98,16 @@
                         const { access_token, refresh_token } = await refreshRes.json();
                         localStorage.setItem('access_token', access_token);
                         localStorage.setItem('refresh_token', refresh_token);
-                        // Retry original request once
                         return req(endpoint, method, body, false);
                     }
                 }
-                localStorage.removeItem('access_token');
-                localStorage.removeItem('refresh_token');
-                window.location.href = '/bisignin';
+                forceLogout();
                 throw new Error('Session expired');
             }
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             return data;
         } catch (err) { addDebugLog(endpoint, method, res?.status || null, null, err.message); throw err; }
     }
-    // ================================================================
 
     async function loadTickets() {
         const status = document.getElementById('queue-status-filter').value;
