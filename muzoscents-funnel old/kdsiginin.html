@@ -35,10 +35,47 @@
         <button type="button" id="demo-login-btn" class="w-full bg-emerald-600 text-white py-2.5 rounded-lg hover:bg-emerald-700 font-medium flex items-center justify-center gap-2"><i class="fa-solid fa-bolt"></i> One-Click Demo Access</button>
     </form>
 
-    <!-- Register form -->
+    <!-- Register form (updated with organisation creation fields) -->
     <form id="register-form" class="hidden">
-        <input type="text" id="reg-invite-code" placeholder="Invite Code (e.g., KD001)" class="w-full mb-2 p-3 border rounded-lg" required>
-        <div id="org-name-preview" class="text-xs text-gray-500 mb-2 hidden">Organisation: <span id="preview-org-name"></span></div>
+        <div class="mb-3">
+            <label class="block text-xs text-gray-500 mb-1">Invite Code (if joining existing)</label>
+            <input type="text" id="reg-invite-code" placeholder="e.g., KD001" class="w-full p-3 border rounded-lg">
+            <div id="org-name-preview" class="text-xs text-gray-500 mt-1 hidden">Organisation: <span id="preview-org-name"></span></div>
+        </div>
+        <div class="relative my-2">
+            <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-gray-200"></div></div>
+            <div class="relative flex justify-center text-xs"><span class="bg-white px-2 text-gray-400">OR create new organisation</span></div>
+        </div>
+        <div>
+            <label class="block text-xs text-gray-500 mb-1">Organisation Name *</label>
+            <input type="text" id="reg-org-name" placeholder="Your Company Name" class="w-full p-3 border rounded-lg mb-2">
+        </div>
+        <div>
+            <label class="block text-xs text-gray-500 mb-1">Location (City, Country) *</label>
+            <input type="text" id="reg-location" placeholder="e.g., Lagos, Nigeria" class="w-full p-3 border rounded-lg mb-2">
+        </div>
+        <div>
+            <label class="block text-xs text-gray-500 mb-1">Niche / Industry *</label>
+            <input type="text" id="reg-niche" placeholder="e.g., Retail, Tech, Logistics" class="w-full p-3 border rounded-lg mb-2">
+        </div>
+        <div>
+            <label class="block text-xs text-gray-500 mb-1">Estimated Budget (₦)</label>
+            <input type="number" id="reg-budget" placeholder="Optional" class="w-full p-3 border rounded-lg mb-2">
+        </div>
+        <div class="grid grid-cols-2 gap-2 mb-2">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">First Name *</label>
+                <input type="text" id="reg-fname" placeholder="John" class="w-full p-3 border rounded-lg">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Last Name *</label>
+                <input type="text" id="reg-lname" placeholder="Doe" class="w-full p-3 border rounded-lg">
+            </div>
+        </div>
+        <div>
+            <label class="block text-xs text-gray-500 mb-1">Phone Number *</label>
+            <input type="tel" id="reg-phone" placeholder="e.g., +2348123456789" class="w-full p-3 border rounded-lg mb-2">
+        </div>
         <input type="email" id="reg-email" placeholder="Email" class="w-full mb-2 p-3 border rounded-lg" required>
         <input type="password" id="reg-password" placeholder="Password" class="w-full mb-4 p-3 border rounded-lg" required>
         <button type="submit" class="w-full bg-green-600 text-white py-2.5 rounded-lg hover:bg-green-700 transition">Register</button>
@@ -84,9 +121,9 @@
         setTimeout(() => { window.location.href = DASHBOARD_URL; }, 1000);
     }
 
-    async function register(inviteCode, email, password) {
-        await apiCall('/auth/register', 'POST', { invite_code: inviteCode, email, password });
-        showToast('Registration successful! Please verify email and then login.');
+    async function register(payload) {
+        await apiCall('/auth/register', 'POST', payload);
+        showToast('Registration successful! Please verify email (if required) and then login.');
         document.getElementById('login-tab').click();
     }
 
@@ -95,6 +132,7 @@
         showToast('Password reset email sent. Check your inbox.');
     }
 
+    // Preview organisation name when typing invite code
     let previewTimeout;
     document.getElementById('reg-invite-code')?.addEventListener('input', async (e) => {
         const code = e.target.value.trim();
@@ -144,10 +182,41 @@
 
     document.getElementById('register-form')?.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const code = document.getElementById('reg-invite-code').value.trim();
-        const email = document.getElementById('reg-email').value;
-        const pwd = document.getElementById('reg-password').value;
-        try { await register(code, email, pwd); } catch (err) { showToast(err.message, 'error'); }
+        const inviteCode = document.getElementById('reg-invite-code').value.trim();
+        const orgName = document.getElementById('reg-org-name').value.trim();
+        const location = document.getElementById('reg-location').value.trim();
+        const niche = document.getElementById('reg-niche').value.trim();
+        const budget = parseInt(document.getElementById('reg-budget').value) || 0;
+        const firstName = document.getElementById('reg-fname').value.trim();
+        const lastName = document.getElementById('reg-lname').value.trim();
+        const phone = document.getElementById('reg-phone').value.trim();
+        const email = document.getElementById('reg-email').value.trim();
+        const password = document.getElementById('reg-password').value.trim();
+
+        if (!email || !password) { showToast('Email and password are required', 'error'); return; }
+        if (!firstName || !lastName || !phone) { showToast('First name, last name, and phone number are required', 'error'); return; }
+        if (!inviteCode && (!orgName || !location || !niche)) {
+            showToast('Either provide an invite code OR fill organisation name, location, and niche.', 'error');
+            return;
+        }
+
+        const payload = {
+            email, password,
+            first_name: firstName,
+            last_name: lastName,
+            phone: phone
+        };
+        if (inviteCode) {
+            payload.invite_code = inviteCode;
+        } else {
+            payload.org_name = orgName;
+            payload.location = location;
+            payload.niche = niche;
+            payload.budget = budget;
+        }
+        try {
+            await register(payload);
+        } catch (err) { showToast(err.message, 'error'); }
     });
 
     document.getElementById('forgot-pwd-btn')?.addEventListener('click', async () => {
