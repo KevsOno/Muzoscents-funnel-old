@@ -155,6 +155,13 @@
     let isRegisterMode = false;
     let typingIndicatorDiv = null;
 
+    // Ensure a unique persistent session ID exists
+    let sessionId = localStorage.getItem('pf_session');
+    if (!sessionId) {
+        sessionId = 'web_' + Date.now() + '_' + Math.random().toString(36).substr(2, 8);
+        localStorage.setItem('pf_session', sessionId);
+    }
+
     function log(msg) {
         const div = document.getElementById('logs-content');
         div.innerHTML += `<br>[${new Date().toLocaleTimeString()}] ${msg}`;
@@ -380,9 +387,10 @@
             addChatMessage('user', text);
             showTypingIndicator();
             try {
+                // Use the global sessionId (already set at top)
                 const data = await apiCall(`/support/chat-stream`, {
                     method: 'POST',
-                    body: JSON.stringify({ session_id: 'web_' + (localStorage.getItem('pf_session') || 'default'), message: text })
+                    body: JSON.stringify({ session_id: sessionId, message: text })
                 });
                 hideTypingIndicator();
                 addChatMessage('assistant', data.response || "No response.");
