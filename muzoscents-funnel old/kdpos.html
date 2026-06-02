@@ -6,16 +6,26 @@
     <title>Kevs POS Terminal</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        .loading-spinner { border: 2px solid #e5e7eb; border-top: 2px solid #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 0.8s linear infinite; display: inline-block; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
 </head>
 <body class="bg-gray-100 p-4">
+<div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
+
 <div class="max-w-7xl mx-auto">
     <div class="bg-white rounded-xl shadow-md p-4 mb-4 flex justify-between items-center">
-        <h1 class="text-2xl font-bold">💳 Kevs POS Terminal</h1>
         <div>
-            <span id="cashier-name" class="text-sm bg-gray-200 px-3 py-1 rounded-full">Cashier</span>
-            <button onclick="logout()" class="ml-3 text-red-500 text-sm">Logout</button>
+            <h1 class="text-2xl font-bold">💳 Kevs POS Terminal</h1>
+            <p class="text-xs text-gray-500">Point of Sale System</p>
+        </div>
+        <div class="flex items-center gap-3">
+            <span id="user-badge" class="text-sm bg-gray-200 px-3 py-1 rounded-full">Loading...</span>
+            <button id="logout-btn" class="text-red-500 text-sm hover:underline">Logout</button>
         </div>
     </div>
+
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div class="lg:col-span-2 bg-white rounded-xl shadow-md p-4">
             <h2 class="text-xl font-semibold mb-3">Products</h2>
@@ -35,47 +45,71 @@
     </div>
 </div>
 
+<!-- Login Modal -->
+<div id="auth-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+    <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-bold text-gray-800">Sign In to POS</h3>
+            <button id="close-modal-btn" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+        </div>
+        <div class="space-y-3">
+            <input id="login-email" type="email" placeholder="Email" class="w-full border rounded-lg p-2 text-sm">
+            <input id="login-password" type="password" placeholder="Password" class="w-full border rounded-lg p-2 text-sm">
+            <button id="modal-login-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white p-2.5 rounded-lg text-sm font-medium">Sign In</button>
+            <button id="demo-login-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white p-2.5 rounded-lg text-sm font-medium">
+                <i class="fa-solid fa-bolt mr-1"></i> Demo Login
+            </button>
+        </div>
+    </div>
+</div>
+
 <script>
     const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
-
-    function forceLogout() {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        window.location.href = '/kdsiginin';
-    }
-
-    if (localStorage.getItem('access_token') && !localStorage.getItem('refresh_token')) forceLogout();
     let token = localStorage.getItem('access_token');
-    if (!token) forceLogout();
-
     let cart = [];
     let products = [];
 
+    function showToast(msg, type='success') {
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type==='success'?'bg-green-600':'bg-red-600'} mb-2 text-sm`;
+        toast.innerText = msg;
+        container.appendChild(toast);
+        setTimeout(() => toast.remove(), 3500);
+    }
+
+    async function refreshToken() {
+        const refresh = localStorage.getItem('refresh_token');
+        if (!refresh) return false;
+        try {
+            const res = await fetch(`${BACKEND}/auth/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: refresh })
+            });
+            if (res.ok) {
+                const { access_token, refresh_token } = await res.json();
+                localStorage.setItem('access_token', access_token);
+                localStorage.setItem('refresh_token', refresh_token);
+                token = access_token;
+                return true;
+            }
+        } catch (e) {}
+        return false;
+    }
+
     async function call(endpoint, method='GET', body=null, retry=true) {
-        const accessToken = localStorage.getItem('access_token');
         const headers = { 'Content-Type': 'application/json' };
-        if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
-        const res = await fetch(`${BACKEND}${endpoint}`, {
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        let res = await fetch(`${BACKEND}${endpoint}`, {
             method,
             headers,
             body: body ? JSON.stringify(body) : undefined
         });
-        if (res.status === 401) {
-            const refreshToken = localStorage.getItem('refresh_token');
-            if (refreshToken && retry) {
-                const refreshRes = await fetch(`${BACKEND}/auth/refresh`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ refresh_token: refreshToken })
-                });
-                if (refreshRes.ok) {
-                    const { access_token, refresh_token } = await refreshRes.json();
-                    localStorage.setItem('access_token', access_token);
-                    localStorage.setItem('refresh_token', refresh_token);
-                    return call(endpoint, method, body, false);
-                }
-            }
-            forceLogout();
+        if (res.status === 401 && retry) {
+            const ok = await refreshToken();
+            if (ok) return call(endpoint, method, body, false);
+            showLoginModal();
             throw new Error('Session expired');
         }
         if (!res.ok) {
@@ -85,28 +119,86 @@
         return res.json();
     }
 
+    function showLoginModal() {
+        document.getElementById('auth-modal').classList.remove('hidden');
+    }
+    function hideLoginModal() {
+        document.getElementById('auth-modal').classList.add('hidden');
+    }
+
+    async function logout() {
+        try { await call('/auth/logout', 'POST'); } catch(e) {}
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        token = null;
+        showLoginModal();
+        document.getElementById('user-badge').innerText = '';
+        showToast('Logged out');
+    }
+
+    async function demoLogin() {
+        const btn = document.getElementById('demo-login-btn');
+        btn.disabled = true;
+        try {
+            const res = await fetch(`${BACKEND}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail);
+            token = data.access_token;
+            localStorage.setItem('access_token', token);
+            localStorage.setItem('refresh_token', data.refresh_token);
+            await loadUserInfo();
+            await loadProducts();
+            hideLoginModal();
+            showToast('Demo login successful');
+        } catch (err) {
+            showToast(err.message, 'error');
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    async function loadUserInfo() {
+        try {
+            const me = await call('/auth/me');
+            const context = await call(`/support/customer-context?target_user_id=${me.user_id}`);
+            const name = context.profile?.first_name || 'Cashier';
+            let orgName = '';
+            try {
+                const orgData = await call('/auth/org');
+                orgName = orgData.org_name;
+            } catch (e) { orgName = 'Workspace'; }
+            document.getElementById('user-badge').innerHTML = `<i class="fa-regular fa-user mr-1"></i> ${name} | ${orgName}`;
+        } catch (e) {
+            document.getElementById('user-badge').innerHTML = 'Cashier';
+        }
+    }
+
     async function loadProducts() {
         try {
             const data = await call('/inventory');
             products = data;
             const container = document.getElementById('product-list');
             container.innerHTML = products.map(p => `
-                <button onclick="addToCart(${p.id}, '${p.description}', ${p.price_naira}, ${p.current_qty})" class="bg-gray-50 p-3 rounded-lg text-left hover:bg-gray-100 border">
-                    <div class="font-semibold">${p.description}</div>
+                <button onclick="addToCart(${p.id}, '${escapeHtml(p.description)}', ${p.price_naira}, ${p.current_qty})" class="bg-gray-50 p-3 rounded-lg text-left hover:bg-gray-100 border">
+                    <div class="font-semibold">${escapeHtml(p.description)}</div>
                     <div class="text-sm">₦${p.price_naira.toLocaleString()}</div>
                     <div class="text-xs text-gray-500">Stock: ${p.current_qty}</div>
                 </button>
             `).join('');
-        } catch(err) { alert('Failed to load products'); }
+        } catch(err) { showToast('Failed to load products: ' + err.message, 'error'); }
     }
 
     function addToCart(id, name, price, stock) {
         const existing = cart.find(i => i.id === id);
         if (existing) {
-            if (existing.qty + 1 > stock) { alert('Insufficient stock'); return; }
+            if (existing.qty + 1 > stock) { showToast('Insufficient stock', 'error'); return; }
             existing.qty++;
         } else {
-            if (1 > stock) { alert('Out of stock'); return; }
+            if (1 > stock) { showToast('Out of stock', 'error'); return; }
             cart.push({ id, name, price, qty: 1 });
         }
         renderCart();
@@ -118,7 +210,7 @@
         container.innerHTML = cart.map((item, idx) => {
             const subtotal = item.price * item.qty;
             total += subtotal;
-            return `<div class="flex justify-between items-center border-b pb-2"><div>${item.name} x${item.qty}</div><div>₦${subtotal}</div><button onclick="removeFromCart(${idx})" class="text-red-500 text-xs">Remove</button></div>`;
+            return `<div class="flex justify-between items-center border-b pb-2"><div>${escapeHtml(item.name)} x${item.qty}</div><div>₦${subtotal.toLocaleString()}</div><button onclick="removeFromCart(${idx})" class="text-red-500 text-xs">Remove</button></div>`;
         }).join('');
         document.getElementById('cart-total').innerText = `₦${total.toLocaleString()}`;
     }
@@ -126,29 +218,69 @@
     function removeFromCart(idx) { cart.splice(idx,1); renderCart(); }
 
     async function checkout() {
-        if (cart.length === 0) { alert('Cart empty'); return; }
+        if (cart.length === 0) { showToast('Cart empty', 'error'); return; }
         const items = cart.map(i => ({ inventory_id: i.id, quantity: i.qty }));
         const paymentMethod = document.getElementById('payment-method').value;
-        const customerName = document.getElementById('customer-name').value || null;
-        const customerPhone = document.getElementById('customer-phone').value || null;
+        const customerName = document.getElementById('customer-name').value.trim() || null;
+        const customerPhone = document.getElementById('customer-phone').value.trim() || null;
         try {
             const result = await call('/pos/terminal/checkout', 'POST', { items, payment_method: paymentMethod, customer_name: customerName, customer_phone: customerPhone });
-            alert(`Sale complete!\nReceipt: ${result.receipt_number}\nTotal: ₦${result.total.toLocaleString()}`);
+            showToast(`Sale complete! Receipt: ${result.receipt_number}`, 'success');
             cart = [];
             renderCart();
             await loadProducts();
-        } catch(err) { alert('Checkout failed: ' + err.message); }
+        } catch(err) { showToast('Checkout failed: ' + err.message, 'error'); }
     }
 
-    async function logout() {
-        try {
-            await call('/auth/logout', 'POST');
-        } catch(e) {}
-        forceLogout();
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
     }
 
     document.getElementById('checkout-btn')?.addEventListener('click', checkout);
-    loadProducts();
+    document.getElementById('logout-btn')?.addEventListener('click', logout);
+    document.getElementById('modal-login-btn')?.addEventListener('click', async () => {
+        const email = document.getElementById('login-email').value.trim();
+        const pwd = document.getElementById('login-password').value.trim();
+        if (!email || !pwd) { showToast('Enter email and password', 'error'); return; }
+        try {
+            const res = await fetch(`${BACKEND}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password: pwd })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail);
+            token = data.access_token;
+            localStorage.setItem('access_token', token);
+            localStorage.setItem('refresh_token', data.refresh_token);
+            await loadUserInfo();
+            await loadProducts();
+            hideLoginModal();
+            showToast('Login successful');
+        } catch(err) { showToast(err.message, 'error'); }
+    });
+    document.getElementById('demo-login-btn')?.addEventListener('click', demoLogin);
+    document.getElementById('close-modal-btn')?.addEventListener('click', hideLoginModal);
+
+    (async () => {
+        if (token) {
+            try {
+                await loadUserInfo();
+                await loadProducts();
+            } catch (e) {
+                token = null;
+                showLoginModal();
+            }
+        } else {
+            showLoginModal();
+        }
+    })();
 </script>
 </body>
 </html>
