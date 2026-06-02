@@ -11,10 +11,33 @@
         .debug-panel { background: #1e1e2f; color: #0fc; font-family: monospace; font-size: 10px; max-height: 120px; overflow-y: auto; padding: 6px; }
         .nav-tab { cursor: pointer; padding: 8px 12px; border-radius: 20px; transition: 0.2s; color: #94A3B8; display: flex; align-items: center; gap: 6px; }
         .nav-tab.active { background: #1E3A8A; color: #FFFFFF; }
-        /* Ensure chat input is fully interactive */
         #chat-input { background-color: #0f172a !important; color: white !important; }
         #chat-input:focus { outline: none; border-color: #3b82f6; }
-        #chat-input:disabled { opacity: 0.6; cursor: not-allowed; }
+        /* Typing indicator animation */
+        .typing-indicator {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 8px 12px;
+            background: #1e293b;
+            border-radius: 16px;
+            width: fit-content;
+        }
+        .typing-indicator span {
+            width: 8px;
+            height: 8px;
+            background: #94a3b8;
+            border-radius: 50%;
+            display: inline-block;
+            animation: typing 1.4s infinite ease-in-out;
+        }
+        .typing-indicator span:nth-child(1) { animation-delay: 0s; }
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+            30% { transform: translateY(-6px); opacity: 1; }
+        }
     </style>
 </head>
 <body class="text-slate-200">
@@ -59,7 +82,7 @@
     </div>
 </div>
 
-<!-- Login Modal (same as before, unchanged for brevity) -->
+<!-- Login Modal (unchanged) -->
 <div id="auth-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
     <div class="bg-slate-800 border border-slate-700 p-6 rounded-2xl shadow-xl w-full max-w-sm text-slate-200">
         <div class="flex justify-between items-center mb-4">
@@ -112,6 +135,7 @@
     let userProfile = null;
     let currentTab = 'chat';
     let isRegisterMode = false;
+    let typingIndicatorDiv = null; // to store reference to typing indicator
 
     function log(msg) {
         const div = document.getElementById('logs-content');
@@ -219,6 +243,25 @@
         }
     }
 
+    // Typing indicator functions
+    function showTypingIndicator() {
+        const container = document.getElementById('chat-container');
+        if (!container) return;
+        if (typingIndicatorDiv) hideTypingIndicator();
+        typingIndicatorDiv = document.createElement('div');
+        typingIndicatorDiv.className = 'typing-indicator';
+        typingIndicatorDiv.innerHTML = '<span></span><span></span><span></span>';
+        container.appendChild(typingIndicatorDiv);
+        container.parentElement.scrollTop = container.parentElement.scrollHeight;
+    }
+
+    function hideTypingIndicator() {
+        if (typingIndicatorDiv && typingIndicatorDiv.parentNode) {
+            typingIndicatorDiv.parentNode.removeChild(typingIndicatorDiv);
+            typingIndicatorDiv = null;
+        }
+    }
+
     function addChatMessage(sender, text) {
         const container = document.getElementById('chat-container');
         if (!container) return;
@@ -268,7 +311,9 @@
         const panel = document.getElementById('dynamic-panel');
         panel.innerHTML = '<div class="text-slate-400 text-center py-8"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Syncing helpdesk records...</div>';
         try {
-            const tickets = await apiCall('/support/tickets');
+            const data = await apiCall('/support/tickets');
+            // FIX: response is { tickets: [...] }, not direct array
+            const tickets = data.tickets || [];
             if(!tickets || tickets.length === 0) {
                 panel.innerHTML = '<div class="text-slate-400 text-center py-8">No structural support tickets found.</div>';
                 return;
@@ -300,7 +345,7 @@
         });
     }
 
-    // ---- Fixed: Ensure chat input events are always attached ----
+    // ---- Chat send with typing indicator ----
     function attachChatEvents() {
         const input = document.getElementById('chat-input');
         const sendBtn = document.getElementById('chat-send');
@@ -308,7 +353,7 @@
             log('Chat input or send button not found – reattaching later');
             return false;
         }
-        // Remove old listeners to avoid duplicates (optional)
+        // Clone to remove any stuck listeners
         const newInput = input.cloneNode(true);
         input.parentNode.replaceChild(newInput, input);
         const newSend = sendBtn.cloneNode(true);
@@ -319,18 +364,23 @@
             if(!text) return;
             newInput.value = '';
             addChatMessage('user', text);
+            showTypingIndicator();   // show dots while waiting
             try {
                 const data = await apiCall(`/support/chat-stream`, {
                     method: 'POST',
                     body: JSON.stringify({ session_id: 'web_' + (localStorage.getItem('pf_session') || 'default'), message: text })
                 });
+                hideTypingIndicator();
                 addChatMessage('assistant', data.response || "No response.");
-            } catch (err) { addChatMessage('assistant', `Error: ${err.message}`); }
+            } catch (err) {
+                hideTypingIndicator();
+                addChatMessage('assistant', `Error: ${err.message}`);
+            }
         };
         newSend.onclick = sendMessageHandler;
         newInput.onkeypress = (e) => { if (e.key === 'Enter') sendMessageHandler(); };
         newInput.disabled = false;
-        log('Chat events attached successfully');
+        log('Chat events attached with typing indicator');
         return true;
     }
 
@@ -346,7 +396,6 @@
             panel.innerHTML = '<div id="chat-container" class="space-y-4"></div>';
             if (userProfile) addChatMessage('assistant', `Welcome back, ${userProfile.first_name}! How can I help you today?`);
             else addChatMessage('assistant', 'Hello! I am your business companion. How can I assist you with products or support?');
-            // Re-attach events every time chat tab is shown (ensures input works)
             setTimeout(() => attachChatEvents(), 50);
         } else if (tab === 'track') {
             inputBar.classList.add('hidden');
@@ -362,28 +411,31 @@
                     <div id="track-result" class="mt-4 text-sm"></div>
                 </div>
             `;
-            document.getElementById('track-btn')?.addEventListener('click', async () => {
-                const receipt = document.getElementById('track-receipt').value.trim();
-                const email = document.getElementById('track-email').value.trim();
-                if (!receipt || !email) { alert('Enter receipt number and email address'); return; }
-                const resultDiv = document.getElementById('track-result');
-                resultDiv.innerHTML = '<div class="text-slate-400 text-center py-2"><i class="fa-solid fa-circle-notch fa-spin mr-2"></i>Checking database registries...</div>';
-                try {
-                    const data = await apiCall(`/track-order?receipt_number=${receipt}&email=${email}`);
-                    const statusMap = { pending: '⏳ Pending Operations', completed: '📦 Order Formulated', shipped: '🚚 Dispatched / Shipped', delivered: '✅ Successfully Delivered', cancelled: '❌ Cancelled' };
-                    resultDiv.innerHTML = `
-                        <div class="bg-slate-950 border border-slate-700/60 p-4 rounded-xl space-y-2 mt-2 text-slate-300 font-sans">
-                            <div class="flex justify-between border-b border-slate-800 pb-1.5"><span class="text-xs text-slate-400">Order Token</span> <span class="font-mono text-white text-xs">${data.receipt_number}</span></div>
-                            <div class="flex justify-between border-b border-slate-800 pb-1.5"><span class="text-xs text-slate-400">Total Charged</span> <span class="text-white font-bold text-xs">₦${data.total_amount.toLocaleString()}</span></div>
-                            <div class="flex justify-between border-b border-slate-800 pb-1.5"><span class="text-xs text-slate-400">Status State</span> <span class="text-blue-400 text-xs font-semibold">${statusMap[data.shipping_status] || data.shipping_status}</span></div>
-                            <div class="flex justify-between border-b border-slate-800 pb-1.5"><span class="text-xs text-slate-400">Logistics Carrier</span> <span class="text-white text-xs">${data.shipping_carrier || 'Awaiting Allocation'}</span></div>
-                            <div class="flex justify-between border-b border-slate-800 pb-1.5"><span class="text-xs text-slate-400">Waybill/Tracking</span> <span class="font-mono text-xs ${data.tracking_number ? 'text-emerald-400' : 'text-slate-500'}">${data.tracking_number || 'N/A'}</span></div>
-                            <div class="flex justify-between border-b border-slate-800 pb-1.5"><span class="text-xs text-slate-400">Estimated Arrival</span> <span class="text-white text-xs">${data.estimated_delivery || 'Processing Logistics'}</span></div>
-                            <div class="text-[10px] text-slate-500 text-right pt-1">Logged: ${new Date(data.created_at).toLocaleString()}</div>
-                        </div>
-                    `;
-                } catch (err) { resultDiv.innerHTML = `<div class="text-red-400 bg-red-500/10 border border-red-500/20 p-3 rounded-lg text-xs mt-2">${err.message}</div>`; }
-            });
+            const trackBtn = document.getElementById('track-btn');
+            if (trackBtn) {
+                trackBtn.onclick = async () => {
+                    const receipt = document.getElementById('track-receipt').value.trim();
+                    const email = document.getElementById('track-email').value.trim();
+                    if (!receipt || !email) { alert('Enter receipt number and email address'); return; }
+                    const resultDiv = document.getElementById('track-result');
+                    resultDiv.innerHTML = '<div class="text-slate-400 text-center py-2"><i class="fa-solid fa-circle-notch fa-spin mr-2"></i>Checking database registries...</div>';
+                    try {
+                        const data = await apiCall(`/track-order?receipt_number=${receipt}&email=${email}`);
+                        const statusMap = { pending: '⏳ Pending Operations', completed: '📦 Order Formulated', shipped: '🚚 Dispatched / Shipped', delivered: '✅ Successfully Delivered', cancelled: '❌ Cancelled' };
+                        resultDiv.innerHTML = `
+                            <div class="bg-slate-950 border border-slate-700/60 p-4 rounded-xl space-y-2 mt-2 text-slate-300 font-sans">
+                                <div class="flex justify-between border-b border-slate-800 pb-1.5"><span class="text-xs text-slate-400">Order Token</span> <span class="font-mono text-white text-xs">${data.receipt_number}</span></div>
+                                <div class="flex justify-between border-b border-slate-800 pb-1.5"><span class="text-xs text-slate-400">Total Charged</span> <span class="text-white font-bold text-xs">₦${data.total_amount.toLocaleString()}</span></div>
+                                <div class="flex justify-between border-b border-slate-800 pb-1.5"><span class="text-xs text-slate-400">Status State</span> <span class="text-blue-400 text-xs font-semibold">${statusMap[data.shipping_status] || data.shipping_status}</span></div>
+                                <div class="flex justify-between border-b border-slate-800 pb-1.5"><span class="text-xs text-slate-400">Logistics Carrier</span> <span class="text-white text-xs">${data.shipping_carrier || 'Awaiting Allocation'}</span></div>
+                                <div class="flex justify-between border-b border-slate-800 pb-1.5"><span class="text-xs text-slate-400">Waybill/Tracking</span> <span class="font-mono text-xs ${data.tracking_number ? 'text-emerald-400' : 'text-slate-500'}">${data.tracking_number || 'N/A'}</span></div>
+                                <div class="flex justify-between border-b border-slate-800 pb-1.5"><span class="text-xs text-slate-400">Estimated Arrival</span> <span class="text-white text-xs">${data.estimated_delivery || 'Processing Logistics'}</span></div>
+                                <div class="text-[10px] text-slate-500 text-right pt-1">Logged: ${new Date(data.created_at).toLocaleString()}</div>
+                            </div>
+                        `;
+                    } catch (err) { resultDiv.innerHTML = `<div class="text-red-400 bg-red-500/10 border border-red-500/20 p-3 rounded-lg text-xs mt-2">${err.message}</div>`; }
+                };
+            }
         } else {
             inputBar.classList.add('hidden');
             if (tab === 'shop') loadProducts();
@@ -391,7 +443,7 @@
         }
     }
 
-    // Event listeners for modal, logout, etc.
+    // Event listeners
     document.getElementById('logout-btn').onclick = logout;
     document.getElementById('toggle-auth-mode').onclick = () => {
         isRegisterMode = !isRegisterMode;
