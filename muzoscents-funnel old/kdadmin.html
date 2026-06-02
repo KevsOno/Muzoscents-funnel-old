@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin – Inventory Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body class="bg-gray-100 p-4">
+<div class="max-w-6xl mx-auto">
+    <h1 class="text-2xl font-bold mb-4">📦 Inventory Manager</h1>
+    <div id="auth-placeholder"></div>
+    <div id="admin-content" class="hidden">
+        <div class="bg-white rounded shadow p-4 mb-6">
+            <h2 class="text-xl font-semibold mb-2">➕ Add New Product</h2>
+            <form id="add-product-form" class="grid grid-cols-2 gap-3">
+                <input id="prod-sku" placeholder="SKU" required class="border p-2 rounded">
+                <input id="prod-name" placeholder="Name" required class="border p-2 rounded">
+                <input id="prod-category" placeholder="Category" class="border p-2 rounded">
+                <input id="prod-selling" type="number" placeholder="Selling Price (₦)" required class="border p-2 rounded">
+                <input id="prod-cost" type="number" placeholder="Purchase Price (₦)" required class="border p-2 rounded">
+                <input id="prod-lead" type="number" placeholder="Lead Time (days)" value="7" class="border p-2 rounded">
+                <input id="prod-shelf" type="number" placeholder="Shelf Life (days)" value="90" class="border p-2 rounded">
+                <button type="submit" class="bg-blue-600 text-white p-2 rounded">Add Product</button>
+            </form>
+        </div>
+        <div id="products-list"></div>
+    </div>
+</div>
+<script>
+    const API = 'https://kevsono-kevs-digital-bos.hf.space';
+    let token = localStorage.getItem('access_token');
+    // ... (copy auth helpers from conc page, then fetch products)
+    async function loadProducts() {
+        const res = await apiCall('/products');
+        const container = document.getElementById('products-list');
+        container.innerHTML = `<h2 class="text-xl font-semibold mt-4">Products</h2><div class="grid grid-cols-1 md:grid-cols-2 gap-3">` +
+            res.map(p => `<div class="bg-white p-3 rounded shadow">${p.name} (${p.sku}) - ₦${p.selling_price}<br><button onclick="deleteProduct('${p.id}')" class="text-red-500 text-sm">Delete</button></div>`).join('') + `</div>`;
+    }
+    // Add similar for inventory batches
+    window.deleteProduct = async (id) => { await apiCall(`/products/${id}`, 'DELETE'); loadProducts(); };
+    // ... form submission
+</script>
+</body>
+</html>
