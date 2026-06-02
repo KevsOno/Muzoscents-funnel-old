@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, viewport-fit=cover">
-    <title>Kevs Digital bOS | AI Marketplace & Concierge</title>
+    <title>Kevs Digital bOS | Mobile Marketplace & AI Concierge</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         body { background: #0B1120; font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif; }
         .typing-indicator span {
-            width: 8px; height: 8px; background: #64748B; border-radius: 50%;
+            width: 8px; height: 8px; background: #94A3B8; border-radius: 50%;
             display: inline-block; animation: typing 1.4s infinite ease-in-out;
         }
         .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
@@ -18,8 +18,8 @@
             0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
             30% { transform: translateY(-6px); opacity: 1; }
         }
-        .product-card { transition: transform 0.2s ease, box-shadow 0.2s; }
-        .product-card:hover { transform: translateY(-3px); box-shadow: 0 20px 25px -12px rgba(0,0,0,0.4); }
+        .product-card { transition: transform 0.2s ease, box-shadow 0.2s; touch-action: manipulation; }
+        .product-card:active { transform: scale(0.98); }
         .cart-sidebar { transition: transform 0.3s cubic-bezier(0.2, 0.9, 0.4, 1.1); will-change: transform; }
         .debug-panel {
             background: #0F172A;
@@ -31,42 +31,63 @@
             transition: all 0.2s;
         }
         .debug-panel.hidden-debug { display: none; }
-        .nav-stack-item {
+        .nav-stack-item, .mobile-nav-item {
             transition: all 0.2s;
             border-radius: 1rem;
+            touch-action: manipulation;
         }
-        .nav-stack-item.active {
+        .nav-stack-item.active, .mobile-nav-item.active {
             background: #1E3A8A;
             color: white;
             box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
         }
-        .nav-stack-item.active i, .nav-stack-item.active span {
+        .mobile-nav-item.active i, .mobile-nav-item.active span {
             color: white;
-        }
-        .mobile-nav-item.active {
-            color: #3B82F6;
-            background: #1E293B;
         }
         #chat-container {
             display: flex;
             flex-direction: column;
             gap: 0.75rem;
         }
+        /* mobile optimizations: bottom nav hidden on chat + 2col grid */
         @media (max-width: 768px) {
             .desktop-sidebar { display: none; }
             .mobile-bottom-nav { display: flex; }
+            .product-grid-mobile {
+                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+                gap: 0.75rem;
+            }
+            .product-card-mobile-optimized {
+                padding: 0.75rem;
+            }
         }
         @media (min-width: 769px) {
             .mobile-bottom-nav { display: none; }
             .desktop-sidebar { display: flex; }
+            .mobile-logout-btn { display: none !important; }
+        }
+        /* ensure no horizontal overflow */
+        .overflow-fix {
+            overflow-x: hidden;
+        }
+        /* smoother chat scroll */
+        .chat-messages-scroll {
+            scroll-behavior: smooth;
+        }
+        button, .cursor-pointer {
+            cursor: pointer;
+            touch-action: manipulation;
+        }
+        input, textarea {
+            font-size: 16px; /* prevents zoom on iOS focus */
         }
     </style>
 </head>
-<body class="text-slate-200 antialiased">
+<body class="text-slate-200 antialiased overflow-fix">
 
 <div class="flex flex-col h-screen overflow-hidden">
     <div class="flex flex-1 overflow-hidden">
-        <!-- DESKTOP LEFT SIDEBAR (stacks) -->
+        <!-- DESKTOP LEFT SIDEBAR (hidden on mobile) -->
         <aside class="desktop-sidebar w-72 bg-slate-900/80 border-r border-slate-800 flex-shrink-0 flex flex-col p-5 backdrop-blur-sm">
             <div class="mb-8 pl-2">
                 <h2 class="text-2xl font-extrabold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">Kevs bOS</h2>
@@ -96,7 +117,7 @@
 
         <!-- MAIN CONTENT AREA -->
         <main class="flex-1 flex flex-col overflow-hidden bg-slate-950/30">
-            <!-- top header with cart icon & toggle debug button -->
+            <!-- top header with cart & mobile logout + debug -->
             <div class="flex justify-between items-center p-4 border-b border-slate-800 bg-slate-900/40 sticky top-0 z-10">
                 <div class="flex items-center gap-2">
                     <i class="fa-solid fa-cart-shopping text-blue-400 text-xl md:hidden"></i>
@@ -104,6 +125,9 @@
                 </div>
                 <div class="flex items-center gap-3">
                     <span id="user-badge-mobile" class="text-xs bg-slate-800 px-2 py-1 rounded-full md:hidden">Guest</span>
+                    <button id="mobile-logout-btn" class="bg-red-600/80 hover:bg-red-700 p-2 rounded-full text-xs transition md:hidden" title="Logout">
+                        <i class="fa-solid fa-right-from-bracket text-sm"></i>
+                    </button>
                     <button id="toggle-debug-btn" class="bg-slate-700 hover:bg-slate-600 p-2 rounded-full text-xs transition" title="Toggle Debug Panel">
                         <i class="fa-solid fa-bug"></i>
                     </button>
@@ -118,7 +142,7 @@
             <div id="dynamic-panel" class="flex-1 overflow-y-auto p-4 md:p-6 scroll-smooth"></div>
 
             <!-- Chat input bar (only visible when chat active) -->
-            <div id="chat-input-bar" class="hidden p-3 bg-slate-900/90 border-t border-slate-800 backdrop-blur-sm sticky bottom-0 z-10">
+            <div id="chat-input-bar" class="hidden p-3 bg-slate-900/90 border-t border-slate-800 backdrop-blur-sm sticky bottom-0 z-20">
                 <div class="flex gap-2 items-center max-w-3xl mx-auto">
                     <input id="chat-message-input" type="text" placeholder="Ask about products, orders, or support..." class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:ring-2 focus:ring-blue-500 outline-none">
                     <button id="chat-send-btn" class="bg-blue-600 hover:bg-blue-700 rounded-xl w-10 h-10 flex items-center justify-center transition"><i class="fa-regular fa-paper-plane"></i></button>
@@ -127,8 +151,8 @@
         </main>
     </div>
 
-    <!-- MOBILE BOTTOM NAVIGATION (visible only on mobile) -->
-    <div class="mobile-bottom-nav fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 flex justify-around p-2 z-30">
+    <!-- MOBILE BOTTOM NAVIGATION (visible only on mobile, hidden when chat tab active) -->
+    <div id="mobile-bottom-nav" class="mobile-bottom-nav fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 flex justify-around p-2 z-30">
         <div data-tab="shop" class="mobile-nav-item flex flex-col items-center py-1 px-3 rounded-xl transition text-slate-400"><i class="fa-solid fa-store text-xl"></i><span class="text-[10px] mt-0.5">Market</span></div>
         <div data-tab="chat" class="mobile-nav-item flex flex-col items-center py-1 px-3 rounded-xl transition text-slate-400"><i class="fa-regular fa-comment-dots text-xl"></i><span class="text-[10px] mt-0.5">Concierge</span></div>
         <div data-tab="tickets" class="mobile-nav-item flex flex-col items-center py-1 px-3 rounded-xl transition text-slate-400"><i class="fa-regular fa-ticket-alt text-xl"></i><span class="text-[10px] mt-0.5">Tickets</span></div>
@@ -184,14 +208,14 @@
     const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
     let token = localStorage.getItem('access_token');
     let userProfile = null;
-    let currentTab = 'shop';   // primary = marketplace
+    let currentTab = 'shop';
     let isRegisterMode = false;
     let typingIndicator = null;
     let sessionId = localStorage.getItem('pf_session') || ('web_' + Date.now() + '_' + Math.random().toString(36).substr(2, 10));
     localStorage.setItem('pf_session', sessionId);
     let cart = [];
     
-    // Debug logging with toggle persistence
+    // Debug
     let debugVisible = true;
     function log(msg) {
         const logsDiv = document.getElementById('logs-content');
@@ -270,7 +294,7 @@
         } catch(err) { showToast(`Checkout error: ${err.message}`, 'error'); log(err); }
     }
     
-    // SHOP (Marketplace) - with upgraded colored stock badge
+    // SHOP with 2x2 grid on mobile, delegated add-to-cart
     async function renderShop() {
         const panel = document.getElementById('dynamic-panel');
         panel.innerHTML = `<div class="flex justify-center py-20"><i class="fa-solid fa-spinner fa-pulse text-3xl text-blue-400"></i><span class="ml-3">loading premium inventory...</span></div>`;
@@ -278,25 +302,41 @@
             const items = await apiCall('/inventory/public-list');
             if (!items || items.length === 0) { panel.innerHTML = '<div class="text-center py-16 text-slate-400 bg-slate-800/40 rounded-2xl">✨ No products available. Check back later.</div>'; return; }
             panel.innerHTML = `
-                <div class="mb-4"><h2 class="text-2xl font-bold flex items-center gap-2"><i class="fa-solid fa-tag text-blue-400"></i> Digital Marketplace</h2><p class="text-sm text-slate-400">AI-powered inventory · instant checkout</p></div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 mt-4">${items.map(p => `
-                    <div class="product-card bg-slate-800/70 border border-slate-700 rounded-2xl p-4 backdrop-blur-sm">
-                        <div class="h-28 bg-gradient-to-br from-slate-700 to-slate-800 rounded-xl flex items-center justify-center mb-3"><i class="fa-solid fa-cube text-4xl text-slate-500"></i></div>
-                        <h3 class="font-semibold text-base truncate">${escapeHtml(p.description)}</h3>
-                        <div class="flex justify-between items-center mt-2">
-                            <span class="text-blue-400 font-bold text-xl">₦${p.price_naira.toLocaleString()}</span>
-                            <span class="text-xs px-2 py-0.5 rounded-full ${p.current_qty > 5 ? 'bg-emerald-500/20 text-emerald-300' : p.current_qty > 0 ? 'bg-amber-500/20 text-amber-300' : 'bg-red-500/20 text-red-300'}">
-                                ${p.current_qty} left
-                            </span>
+                <div class="mb-4"><h2 class="text-2xl font-bold flex items-center gap-2"><i class="fa-solid fa-tag text-blue-400"></i> Digital Marketplace</h2><p class="text-sm text-slate-400">AI-powered inventory · 2‑column mobile grid</p></div>
+                <div class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-5" id="products-grid">
+                    ${items.map(p => `
+                        <div class="product-card bg-slate-800/70 border border-slate-700 rounded-2xl p-3 md:p-4 backdrop-blur-sm flex flex-col" data-pid="${p.id}" data-pname="${escapeHtml(p.description)}" data-price="${p.price_naira}">
+                            <div class="h-20 md:h-28 bg-gradient-to-br from-slate-700 to-slate-800 rounded-xl flex items-center justify-center mb-2"><i class="fa-solid fa-cube text-3xl md:text-4xl text-slate-500"></i></div>
+                            <h3 class="font-semibold text-sm md:text-base truncate">${escapeHtml(p.description)}</h3>
+                            <div class="flex justify-between items-center mt-2 flex-wrap gap-1">
+                                <span class="text-blue-400 font-bold text-base md:text-xl">₦${p.price_naira.toLocaleString()}</span>
+                                <span class="text-[10px] px-2 py-0.5 rounded-full ${p.current_qty > 5 ? 'bg-emerald-500/20 text-emerald-300' : p.current_qty > 0 ? 'bg-amber-500/20 text-amber-300' : 'bg-red-500/20 text-red-300'}">
+                                    ${p.current_qty} left
+                                </span>
+                            </div>
+                            <button class="add-to-cart-btn mt-3 w-full bg-blue-600 hover:bg-blue-500 transition py-2 rounded-xl text-xs md:text-sm font-medium flex items-center justify-center gap-2"><i class="fa-regular fa-cart-plus"></i> Add</button>
                         </div>
-                        <button onclick="addToCart({id:${p.id}, name:'${escapeHtml(p.description)}', price:${p.price_naira}})" class="mt-4 w-full bg-blue-600 hover:bg-blue-500 transition py-2 rounded-xl text-sm font-medium flex items-center justify-center gap-2"><i class="fa-regular fa-cart-plus"></i> Add to Cart</button>
-                    </div>
-                `).join('')}</div>
+                    `).join('')}
+                </div>
             `;
+            // Attach delegated event for add to cart
+            document.querySelectorAll('.add-to-cart-btn').forEach(btn => {
+                btn.removeEventListener('click', productClickHandler);
+                btn.addEventListener('click', productClickHandler);
+            });
         } catch(err) { panel.innerHTML = `<div class="bg-red-500/10 p-8 rounded-2xl text-center text-red-300">⚠️ Error loading shop: ${err.message}</div>`; log(err); }
     }
+    function productClickHandler(e) {
+        const card = e.currentTarget.closest('[data-pid]');
+        if(card) {
+            const id = parseInt(card.dataset.pid);
+            const name = card.dataset.pname;
+            const price = parseInt(card.dataset.price);
+            addToCart({ id, name, price });
+        }
+    }
     
-    // CHAT module - FIXED: no cloning of input field, only button for clean event binding
+    // CHAT module with input focus fixed
     let chatContainer = null;
     function addChatMessage(sender, text) { if(!chatContainer) return; const div = document.createElement('div'); div.className = `p-3 rounded-xl max-w-[85%] text-sm shadow-md mb-2 ${sender === 'user' ? 'bg-blue-600 text-white ml-auto rounded-br-none' : 'bg-slate-800/90 text-slate-100 mr-auto rounded-bl-none border border-slate-700'}`; div.innerText = text; chatContainer.appendChild(div); chatContainer.parentElement?.scrollTo({ top: chatContainer.parentElement.scrollHeight, behavior: 'smooth' }); }
     function showTyping() { if(!chatContainer) return; if(typingIndicator) hideTyping(); typingIndicator = document.createElement('div'); typingIndicator.className = 'typing-indicator bg-slate-800/70 p-2 rounded-xl w-fit px-3 mb-2'; typingIndicator.innerHTML = '<span></span><span></span><span></span><span class="text-xs text-slate-400 ml-1"> Kevs AI typing...</span>'; chatContainer.appendChild(typingIndicator); chatContainer.parentElement?.scrollTo({ top: chatContainer.parentElement.scrollHeight }); }
@@ -305,75 +345,42 @@
     
     async function initChatUI() {
         const panel = document.getElementById('dynamic-panel');
-        panel.innerHTML = '<div id="chat-messages-area" class="flex flex-col space-y-3 pb-4 max-h-[70vh] overflow-y-auto"></div>';
+        panel.innerHTML = '<div id="chat-messages-area" class="flex flex-col space-y-3 pb-4 max-h-[70vh] overflow-y-auto chat-messages-scroll"></div>';
         chatContainer = document.getElementById('chat-messages-area');
-        
-        const welcome = userProfile 
-            ? `Welcome back, ${userProfile.first_name}! I'm your AI concierge. Ask me about orders or inventory.`
-            : "Hi! I'm Kevs AI. How can I assist your business today?";
+        const welcome = userProfile ? `Welcome back, ${userProfile.first_name}! I'm your AI concierge. Ask me about orders or inventory.` : "Hi! I'm Kevs AI. How can I assist your business today?";
         addChatMessage('assistant', welcome);
-        
-        // Get existing DOM elements (do NOT clone the input field - preserve native focus capability)
         const sendBtn = document.getElementById('chat-send-btn');
         const msgInput = document.getElementById('chat-message-input');
-        
-        if (!sendBtn || !msgInput) {
-            console.error("Chat input or send button missing");
-            return;
-        }
-        
-        // IMPORTANT FIX: Remove previous event handlers from send button by replacing with a clone
-        // This avoids stacking multiple handlers but does NOT affect the input field
+        if (!sendBtn || !msgInput) return;
         const freshSendBtn = sendBtn.cloneNode(true);
         sendBtn.parentNode.replaceChild(freshSendBtn, sendBtn);
-        
-        // Define handler that uses the existing input element (not cloned)
-        const sendHandler = () => {
-            const text = msgInput.value.trim();
-            if (text) {
-                msgInput.value = '';
-                sendChatMsg(text);
-            }
-        };
-        
-        // Attach click handler to the fresh button
+        const sendHandler = () => { const text = msgInput.value.trim(); if (text) { msgInput.value = ''; sendChatMsg(text); } };
         freshSendBtn.onclick = sendHandler;
-        
-        // For the input: directly attach onkeypress (overwrites any previous handler)
-        // No cloning! This preserves the input's internal state and focus behavior
-        msgInput.onkeypress = (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                sendHandler();
-            }
-        };
-        
-        // Ensure input is enabled and focused when chat becomes active
+        msgInput.onkeypress = (e) => { if (e.key === 'Enter') { e.preventDefault(); sendHandler(); } };
         msgInput.disabled = false;
-        // Small delay to allow DOM reflow before focusing
-        setTimeout(() => {
-            msgInput.focus();
-            log("Chat input focused and ready");
-        }, 50);
-        
-        log("Chat UI initialized with working input (no cloning)");
+        setTimeout(() => msgInput.focus(), 100);
+        log("Chat UI ready with focus");
     }
     
     // TICKETS & TRACK
     async function renderTickets() { const panel = document.getElementById('dynamic-panel'); panel.innerHTML = `<div class="text-center py-10"><i class="fa-solid fa-spinner fa-pulse"></i> Loading support requests...</div>`; try { const data = await apiCall('/support/tickets'); const tickets = data.tickets || []; if(tickets.length===0) { panel.innerHTML = '<div class="bg-slate-800/50 rounded-2xl p-10 text-center">🎫 No tickets yet. Start a chat to create one.</div>'; return; } panel.innerHTML = `<div class="space-y-3"><h3 class="text-xl font-bold mb-2">📬 Support Cases</h3>${tickets.map(t => `<div class="bg-slate-800 border border-slate-700 rounded-xl p-4"><div class="flex justify-between"><span class="text-xs font-mono text-blue-300">#${t.id.slice(0,8)}</span><span class="text-[10px] uppercase ${t.status==='open'?'bg-amber-500/20 text-amber-400':'bg-slate-700 text-slate-300'} px-2 py-0.5 rounded">${t.status}</span></div><p class="font-semibold mt-1">${escapeHtml(t.subject || 'General inquiry')}</p><p class="text-xs text-slate-400">Priority: ${t.priority}</p></div>`).join('')}</div>`; } catch(e) { panel.innerHTML = `<div class="text-red-400 p-5">Error: ${e.message}</div>`; log(e); } }
     async function renderTracking() { const panel = document.getElementById('dynamic-panel'); panel.innerHTML = `<div class="max-w-md mx-auto bg-slate-800/50 border border-slate-700 rounded-2xl p-6"><h3 class="text-xl font-bold flex gap-2"><i class="fa-solid fa-location-dot text-blue-400"></i> Track Shipment</h3><div class="mt-4 space-y-3"><input id="trackReceipt" placeholder="Receipt number" class="w-full bg-slate-950 border border-slate-700 p-3 rounded-xl"><input id="trackEmail" placeholder="Your email" class="w-full bg-slate-950 border border-slate-700 p-3 rounded-xl"><button id="trackAction" class="bg-blue-600 w-full py-2.5 rounded-xl font-medium">Track Now</button></div><div id="trackResult" class="mt-5 text-sm"></div></div>`; document.getElementById('trackAction')?.addEventListener('click', async () => { const receipt = document.getElementById('trackReceipt').value.trim(); const email = document.getElementById('trackEmail').value.trim(); if(!receipt || !email) { alert("Both fields required"); return; } const resDiv = document.getElementById('trackResult'); resDiv.innerHTML = '<div class="animate-pulse text-slate-400">🔍 Searching logistics...</div>'; try { const data = await apiCall(`/track-order?receipt_number=${receipt}&email=${email}`); const statusMap = { pending:"⏳ Pending", completed:"📦 Ready", shipped:"🚚 In transit", delivered:"✅ Delivered" }; resDiv.innerHTML = `<div class="bg-slate-900 p-4 rounded-xl space-y-1 text-xs"><div>Receipt: ${data.receipt_number}</div><div>Total: ₦${data.total_amount?.toLocaleString()}</div><div>Status: <span class="text-blue-300">${statusMap[data.shipping_status] || data.shipping_status}</span></div><div>Carrier: ${data.shipping_carrier || '—'}</div><div>Tracking: ${data.tracking_number || 'N/A'}</div></div>`; } catch(e) { resDiv.innerHTML = `<div class="text-red-400 p-3">${e.message}</div>`; log(e); } }); }
     
-    // Tab switching + show/hide input bar (chat bar visibility handled)
+    // Tab switching + handle bottom navigation visibility on chat (mobile)
     async function switchTab(tab) {
         currentTab = tab;
         document.querySelectorAll('.nav-stack-item, .mobile-nav-item').forEach(el => el.classList.remove('active'));
         document.querySelectorAll(`[data-tab="${tab}"]`).forEach(el => el.classList.add('active'));
         const chatBar = document.getElementById('chat-input-bar');
+        const mobileBottomNav = document.getElementById('mobile-bottom-nav');
+        const isMobile = window.innerWidth <= 768;
         if (tab === 'chat') {
             chatBar.classList.remove('hidden');
+            if (isMobile && mobileBottomNav) mobileBottomNav.style.display = 'none';
             await initChatUI();
         } else {
             chatBar.classList.add('hidden');
+            if (isMobile && mobileBottomNav) mobileBottomNav.style.display = 'flex';
             if(tab === 'shop') await renderShop();
             else if(tab === 'tickets') await renderTickets();
             else if(tab === 'track') await renderTracking();
@@ -384,14 +391,15 @@
     function showLoginModal() { document.getElementById('authModal').classList.remove('hidden'); }
     function hideLoginModal() { document.getElementById('authModal').classList.add('hidden'); }
     async function loadUserContext() { try { const me = await apiCall('/auth/me'); const ctx = await apiCall(`/support/customer-context?target_user_id=${me.user_id}`); userProfile = ctx.profile || { first_name: me.email?.split('@')[0] || 'User' }; let org = ''; try { const o = await apiCall('/auth/org'); org = o.org_name; } catch(e) {} const nameDisplay = `${userProfile.first_name}${org ? ` | ${org}` : ''}`; document.querySelectorAll('#user-badge-side, #user-badge-mobile').forEach(el => el.innerHTML = `<i class="fa-regular fa-user"></i> ${nameDisplay}`); } catch(e) { throw e; } }
-    async function logout() { try { await apiCall('/auth/logout', 'POST'); } catch(e) {} localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token'); token = null; userProfile = null; cart = []; saveCart(); showLoginModal(); if(currentTab === 'shop') renderShop(); }
+    async function logout() { try { await apiCall('/auth/logout', 'POST'); } catch(e) {} localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token'); token = null; userProfile = null; cart = []; saveCart(); showLoginModal(); if(currentTab === 'shop') renderShop(); const mobileNav = document.getElementById('mobile-bottom-nav'); if(mobileNav) mobileNav.style.display = 'flex'; document.getElementById('chat-input-bar')?.classList.add('hidden'); }
     async function demoLogin() { try { const res = await fetch(`${API_BASE}/auth/login`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email:'demo@kevsdigital.com', password:'KevsDemo2026!' }) }); const data = await res.json(); if(!res.ok) throw new Error(data.detail); token = data.access_token; localStorage.setItem('access_token', token); localStorage.setItem('refresh_token', data.refresh_token); await loadUserContext(); hideLoginModal(); switchTab('shop'); log("Demo login success"); } catch(e) { alert("Demo failed: "+e.message); } }
     
-    // Modal events
+    // Event binding
     document.getElementById('toggleAuthMode')?.addEventListener('click', () => { isRegisterMode = !isRegisterMode; document.getElementById('modalTitle').innerText = isRegisterMode ? "Register Organization" : "Sign In"; document.getElementById('authSubmitBtn').innerText = isRegisterMode ? "Create Profile" : "Sign In"; document.getElementById('regExtraFields').classList.toggle('hidden', !isRegisterMode); });
     document.getElementById('authSubmitBtn')?.addEventListener('click', async () => { const email = document.getElementById('authEmail').value.trim(); const pwd = document.getElementById('authPassword').value.trim(); if(!email || !pwd) return alert("Email & password required"); if(isRegisterMode) { const fname = document.getElementById('firstName').value.trim(), lname = document.getElementById('lastName').value.trim(), phone = document.getElementById('phoneNumber').value.trim(); if(!fname || !lname || !phone) return alert("First name, last name, phone required"); const invite = document.getElementById('inviteCode').value.trim(); const orgName = document.getElementById('orgName').value.trim(); const loc = document.getElementById('orgLocation').value.trim(); const niche = document.getElementById('orgNiche').value.trim(); if(!invite && (!orgName || !loc || !niche)) return alert("Provide invite code or org details"); const payload = { email, password:pwd, first_name:fname, last_name:lname, phone }; if(invite) payload.invite_code = invite; else { payload.org_name = orgName; payload.location = loc; payload.niche = niche; payload.budget = parseInt(document.getElementById('budget').value)||0; } try { await apiCall('/auth/register', 'POST', { body: JSON.stringify(payload) }); alert("Registration success! Please sign in."); isRegisterMode=false; document.getElementById('regExtraFields').classList.add('hidden'); } catch(e) { alert(e.message); } return; } try { const loginRes = await fetch(`${API_BASE}/auth/login`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, password:pwd }) }); const data = await loginRes.json(); if(!loginRes.ok) throw new Error(data.detail); token = data.access_token; localStorage.setItem('access_token', token); localStorage.setItem('refresh_token', data.refresh_token); await loadUserContext(); hideLoginModal(); switchTab('shop'); } catch(e) { alert(e.message); } });
     document.getElementById('demoBtn')?.addEventListener('click', demoLogin); document.getElementById('closeModalBtn')?.addEventListener('click', hideLoginModal);
     document.getElementById('logout-btn-side')?.addEventListener('click', logout);
+    document.getElementById('mobile-logout-btn')?.addEventListener('click', logout);
     document.getElementById('cart-icon-main')?.addEventListener('click', () => document.getElementById('cart-drawer').classList.remove('translate-x-full'));
     document.getElementById('close-drawer')?.addEventListener('click', () => document.getElementById('cart-drawer').classList.add('translate-x-full'));
     document.getElementById('cart-checkout-btn')?.addEventListener('click', checkoutCart);
@@ -400,16 +408,15 @@
     function showToast(msg, type) { const t = document.createElement('div'); t.className = `fixed bottom-24 left-4 right-4 md:left-auto md:right-6 z-50 bg-${type==='success'?'green-600':'red-600'} text-white px-4 py-2 rounded-xl shadow-lg text-sm animate-pulse`; t.innerText = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2800); }
     function escapeHtml(str) { if(!str) return ''; return str.replace(/[&<>]/g, m => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[m])); }
     
-    // init
+    // Init
     (async () => {
         const savedDebug = localStorage.getItem('debug_visible');
         if (savedDebug === 'false') { debugVisible = false; document.getElementById('debug-panel')?.classList.add('hidden-debug'); }
         loadCart();
-        if(token) {
-            try { await loadUserContext(); switchTab('shop'); } catch(e) { token=null; showLoginModal(); }
-        } else { showLoginModal(); }
-        window.addToCart = addToCart; window.removeCartItem = removeCartItem;
-        log("Kevs bOS initialized with CHAT INPUT FIX (no cloning, focus preserved)");
+        if(token) { try { await loadUserContext(); switchTab('shop'); } catch(e) { token=null; showLoginModal(); } } 
+        else { showLoginModal(); }
+        window.addToCart = addToCart;
+        log("✅ Mobile optimized: 2x2 grid, bottom-nav hides on chat, logout on header");
     })();
 </script>
 </body>
