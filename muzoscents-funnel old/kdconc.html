@@ -21,7 +21,6 @@
         .product-card { transition: transform 0.2s ease, box-shadow 0.2s; }
         .product-card:hover { transform: translateY(-3px); box-shadow: 0 20px 25px -12px rgba(0,0,0,0.4); }
         .cart-sidebar { transition: transform 0.3s cubic-bezier(0.2, 0.9, 0.4, 1.1); will-change: transform; }
-        /* debug panel toggle */
         .debug-panel {
             background: #0F172A;
             border-top: 1px solid #1E293B;
@@ -32,7 +31,6 @@
             transition: all 0.2s;
         }
         .debug-panel.hidden-debug { display: none; }
-        /* desktop left nav active style */
         .nav-stack-item {
             transition: all 0.2s;
             border-radius: 1rem;
@@ -272,7 +270,7 @@
         } catch(err) { showToast(`Checkout error: ${err.message}`, 'error'); log(err); }
     }
     
-    // SHOP (Marketplace)
+    // SHOP (Marketplace) - with upgraded colored stock badge
     async function renderShop() {
         const panel = document.getElementById('dynamic-panel');
         panel.innerHTML = `<div class="flex justify-center py-20"><i class="fa-solid fa-spinner fa-pulse text-3xl text-blue-400"></i><span class="ml-3">loading premium inventory...</span></div>`;
@@ -285,7 +283,12 @@
                     <div class="product-card bg-slate-800/70 border border-slate-700 rounded-2xl p-4 backdrop-blur-sm">
                         <div class="h-28 bg-gradient-to-br from-slate-700 to-slate-800 rounded-xl flex items-center justify-center mb-3"><i class="fa-solid fa-cube text-4xl text-slate-500"></i></div>
                         <h3 class="font-semibold text-base truncate">${escapeHtml(p.description)}</h3>
-                        <div class="flex justify-between items-center mt-2"><span class="text-blue-400 font-bold text-xl">₦${p.price_naira.toLocaleString()}</span><span class="text-xs px-2 py-0.5 rounded-full ${p.current_qty > 0 ? 'bg-emerald-500/20 text-emerald-300' : 'bg-red-500/20 text-red-300'}">${p.current_qty} left</span></div>
+                        <div class="flex justify-between items-center mt-2">
+                            <span class="text-blue-400 font-bold text-xl">₦${p.price_naira.toLocaleString()}</span>
+                            <span class="text-xs px-2 py-0.5 rounded-full ${p.current_qty > 5 ? 'bg-emerald-500/20 text-emerald-300' : p.current_qty > 0 ? 'bg-amber-500/20 text-amber-300' : 'bg-red-500/20 text-red-300'}">
+                                ${p.current_qty} left
+                            </span>
+                        </div>
                         <button onclick="addToCart({id:${p.id}, name:'${escapeHtml(p.description)}', price:${p.price_naira}})" class="mt-4 w-full bg-blue-600 hover:bg-blue-500 transition py-2 rounded-xl text-sm font-medium flex items-center justify-center gap-2"><i class="fa-regular fa-cart-plus"></i> Add to Cart</button>
                     </div>
                 `).join('')}</div>
@@ -293,7 +296,7 @@
         } catch(err) { panel.innerHTML = `<div class="bg-red-500/10 p-8 rounded-2xl text-center text-red-300">⚠️ Error loading shop: ${err.message}</div>`; log(err); }
     }
     
-    // CHAT module
+    // CHAT module (unchanged, works perfectly)
     let chatContainer = null;
     function addChatMessage(sender, text) { if(!chatContainer) return; const div = document.createElement('div'); div.className = `p-3 rounded-xl max-w-[85%] text-sm shadow-md mb-2 ${sender === 'user' ? 'bg-blue-600 text-white ml-auto rounded-br-none' : 'bg-slate-800/90 text-slate-100 mr-auto rounded-bl-none border border-slate-700'}`; div.innerText = text; chatContainer.appendChild(div); chatContainer.parentElement?.scrollTo({ top: chatContainer.parentElement.scrollHeight, behavior: 'smooth' }); }
     function showTyping() { if(!chatContainer) return; if(typingIndicator) hideTyping(); typingIndicator = document.createElement('div'); typingIndicator.className = 'typing-indicator bg-slate-800/70 p-2 rounded-xl w-fit px-3 mb-2'; typingIndicator.innerHTML = '<span></span><span></span><span></span><span class="text-xs text-slate-400 ml-1"> Kevs AI typing...</span>'; chatContainer.appendChild(typingIndicator); chatContainer.parentElement?.scrollTo({ top: chatContainer.parentElement.scrollHeight }); }
@@ -337,7 +340,6 @@
     
     // init
     (async () => {
-        // load debug visibility preference
         const savedDebug = localStorage.getItem('debug_visible');
         if (savedDebug === 'false') { debugVisible = false; document.getElementById('debug-panel')?.classList.add('hidden-debug'); }
         loadCart();
@@ -345,7 +347,7 @@
             try { await loadUserContext(); switchTab('shop'); } catch(e) { token=null; showLoginModal(); }
         } else { showLoginModal(); }
         window.addToCart = addToCart; window.removeCartItem = removeCartItem;
-        log("Kevs bOS initialized with toggleable debug panel");
+        log("Kevs bOS initialized with upgraded stock badges");
     })();
 </script>
 </body>
