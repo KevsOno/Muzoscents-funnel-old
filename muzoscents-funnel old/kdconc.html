@@ -13,7 +13,6 @@
         .nav-tab.active { background: #1E3A8A; color: #FFFFFF; }
         #chat-input { background-color: #0f172a !important; color: white !important; }
         #chat-input:focus { outline: none; border-color: #3b82f6; }
-        /* Typing indicator animation */
         .typing-indicator {
             display: flex;
             align-items: center;
@@ -82,7 +81,7 @@
     </div>
 </div>
 
-<!-- Login Modal (unchanged) -->
+<!-- Login / Register Modal (updated registration fields) -->
 <div id="auth-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
     <div class="bg-slate-800 border border-slate-700 p-6 rounded-2xl shadow-xl w-full max-w-sm text-slate-200">
         <div class="flex justify-between items-center mb-4">
@@ -90,10 +89,6 @@
             <button id="close-modal-btn" class="text-slate-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
         </div>
         <div class="space-y-3">
-            <div>
-                <label class="text-xs text-slate-400 block mb-1">Invite/Org Code</label>
-                <input id="auth-org" type="text" placeholder="e.g., KD001 (Leave blank if registering)" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm focus:outline-none focus:border-blue-500">
-            </div>
             <div>
                 <label class="text-xs text-slate-400 block mb-1">Email Address</label>
                 <input id="auth-email" type="email" placeholder="you@company.com" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm focus:outline-none focus:border-blue-500">
@@ -103,19 +98,42 @@
                 <input id="auth-password" type="password" placeholder="••••••••" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm focus:outline-none focus:border-blue-500">
             </div>
             <div id="reg-fields" class="hidden space-y-3 pt-1 border-t border-slate-700/50 mt-2">
+                <!-- Existing organisation option (invite code) -->
+                <div>
+                    <label class="text-xs text-slate-400 block mb-1">Use Invite Code (if joining existing)</label>
+                    <input id="auth-invite-code" type="text" placeholder="e.g., KD001" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
+                </div>
+                <div class="text-center text-xs text-slate-500">— OR —</div>
+                <!-- New organisation fields -->
+                <div>
+                    <label class="text-xs text-slate-400 block mb-1">Organisation Name *</label>
+                    <input id="auth-org-name" type="text" placeholder="Your Company Name" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400 block mb-1">Location (City, Country) *</label>
+                    <input id="auth-location" type="text" placeholder="e.g., Lagos, Nigeria" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400 block mb-1">Niche / Industry *</label>
+                    <input id="auth-niche" type="text" placeholder="e.g., Retail, Tech, Logistics" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400 block mb-1">Estimated Budget (₦)</label>
+                    <input id="auth-budget" type="number" placeholder="Optional" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
+                </div>
                 <div class="grid grid-cols-2 gap-2">
                     <div>
-                        <label class="text-xs text-slate-400 block mb-1">First Name</label>
-                        <input id="auth-fname" type="text" placeholder="John" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm focus:outline-none focus:border-blue-500">
+                        <label class="text-xs text-slate-400 block mb-1">First Name *</label>
+                        <input id="auth-fname" type="text" placeholder="John" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
                     </div>
                     <div>
-                        <label class="text-xs text-slate-400 block mb-1">Last Name</label>
-                        <input id="auth-lname" type="text" placeholder="Doe" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm focus:outline-none focus:border-blue-500">
+                        <label class="text-xs text-slate-400 block mb-1">Last Name *</label>
+                        <input id="auth-lname" type="text" placeholder="Doe" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
                     </div>
                 </div>
                 <div>
-                    <label class="text-xs text-slate-400 block mb-1">Phone Number</label>
-                    <input id="auth-phone" type="text" placeholder="e.g., +234..." class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm focus:outline-none focus:border-blue-500">
+                    <label class="text-xs text-slate-400 block mb-1">Phone Number *</label>
+                    <input id="auth-phone" type="tel" placeholder="e.g., +2348123456789" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
                 </div>
             </div>
             <button id="modal-submit-btn" class="w-full bg-blue-600 hover:bg-blue-700 font-medium text-white p-2.5 rounded-lg transition text-sm">Sign In</button>
@@ -135,7 +153,7 @@
     let userProfile = null;
     let currentTab = 'chat';
     let isRegisterMode = false;
-    let typingIndicatorDiv = null; // to store reference to typing indicator
+    let typingIndicatorDiv = null;
 
     function log(msg) {
         const div = document.getElementById('logs-content');
@@ -243,7 +261,6 @@
         }
     }
 
-    // Typing indicator functions
     function showTypingIndicator() {
         const container = document.getElementById('chat-container');
         if (!container) return;
@@ -312,7 +329,6 @@
         panel.innerHTML = '<div class="text-slate-400 text-center py-8"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Syncing helpdesk records...</div>';
         try {
             const data = await apiCall('/support/tickets');
-            // FIX: response is { tickets: [...] }, not direct array
             const tickets = data.tickets || [];
             if(!tickets || tickets.length === 0) {
                 panel.innerHTML = '<div class="text-slate-400 text-center py-8">No structural support tickets found.</div>';
@@ -345,7 +361,6 @@
         });
     }
 
-    // ---- Chat send with typing indicator ----
     function attachChatEvents() {
         const input = document.getElementById('chat-input');
         const sendBtn = document.getElementById('chat-send');
@@ -353,7 +368,6 @@
             log('Chat input or send button not found – reattaching later');
             return false;
         }
-        // Clone to remove any stuck listeners
         const newInput = input.cloneNode(true);
         input.parentNode.replaceChild(newInput, input);
         const newSend = sendBtn.cloneNode(true);
@@ -364,7 +378,7 @@
             if(!text) return;
             newInput.value = '';
             addChatMessage('user', text);
-            showTypingIndicator();   // show dots while waiting
+            showTypingIndicator();
             try {
                 const data = await apiCall(`/support/chat-stream`, {
                     method: 'POST',
@@ -452,24 +466,57 @@
         document.getElementById('toggle-auth-mode').innerText = isRegisterMode ? "Already operational? Sign In" : "Don't have an account? Register business";
         document.getElementById('reg-fields').classList.toggle('hidden', !isRegisterMode);
     };
+
     document.getElementById('modal-submit-btn').onclick = async () => {
         const email = document.getElementById('auth-email').value.trim();
         const password = document.getElementById('auth-password').value.trim();
-        const orgCode = document.getElementById('auth-org').value.trim();
         if (!email || !password) { alert('Fill out credentials fields.'); return; }
         try {
             if (isRegisterMode) {
-                const first_name = document.getElementById('auth-fname').value.trim();
-                const last_name = document.getElementById('auth-lname').value.trim();
+                const inviteCode = document.getElementById('auth-invite-code').value.trim();
+                const orgName = document.getElementById('auth-org-name').value.trim();
+                const location = document.getElementById('auth-location').value.trim();
+                const niche = document.getElementById('auth-niche').value.trim();
+                const budget = parseInt(document.getElementById('auth-budget').value) || 0;
+                const firstName = document.getElementById('auth-fname').value.trim();
+                const lastName = document.getElementById('auth-lname').value.trim();
                 const phone = document.getElementById('auth-phone').value.trim();
+
+                if (!firstName || !lastName || !phone) {
+                    alert('First name, last name, and phone number are required.');
+                    return;
+                }
+                if (!inviteCode && (!orgName || !location || !niche)) {
+                    alert('Either provide an invite code OR fill organisation name, location, and niche.');
+                    return;
+                }
+
+                const payload = {
+                    email, password,
+                    first_name: firstName,
+                    last_name: lastName,
+                    phone: phone
+                };
+                if (inviteCode) {
+                    payload.invite_code = inviteCode;
+                } else {
+                    payload.org_name = orgName;
+                    payload.location = location;
+                    payload.niche = niche;
+                    payload.budget = budget;
+                }
+
                 await apiCall('/auth/register', {
                     method: 'POST',
-                    body: JSON.stringify({ email, password, first_name, last_name, phone, invite_code: orgCode })
+                    body: JSON.stringify(payload)
                 });
-                alert('Registration finalized successfully! Signing in...');
+                alert('Registration successful! Please verify email (if required) and then log in.');
                 isRegisterMode = false;
                 document.getElementById('reg-fields').classList.add('hidden');
+                document.getElementById('toggle-auth-mode').click(); // switch to login
+                return;
             }
+            // Login flow
             const loginRes = await fetch(`${API_BASE}/auth/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -486,6 +533,7 @@
             log(`Authenticated successfully`);
         } catch(err) { alert(err.message); }
     };
+
     document.getElementById('demo-login-btn').onclick = demoLogin;
     document.getElementById('close-modal-btn').onclick = hideLoginModal;
 
