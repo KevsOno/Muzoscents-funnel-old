@@ -2,565 +2,350 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kevs Digital Concierge & Shop</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, viewport-fit=cover">
+    <title>Kevs Digital bOS | AI Marketplace & Concierge</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
-        body { background-color: #0F172A; font-family: system-ui, sans-serif; }
-        .debug-panel { background: #1e1e2f; color: #0fc; font-family: monospace; font-size: 10px; max-height: 120px; overflow-y: auto; padding: 6px; }
-        .nav-tab { cursor: pointer; padding: 8px 12px; border-radius: 20px; transition: 0.2s; color: #94A3B8; display: flex; align-items: center; gap: 6px; }
-        .nav-tab.active { background: #1E3A8A; color: #FFFFFF; }
-        #chat-input { background-color: #0f172a !important; color: white !important; }
-        #chat-input:focus { outline: none; border-color: #3b82f6; }
-        .typing-indicator {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            padding: 8px 12px;
-            background: #1e293b;
-            border-radius: 16px;
-            width: fit-content;
-        }
+        body { background: #0B1120; font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif; }
         .typing-indicator span {
-            width: 8px;
-            height: 8px;
-            background: #94a3b8;
-            border-radius: 50%;
-            display: inline-block;
-            animation: typing 1.4s infinite ease-in-out;
+            width: 8px; height: 8px; background: #64748B; border-radius: 50%;
+            display: inline-block; animation: typing 1.4s infinite ease-in-out;
         }
-        .typing-indicator span:nth-child(1) { animation-delay: 0s; }
         .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
         .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
         @keyframes typing {
             0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
             30% { transform: translateY(-6px); opacity: 1; }
         }
+        .product-card { transition: transform 0.2s ease, box-shadow 0.2s; }
+        .product-card:hover { transform: translateY(-3px); box-shadow: 0 20px 25px -12px rgba(0,0,0,0.4); }
+        .cart-sidebar { transition: transform 0.3s cubic-bezier(0.2, 0.9, 0.4, 1.1); will-change: transform; }
+        /* debug panel toggle */
+        .debug-panel {
+            background: #0F172A;
+            border-top: 1px solid #1E293B;
+            font-family: monospace;
+            font-size: 10px;
+            max-height: 140px;
+            overflow-y: auto;
+            transition: all 0.2s;
+        }
+        .debug-panel.hidden-debug { display: none; }
+        /* desktop left nav active style */
+        .nav-stack-item {
+            transition: all 0.2s;
+            border-radius: 1rem;
+        }
+        .nav-stack-item.active {
+            background: #1E3A8A;
+            color: white;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+        }
+        .nav-stack-item.active i, .nav-stack-item.active span {
+            color: white;
+        }
+        .mobile-nav-item.active {
+            color: #3B82F6;
+            background: #1E293B;
+        }
+        #chat-container {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        @media (max-width: 768px) {
+            .desktop-sidebar { display: none; }
+            .mobile-bottom-nav { display: flex; }
+        }
+        @media (min-width: 769px) {
+            .mobile-bottom-nav { display: none; }
+            .desktop-sidebar { display: flex; }
+        }
     </style>
 </head>
-<body class="text-slate-200">
+<body class="text-slate-200 antialiased">
 
-<div class="max-w-md mx-auto min-h-screen flex flex-col bg-slate-900 shadow-2xl relative">
-    <header class="p-4 bg-slate-800 border-b border-slate-700 flex justify-between items-center">
-        <div>
-            <h1 class="font-bold text-lg text-white">Kevs Digital bOS</h1>
-            <p class="text-xs text-slate-400">Omnichannel Customer Concierge</p>
-        </div>
-        <div class="flex gap-2 items-center">
-            <span id="user-badge" class="text-xs bg-slate-700 px-2 py-1 rounded-full"></span>
-            <button id="logout-btn" class="bg-red-600/80 hover:bg-red-700 text-xs text-white px-3 py-1.5 rounded-lg transition">
-                <i class="fa-solid fa-sign-out-alt mr-1"></i> Logout
-            </button>
-        </div>
-    </header>
+<div class="flex flex-col h-screen overflow-hidden">
+    <div class="flex flex-1 overflow-hidden">
+        <!-- DESKTOP LEFT SIDEBAR (stacks) -->
+        <aside class="desktop-sidebar w-72 bg-slate-900/80 border-r border-slate-800 flex-shrink-0 flex flex-col p-5 backdrop-blur-sm">
+            <div class="mb-8 pl-2">
+                <h2 class="text-2xl font-extrabold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">Kevs bOS</h2>
+                <p class="text-xs text-slate-500 mt-1">omnichannel engine</p>
+            </div>
+            <nav class="flex-1 space-y-2">
+                <div data-tab="shop" class="nav-stack-item flex items-center gap-4 px-4 py-3 cursor-pointer text-slate-300 hover:bg-slate-800/70 transition">
+                    <i class="fa-solid fa-store text-xl w-6"></i><span class="font-medium">Marketplace</span>
+                </div>
+                <div data-tab="chat" class="nav-stack-item flex items-center gap-4 px-4 py-3 cursor-pointer text-slate-300 hover:bg-slate-800/70 transition">
+                    <i class="fa-regular fa-comment-dots text-xl w-6"></i><span class="font-medium">Concierge AI</span>
+                </div>
+                <div data-tab="tickets" class="nav-stack-item flex items-center gap-4 px-4 py-3 cursor-pointer text-slate-300 hover:bg-slate-800/70 transition">
+                    <i class="fa-regular fa-ticket-alt text-xl w-6"></i><span class="font-medium">Support Tickets</span>
+                </div>
+                <div data-tab="track" class="nav-stack-item flex items-center gap-4 px-4 py-3 cursor-pointer text-slate-300 hover:bg-slate-800/70 transition">
+                    <i class="fa-solid fa-truck-fast text-xl w-6"></i><span class="font-medium">Track Order</span>
+                </div>
+            </nav>
+            <div class="pt-6 border-t border-slate-800 mt-4">
+                <div class="flex items-center justify-between">
+                    <div class="text-xs"><span id="user-badge-side" class="bg-slate-800 px-2 py-1 rounded-full inline-flex items-center gap-1"><i class="fa-regular fa-user"></i> Guest</span></div>
+                    <button id="logout-btn-side" class="bg-red-600/70 hover:bg-red-700 text-xs px-3 py-1.5 rounded-lg transition"><i class="fa-solid fa-right-from-bracket"></i> Exit</button>
+                </div>
+            </div>
+        </aside>
 
-    <nav class="flex justify-around bg-slate-800/50 p-2 border-b border-slate-700/50 text-sm font-medium">
-        <div data-tab="chat" class="nav-tab active"><i class="fa-solid fa-comments"></i> Chat</div>
-        <div data-tab="shop" class="nav-tab"><i class="fa-solid fa-store"></i> Shop</div>
-        <div data-tab="tickets" class="nav-tab"><i class="fa-solid fa-ticket"></i> Tickets</div>
-        <div data-tab="track" class="nav-tab"><i class="fa-solid fa-truck"></i> Track Order</div>
-    </nav>
+        <!-- MAIN CONTENT AREA -->
+        <main class="flex-1 flex flex-col overflow-hidden bg-slate-950/30">
+            <!-- top header with cart icon & toggle debug button -->
+            <div class="flex justify-between items-center p-4 border-b border-slate-800 bg-slate-900/40 sticky top-0 z-10">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-cart-shopping text-blue-400 text-xl md:hidden"></i>
+                    <h3 class="text-lg font-semibold md:hidden">Kevs bOS</h3>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span id="user-badge-mobile" class="text-xs bg-slate-800 px-2 py-1 rounded-full md:hidden">Guest</span>
+                    <button id="toggle-debug-btn" class="bg-slate-700 hover:bg-slate-600 p-2 rounded-full text-xs transition" title="Toggle Debug Panel">
+                        <i class="fa-solid fa-bug"></i>
+                    </button>
+                    <button id="cart-icon-main" class="relative bg-slate-800 hover:bg-slate-700 transition p-2 rounded-full">
+                        <i class="fa-solid fa-bag-shopping text-lg"></i>
+                        <span id="cart-count-global" class="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center shadow-md">0</span>
+                    </button>
+                </div>
+            </div>
 
-    <main id="dynamic-panel" class="flex-1 p-4 overflow-y-auto space-y-4 text-slate-800">
-        <div id="chat-container" class="space-y-4"></div>
-    </main>
+            <!-- Dynamic panel (scrollable) -->
+            <div id="dynamic-panel" class="flex-1 overflow-y-auto p-4 md:p-6 scroll-smooth"></div>
 
-    <div id="input-bar" class="p-3 bg-slate-800 border-t border-slate-700 flex gap-2 items-center">
-        <input id="chat-input" type="text" placeholder="Type your message..." 
-               autocomplete="off" spellcheck="false"
-               class="flex-1 bg-slate-950 text-slate-100 placeholder-slate-500 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
-        <button id="chat-send" class="bg-blue-600 hover:bg-blue-700 text-white w-9 h-9 rounded-lg flex items-center justify-center transition">
-            <i class="fa-solid fa-paper-plane"></i>
-        </button>
+            <!-- Chat input bar (only visible when chat active) -->
+            <div id="chat-input-bar" class="hidden p-3 bg-slate-900/90 border-t border-slate-800 backdrop-blur-sm sticky bottom-0 z-10">
+                <div class="flex gap-2 items-center max-w-3xl mx-auto">
+                    <input id="chat-message-input" type="text" placeholder="Ask about products, orders, or support..." class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:ring-2 focus:ring-blue-500 outline-none">
+                    <button id="chat-send-btn" class="bg-blue-600 hover:bg-blue-700 rounded-xl w-10 h-10 flex items-center justify-center transition"><i class="fa-regular fa-paper-plane"></i></button>
+                </div>
+            </div>
+        </main>
     </div>
 
-    <div class="debug-panel">
-        <div class="font-bold border-b border-slate-700 pb-0.5 mb-1 text-slate-400">DEBUG LOGS:</div>
-        <div id="logs-content">System initialized... Ready.</div>
+    <!-- MOBILE BOTTOM NAVIGATION (visible only on mobile) -->
+    <div class="mobile-bottom-nav fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 flex justify-around p-2 z-30">
+        <div data-tab="shop" class="mobile-nav-item flex flex-col items-center py-1 px-3 rounded-xl transition text-slate-400"><i class="fa-solid fa-store text-xl"></i><span class="text-[10px] mt-0.5">Market</span></div>
+        <div data-tab="chat" class="mobile-nav-item flex flex-col items-center py-1 px-3 rounded-xl transition text-slate-400"><i class="fa-regular fa-comment-dots text-xl"></i><span class="text-[10px] mt-0.5">Concierge</span></div>
+        <div data-tab="tickets" class="mobile-nav-item flex flex-col items-center py-1 px-3 rounded-xl transition text-slate-400"><i class="fa-regular fa-ticket-alt text-xl"></i><span class="text-[10px] mt-0.5">Tickets</span></div>
+        <div data-tab="track" class="mobile-nav-item flex flex-col items-center py-1 px-3 rounded-xl transition text-slate-400"><i class="fa-solid fa-truck-fast text-xl"></i><span class="text-[10px] mt-0.5">Track</span></div>
     </div>
-</div>
 
-<!-- Login / Register Modal (updated registration fields) -->
-<div id="auth-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-    <div class="bg-slate-800 border border-slate-700 p-6 rounded-2xl shadow-xl w-full max-w-sm text-slate-200">
-        <div class="flex justify-between items-center mb-4">
-            <h3 id="modal-title" class="text-lg font-bold text-white">Sign In to Workspace</h3>
-            <button id="close-modal-btn" class="text-slate-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+    <!-- CART SIDEBAR (right drawer) -->
+    <div id="cart-drawer" class="cart-sidebar fixed top-0 right-0 w-full sm:w-96 h-full bg-slate-900 border-l border-slate-700 shadow-2xl z-50 transform translate-x-full transition-transform duration-300 flex flex-col">
+        <div class="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/95">
+            <h3 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-basket-shopping text-blue-400"></i> Your Cart</h3>
+            <button id="close-drawer" class="text-slate-400 hover:text-white text-2xl">&times;</button>
         </div>
-        <div class="space-y-3">
-            <div>
-                <label class="text-xs text-slate-400 block mb-1">Email Address</label>
-                <input id="auth-email" type="email" placeholder="you@company.com" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm focus:outline-none focus:border-blue-500">
-            </div>
-            <div>
-                <label class="text-xs text-slate-400 block mb-1">Password</label>
-                <input id="auth-password" type="password" placeholder="••••••••" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm focus:outline-none focus:border-blue-500">
-            </div>
-            <div id="reg-fields" class="hidden space-y-3 pt-1 border-t border-slate-700/50 mt-2">
-                <!-- Existing organisation option (invite code) -->
-                <div>
-                    <label class="text-xs text-slate-400 block mb-1">Use Invite Code (if joining existing)</label>
-                    <input id="auth-invite-code" type="text" placeholder="e.g., KD001" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
+        <div id="cart-items-panel" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
+        <div class="p-4 border-t border-slate-800 bg-slate-900/90">
+            <div class="flex justify-between font-bold text-lg mb-4"><span>Total</span><span id="cart-grand-total" class="text-blue-300">₦0</span></div>
+            <button id="cart-checkout-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 py-2.5 rounded-xl font-semibold transition shadow-lg">💳 Proceed to Checkout</button>
+            <p class="text-[10px] text-slate-500 text-center mt-2">Point of Sale / Cash</p>
+        </div>
+    </div>
+
+    <!-- DEBUG PANEL (toggleable) -->
+    <div id="debug-panel" class="debug-panel text-slate-400 text-[11px] px-4 py-2 border-t border-slate-800/80">
+        <div class="flex items-center gap-2 font-mono"><i class="fa-regular fa-terminal text-blue-400 text-xs"></i> <span class="font-semibold">DEBUG LOGS</span></div>
+        <div id="logs-content" class="break-words font-mono leading-relaxed max-h-[100px] overflow-y-auto">⚡ System ready. Kevs bOS online.</div>
+    </div>
+
+    <!-- LOGIN / REGISTER MODAL (enhanced) -->
+    <div id="authModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
+        <div class="bg-slate-800 border border-slate-700 p-6 rounded-2xl shadow-2xl w-full max-w-md text-slate-200">
+            <div class="flex justify-between items-center mb-4"><h3 id="modalTitle" class="text-xl font-bold">Sign In</h3><button id="closeModalBtn" class="text-2xl">&times;</button></div>
+            <div class="space-y-3">
+                <input id="authEmail" type="email" placeholder="Email address" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                <input id="authPassword" type="password" placeholder="Password" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                <div id="regExtraFields" class="hidden space-y-3 border-t border-slate-700/50 pt-3">
+                    <input id="inviteCode" placeholder="Invite code (optional)" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
+                    <div class="text-xs text-center text-slate-500">— OR create new org —</div>
+                    <input id="orgName" placeholder="Organization name *" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
+                    <div class="grid grid-cols-2 gap-2"><input id="orgLocation" placeholder="City, Country *" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm"><input id="orgNiche" placeholder="Industry *" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm"></div>
+                    <input id="budget" type="number" placeholder="Budget (₦)" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
+                    <div class="grid grid-cols-2 gap-2"><input id="firstName" placeholder="First name *" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm"><input id="lastName" placeholder="Last name *" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm"></div>
+                    <input id="phoneNumber" placeholder="Phone number *" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
                 </div>
-                <div class="text-center text-xs text-slate-500">— OR —</div>
-                <!-- New organisation fields -->
-                <div>
-                    <label class="text-xs text-slate-400 block mb-1">Organisation Name *</label>
-                    <input id="auth-org-name" type="text" placeholder="Your Company Name" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
-                </div>
-                <div>
-                    <label class="text-xs text-slate-400 block mb-1">Location (City, Country) *</label>
-                    <input id="auth-location" type="text" placeholder="e.g., Lagos, Nigeria" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
-                </div>
-                <div>
-                    <label class="text-xs text-slate-400 block mb-1">Niche / Industry *</label>
-                    <input id="auth-niche" type="text" placeholder="e.g., Retail, Tech, Logistics" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
-                </div>
-                <div>
-                    <label class="text-xs text-slate-400 block mb-1">Estimated Budget (₦)</label>
-                    <input id="auth-budget" type="number" placeholder="Optional" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
-                </div>
-                <div class="grid grid-cols-2 gap-2">
-                    <div>
-                        <label class="text-xs text-slate-400 block mb-1">First Name *</label>
-                        <input id="auth-fname" type="text" placeholder="John" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
-                    </div>
-                    <div>
-                        <label class="text-xs text-slate-400 block mb-1">Last Name *</label>
-                        <input id="auth-lname" type="text" placeholder="Doe" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
-                    </div>
-                </div>
-                <div>
-                    <label class="text-xs text-slate-400 block mb-1">Phone Number *</label>
-                    <input id="auth-phone" type="tel" placeholder="e.g., +2348123456789" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
-                </div>
-            </div>
-            <button id="modal-submit-btn" class="w-full bg-blue-600 hover:bg-blue-700 font-medium text-white p-2.5 rounded-lg transition text-sm">Sign In</button>
-            <button id="demo-login-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white p-2.5 rounded-lg text-sm mt-2">
-                <i class="fa-solid fa-bolt mr-1"></i> Try Demo Account
-            </button>
-            <div class="text-center mt-2">
-                <button id="toggle-auth-mode" class="text-xs text-blue-400 hover:underline">Don't have an account? Register business</button>
+                <button id="authSubmitBtn" class="w-full bg-blue-600 hover:bg-blue-700 font-semibold py-2.5 rounded-lg transition">Sign In</button>
+                <button id="demoBtn" class="w-full bg-emerald-600/80 hover:bg-emerald-700 py-2.5 rounded-lg text-sm flex items-center justify-center gap-2"><i class="fa-solid fa-flask"></i> Demo Access</button>
+                <div class="text-center"><button id="toggleAuthMode" class="text-xs text-blue-400 hover:underline">Don't have an account? Register business</button></div>
             </div>
         </div>
     </div>
 </div>
 
 <script>
+    // ---------- API & GLOBALS ----------
     const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
     let token = localStorage.getItem('access_token');
     let userProfile = null;
-    let currentTab = 'chat';
+    let currentTab = 'shop';   // primary = marketplace
     let isRegisterMode = false;
-    let typingIndicatorDiv = null;
-
-    // Ensure a unique persistent session ID exists
-    let sessionId = localStorage.getItem('pf_session');
-    if (!sessionId) {
-        sessionId = 'web_' + Date.now() + '_' + Math.random().toString(36).substr(2, 8);
-        localStorage.setItem('pf_session', sessionId);
-    }
-
+    let typingIndicator = null;
+    let sessionId = localStorage.getItem('pf_session') || ('web_' + Date.now() + '_' + Math.random().toString(36).substr(2, 10));
+    localStorage.setItem('pf_session', sessionId);
+    let cart = [];
+    
+    // Debug logging with toggle persistence
+    let debugVisible = true;
     function log(msg) {
-        const div = document.getElementById('logs-content');
-        div.innerHTML += `<br>[${new Date().toLocaleTimeString()}] ${msg}`;
-        div.scrollTop = div.scrollHeight;
+        const logsDiv = document.getElementById('logs-content');
+        if (logsDiv) {
+            logsDiv.innerHTML += `<br>⏺ [${new Date().toLocaleTimeString()}] ${msg}`;
+            logsDiv.scrollTop = logsDiv.scrollHeight;
+        }
+        console.log(msg);
     }
-
+    function toggleDebugPanel() {
+        const panel = document.getElementById('debug-panel');
+        if (panel) {
+            debugVisible = !debugVisible;
+            if (debugVisible) panel.classList.remove('hidden-debug');
+            else panel.classList.add('hidden-debug');
+            localStorage.setItem('debug_visible', debugVisible);
+        }
+    }
+    
+    // API helpers with refresh
     async function refreshToken() {
         const refresh = localStorage.getItem('refresh_token');
         if (!refresh) return false;
         try {
-            const res = await fetch(`${API_BASE}/auth/refresh`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ refresh_token: refresh })
-            });
-            if (res.ok) {
-                const { access_token, refresh_token } = await res.json();
-                localStorage.setItem('access_token', access_token);
-                localStorage.setItem('refresh_token', refresh_token);
-                token = access_token;
-                return true;
-            }
-        } catch (e) {}
+            const res = await fetch(`${API_BASE}/auth/refresh`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ refresh_token: refresh }) });
+            if (res.ok) { const { access_token, refresh_token } = await res.json(); localStorage.setItem('access_token', access_token); localStorage.setItem('refresh_token', refresh_token); token = access_token; return true; }
+        } catch(e) { log("refresh failed"); }
         return false;
     }
-
     async function apiCall(endpoint, options = {}, retry = true) {
         if (!options.headers) options.headers = {};
         options.headers['Content-Type'] = 'application/json';
         if (token) options.headers['Authorization'] = `Bearer ${token}`;
         let res = await fetch(`${API_BASE}${endpoint}`, options);
-        if (res.status === 401 && retry) {
-            const ok = await refreshToken();
-            if (ok) return apiCall(endpoint, options, false);
-            showLoginModal();
-            throw new Error('Session expired');
-        }
-        if (!res.ok) {
-            const err = await res.json().catch(()=>({detail:'Error'}));
-            throw new Error(err.detail || 'API error');
-        }
+        if (res.status === 401 && retry) { if (await refreshToken()) return apiCall(endpoint, options, false); showLoginModal(); throw new Error('Session expired'); }
+        if (!res.ok) { const err = await res.json().catch(()=>({detail:'API error'})); throw new Error(err.detail || 'Request failed'); }
         return res.json();
     }
-
-    function showLoginModal() { document.getElementById('auth-modal').classList.remove('hidden'); }
-    function hideLoginModal() { document.getElementById('auth-modal').classList.add('hidden'); }
-
-    async function logout() {
-        try { await apiCall('/auth/logout', 'POST'); } catch(e) {}
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        token = null;
-        userProfile = null;
-        document.getElementById('user-badge').innerText = '';
-        showLoginModal();
-        const chatContainer = document.getElementById('chat-container');
-        if (chatContainer) chatContainer.innerHTML = '';
-        addChatMessage('assistant', 'You have been logged out. Please sign in again.');
-        log('Logged out');
-    }
-
-    async function demoLogin() {
-        const btn = document.getElementById('demo-login-btn');
-        btn.disabled = true;
-        try {
-            const data = await fetch(`${API_BASE}/auth/login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' })
-            }).then(r => r.json());
-            if (data.access_token) {
-                token = data.access_token;
-                localStorage.setItem('access_token', token);
-                localStorage.setItem('refresh_token', data.refresh_token);
-                await loadUserContext();
-                hideLoginModal();
-                switchTab(currentTab);
-                log('Demo login successful');
-            } else throw new Error('Login failed');
-        } catch (err) {
-            alert('Demo login failed: ' + err.message);
-            log('Demo error: ' + err.message);
-        } finally {
-            btn.disabled = false;
-        }
-    }
-
-    async function loadUserContext() {
-        try {
-            const me = await apiCall('/auth/me');
-            const context = await apiCall(`/support/customer-context?target_user_id=${me.user_id}`);
-            userProfile = context.profile || { first_name: 'Customer' };
-            let orgName = '';
-            try {
-                const orgData = await apiCall('/auth/org');
-                orgName = orgData.org_name;
-            } catch (e) { orgName = 'Workspace'; }
-            document.getElementById('user-badge').innerHTML = `<i class="fa-regular fa-user mr-1"></i> ${userProfile.first_name} | ${orgName}`;
-            log(`Session active for ${userProfile.first_name} @ ${orgName}`);
-        } catch (err) {
-            log(`Profile error: ${err.message}`);
-            userProfile = { first_name: 'Guest' };
-            document.getElementById('user-badge').innerHTML = 'Guest';
-        }
-    }
-
-    function showTypingIndicator() {
-        const container = document.getElementById('chat-container');
+    
+    // Cart functions
+    function saveCart() { localStorage.setItem('kevs_cart', JSON.stringify(cart)); updateCartUI(); }
+    function loadCart() { const saved = localStorage.getItem('kevs_cart'); cart = saved ? JSON.parse(saved) : []; updateCartUI(); }
+    function updateCartUI() {
+        const total = cart.reduce((s,i) => s + (i.price * i.quantity), 0);
+        document.getElementById('cart-grand-total').innerText = `₦${total.toLocaleString()}`;
+        const count = cart.reduce((s,i) => s + i.quantity, 0);
+        document.getElementById('cart-count-global').innerText = count;
+        const container = document.getElementById('cart-items-panel');
         if (!container) return;
-        if (typingIndicatorDiv) hideTypingIndicator();
-        typingIndicatorDiv = document.createElement('div');
-        typingIndicatorDiv.className = 'typing-indicator';
-        typingIndicatorDiv.innerHTML = '<span></span><span></span><span></span>';
-        container.appendChild(typingIndicatorDiv);
-        container.parentElement.scrollTop = container.parentElement.scrollHeight;
+        if (cart.length === 0) { container.innerHTML = '<div class="text-center text-slate-500 py-8"><i class="fa-regular fa-basket-shopping text-3xl mb-2 opacity-40"></i><p>Cart empty</p></div>'; return; }
+        container.innerHTML = cart.map((item, idx) => `
+            <div class="flex justify-between items-center bg-slate-800/60 p-3 rounded-xl border border-slate-700">
+                <div><span class="font-medium">${escapeHtml(item.name)}</span> <span class="text-xs text-slate-400">x${item.quantity}</span></div>
+                <div class="font-mono text-blue-300">₦${(item.price * item.quantity).toLocaleString()}</div>
+                <button onclick="removeCartItem(${idx})" class="text-red-400 hover:text-red-300"><i class="fa-regular fa-trash-can"></i></button>
+            </div>
+        `).join('');
     }
-
-    function hideTypingIndicator() {
-        if (typingIndicatorDiv && typingIndicatorDiv.parentNode) {
-            typingIndicatorDiv.parentNode.removeChild(typingIndicatorDiv);
-            typingIndicatorDiv = null;
-        }
+    window.removeCartItem = (idx) => { cart.splice(idx,1); saveCart(); if(currentTab === 'shop') renderShop(); };
+    function addToCart(product) {
+        let existing = cart.find(i => i.id === product.id);
+        if(existing) existing.quantity++;
+        else cart.push({ id: product.id, name: product.name, price: product.price, quantity: 1 });
+        saveCart();
+        showToast(`${product.name} added to cart`, 'success');
     }
-
-    function addChatMessage(sender, text) {
-        const container = document.getElementById('chat-container');
-        if (!container) return;
-        const msgDiv = document.createElement('div');
-        msgDiv.className = `p-3 rounded-xl max-w-[85%] text-sm shadow-sm ${
-            sender === 'user' 
-                ? 'bg-blue-600 text-white ml-auto rounded-tr-none' 
-                : 'bg-slate-800 text-slate-100 mr-auto rounded-tl-none border border-slate-700'
-        }`;
-        msgDiv.innerText = text;
-        container.appendChild(msgDiv);
-        container.parentElement.scrollTop = container.parentElement.scrollHeight;
+    async function checkoutCart() {
+        if (!cart.length) { showToast("Cart is empty", 'error'); return; }
+        if (!token) { showLoginModal(); showToast("Please login first", 'error'); return; }
+        const items = cart.map(i => ({ inventory_id: i.id, quantity: i.quantity }));
+        try {
+            const result = await apiCall('/pos/terminal/checkout', 'POST', { body: JSON.stringify({ items, payment_method: 'cash', customer_name: userProfile?.first_name || null }) });
+            showToast(`✅ Checkout success! Receipt: ${result.receipt_number || 'OK'}`, 'success');
+            cart = []; saveCart(); if(currentTab === 'shop') renderShop();
+            document.getElementById('cart-drawer').classList.add('translate-x-full');
+        } catch(err) { showToast(`Checkout error: ${err.message}`, 'error'); log(err); }
     }
-
-    async function loadProducts() {
+    
+    // SHOP (Marketplace)
+    async function renderShop() {
         const panel = document.getElementById('dynamic-panel');
-        panel.innerHTML = '<div class="text-slate-400 text-center py-8"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading catalogue...</div>';
+        panel.innerHTML = `<div class="flex justify-center py-20"><i class="fa-solid fa-spinner fa-pulse text-3xl text-blue-400"></i><span class="ml-3">loading premium inventory...</span></div>`;
         try {
             const items = await apiCall('/inventory/public-list');
-            if(!items || items.length === 0) {
-                panel.innerHTML = '<div class="text-slate-400 text-center py-8">No retail stock items currently visible.</div>';
-                return;
-            }
-            let html = `<div class="grid grid-cols-1 gap-4">`;
-            items.forEach(p => {
-                html += `
-                    <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex justify-between items-center shadow-sm">
-                        <div>
-                            <h4 class="font-bold text-white">${escapeHtml(p.description)}</h4>
-                            <p class="text-xs text-slate-400 mt-0.5">SKU: ${p.id}</p>
-                            <p class="text-blue-400 font-bold text-sm mt-2">₦${p.price_naira.toLocaleString()}</p>
-                        </div>
-                        <div class="text-right">
-                            <span class="text-xs px-2 py-1 rounded-full font-medium ${p.current_qty > 5 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}">
-                                ${p.current_qty} units left
-                            </span>
-                            <button onclick="alert('Checkout integration triggered')" class="block mt-3 bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded-lg transition">Buy Now</button>
-                        </div>
-                    </div>`;
-            });
-            html += `</div>`;
-            panel.innerHTML = html;
-        } catch(err) { panel.innerHTML = `<div class="text-red-400 bg-red-500/10 border border-red-500/20 p-4 rounded-xl text-sm">Catalog failed: ${err.message}</div>`; }
-    }
-
-    async function loadMyTickets() {
-        const panel = document.getElementById('dynamic-panel');
-        panel.innerHTML = '<div class="text-slate-400 text-center py-8"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Syncing helpdesk records...</div>';
-        try {
-            const data = await apiCall('/support/tickets');
-            const tickets = data.tickets || [];
-            if(!tickets || tickets.length === 0) {
-                panel.innerHTML = '<div class="text-slate-400 text-center py-8">No structural support tickets found.</div>';
-                return;
-            }
-            let html = `<div class="space-y-3">`;
-            tickets.forEach(t => {
-                html += `
-                    <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 shadow-sm">
-                        <div class="flex justify-between items-start">
-                            <span class="text-xs font-mono font-bold text-blue-400">#${t.id.slice(0,8).toUpperCase()}</span>
-                            <span class="text-[10px] uppercase font-bold px-2 py-0.5 rounded ${t.status === 'open' ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-700 text-slate-400'}">${t.status}</span>
-                        </div>
-                        <p class="text-sm font-semibold mt-1 text-white">${escapeHtml(t.subject || 'Automated Query Case')}</p>
-                        <p class="text-xs text-slate-400 mt-1">Priority: <span class="capitalize text-slate-300">${t.priority}</span></p>
-                    </div>`;
-            });
-            html += `</div>`;
-            panel.innerHTML = html;
-        } catch(err) { panel.innerHTML = `<div class="text-red-400 bg-red-500/10 border border-red-500/20 p-4 rounded-xl text-sm">Failed loading tickets: ${err.message}</div>`; }
-    }
-
-    function escapeHtml(str) {
-        if (!str) return '';
-        return str.replace(/[&<>]/g, function(m) {
-            if (m === '&') return '&amp;';
-            if (m === '<') return '&lt;';
-            if (m === '>') return '&gt;';
-            return m;
-        });
-    }
-
-    function attachChatEvents() {
-        const input = document.getElementById('chat-input');
-        const sendBtn = document.getElementById('chat-send');
-        if (!input || !sendBtn) {
-            log('Chat input or send button not found – reattaching later');
-            return false;
-        }
-        const newInput = input.cloneNode(true);
-        input.parentNode.replaceChild(newInput, input);
-        const newSend = sendBtn.cloneNode(true);
-        sendBtn.parentNode.replaceChild(newSend, sendBtn);
-        
-        const sendMessageHandler = async () => {
-            const text = newInput.value.trim();
-            if(!text) return;
-            newInput.value = '';
-            addChatMessage('user', text);
-            showTypingIndicator();
-            try {
-                // Use the global sessionId (already set at top)
-                const data = await apiCall(`/support/chat-stream`, {
-                    method: 'POST',
-                    body: JSON.stringify({ session_id: sessionId, message: text })
-                });
-                hideTypingIndicator();
-                addChatMessage('assistant', data.response || "No response.");
-            } catch (err) {
-                hideTypingIndicator();
-                addChatMessage('assistant', `Error: ${err.message}`);
-            }
-        };
-        newSend.onclick = sendMessageHandler;
-        newInput.onkeypress = (e) => { if (e.key === 'Enter') sendMessageHandler(); };
-        newInput.disabled = false;
-        log('Chat events attached with typing indicator');
-        return true;
-    }
-
-    function switchTab(tab) {
-        currentTab = tab;
-        document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
-        document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
-        const panel = document.getElementById('dynamic-panel');
-        const inputBar = document.getElementById('input-bar');
-        
-        if (tab === 'chat') {
-            inputBar.classList.remove('hidden');
-            panel.innerHTML = '<div id="chat-container" class="space-y-4"></div>';
-            if (userProfile) addChatMessage('assistant', `Welcome back, ${userProfile.first_name}! How can I help you today?`);
-            else addChatMessage('assistant', 'Hello! I am your business companion. How can I assist you with products or support?');
-            setTimeout(() => attachChatEvents(), 50);
-        } else if (tab === 'track') {
-            inputBar.classList.add('hidden');
+            if (!items || items.length === 0) { panel.innerHTML = '<div class="text-center py-16 text-slate-400 bg-slate-800/40 rounded-2xl">✨ No products available. Check back later.</div>'; return; }
             panel.innerHTML = `
-                <div class="bg-slate-800 border border-slate-700 p-5 rounded-2xl shadow-sm text-slate-200">
-                    <h3 class="font-bold text-lg mb-1 text-white flex items-center gap-2"><i class="fa-solid fa-truck text-blue-500"></i> Track Your Order</h3>
-                    <p class="text-xs text-slate-400 mb-4">Monitor real-time retail fulfillment and carrier tracking updates.</p>
-                    <div class="space-y-3">
-                        <input id="track-receipt" type="text" placeholder="Receipt Number (e.g., RCP-...)" class="w-full bg-slate-950 border border-slate-700 p-2.5 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
-                        <input id="track-email" type="email" placeholder="Your Associated Email" class="w-full bg-slate-950 border border-slate-700 p-2.5 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
-                        <button id="track-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2.5 rounded-lg w-full transition text-sm">Query Delivery State</button>
+                <div class="mb-4"><h2 class="text-2xl font-bold flex items-center gap-2"><i class="fa-solid fa-tag text-blue-400"></i> Digital Marketplace</h2><p class="text-sm text-slate-400">AI-powered inventory · instant checkout</p></div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 mt-4">${items.map(p => `
+                    <div class="product-card bg-slate-800/70 border border-slate-700 rounded-2xl p-4 backdrop-blur-sm">
+                        <div class="h-28 bg-gradient-to-br from-slate-700 to-slate-800 rounded-xl flex items-center justify-center mb-3"><i class="fa-solid fa-cube text-4xl text-slate-500"></i></div>
+                        <h3 class="font-semibold text-base truncate">${escapeHtml(p.description)}</h3>
+                        <div class="flex justify-between items-center mt-2"><span class="text-blue-400 font-bold text-xl">₦${p.price_naira.toLocaleString()}</span><span class="text-xs px-2 py-0.5 rounded-full ${p.current_qty > 0 ? 'bg-emerald-500/20 text-emerald-300' : 'bg-red-500/20 text-red-300'}">${p.current_qty} left</span></div>
+                        <button onclick="addToCart({id:${p.id}, name:'${escapeHtml(p.description)}', price:${p.price_naira}})" class="mt-4 w-full bg-blue-600 hover:bg-blue-500 transition py-2 rounded-xl text-sm font-medium flex items-center justify-center gap-2"><i class="fa-regular fa-cart-plus"></i> Add to Cart</button>
                     </div>
-                    <div id="track-result" class="mt-4 text-sm"></div>
-                </div>
+                `).join('')}</div>
             `;
-            const trackBtn = document.getElementById('track-btn');
-            if (trackBtn) {
-                trackBtn.onclick = async () => {
-                    const receipt = document.getElementById('track-receipt').value.trim();
-                    const email = document.getElementById('track-email').value.trim();
-                    if (!receipt || !email) { alert('Enter receipt number and email address'); return; }
-                    const resultDiv = document.getElementById('track-result');
-                    resultDiv.innerHTML = '<div class="text-slate-400 text-center py-2"><i class="fa-solid fa-circle-notch fa-spin mr-2"></i>Checking database registries...</div>';
-                    try {
-                        const data = await apiCall(`/track-order?receipt_number=${receipt}&email=${email}`);
-                        const statusMap = { pending: '⏳ Pending Operations', completed: '📦 Order Formulated', shipped: '🚚 Dispatched / Shipped', delivered: '✅ Successfully Delivered', cancelled: '❌ Cancelled' };
-                        resultDiv.innerHTML = `
-                            <div class="bg-slate-950 border border-slate-700/60 p-4 rounded-xl space-y-2 mt-2 text-slate-300 font-sans">
-                                <div class="flex justify-between border-b border-slate-800 pb-1.5"><span class="text-xs text-slate-400">Order Token</span> <span class="font-mono text-white text-xs">${data.receipt_number}</span></div>
-                                <div class="flex justify-between border-b border-slate-800 pb-1.5"><span class="text-xs text-slate-400">Total Charged</span> <span class="text-white font-bold text-xs">₦${data.total_amount.toLocaleString()}</span></div>
-                                <div class="flex justify-between border-b border-slate-800 pb-1.5"><span class="text-xs text-slate-400">Status State</span> <span class="text-blue-400 text-xs font-semibold">${statusMap[data.shipping_status] || data.shipping_status}</span></div>
-                                <div class="flex justify-between border-b border-slate-800 pb-1.5"><span class="text-xs text-slate-400">Logistics Carrier</span> <span class="text-white text-xs">${data.shipping_carrier || 'Awaiting Allocation'}</span></div>
-                                <div class="flex justify-between border-b border-slate-800 pb-1.5"><span class="text-xs text-slate-400">Waybill/Tracking</span> <span class="font-mono text-xs ${data.tracking_number ? 'text-emerald-400' : 'text-slate-500'}">${data.tracking_number || 'N/A'}</span></div>
-                                <div class="flex justify-between border-b border-slate-800 pb-1.5"><span class="text-xs text-slate-400">Estimated Arrival</span> <span class="text-white text-xs">${data.estimated_delivery || 'Processing Logistics'}</span></div>
-                                <div class="text-[10px] text-slate-500 text-right pt-1">Logged: ${new Date(data.created_at).toLocaleString()}</div>
-                            </div>
-                        `;
-                    } catch (err) { resultDiv.innerHTML = `<div class="text-red-400 bg-red-500/10 border border-red-500/20 p-3 rounded-lg text-xs mt-2">${err.message}</div>`; }
-                };
-            }
-        } else {
-            inputBar.classList.add('hidden');
-            if (tab === 'shop') loadProducts();
-            else if (tab === 'tickets') loadMyTickets();
-        }
+        } catch(err) { panel.innerHTML = `<div class="bg-red-500/10 p-8 rounded-2xl text-center text-red-300">⚠️ Error loading shop: ${err.message}</div>`; log(err); }
     }
-
-    // Event listeners
-    document.getElementById('logout-btn').onclick = logout;
-    document.getElementById('toggle-auth-mode').onclick = () => {
-        isRegisterMode = !isRegisterMode;
-        document.getElementById('modal-title').innerText = isRegisterMode ? "Register Organization" : "Sign In to Workspace";
-        document.getElementById('modal-submit-btn').innerText = isRegisterMode ? "Create Business Profile" : "Sign In";
-        document.getElementById('toggle-auth-mode').innerText = isRegisterMode ? "Already operational? Sign In" : "Don't have an account? Register business";
-        document.getElementById('reg-fields').classList.toggle('hidden', !isRegisterMode);
-    };
-
-    document.getElementById('modal-submit-btn').onclick = async () => {
-        const email = document.getElementById('auth-email').value.trim();
-        const password = document.getElementById('auth-password').value.trim();
-        if (!email || !password) { alert('Fill out credentials fields.'); return; }
-        try {
-            if (isRegisterMode) {
-                const inviteCode = document.getElementById('auth-invite-code').value.trim();
-                const orgName = document.getElementById('auth-org-name').value.trim();
-                const location = document.getElementById('auth-location').value.trim();
-                const niche = document.getElementById('auth-niche').value.trim();
-                const budget = parseInt(document.getElementById('auth-budget').value) || 0;
-                const firstName = document.getElementById('auth-fname').value.trim();
-                const lastName = document.getElementById('auth-lname').value.trim();
-                const phone = document.getElementById('auth-phone').value.trim();
-
-                if (!firstName || !lastName || !phone) {
-                    alert('First name, last name, and phone number are required.');
-                    return;
-                }
-                if (!inviteCode && (!orgName || !location || !niche)) {
-                    alert('Either provide an invite code OR fill organisation name, location, and niche.');
-                    return;
-                }
-
-                const payload = {
-                    email, password,
-                    first_name: firstName,
-                    last_name: lastName,
-                    phone: phone
-                };
-                if (inviteCode) {
-                    payload.invite_code = inviteCode;
-                } else {
-                    payload.org_name = orgName;
-                    payload.location = location;
-                    payload.niche = niche;
-                    payload.budget = budget;
-                }
-
-                await apiCall('/auth/register', {
-                    method: 'POST',
-                    body: JSON.stringify(payload)
-                });
-                alert('Registration successful! Please verify email (if required) and then log in.');
-                isRegisterMode = false;
-                document.getElementById('reg-fields').classList.add('hidden');
-                document.getElementById('toggle-auth-mode').click(); // switch to login
-                return;
-            }
-            // Login flow
-            const loginRes = await fetch(`${API_BASE}/auth/login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password })
-            });
-            const loginData = await loginRes.json();
-            if (!loginRes.ok) throw new Error(loginData.detail || 'Login failed');
-            token = loginData.access_token;
-            localStorage.setItem('access_token', token);
-            localStorage.setItem('refresh_token', loginData.refresh_token);
-            await loadUserContext();
-            hideLoginModal();
-            switchTab(currentTab);
-            log(`Authenticated successfully`);
-        } catch(err) { alert(err.message); }
-    };
-
-    document.getElementById('demo-login-btn').onclick = demoLogin;
-    document.getElementById('close-modal-btn').onclick = hideLoginModal;
-
-    // Initialization
+    
+    // CHAT module
+    let chatContainer = null;
+    function addChatMessage(sender, text) { if(!chatContainer) return; const div = document.createElement('div'); div.className = `p-3 rounded-xl max-w-[85%] text-sm shadow-md mb-2 ${sender === 'user' ? 'bg-blue-600 text-white ml-auto rounded-br-none' : 'bg-slate-800/90 text-slate-100 mr-auto rounded-bl-none border border-slate-700'}`; div.innerText = text; chatContainer.appendChild(div); chatContainer.parentElement?.scrollTo({ top: chatContainer.parentElement.scrollHeight, behavior: 'smooth' }); }
+    function showTyping() { if(!chatContainer) return; if(typingIndicator) hideTyping(); typingIndicator = document.createElement('div'); typingIndicator.className = 'typing-indicator bg-slate-800/70 p-2 rounded-xl w-fit px-3 mb-2'; typingIndicator.innerHTML = '<span></span><span></span><span></span><span class="text-xs text-slate-400 ml-1"> Kevs AI typing...</span>'; chatContainer.appendChild(typingIndicator); chatContainer.parentElement?.scrollTo({ top: chatContainer.parentElement.scrollHeight }); }
+    function hideTyping() { if(typingIndicator && typingIndicator.parentNode) typingIndicator.parentNode.removeChild(typingIndicator); typingIndicator = null; }
+    async function sendChatMsg(message) { if(!message.trim()) return; addChatMessage('user', message); const inputField = document.getElementById('chat-message-input'); if(inputField) inputField.value = ''; showTyping(); try { const data = await apiCall('/support/chat-stream', { method:'POST', body: JSON.stringify({ session_id: sessionId, message }) }); hideTyping(); addChatMessage('assistant', data.response || "Response ready."); } catch(err) { hideTyping(); addChatMessage('assistant', `AI error: ${err.message}`); log(err); } }
+    async function initChatUI() { const panel = document.getElementById('dynamic-panel'); panel.innerHTML = '<div id="chat-messages-area" class="flex flex-col space-y-3 pb-4 max-h-[70vh] overflow-y-auto"></div>'; chatContainer = document.getElementById('chat-messages-area'); const welcome = userProfile ? `Welcome back, ${userProfile.first_name}! I'm your AI concierge. Ask me about orders or inventory.` : "Hi! I'm Kevs AI. How can I assist your business today?"; addChatMessage('assistant', welcome); const sendBtn = document.getElementById('chat-send-btn'); const msgInput = document.getElementById('chat-message-input'); if(sendBtn && msgInput) { const newSend = sendBtn.cloneNode(true); sendBtn.parentNode.replaceChild(newSend, sendBtn); const newInput = msgInput.cloneNode(true); msgInput.parentNode.replaceChild(newInput, msgInput); const handler = () => sendChatMsg(newInput.value); newSend.onclick = handler; newInput.onkeypress = (e) => e.key === 'Enter' && handler(); } }
+    
+    // TICKETS & TRACK
+    async function renderTickets() { const panel = document.getElementById('dynamic-panel'); panel.innerHTML = `<div class="text-center py-10"><i class="fa-solid fa-spinner fa-pulse"></i> Loading support requests...</div>`; try { const data = await apiCall('/support/tickets'); const tickets = data.tickets || []; if(tickets.length===0) { panel.innerHTML = '<div class="bg-slate-800/50 rounded-2xl p-10 text-center">🎫 No tickets yet. Start a chat to create one.</div>'; return; } panel.innerHTML = `<div class="space-y-3"><h3 class="text-xl font-bold mb-2">📬 Support Cases</h3>${tickets.map(t => `<div class="bg-slate-800 border border-slate-700 rounded-xl p-4"><div class="flex justify-between"><span class="text-xs font-mono text-blue-300">#${t.id.slice(0,8)}</span><span class="text-[10px] uppercase ${t.status==='open'?'bg-amber-500/20 text-amber-400':'bg-slate-700 text-slate-300'} px-2 py-0.5 rounded">${t.status}</span></div><p class="font-semibold mt-1">${escapeHtml(t.subject || 'General inquiry')}</p><p class="text-xs text-slate-400">Priority: ${t.priority}</p></div>`).join('')}</div>`; } catch(e) { panel.innerHTML = `<div class="text-red-400 p-5">Error: ${e.message}</div>`; log(e); } }
+    async function renderTracking() { const panel = document.getElementById('dynamic-panel'); panel.innerHTML = `<div class="max-w-md mx-auto bg-slate-800/50 border border-slate-700 rounded-2xl p-6"><h3 class="text-xl font-bold flex gap-2"><i class="fa-solid fa-location-dot text-blue-400"></i> Track Shipment</h3><div class="mt-4 space-y-3"><input id="trackReceipt" placeholder="Receipt number" class="w-full bg-slate-950 border border-slate-700 p-3 rounded-xl"><input id="trackEmail" placeholder="Your email" class="w-full bg-slate-950 border border-slate-700 p-3 rounded-xl"><button id="trackAction" class="bg-blue-600 w-full py-2.5 rounded-xl font-medium">Track Now</button></div><div id="trackResult" class="mt-5 text-sm"></div></div>`; document.getElementById('trackAction')?.addEventListener('click', async () => { const receipt = document.getElementById('trackReceipt').value.trim(); const email = document.getElementById('trackEmail').value.trim(); if(!receipt || !email) { alert("Both fields required"); return; } const resDiv = document.getElementById('trackResult'); resDiv.innerHTML = '<div class="animate-pulse text-slate-400">🔍 Searching logistics...</div>'; try { const data = await apiCall(`/track-order?receipt_number=${receipt}&email=${email}`); const statusMap = { pending:"⏳ Pending", completed:"📦 Ready", shipped:"🚚 In transit", delivered:"✅ Delivered" }; resDiv.innerHTML = `<div class="bg-slate-900 p-4 rounded-xl space-y-1 text-xs"><div>Receipt: ${data.receipt_number}</div><div>Total: ₦${data.total_amount?.toLocaleString()}</div><div>Status: <span class="text-blue-300">${statusMap[data.shipping_status] || data.shipping_status}</span></div><div>Carrier: ${data.shipping_carrier || '—'}</div><div>Tracking: ${data.tracking_number || 'N/A'}</div></div>`; } catch(e) { resDiv.innerHTML = `<div class="text-red-400 p-3">${e.message}</div>`; log(e); } }); }
+    
+    // Tab switching + show/hide input bar
+    async function switchTab(tab) {
+        currentTab = tab;
+        document.querySelectorAll('.nav-stack-item, .mobile-nav-item').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll(`[data-tab="${tab}"]`).forEach(el => el.classList.add('active'));
+        const chatBar = document.getElementById('chat-input-bar');
+        if (tab === 'chat') { chatBar.classList.remove('hidden'); await initChatUI(); }
+        else { chatBar.classList.add('hidden'); if(tab === 'shop') await renderShop(); else if(tab === 'tickets') await renderTickets(); else if(tab === 'track') await renderTracking(); }
+    }
+    
+    // AUTH & MODAL
+    function showLoginModal() { document.getElementById('authModal').classList.remove('hidden'); }
+    function hideLoginModal() { document.getElementById('authModal').classList.add('hidden'); }
+    async function loadUserContext() { try { const me = await apiCall('/auth/me'); const ctx = await apiCall(`/support/customer-context?target_user_id=${me.user_id}`); userProfile = ctx.profile || { first_name: me.email?.split('@')[0] || 'User' }; let org = ''; try { const o = await apiCall('/auth/org'); org = o.org_name; } catch(e) {} const nameDisplay = `${userProfile.first_name}${org ? ` | ${org}` : ''}`; document.querySelectorAll('#user-badge-side, #user-badge-mobile').forEach(el => el.innerHTML = `<i class="fa-regular fa-user"></i> ${nameDisplay}`); } catch(e) { throw e; } }
+    async function logout() { try { await apiCall('/auth/logout', 'POST'); } catch(e) {} localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token'); token = null; userProfile = null; cart = []; saveCart(); showLoginModal(); if(currentTab === 'shop') renderShop(); }
+    async function demoLogin() { try { const res = await fetch(`${API_BASE}/auth/login`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email:'demo@kevsdigital.com', password:'KevsDemo2026!' }) }); const data = await res.json(); if(!res.ok) throw new Error(data.detail); token = data.access_token; localStorage.setItem('access_token', token); localStorage.setItem('refresh_token', data.refresh_token); await loadUserContext(); hideLoginModal(); switchTab('shop'); log("Demo login success"); } catch(e) { alert("Demo failed: "+e.message); } }
+    
+    // Modal events
+    document.getElementById('toggleAuthMode')?.addEventListener('click', () => { isRegisterMode = !isRegisterMode; document.getElementById('modalTitle').innerText = isRegisterMode ? "Register Organization" : "Sign In"; document.getElementById('authSubmitBtn').innerText = isRegisterMode ? "Create Profile" : "Sign In"; document.getElementById('regExtraFields').classList.toggle('hidden', !isRegisterMode); });
+    document.getElementById('authSubmitBtn')?.addEventListener('click', async () => { const email = document.getElementById('authEmail').value.trim(); const pwd = document.getElementById('authPassword').value.trim(); if(!email || !pwd) return alert("Email & password required"); if(isRegisterMode) { const fname = document.getElementById('firstName').value.trim(), lname = document.getElementById('lastName').value.trim(), phone = document.getElementById('phoneNumber').value.trim(); if(!fname || !lname || !phone) return alert("First name, last name, phone required"); const invite = document.getElementById('inviteCode').value.trim(); const orgName = document.getElementById('orgName').value.trim(); const loc = document.getElementById('orgLocation').value.trim(); const niche = document.getElementById('orgNiche').value.trim(); if(!invite && (!orgName || !loc || !niche)) return alert("Provide invite code or org details"); const payload = { email, password:pwd, first_name:fname, last_name:lname, phone }; if(invite) payload.invite_code = invite; else { payload.org_name = orgName; payload.location = loc; payload.niche = niche; payload.budget = parseInt(document.getElementById('budget').value)||0; } try { await apiCall('/auth/register', 'POST', { body: JSON.stringify(payload) }); alert("Registration success! Please sign in."); isRegisterMode=false; document.getElementById('regExtraFields').classList.add('hidden'); } catch(e) { alert(e.message); } return; } try { const loginRes = await fetch(`${API_BASE}/auth/login`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, password:pwd }) }); const data = await loginRes.json(); if(!loginRes.ok) throw new Error(data.detail); token = data.access_token; localStorage.setItem('access_token', token); localStorage.setItem('refresh_token', data.refresh_token); await loadUserContext(); hideLoginModal(); switchTab('shop'); } catch(e) { alert(e.message); } });
+    document.getElementById('demoBtn')?.addEventListener('click', demoLogin); document.getElementById('closeModalBtn')?.addEventListener('click', hideLoginModal);
+    document.getElementById('logout-btn-side')?.addEventListener('click', logout);
+    document.getElementById('cart-icon-main')?.addEventListener('click', () => document.getElementById('cart-drawer').classList.remove('translate-x-full'));
+    document.getElementById('close-drawer')?.addEventListener('click', () => document.getElementById('cart-drawer').classList.add('translate-x-full'));
+    document.getElementById('cart-checkout-btn')?.addEventListener('click', checkoutCart);
+    document.getElementById('toggle-debug-btn')?.addEventListener('click', toggleDebugPanel);
+    document.querySelectorAll('.nav-stack-item, .mobile-nav-item').forEach(el => el.addEventListener('click', () => switchTab(el.getAttribute('data-tab'))));
+    function showToast(msg, type) { const t = document.createElement('div'); t.className = `fixed bottom-24 left-4 right-4 md:left-auto md:right-6 z-50 bg-${type==='success'?'green-600':'red-600'} text-white px-4 py-2 rounded-xl shadow-lg text-sm animate-pulse`; t.innerText = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2800); }
+    function escapeHtml(str) { if(!str) return ''; return str.replace(/[&<>]/g, m => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[m])); }
+    
+    // init
     (async () => {
-        document.querySelectorAll('.nav-tab').forEach(tab => {
-            tab.onclick = () => switchTab(tab.getAttribute('data-tab'));
-        });
-        if (token) {
-            try {
-                await loadUserContext();
-                switchTab('chat');
-            } catch (e) {
-                token = null;
-                showLoginModal();
-            }
-        } else {
-            showLoginModal();
-        }
+        // load debug visibility preference
+        const savedDebug = localStorage.getItem('debug_visible');
+        if (savedDebug === 'false') { debugVisible = false; document.getElementById('debug-panel')?.classList.add('hidden-debug'); }
+        loadCart();
+        if(token) {
+            try { await loadUserContext(); switchTab('shop'); } catch(e) { token=null; showLoginModal(); }
+        } else { showLoginModal(); }
+        window.addToCart = addToCart; window.removeCartItem = removeCartItem;
+        log("Kevs bOS initialized with toggleable debug panel");
     })();
 </script>
 </body>
