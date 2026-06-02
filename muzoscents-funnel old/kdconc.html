@@ -296,26 +296,88 @@
         } catch(err) { panel.innerHTML = `<div class="bg-red-500/10 p-8 rounded-2xl text-center text-red-300">⚠️ Error loading shop: ${err.message}</div>`; log(err); }
     }
     
-    // CHAT module (unchanged, works perfectly)
+    // CHAT module - FIXED: no cloning of input field, only button for clean event binding
     let chatContainer = null;
     function addChatMessage(sender, text) { if(!chatContainer) return; const div = document.createElement('div'); div.className = `p-3 rounded-xl max-w-[85%] text-sm shadow-md mb-2 ${sender === 'user' ? 'bg-blue-600 text-white ml-auto rounded-br-none' : 'bg-slate-800/90 text-slate-100 mr-auto rounded-bl-none border border-slate-700'}`; div.innerText = text; chatContainer.appendChild(div); chatContainer.parentElement?.scrollTo({ top: chatContainer.parentElement.scrollHeight, behavior: 'smooth' }); }
     function showTyping() { if(!chatContainer) return; if(typingIndicator) hideTyping(); typingIndicator = document.createElement('div'); typingIndicator.className = 'typing-indicator bg-slate-800/70 p-2 rounded-xl w-fit px-3 mb-2'; typingIndicator.innerHTML = '<span></span><span></span><span></span><span class="text-xs text-slate-400 ml-1"> Kevs AI typing...</span>'; chatContainer.appendChild(typingIndicator); chatContainer.parentElement?.scrollTo({ top: chatContainer.parentElement.scrollHeight }); }
     function hideTyping() { if(typingIndicator && typingIndicator.parentNode) typingIndicator.parentNode.removeChild(typingIndicator); typingIndicator = null; }
     async function sendChatMsg(message) { if(!message.trim()) return; addChatMessage('user', message); const inputField = document.getElementById('chat-message-input'); if(inputField) inputField.value = ''; showTyping(); try { const data = await apiCall('/support/chat-stream', { method:'POST', body: JSON.stringify({ session_id: sessionId, message }) }); hideTyping(); addChatMessage('assistant', data.response || "Response ready."); } catch(err) { hideTyping(); addChatMessage('assistant', `AI error: ${err.message}`); log(err); } }
-    async function initChatUI() { const panel = document.getElementById('dynamic-panel'); panel.innerHTML = '<div id="chat-messages-area" class="flex flex-col space-y-3 pb-4 max-h-[70vh] overflow-y-auto"></div>'; chatContainer = document.getElementById('chat-messages-area'); const welcome = userProfile ? `Welcome back, ${userProfile.first_name}! I'm your AI concierge. Ask me about orders or inventory.` : "Hi! I'm Kevs AI. How can I assist your business today?"; addChatMessage('assistant', welcome); const sendBtn = document.getElementById('chat-send-btn'); const msgInput = document.getElementById('chat-message-input'); if(sendBtn && msgInput) { const newSend = sendBtn.cloneNode(true); sendBtn.parentNode.replaceChild(newSend, sendBtn); const newInput = msgInput.cloneNode(true); msgInput.parentNode.replaceChild(newInput, msgInput); const handler = () => sendChatMsg(newInput.value); newSend.onclick = handler; newInput.onkeypress = (e) => e.key === 'Enter' && handler(); } }
+    
+    async function initChatUI() {
+        const panel = document.getElementById('dynamic-panel');
+        panel.innerHTML = '<div id="chat-messages-area" class="flex flex-col space-y-3 pb-4 max-h-[70vh] overflow-y-auto"></div>';
+        chatContainer = document.getElementById('chat-messages-area');
+        
+        const welcome = userProfile 
+            ? `Welcome back, ${userProfile.first_name}! I'm your AI concierge. Ask me about orders or inventory.`
+            : "Hi! I'm Kevs AI. How can I assist your business today?";
+        addChatMessage('assistant', welcome);
+        
+        // Get existing DOM elements (do NOT clone the input field - preserve native focus capability)
+        const sendBtn = document.getElementById('chat-send-btn');
+        const msgInput = document.getElementById('chat-message-input');
+        
+        if (!sendBtn || !msgInput) {
+            console.error("Chat input or send button missing");
+            return;
+        }
+        
+        // IMPORTANT FIX: Remove previous event handlers from send button by replacing with a clone
+        // This avoids stacking multiple handlers but does NOT affect the input field
+        const freshSendBtn = sendBtn.cloneNode(true);
+        sendBtn.parentNode.replaceChild(freshSendBtn, sendBtn);
+        
+        // Define handler that uses the existing input element (not cloned)
+        const sendHandler = () => {
+            const text = msgInput.value.trim();
+            if (text) {
+                msgInput.value = '';
+                sendChatMsg(text);
+            }
+        };
+        
+        // Attach click handler to the fresh button
+        freshSendBtn.onclick = sendHandler;
+        
+        // For the input: directly attach onkeypress (overwrites any previous handler)
+        // No cloning! This preserves the input's internal state and focus behavior
+        msgInput.onkeypress = (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                sendHandler();
+            }
+        };
+        
+        // Ensure input is enabled and focused when chat becomes active
+        msgInput.disabled = false;
+        // Small delay to allow DOM reflow before focusing
+        setTimeout(() => {
+            msgInput.focus();
+            log("Chat input focused and ready");
+        }, 50);
+        
+        log("Chat UI initialized with working input (no cloning)");
+    }
     
     // TICKETS & TRACK
     async function renderTickets() { const panel = document.getElementById('dynamic-panel'); panel.innerHTML = `<div class="text-center py-10"><i class="fa-solid fa-spinner fa-pulse"></i> Loading support requests...</div>`; try { const data = await apiCall('/support/tickets'); const tickets = data.tickets || []; if(tickets.length===0) { panel.innerHTML = '<div class="bg-slate-800/50 rounded-2xl p-10 text-center">🎫 No tickets yet. Start a chat to create one.</div>'; return; } panel.innerHTML = `<div class="space-y-3"><h3 class="text-xl font-bold mb-2">📬 Support Cases</h3>${tickets.map(t => `<div class="bg-slate-800 border border-slate-700 rounded-xl p-4"><div class="flex justify-between"><span class="text-xs font-mono text-blue-300">#${t.id.slice(0,8)}</span><span class="text-[10px] uppercase ${t.status==='open'?'bg-amber-500/20 text-amber-400':'bg-slate-700 text-slate-300'} px-2 py-0.5 rounded">${t.status}</span></div><p class="font-semibold mt-1">${escapeHtml(t.subject || 'General inquiry')}</p><p class="text-xs text-slate-400">Priority: ${t.priority}</p></div>`).join('')}</div>`; } catch(e) { panel.innerHTML = `<div class="text-red-400 p-5">Error: ${e.message}</div>`; log(e); } }
     async function renderTracking() { const panel = document.getElementById('dynamic-panel'); panel.innerHTML = `<div class="max-w-md mx-auto bg-slate-800/50 border border-slate-700 rounded-2xl p-6"><h3 class="text-xl font-bold flex gap-2"><i class="fa-solid fa-location-dot text-blue-400"></i> Track Shipment</h3><div class="mt-4 space-y-3"><input id="trackReceipt" placeholder="Receipt number" class="w-full bg-slate-950 border border-slate-700 p-3 rounded-xl"><input id="trackEmail" placeholder="Your email" class="w-full bg-slate-950 border border-slate-700 p-3 rounded-xl"><button id="trackAction" class="bg-blue-600 w-full py-2.5 rounded-xl font-medium">Track Now</button></div><div id="trackResult" class="mt-5 text-sm"></div></div>`; document.getElementById('trackAction')?.addEventListener('click', async () => { const receipt = document.getElementById('trackReceipt').value.trim(); const email = document.getElementById('trackEmail').value.trim(); if(!receipt || !email) { alert("Both fields required"); return; } const resDiv = document.getElementById('trackResult'); resDiv.innerHTML = '<div class="animate-pulse text-slate-400">🔍 Searching logistics...</div>'; try { const data = await apiCall(`/track-order?receipt_number=${receipt}&email=${email}`); const statusMap = { pending:"⏳ Pending", completed:"📦 Ready", shipped:"🚚 In transit", delivered:"✅ Delivered" }; resDiv.innerHTML = `<div class="bg-slate-900 p-4 rounded-xl space-y-1 text-xs"><div>Receipt: ${data.receipt_number}</div><div>Total: ₦${data.total_amount?.toLocaleString()}</div><div>Status: <span class="text-blue-300">${statusMap[data.shipping_status] || data.shipping_status}</span></div><div>Carrier: ${data.shipping_carrier || '—'}</div><div>Tracking: ${data.tracking_number || 'N/A'}</div></div>`; } catch(e) { resDiv.innerHTML = `<div class="text-red-400 p-3">${e.message}</div>`; log(e); } }); }
     
-    // Tab switching + show/hide input bar
+    // Tab switching + show/hide input bar (chat bar visibility handled)
     async function switchTab(tab) {
         currentTab = tab;
         document.querySelectorAll('.nav-stack-item, .mobile-nav-item').forEach(el => el.classList.remove('active'));
         document.querySelectorAll(`[data-tab="${tab}"]`).forEach(el => el.classList.add('active'));
         const chatBar = document.getElementById('chat-input-bar');
-        if (tab === 'chat') { chatBar.classList.remove('hidden'); await initChatUI(); }
-        else { chatBar.classList.add('hidden'); if(tab === 'shop') await renderShop(); else if(tab === 'tickets') await renderTickets(); else if(tab === 'track') await renderTracking(); }
+        if (tab === 'chat') {
+            chatBar.classList.remove('hidden');
+            await initChatUI();
+        } else {
+            chatBar.classList.add('hidden');
+            if(tab === 'shop') await renderShop();
+            else if(tab === 'tickets') await renderTickets();
+            else if(tab === 'track') await renderTracking();
+        }
     }
     
     // AUTH & MODAL
@@ -347,7 +409,7 @@
             try { await loadUserContext(); switchTab('shop'); } catch(e) { token=null; showLoginModal(); }
         } else { showLoginModal(); }
         window.addToCart = addToCart; window.removeCartItem = removeCartItem;
-        log("Kevs bOS initialized with upgraded stock badges");
+        log("Kevs bOS initialized with CHAT INPUT FIX (no cloning, focus preserved)");
     })();
 </script>
 </body>
