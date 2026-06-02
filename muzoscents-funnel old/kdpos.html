@@ -1,24 +1,60 @@
+Here is an HTML document that implements a multi-tab POS system with search functionality, allowing you to serve two customers simultaneously.
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kevs POS Terminal</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Kevs POS Pro | Multi-Tab & SKU Search</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
+        /* smooth tab transitions */
+        .tab-active {
+            background-color: #3b82f6;
+            color: white;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            border-color: #3b82f6;
+        }
+        .tab-inactive {
+            background-color: #f3f4f6;
+            color: #1f2937;
+            border-color: #d1d5db;
+        }
+        .tab-inactive:hover {
+            background-color: #e5e7eb;
+        }
+        .product-card {
+            transition: all 0.15s ease;
+        }
+        .product-card:active {
+            transform: scale(0.98);
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 10px;
+        }
         .loading-spinner { border: 2px solid #e5e7eb; border-top: 2px solid #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 0.8s linear infinite; display: inline-block; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
-<body class="bg-gray-100 p-4">
+<body class="bg-gray-100 p-4 font-sans">
 <div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
 
 <div class="max-w-7xl mx-auto">
-    <div class="bg-white rounded-xl shadow-md p-4 mb-4 flex justify-between items-center">
+    <!-- Header -->
+    <div class="bg-white rounded-xl shadow-md p-4 mb-4 flex flex-wrap justify-between items-center gap-3">
         <div>
             <h1 class="text-2xl font-bold">💳 Kevs POS Terminal</h1>
-            <p class="text-xs text-gray-500">Point of Sale System</p>
+            <p class="text-xs text-gray-500">Multi‑Tab | Dual Customer Mode</p>
         </div>
         <div class="flex items-center gap-3">
             <span id="user-badge" class="text-sm bg-gray-200 px-3 py-1 rounded-full">Loading...</span>
@@ -26,20 +62,57 @@
         </div>
     </div>
 
+    <!-- TABS for two customers -->
+    <div class="flex gap-3 mb-4 border-b border-gray-200 pb-1">
+        <button id="tab1-btn" data-tab="1" class="tab-active px-6 py-2.5 rounded-t-lg font-semibold text-sm transition flex items-center gap-2 shadow-sm border">
+            <i class="fa-solid fa-user"></i> Customer A <span class="bg-white/20 text-xs px-1.5 py-0.5 rounded-full ml-1 hidden md:inline-block">Tab 1</span>
+        </button>
+        <button id="tab2-btn" data-tab="2" class="tab-inactive px-6 py-2.5 rounded-t-lg font-semibold text-sm transition flex items-center gap-2 border">
+            <i class="fa-solid fa-user-group"></i> Customer B <span class="bg-white/20 text-xs px-1.5 py-0.5 rounded-full ml-1 hidden md:inline-block">Tab 2</span>
+        </button>
+    </div>
+
+    <!-- Main Content: Products (left) + Active Sale Panel (right) -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- LEFT: Products with SEARCH -->
         <div class="lg:col-span-2 bg-white rounded-xl shadow-md p-4">
-            <h2 class="text-xl font-semibold mb-3">Products</h2>
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+                <h2 class="text-xl font-semibold">📦 Product Catalog</h2>
+                <div class="relative w-full sm:w-64">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                    <input type="text" id="product-search" placeholder="Search by SKU, name or ID" 
+                           class="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none">
+                </div>
+            </div>
             <div id="product-list" class="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[500px] overflow-y-auto"></div>
+            <div id="product-list-empty" class="hidden text-center py-8 text-gray-400 col-span-full">No products match your search</div>
         </div>
-        <div class="bg-white rounded-xl shadow-md p-4">
-            <h2 class="text-xl font-semibold mb-3">Current Sale</h2>
-            <div id="cart-items" class="space-y-2 max-h-96 overflow-y-auto"></div>
-            <div class="border-t pt-3 mt-3">
+
+        <!-- RIGHT: Active Cart Panel (dynamic per tab) -->
+        <div class="bg-white rounded-xl shadow-md p-4 flex flex-col">
+            <div class="flex justify-between items-center border-b pb-2 mb-2">
+                <h2 class="text-xl font-semibold"><i class="fa-solid fa-cart-shopping"></i> <span id="active-customer-label">Customer A</span> Sale</h2>
+                <span class="text-xs bg-gray-100 px-2 py-1 rounded-full" id="tab-badge">Tab 1 active</span>
+            </div>
+            <div id="cart-items" class="space-y-2 max-h-96 overflow-y-auto flex-1 min-h-[200px]"></div>
+            <div class="border-t pt-3 mt-2">
                 <div class="flex justify-between text-lg font-bold"><span>Total:</span><span id="cart-total">₦0</span></div>
-                <div class="mt-3"><label class="block text-sm">Payment Method</label><select id="payment-method" class="w-full border rounded-lg p-2"><option value="cash">Cash</option><option value="card">Card</option><option value="transfer">Bank Transfer</option></select></div>
-                <div class="mt-3"><label class="block text-sm">Customer Name (optional)</label><input id="customer-name" class="w-full border rounded-lg p-2" placeholder="Walk-in Customer"></div>
-                <div class="mt-3"><label class="block text-sm">Customer Phone</label><input id="customer-phone" class="w-full border rounded-lg p-2" placeholder="Optional"></div>
-                <button id="checkout-btn" class="mt-4 w-full bg-green-600 text-white py-2 rounded-lg font-bold">Complete Sale</button>
+                <div class="mt-3"><label class="block text-sm font-medium">Payment Method</label>
+                    <select id="payment-method" class="w-full border rounded-lg p-2 bg-white">
+                        <option value="cash">💵 Cash</option>
+                        <option value="card">💳 Card</option>
+                        <option value="transfer">🏦 Bank Transfer</option>
+                    </select>
+                </div>
+                <div class="mt-3"><label class="block text-sm font-medium">Customer Name</label>
+                    <input id="customer-name" class="w-full border rounded-lg p-2" placeholder="Walk-in Customer" autocomplete="off">
+                </div>
+                <div class="mt-3"><label class="block text-sm font-medium">Phone Number</label>
+                    <input id="customer-phone" class="w-full border rounded-lg p-2" placeholder="Optional" autocomplete="off">
+                </div>
+                <button id="checkout-btn" class="mt-4 w-full bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-lg font-bold transition shadow-md">
+                    ✅ Complete Sale
+                </button>
             </div>
         </div>
     </div>
@@ -49,7 +122,7 @@
 <div id="auth-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
     <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm">
         <div class="flex justify-between items-center mb-4">
-            <h3 class="text-lg font-bold text-gray-800">Sign In to POS</h3>
+            <h3 class="text-lg font-bold text-gray-800">🔐 Sign In to POS</h3>
             <button id="close-modal-btn" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
         </div>
         <div class="space-y-3">
@@ -64,20 +137,45 @@
 </div>
 
 <script>
+    // ------------------- CONFIGURATION -------------------
     const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
     let token = localStorage.getItem('access_token');
-    let cart = [];
-    let products = [];
+    let products = [];            // full product list from inventory
+    let searchTerm = '';          // current SKU/name filter
 
-    function showToast(msg, type='success') {
+    // MULTI-TAB STATE: two independent customers
+    let activeTab = 1;   // 1 or 2
+    const tabState = {
+        1: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '' },
+        2: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '' }
+    };
+
+    // DOM elements
+    const productContainer = document.getElementById('product-list');
+    const emptyMsgDiv = document.getElementById('product-list-empty');
+    const cartContainer = document.getElementById('cart-items');
+    const cartTotalSpan = document.getElementById('cart-total');
+    const paymentMethodSelect = document.getElementById('payment-method');
+    const customerNameInput = document.getElementById('customer-name');
+    const customerPhoneInput = document.getElementById('customer-phone');
+    const activeCustomerLabel = document.getElementById('active-customer-label');
+    const tabBadge = document.getElementById('tab-badge');
+    const tab1Btn = document.getElementById('tab1-btn');
+    const tab2Btn = document.getElementById('tab2-btn');
+    const checkoutBtn = document.getElementById('checkout-btn');
+    const searchInput = document.getElementById('product-search');
+
+    // Helper: Toast notifications
+    function showToast(msg, type = 'success') {
         const container = document.getElementById('toast-container');
         const toast = document.createElement('div');
-        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type==='success'?'bg-green-600':'bg-red-600'} mb-2 text-sm`;
-        toast.innerText = msg;
+        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} mb-2 text-sm flex items-center gap-2`;
+        toast.innerHTML = `<i class="fa-solid ${type === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation'}"></i> ${msg}`;
         container.appendChild(toast);
-        setTimeout(() => toast.remove(), 3500);
+        setTimeout(() => toast.remove(), 3800);
     }
 
+    // ---------- API & AUTH ----------
     async function refreshToken() {
         const refresh = localStorage.getItem('refresh_token');
         if (!refresh) return false;
@@ -94,11 +192,11 @@
                 token = access_token;
                 return true;
             }
-        } catch (e) {}
+        } catch (e) { }
         return false;
     }
 
-    async function call(endpoint, method='GET', body=null, retry=true) {
+    async function call(endpoint, method = 'GET', body = null, retry = true) {
         const headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
         let res = await fetch(`${BACKEND}${endpoint}`, {
@@ -113,52 +211,26 @@
             throw new Error('Session expired');
         }
         if (!res.ok) {
-            const err = await res.json().catch(()=>({detail:'Error'}));
+            const err = await res.json().catch(() => ({ detail: 'Request error' }));
             throw new Error(err.detail || 'API error');
         }
         return res.json();
     }
 
-    function showLoginModal() {
-        document.getElementById('auth-modal').classList.remove('hidden');
-    }
-    function hideLoginModal() {
-        document.getElementById('auth-modal').classList.add('hidden');
-    }
+    function showLoginModal() { document.getElementById('auth-modal').classList.remove('hidden'); }
+    function hideLoginModal() { document.getElementById('auth-modal').classList.add('hidden'); }
 
     async function logout() {
-        try { await call('/auth/logout', 'POST'); } catch(e) {}
+        try { await call('/auth/logout', 'POST'); } catch (e) { }
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
         token = null;
         showLoginModal();
         document.getElementById('user-badge').innerText = '';
-        showToast('Logged out');
-    }
-
-    async function demoLogin() {
-        const btn = document.getElementById('demo-login-btn');
-        btn.disabled = true;
-        try {
-            const res = await fetch(`${BACKEND}/auth/login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' })
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.detail);
-            token = data.access_token;
-            localStorage.setItem('access_token', token);
-            localStorage.setItem('refresh_token', data.refresh_token);
-            await loadUserInfo();
-            await loadProducts();
-            hideLoginModal();
-            showToast('Demo login successful');
-        } catch (err) {
-            showToast(err.message, 'error');
-        } finally {
-            btn.disabled = false;
-        }
+        showToast('Logged out', 'success');
+        // reset UI
+        products = [];
+        renderProductGrid();
     }
 
     async function loadUserInfo() {
@@ -177,74 +249,263 @@
         }
     }
 
+    // ---------- PRODUCTS LOAD & SEARCH ----------
     async function loadProducts() {
         try {
             const data = await call('/inventory');
             products = data;
-            const container = document.getElementById('product-list');
-            container.innerHTML = products.map(p => `
-                <button onclick="addToCart(${p.id}, '${escapeHtml(p.description)}', ${p.price_naira}, ${p.current_qty})" class="bg-gray-50 p-3 rounded-lg text-left hover:bg-gray-100 border">
-                    <div class="font-semibold">${escapeHtml(p.description)}</div>
-                    <div class="text-sm">₦${p.price_naira.toLocaleString()}</div>
-                    <div class="text-xs text-gray-500">Stock: ${p.current_qty}</div>
-                </button>
-            `).join('');
-        } catch(err) { showToast('Failed to load products: ' + err.message, 'error'); }
-    }
-
-    function addToCart(id, name, price, stock) {
-        const existing = cart.find(i => i.id === id);
-        if (existing) {
-            if (existing.qty + 1 > stock) { showToast('Insufficient stock', 'error'); return; }
-            existing.qty++;
-        } else {
-            if (1 > stock) { showToast('Out of stock', 'error'); return; }
-            cart.push({ id, name, price, qty: 1 });
+            renderProductGrid();   // apply current search filter
+        } catch (err) {
+            showToast('Failed to load products: ' + err.message, 'error');
+            products = [];
+            renderProductGrid();
         }
-        renderCart();
     }
 
-    function renderCart() {
-        const container = document.getElementById('cart-items');
-        let total = 0;
-        container.innerHTML = cart.map((item, idx) => {
-            const subtotal = item.price * item.qty;
-            total += subtotal;
-            return `<div class="flex justify-between items-center border-b pb-2"><div>${escapeHtml(item.name)} x${item.qty}</div><div>₦${subtotal.toLocaleString()}</div><button onclick="removeFromCart(${idx})" class="text-red-500 text-xs">Remove</button></div>`;
-        }).join('');
-        document.getElementById('cart-total').innerText = `₦${total.toLocaleString()}`;
+    function getDisplaySku(product) {
+        if (product.sku) return product.sku;
+        if (product.sku_code) return product.sku_code;
+        return `ID:${product.id}`;
     }
 
-    function removeFromCart(idx) { cart.splice(idx,1); renderCart(); }
-
-    async function checkout() {
-        if (cart.length === 0) { showToast('Cart empty', 'error'); return; }
-        const items = cart.map(i => ({ inventory_id: i.id, quantity: i.qty }));
-        const paymentMethod = document.getElementById('payment-method').value;
-        const customerName = document.getElementById('customer-name').value.trim() || null;
-        const customerPhone = document.getElementById('customer-phone').value.trim() || null;
-        try {
-            const result = await call('/pos/terminal/checkout', 'POST', { items, payment_method: paymentMethod, customer_name: customerName, customer_phone: customerPhone });
-            showToast(`Sale complete! Receipt: ${result.receipt_number}`, 'success');
-            cart = [];
-            renderCart();
-            await loadProducts();
-        } catch(err) { showToast('Checkout failed: ' + err.message, 'error'); }
-    }
-
-    function escapeHtml(str) {
-        if (!str) return '';
-        return str.replace(/[&<>]/g, function(m) {
-            if (m === '&') return '&amp;';
-            if (m === '<') return '&lt;';
-            if (m === '>') return '&gt;';
-            return m;
+    function filterProducts() {
+        if (!searchTerm.trim()) return products;
+        const term = searchTerm.trim().toLowerCase();
+        return products.filter(p => {
+            const skuRaw = getDisplaySku(p).toLowerCase();
+            const desc = (p.description || '').toLowerCase();
+            const idMatch = p.id.toString().includes(term);
+            return skuRaw.includes(term) || desc.includes(term) || idMatch;
         });
     }
 
-    document.getElementById('checkout-btn')?.addEventListener('click', checkout);
-    document.getElementById('logout-btn')?.addEventListener('click', logout);
-    document.getElementById('modal-login-btn')?.addEventListener('click', async () => {
+    function renderProductGrid() {
+        const filtered = filterProducts();
+        if (!productContainer) return;
+        if (filtered.length === 0) {
+            productContainer.innerHTML = '';
+            emptyMsgDiv.classList.remove('hidden');
+            return;
+        }
+        emptyMsgDiv.classList.add('hidden');
+        productContainer.innerHTML = filtered.map(p => {
+            const skuDisplay = getDisplaySku(p);
+            const stock = p.current_qty ?? 0;
+            const price = p.price_naira ?? 0;
+            const descSafe = escapeHtml(p.description || 'Unnamed product');
+            return `
+                <button onclick="addToCart(${p.id}, '${descSafe}', ${price}, ${stock}, '${escapeHtml(skuDisplay)}')" 
+                        class="product-card bg-gray-50 p-3 rounded-xl text-left hover:bg-blue-50 border border-gray-200 transition shadow-sm">
+                    <div class="font-semibold text-gray-800">${descSafe}</div>
+                    <div class="text-xs text-gray-500 font-mono mt-0.5">📟 ${escapeHtml(skuDisplay)}</div>
+                    <div class="text-md font-bold text-blue-700 mt-1">₦${price.toLocaleString()}</div>
+                    <div class="text-xs text-gray-500 mt-1">📦 Stock: ${stock}</div>
+                </button>
+            `;
+        }).join('');
+    }
+
+    function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, function(m) { if (m === '&') return '&amp;'; if (m === '<') return '&lt;'; if (m === '>') return '&gt;'; return m; }); }
+
+    // ---------- CART & TAB MANAGEMENT ----------
+    function syncUIWithActiveTab() {
+        // get current active tab state
+        const state = tabState[activeTab];
+        // update cart display
+        renderActiveCart();
+        // update payment method select (without triggering infinite events)
+        paymentMethodSelect.value = state.paymentMethod;
+        customerNameInput.value = state.customerName;
+        customerPhoneInput.value = state.customerPhone;
+        // update label & badge
+        activeCustomerLabel.innerText = activeTab === 1 ? 'Customer A' : 'Customer B';
+        tabBadge.innerText = activeTab === 1 ? 'Tab 1 active' : 'Tab 2 active';
+        // update visual tab styling
+        if (activeTab === 1) {
+            tab1Btn.classList.add('tab-active');
+            tab1Btn.classList.remove('tab-inactive');
+            tab2Btn.classList.add('tab-inactive');
+            tab2Btn.classList.remove('tab-active');
+        } else {
+            tab2Btn.classList.add('tab-active');
+            tab2Btn.classList.remove('tab-inactive');
+            tab1Btn.classList.add('tab-inactive');
+            tab1Btn.classList.remove('tab-active');
+        }
+    }
+
+    function renderActiveCart() {
+        const cart = tabState[activeTab].cart;
+        if (!cartContainer) return;
+        if (cart.length === 0) {
+            cartContainer.innerHTML = `<div class="text-center text-gray-400 py-6"><i class="fa-regular fa-receipt text-2xl"></i><p class="text-sm mt-1">Cart is empty</p></div>`;
+            cartTotalSpan.innerText = `₦0`;
+            return;
+        }
+        let total = 0;
+        cartContainer.innerHTML = cart.map((item, idx) => {
+            const subtotal = item.price * item.qty;
+            total += subtotal;
+            return `
+                <div class="flex justify-between items-center border-b pb-2 hover:bg-gray-50 px-1 rounded">
+                    <div class="flex-1">
+                        <div class="font-medium text-sm">${escapeHtml(item.name)}</div>
+                        <div class="text-xs text-gray-500">₦${item.price.toLocaleString()} x ${item.qty}</div>
+                    </div>
+                    <div class="font-semibold text-sm">₦${subtotal.toLocaleString()}</div>
+                    <button onclick="removeCartItem(${idx})" class="ml-3 text-red-500 hover:text-red-700 text-sm w-7 h-7 rounded-full hover:bg-red-50"><i class="fa-regular fa-trash-can"></i></button>
+                </div>
+            `;
+        }).join('');
+        cartTotalSpan.innerText = `₦${total.toLocaleString()}`;
+    }
+
+    window.removeCartItem = function(index) {
+        const currentCart = tabState[activeTab].cart;
+        if (index >= 0 && index < currentCart.length) {
+            currentCart.splice(index, 1);
+            renderActiveCart();
+            // persist state already updated
+        }
+    };
+
+    window.addToCart = function(productId, productName, price, stock, skuLabel) {
+        const activeCart = tabState[activeTab].cart;
+        const existing = activeCart.find(i => i.id === productId);
+        // find product from global products to cross-check real-time stock
+        const productRef = products.find(p => p.id === productId);
+        const availableStock = productRef ? (productRef.current_qty ?? 0) : stock;
+        
+        if (existing) {
+            if (existing.qty + 1 > availableStock) {
+                showToast(`⚠️ Only ${availableStock} left for "${productName}"`, 'error');
+                return;
+            }
+            existing.qty++;
+        } else {
+            if (1 > availableStock) {
+                showToast(`❌ "${productName}" out of stock`, 'error');
+                return;
+            }
+            activeCart.push({ id: productId, name: productName, price: price, qty: 1, sku: skuLabel });
+        }
+        renderActiveCart();
+        showToast(`➕ Added ${productName}`, 'success');
+    };
+
+    // update tab state when user edits fields
+    function bindFieldEvents() {
+        paymentMethodSelect.onchange = () => {
+            tabState[activeTab].paymentMethod = paymentMethodSelect.value;
+        };
+        customerNameInput.oninput = () => {
+            tabState[activeTab].customerName = customerNameInput.value;
+        };
+        customerPhoneInput.oninput = () => {
+            tabState[activeTab].customerPhone = customerPhoneInput.value;
+        };
+    }
+
+    async function checkout() {
+        const activeCart = tabState[activeTab].cart;
+        if (activeCart.length === 0) {
+            showToast('🛒 Cart is empty. Add items first.', 'error');
+            return;
+        }
+        const items = activeCart.map(i => ({ inventory_id: i.id, quantity: i.qty }));
+        const paymentMethod = tabState[activeTab].paymentMethod;
+        const customerName = tabState[activeTab].customerName.trim() || null;
+        const customerPhone = tabState[activeTab].customerPhone.trim() || null;
+        
+        // Disable button to avoid double click
+        checkoutBtn.disabled = true;
+        checkoutBtn.innerText = 'Processing...';
+        try {
+            const result = await call('/pos/terminal/checkout', 'POST', { 
+                items, 
+                payment_method: paymentMethod, 
+                customer_name: customerName, 
+                customer_phone: customerPhone 
+            });
+            showToast(`✅ Sale complete! Receipt: ${result.receipt_number || 'OK'}`, 'success');
+            // Reset current tab cart & fields
+            tabState[activeTab].cart = [];
+            tabState[activeTab].paymentMethod = 'cash';
+            tabState[activeTab].customerName = '';
+            tabState[activeTab].customerPhone = '';
+            // sync UI
+            syncUIWithActiveTab();
+            // refresh product list to reflect new stock levels
+            await loadProducts();
+        } catch (err) {
+            showToast(`❌ Checkout failed: ${err.message}`, 'error');
+        } finally {
+            checkoutBtn.disabled = false;
+            checkoutBtn.innerText = '✅ Complete Sale';
+        }
+    }
+
+    // switch tab
+    function setActiveTab(tabId) {
+        if (tabId === activeTab) return;
+        // capture current UI fields into current tab state BEFORE switching
+        tabState[activeTab].paymentMethod = paymentMethodSelect.value;
+        tabState[activeTab].customerName = customerNameInput.value;
+        tabState[activeTab].customerPhone = customerPhoneInput.value;
+        // change active
+        activeTab = tabId;
+        // refresh UI from new tab state
+        syncUIWithActiveTab();
+        // re-apply search filter (product grid stays same but ensure correct highlight)
+        renderProductGrid();
+    }
+
+    // initial setup + event listeners for tabs
+    function initTabs() {
+        tab1Btn.onclick = () => setActiveTab(1);
+        tab2Btn.onclick = () => setActiveTab(2);
+    }
+
+    // Search listener
+    function initSearch() {
+        searchInput.addEventListener('input', (e) => {
+            searchTerm = e.target.value;
+            renderProductGrid();
+        });
+    }
+
+    // ---------- DEMO & LOGIN HANDLERS ----------
+    async function demoLogin() {
+        const btn = document.getElementById('demo-login-btn');
+        btn.disabled = true;
+        try {
+            const res = await fetch(`${BACKEND}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail);
+            token = data.access_token;
+            localStorage.setItem('access_token', token);
+            localStorage.setItem('refresh_token', data.refresh_token);
+            await loadUserInfo();
+            await loadProducts();
+            hideLoginModal();
+            showToast('Demo login successful — Multi-Tab ready', 'success');
+            // reset both tabs to fresh state
+            tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '' };
+            tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '' };
+            activeTab = 1;
+            syncUIWithActiveTab();
+        } catch (err) {
+            showToast(err.message, 'error');
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    async function handleLogin() {
         const email = document.getElementById('login-email').value.trim();
         const pwd = document.getElementById('login-password').value.trim();
         if (!email || !pwd) { showToast('Enter email and password', 'error'); return; }
@@ -262,17 +523,38 @@
             await loadUserInfo();
             await loadProducts();
             hideLoginModal();
-            showToast('Login successful');
-        } catch(err) { showToast(err.message, 'error'); }
-    });
+            // reset tabs for clean state
+            tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '' };
+            tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '' };
+            activeTab = 1;
+            syncUIWithActiveTab();
+            showToast('Login successful', 'success');
+        } catch (err) {
+            showToast(err.message, 'error');
+        }
+    }
+
+    // Attach global checkout listener
+    checkoutBtn.addEventListener('click', checkout);
+    document.getElementById('logout-btn')?.addEventListener('click', logout);
+    document.getElementById('modal-login-btn')?.addEventListener('click', handleLogin);
     document.getElementById('demo-login-btn')?.addEventListener('click', demoLogin);
     document.getElementById('close-modal-btn')?.addEventListener('click', hideLoginModal);
-
+    
+    // initial load sequence
     (async () => {
+        initTabs();
+        initSearch();
+        bindFieldEvents();
         if (token) {
             try {
                 await loadUserInfo();
                 await loadProducts();
+                // reset tab states after login
+                tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '' };
+                tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '' };
+                activeTab = 1;
+                syncUIWithActiveTab();
             } catch (e) {
                 token = null;
                 showLoginModal();
@@ -284,3 +566,4 @@
 </script>
 </body>
 </html>
+```
