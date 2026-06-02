@@ -11,9 +11,10 @@
         .debug-panel { background: #1e1e2f; color: #0fc; font-family: monospace; font-size: 10px; max-height: 120px; overflow-y: auto; padding: 6px; }
         .nav-tab { cursor: pointer; padding: 8px 12px; border-radius: 20px; transition: 0.2s; color: #94A3B8; display: flex; align-items: center; gap: 6px; }
         .nav-tab.active { background: #1E3A8A; color: #FFFFFF; }
-        /* Fix chat input */
+        /* Ensure chat input is fully interactive */
         #chat-input { background-color: #0f172a !important; color: white !important; }
         #chat-input:focus { outline: none; border-color: #3b82f6; }
+        #chat-input:disabled { opacity: 0.6; cursor: not-allowed; }
     </style>
 </head>
 <body class="text-slate-200">
@@ -45,6 +46,7 @@
 
     <div id="input-bar" class="p-3 bg-slate-800 border-t border-slate-700 flex gap-2 items-center">
         <input id="chat-input" type="text" placeholder="Type your message..." 
+               autocomplete="off" spellcheck="false"
                class="flex-1 bg-slate-950 text-slate-100 placeholder-slate-500 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
         <button id="chat-send" class="bg-blue-600 hover:bg-blue-700 text-white w-9 h-9 rounded-lg flex items-center justify-center transition">
             <i class="fa-solid fa-paper-plane"></i>
@@ -57,7 +59,7 @@
     </div>
 </div>
 
-<!-- Login Modal -->
+<!-- Login Modal (same as before, unchanged for brevity) -->
 <div id="auth-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
     <div class="bg-slate-800 border border-slate-700 p-6 rounded-2xl shadow-xl w-full max-w-sm text-slate-200">
         <div class="flex justify-between items-center mb-4">
@@ -166,7 +168,6 @@
         userProfile = null;
         document.getElementById('user-badge').innerText = '';
         showLoginModal();
-        // Clear chat UI
         const chatContainer = document.getElementById('chat-container');
         if (chatContainer) chatContainer.innerHTML = '';
         addChatMessage('assistant', 'You have been logged out. Please sign in again.');
@@ -299,6 +300,40 @@
         });
     }
 
+    // ---- Fixed: Ensure chat input events are always attached ----
+    function attachChatEvents() {
+        const input = document.getElementById('chat-input');
+        const sendBtn = document.getElementById('chat-send');
+        if (!input || !sendBtn) {
+            log('Chat input or send button not found – reattaching later');
+            return false;
+        }
+        // Remove old listeners to avoid duplicates (optional)
+        const newInput = input.cloneNode(true);
+        input.parentNode.replaceChild(newInput, input);
+        const newSend = sendBtn.cloneNode(true);
+        sendBtn.parentNode.replaceChild(newSend, sendBtn);
+        
+        const sendMessageHandler = async () => {
+            const text = newInput.value.trim();
+            if(!text) return;
+            newInput.value = '';
+            addChatMessage('user', text);
+            try {
+                const data = await apiCall(`/support/chat-stream`, {
+                    method: 'POST',
+                    body: JSON.stringify({ session_id: 'web_' + (localStorage.getItem('pf_session') || 'default'), message: text })
+                });
+                addChatMessage('assistant', data.response || "No response.");
+            } catch (err) { addChatMessage('assistant', `Error: ${err.message}`); }
+        };
+        newSend.onclick = sendMessageHandler;
+        newInput.onkeypress = (e) => { if (e.key === 'Enter') sendMessageHandler(); };
+        newInput.disabled = false;
+        log('Chat events attached successfully');
+        return true;
+    }
+
     function switchTab(tab) {
         currentTab = tab;
         document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
@@ -311,6 +346,8 @@
             panel.innerHTML = '<div id="chat-container" class="space-y-4"></div>';
             if (userProfile) addChatMessage('assistant', `Welcome back, ${userProfile.first_name}! How can I help you today?`);
             else addChatMessage('assistant', 'Hello! I am your business companion. How can I assist you with products or support?');
+            // Re-attach events every time chat tab is shown (ensures input works)
+            setTimeout(() => attachChatEvents(), 50);
         } else if (tab === 'track') {
             inputBar.classList.add('hidden');
             panel.innerHTML = `
@@ -354,26 +391,7 @@
         }
     }
 
-    async function sendMessage() {
-        const input = document.getElementById('chat-input');
-        const text = input.value.trim();
-        if(!text) return;
-        input.value = '';
-
-        addChatMessage('user', text);
-
-        try {
-            const data = await apiCall(`/support/chat-stream`, {
-                method: 'POST',
-                body: JSON.stringify({ session_id: 'web_' + (localStorage.getItem('pf_session') || 'default'), message: text })
-            });
-            addChatMessage('assistant', data.response || "No structural feedback returned.");
-        } catch (err) { addChatMessage('assistant', `Error processing conversation: ${err.message}`); }
-    }
-
-    // Event listeners
-    document.getElementById('chat-send').onclick = sendMessage;
-    document.getElementById('chat-input').onkeypress = (e) => e.key === 'Enter' && sendMessage();
+    // Event listeners for modal, logout, etc.
     document.getElementById('logout-btn').onclick = logout;
     document.getElementById('toggle-auth-mode').onclick = () => {
         isRegisterMode = !isRegisterMode;
