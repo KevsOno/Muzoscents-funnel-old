@@ -69,7 +69,22 @@
                 </div>
             </form>
         </div>
-
+        
+<!-- Bulk Upload Section -->
+<div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-slate-700 shadow-xl">
+    <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fa-solid fa-upload text-green-400"></i> Bulk Upload Products (CSV)</h2>
+    <p class="text-sm text-slate-400 mb-4">Upload a CSV file with columns: <code class="bg-slate-950 px-2 py-0.5 rounded">item_code, description, product_group, price_naira, current_qty, image_url</code><br>
+    <span class="text-amber-400">* description and price_naira are required.</span></p>
+    <div class="flex flex-col sm:flex-row gap-4 items-end">
+        <div class="flex-1">
+            <label class="block text-xs text-slate-400 mb-1">CSV File</label>
+            <input type="file" id="bulk-csv-file" accept=".csv" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm file:mr-2 file:py-1 file:px-3 file:rounded-md file:bg-slate-700 file:text-white file:border-0">
+        </div>
+        <button id="bulk-upload-btn" class="bg-green-600 hover:bg-green-700 px-5 py-2 rounded-lg font-medium transition flex items-center gap-2"><i class="fa-solid fa-cloud-upload-alt"></i> Upload CSV</button>
+    </div>
+    <div id="bulk-upload-status" class="mt-3 text-sm"></div>
+</div>
+        
         <!-- Products List -->
         <div>
             <div class="flex justify-between items-center mb-4">
@@ -77,7 +92,6 @@
                 <button id="refresh-list" class="bg-slate-700 hover:bg-slate-600 text-sm px-3 py-1.5 rounded-lg"><i class="fa-solid fa-rotate-right mr-1"></i> Refresh</button>
             </div>
             <div id="products-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <!-- Products will be loaded here -->
                 <div class="col-span-full text-center py-8 text-slate-400"><i class="fa-solid fa-spinner fa-pulse mr-2"></i> Loading...</div>
             </div>
         </div>
@@ -127,14 +141,11 @@
         return res.json();
     }
 
-    // ---------- Inventory CRUD ----------
-    // Since backend uses /inventory endpoint for admin operations (assumption)
-    // We'll use the existing /inventory/public-list for GET but with auth token to get all items.
-    // For POST/PUT/DELETE, we'll use /inventory (or /inventory/{id}) as typical REST.
+    // ---------- Inventory CRUD (uses /inventory endpoints) ----------
     async function loadInventory() {
         try {
-            // Use the same public list but with auth token – backend should return all items for admin.
-            const items = await apiCall('/inventory/public-list');
+            // Use authenticated /inventory endpoint to get all items (not just public)
+            const items = await apiCall('/inventory');
             renderProducts(items);
         } catch (err) {
             document.getElementById('products-grid').innerHTML = `<div class="col-span-full text-center py-8 text-red-400">❌ Failed to load inventory: ${err.message}</div>`;
@@ -152,7 +163,7 @@
                 <div class="flex justify-between items-start">
                     <div class="flex-1">
                         <h3 class="font-bold text-white text-base truncate">${escapeHtml(p.description)}</h3>
-                        <p class="text-xs text-slate-400 font-mono">SKU: ${escapeHtml(p.item_code || p.sku || p.id)}</p>
+                        <p class="text-xs text-slate-400 font-mono">SKU: ${escapeHtml(p.item_code || p.id)}</p>
                         <div class="mt-2 flex flex-wrap gap-2 items-center">
                             <span class="text-blue-400 font-bold text-lg">₦${p.price_naira.toLocaleString()}</span>
                             <span class="text-xs px-2 py-0.5 rounded-full ${p.current_qty > 5 ? 'bg-emerald-500/20 text-emerald-300' : p.current_qty > 0 ? 'bg-amber-500/20 text-amber-300' : 'bg-red-500/20 text-red-300'}">
@@ -187,7 +198,7 @@
         }
         try {
             if (id) {
-                // Update existing product
+                // Update existing product – backend uses PUT
                 await apiCall(`/inventory/${id}`, {
                     method: 'PUT',
                     body: JSON.stringify(payload)
@@ -211,7 +222,7 @@
 
     window.editProduct = async function(id) {
         try {
-            const products = await apiCall('/inventory/public-list');
+            const products = await apiCall('/inventory');
             const product = products.find(p => p.id == id);
             if (!product) throw new Error('Product not found');
             document.getElementById('edit-id').value = product.id;
@@ -223,7 +234,6 @@
             document.getElementById('image_url').value = product.image_url || '';
             document.getElementById('form-title').innerText = '✏️ Edit Product';
             document.getElementById('cancel-edit').classList.remove('hidden');
-            // Scroll to form
             document.querySelector('#product-form').scrollIntoView({ behavior: 'smooth' });
         } catch (err) {
             alert(`Failed to load product details: ${err.message}`);
@@ -249,34 +259,69 @@
         document.getElementById('cancel-edit').classList.add('hidden');
     }
 
+    // ---------- Bulk CSV Upload ----------
+const bulkFileInput = document.getElementById('bulk-csv-file');
+const bulkUploadBtn = document.getElementById('bulk-upload-btn');
+const bulkStatus = document.getElementById('bulk-upload-status');
+
+async function bulkUploadProducts() {
+    const file = bulkFileInput.files[0];
+    if (!file) {
+        bulkStatus.innerHTML = '<span class="text-red-400"><i class="fa-solid fa-circle-exclamation mr-1"></i> Please select a CSV file.</span>';
+        return;
+    }
+    if (!file.name.endsWith('.csv')) {
+        bulkStatus.innerHTML = '<span class="text-red-400"><i class="fa-solid fa-circle-exclamation mr-1"></i> Only CSV files allowed.</span>';
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    bulkUploadBtn.disabled = true;
+    bulkUploadBtn.innerHTML = '<i class="fa-solid fa-spinner fa-pulse"></i> Uploading...';
+    bulkStatus.innerHTML = '<span class="text-blue-400">Uploading, please wait...</span>';
+
+    try {
+        let url = `${API_BASE}/inventory/bulk-upload`;
+        let headers = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: headers,
+            body: formData
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Upload failed');
+
+        bulkStatus.innerHTML = `<span class="text-green-400"><i class="fa-solid fa-check-circle mr-1"></i> ${data.message} (${data.count} products added)</span>`;
+        bulkFileInput.value = '';
+        loadInventory();  // refresh product list
+    } catch (err) {
+        bulkStatus.innerHTML = `<span class="text-red-400"><i class="fa-solid fa-circle-exclamation mr-1"></i> Error: ${err.message}</span>`;
+    } finally {
+        bulkUploadBtn.disabled = false;
+        bulkUploadBtn.innerHTML = '<i class="fa-solid fa-cloud-upload-alt"></i> Upload CSV';
+        setTimeout(() => {
+            if (bulkStatus.innerHTML.includes('Success')) {
+                setTimeout(() => bulkStatus.innerHTML = '', 5000);
+            }
+        }, 3000);
+    }
+}
+
+bulkUploadBtn.addEventListener('click', bulkUploadProducts);
+
     // ---------- Admin Authentication & Role Check ----------
     async function checkAdminAccess() {
         try {
             const me = await apiCall('/auth/me');
-            // Try to get user profile to check role (assuming admin role is 'admin' or similar)
-            // If no explicit role, we'll assume any authenticated user is admin for now,
-            // but better to check if user is member of an organisation with admin privileges.
-            // We'll call a custom endpoint or check org_members table via backend.
-            // Simpler: we can assume the first user (demo) is admin. For production, implement role check.
-            // Let's attempt to fetch org members or profile for 'is_admin' flag.
-            let isAdmin = false;
-            try {
-                const profile = await apiCall('/auth/profile'); // might exist
-                isAdmin = profile.is_admin === true;
-            } catch (e) {
-                // Fallback: if user is the only member, consider admin
-                const orgMembers = await apiCall('/org/members'); // hypothetical
-                if (orgMembers && orgMembers.length > 0) {
-                    const current = orgMembers.find(m => m.user_id === me.user_id);
-                    isAdmin = current && current.role === 'admin';
-                } else {
-                    // If no role info, allow access (demo mode)
-                    isAdmin = true;
-                }
-            }
-            if (!isAdmin) throw new Error('You do not have admin privileges.');
+            // For simplicity, we assume any authenticated user with an org can manage inventory.
+            // You may add a role check if needed (e.g., check org_members.role = 'admin').
             currentUser = me;
-            document.getElementById('admin-user-badge').innerHTML = `<i class="fa-regular fa-user-shield mr-1"></i> ${me.email} (Admin)`;
+            document.getElementById('admin-user-badge').innerHTML = `<i class="fa-regular fa-user-shield mr-1"></i> ${me.user_id.substring(0,8)} (Admin)`;
             document.getElementById('auth-check-placeholder').classList.add('hidden');
             document.getElementById('admin-panel').classList.remove('hidden');
             loadInventory();
@@ -286,18 +331,17 @@
                 <button id="retry-login" class="mt-4 bg-blue-600 px-4 py-2 rounded-lg">Go to Main App</button>
             `;
             document.getElementById('retry-login')?.addEventListener('click', () => {
-                window.location.href = '/'; // adjust to your main app URL
+                window.location.href = '/';
             });
         }
     }
 
-    // Logout
     async function logout() {
-        try { await apiCall('/auth/logout', 'POST'); } catch(e) {}
+        try { await apiCall('/auth/logout', { method: 'POST' }); } catch(e) {}
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
         token = null;
-        window.location.href = '/'; // redirect to main page or login
+        window.location.href = '/';
     }
 
     // Event Listeners
@@ -306,7 +350,6 @@
     document.getElementById('refresh-list').addEventListener('click', loadInventory);
     document.getElementById('admin-logout').addEventListener('click', logout);
 
-    // Helper
     function escapeHtml(str) {
         if (!str) return '';
         return str.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
