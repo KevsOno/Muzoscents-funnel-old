@@ -20,7 +20,6 @@
         </div>
     </div>
 
-    <!-- Date range selector -->
     <div class="bg-white rounded shadow p-4 mb-6 flex flex-wrap gap-4 items-end">
         <div><label class="block text-sm">Start Date</label><input type="date" id="start-date" class="border rounded p-2"></div>
         <div><label class="block text-sm">End Date</label><input type="date" id="end-date" class="border rounded p-2"></div>
@@ -28,7 +27,6 @@
         <div class="ml-auto"><span class="text-sm text-gray-500">Default: last 30 days</span></div>
     </div>
 
-    <!-- KPI Cards -->
     <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div class="bg-white p-4 rounded shadow"><div class="text-gray-500 text-sm">Total Revenue</div><div id="kpi-revenue" class="text-2xl font-bold">₦0</div></div>
         <div class="bg-white p-4 rounded shadow"><div class="text-gray-500 text-sm">COGS</div><div id="kpi-cogs" class="text-2xl font-bold">₦0</div></div>
@@ -36,19 +34,16 @@
         <div class="bg-white p-4 rounded shadow"><div class="text-gray-500 text-sm">Inventory Value</div><div id="kpi-inventory-value" class="text-2xl font-bold">₦0</div></div>
     </div>
 
-    <!-- Charts -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div class="bg-white p-4 rounded shadow"><canvas id="revenueChart" height="250"></canvas></div>
         <div class="bg-white p-4 rounded shadow"><canvas id="profitChart" height="250"></canvas></div>
     </div>
 
-    <!-- Expenditure breakdown -->
     <div class="bg-white rounded shadow p-4 mb-6">
         <h2 class="text-xl font-semibold mb-3">Expenditure Breakdown (COGS by Product)</h2>
         <div id="expenditure-table" class="overflow-x-auto"></div>
     </div>
 
-    <!-- Top selling products -->
     <div class="bg-white rounded shadow p-4">
         <h2 class="text-xl font-semibold mb-3">🏆 Top Selling Products (units)</h2>
         <div id="top-products" class="overflow-x-auto"></div>
@@ -60,9 +55,56 @@
     let token = localStorage.getItem('access_token');
     let revenueChart, profitChart;
 
-    // Auth helpers (same as admin page)
-    async function refreshToken() { /* same as above */ }
-    async function apiCall(endpoint, options = {}, retry = true) { /* same as admin */ }
+    // ---------- Helper: apiCall with token refresh ----------
+    async function apiCall(endpoint, options = {}, retry = true) {
+        const headers = {
+            'Content-Type': 'application/json',
+            ...options.headers,
+        };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const response = await fetch(`${API_BASE}${endpoint}`, {
+            ...options,
+            headers,
+        });
+
+        if (response.status === 401 && retry) {
+            // Try to refresh token
+            const refreshed = await refreshToken();
+            if (refreshed) {
+                return apiCall(endpoint, options, false);
+            } else {
+                localStorage.clear();
+                window.location.href = '/kdsiginin';
+                throw new Error('Session expired');
+            }
+        }
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`API error ${response.status}: ${text}`);
+        }
+        return response.json();
+    }
+
+    async function refreshToken() {
+        const refreshToken = localStorage.getItem('refresh_token');
+        if (!refreshToken) return false;
+        try {
+            const res = await fetch(`${API_BASE}/auth/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: refreshToken })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                token = data.access_token;
+                localStorage.setItem('access_token', token);
+                localStorage.setItem('refresh_token', data.refresh_token);
+                return true;
+            }
+        } catch (e) {}
+        return false;
+    }
 
     async function loadUserInfo() {
         try {
@@ -70,7 +112,9 @@
             const context = await apiCall(`/support/customer-context?target_user_id=${me.user_id}`);
             const name = context.profile?.first_name || 'Executive';
             document.getElementById('user-badge').innerText = name;
-        } catch(e) { document.getElementById('user-badge').innerText = 'Executive'; }
+        } catch(e) {
+            document.getElementById('user-badge').innerText = 'Executive';
+        }
     }
 
     // Set default dates to last 30 days
@@ -85,69 +129,76 @@
         const end = document.getElementById('end-date').value;
         if (!start || !end) return;
 
-        // KPIs
-        const summary = await apiCall(`/sales/summary?start_date=${start}&end_date=${end}`);
-        document.getElementById('kpi-revenue').innerHTML = `₦${summary.total_revenue.toLocaleString()}`;
-        document.getElementById('kpi-cogs').innerHTML = `₦${summary.total_cogs.toLocaleString()}`;
-        document.getElementById('kpi-profit').innerHTML = `₦${summary.total_profit.toLocaleString()}`;
+        try {
+            // 1. KPI summary
+            const summary = await apiCall(`/sales/summary?start_date=${start}&end_date=${end}`);
+            document.getElementById('kpi-revenue').innerHTML = `₦${summary.total_revenue.toLocaleString()}`;
+            document.getElementById('kpi-cogs').innerHTML = `₦${summary.total_cogs.toLocaleString()}`;
+            document.getElementById('kpi-profit').innerHTML = `₦${summary.total_profit.toLocaleString()}`;
 
-        // Inventory value
-        const inventory = await apiCall('/inventory');
-        const totalValue = inventory.reduce((sum, item) => sum + (item.quantity * item.unit_cost), 0);
-        document.getElementById('kpi-inventory-value').innerHTML = `₦${totalValue.toLocaleString()}`;
+            // 2. Inventory value (sum of price_naira * current_qty)
+            const inventory = await apiCall('/inventory');
+            let inventoryValue = 0;
+            for (let item of inventory) {
+                inventoryValue += (item.price_naira * (item.current_qty || 0));
+            }
+            document.getElementById('kpi-inventory-value').innerHTML = `₦${inventoryValue.toLocaleString()}`;
 
-        // Revenue trend
-        const trend = await apiCall(`/sales/trend?days=30`);
-        const labels = trend.map(t => t.date);
-        const revenues = trend.map(t => t.revenue);
-        if (revenueChart) revenueChart.destroy();
-        revenueChart = new Chart(document.getElementById('revenueChart'), {
-            type: 'line', data: { labels, datasets: [{ label: 'Daily Revenue (₦)', data: revenues, borderColor: '#3b82f6', fill: false }] }
-        });
+            // 3. Revenue trend
+            const trend = await apiCall(`/sales/trend?days=30`);
+            const labels = trend.map(t => t.date);
+            const revenues = trend.map(t => t.revenue);
+            if (revenueChart) revenueChart.destroy();
+            revenueChart = new Chart(document.getElementById('revenueChart'), {
+                type: 'line',
+                data: { labels, datasets: [{ label: 'Daily Revenue (₦)', data: revenues, borderColor: '#3b82f6', fill: false }] }
+            });
+            if (profitChart) profitChart.destroy();
+            profitChart = new Chart(document.getElementById('profitChart'), {
+                type: 'line',
+                data: { labels, datasets: [{ label: 'Daily Profit (est.)', data: revenues.map(r => r * 0.25), borderColor: '#10b981', fill: false }] }
+            });
 
-        // Profit trend (reuse trend but need profit data – we'll add a separate endpoint later; for now, reuse revenue)
-        if (profitChart) profitChart.destroy();
-        profitChart = new Chart(document.getElementById('profitChart'), {
-            type: 'line', data: { labels, datasets: [{ label: 'Daily Profit (est.)', data: revenues.map(r => r * 0.25), borderColor: '#10b981', fill: false }] }
-        });
+            // 4. Product breakdown (needs the new endpoint)
+            const productStats = await apiCall(`/sales/product-stats?start_date=${start}&end_date=${end}`);
+            const cogsByProduct = productStats.cogs_by_product || {};
+            const qtyByProduct = productStats.qty_by_product || {};
 
-        // Expenditure by product (COGS)
-        const sales = await apiCall(`/sales?start_date=${start}&end_date=${end}`);
-        const cogsByProduct = {};
-        for (let sale of sales) {
-            const prodName = sale.products?.name || sale.product_id;
-            const cogs = sale.total_cogs || 0;
-            cogsByProduct[prodName] = (cogsByProduct[prodName] || 0) + cogs;
+            // Expenditure table
+            let expendHtml = '<table class="min-w-full"><thead><tr><th>Product</th><th>Total COGS (₦)</th></tr></thead><tbody>';
+            for (let [prod, cogs] of Object.entries(cogsByProduct)) {
+                expendHtml += `<tr><td class="p-2">${escapeHtml(prod)}</td><td>₦${cogs.toLocaleString()}</td></tr>`;
+            }
+            expendHtml += '</tbody></table>';
+            document.getElementById('expenditure-table').innerHTML = expendHtml || '<p>No sales in period.</p>';
+
+            // Top products by units
+            const top = Object.entries(qtyByProduct).sort((a,b) => b[1]-a[1]).slice(0,10);
+            let topHtml = '<table class="min-w-full"><thead><tr><th>Product</th><th>Units Sold</th></tr></thead><tbody>';
+            for (let [prod, qty] of top) {
+                topHtml += `<tr><td class="p-2">${escapeHtml(prod)}</td><td>${qty}</td></tr>`;
+            }
+            topHtml += '</tbody></table>';
+            document.getElementById('top-products').innerHTML = topHtml;
+        } catch (err) {
+            console.error('Dashboard load error:', err);
+            document.getElementById('expenditure-table').innerHTML = '<p class="text-red-500">Failed to load data. Check that you added the /sales/product-stats endpoint to main.py.</p>';
         }
-        let expendHtml = '<table class="min-w-full"><thead><tr><th>Product</th><th>Total COGS (₦)</th></tr></thead><tbody>';
-        for (let [prod, cogs] of Object.entries(cogsByProduct)) {
-            expendHtml += `<tr><td class="p-2">${escapeHtml(prod)}</td><td>₦${cogs.toLocaleString()}</td></tr>`;
-        }
-        expendHtml += '</tbody></table>';
-        document.getElementById('expenditure-table').innerHTML = expendHtml || '<p>No sales in period.</p>';
-
-        // Top products by quantity
-        const qtyByProduct = {};
-        for (let sale of sales) {
-            const prodName = sale.products?.name || sale.product_id;
-            qtyByProduct[prodName] = (qtyByProduct[prodName] || 0) + sale.quantity;
-        }
-        const top = Object.entries(qtyByProduct).sort((a,b) => b[1]-a[1]).slice(0,10);
-        let topHtml = '<table class="min-w-full"><thead><tr><th>Product</th><th>Units Sold</th></tr></thead><tbody>';
-        for (let [prod, qty] of top) {
-            topHtml += `<tr><td class="p-2">${escapeHtml(prod)}</td><td>${qty}</td></tr>`;
-        }
-        topHtml += '</tbody></table>';
-        document.getElementById('top-products').innerHTML = topHtml;
     }
 
-    function escapeHtml(str) { if(!str) return ''; return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
+    }
 
     document.getElementById('update-dates').onclick = () => loadDashboard();
     document.getElementById('logout-btn').onclick = () => { localStorage.clear(); window.location.href = '/kdsiginin'; };
 
     (async () => {
-        if (!token) { window.location.href = '/kdsiginin'; return; }
+        if (!token) {
+            window.location.href = '/kdsiginin';
+            return;
+        }
         await loadUserInfo();
         await loadDashboard();
     })();
