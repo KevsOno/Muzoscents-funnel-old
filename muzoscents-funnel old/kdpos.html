@@ -3,11 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Kevs POS Pro | Multi-Tab & SKU Search</title>
+    <title>Kevs POS Pro | Multi-Tab · SKU Search · Online Payments</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
-        /* smooth tab transitions */
         .tab-active {
             background-color: #3b82f6;
             color: white;
@@ -42,6 +41,7 @@
         }
         .loading-spinner { border: 2px solid #e5e7eb; border-top: 2px solid #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 0.8s linear infinite; display: inline-block; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .transition-smooth { transition: all 0.2s ease; }
     </style>
 </head>
 <body class="bg-gray-100 p-4 font-sans">
@@ -52,7 +52,7 @@
     <div class="bg-white rounded-xl shadow-md p-4 mb-4 flex flex-wrap justify-between items-center gap-3">
         <div>
             <h1 class="text-2xl font-bold">💳 Kevs POS Terminal</h1>
-            <p class="text-xs text-gray-500">Multi‑Tab | Dual Customer Mode</p>
+            <p class="text-xs text-gray-500">Multi‑Tab | SKU Search | Card/Transfer Payments</p>
         </div>
         <div class="flex items-center gap-3">
             <span id="user-badge" class="text-sm bg-gray-200 px-3 py-1 rounded-full">Loading...</span>
@@ -70,7 +70,7 @@
         </button>
     </div>
 
-    <!-- Main Content: Products (left) + Active Sale Panel (right) -->
+    <!-- Main Content: Products + Active Sale Panel -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- LEFT: Products with SEARCH -->
         <div class="lg:col-span-2 bg-white rounded-xl shadow-md p-4">
@@ -92,7 +92,7 @@
                 <h2 class="text-xl font-semibold"><i class="fa-solid fa-cart-shopping"></i> <span id="active-customer-label">Customer A</span> Sale</h2>
                 <span class="text-xs bg-gray-100 px-2 py-1 rounded-full" id="tab-badge">Tab 1 active</span>
             </div>
-            <div id="cart-items" class="space-y-2 max-h-96 overflow-y-auto flex-1 min-h-[200px]"></div>
+            <div id="cart-items" class="space-y-2 max-h-80 overflow-y-auto flex-1 min-h-[180px]"></div>
             <div class="border-t pt-3 mt-2">
                 <div class="flex justify-between text-lg font-bold"><span>Total:</span><span id="cart-total">₦0</span></div>
                 <div class="mt-3"><label class="block text-sm font-medium">Payment Method</label>
@@ -105,8 +105,11 @@
                 <div class="mt-3"><label class="block text-sm font-medium">Customer Name</label>
                     <input id="customer-name" class="w-full border rounded-lg p-2" placeholder="Walk-in Customer" autocomplete="off">
                 </div>
-                <div class="mt-3"><label class="block text-sm font-medium">Phone Number</label>
+                <div class="mt-2"><label class="block text-sm font-medium">Phone Number</label>
                     <input id="customer-phone" class="w-full border rounded-lg p-2" placeholder="Optional" autocomplete="off">
+                </div>
+                <div class="mt-2"><label class="block text-sm font-medium">Email (for receipt/payment)</label>
+                    <input id="customer-email" type="email" class="w-full border rounded-lg p-2" placeholder="customer@example.com" autocomplete="off">
                 </div>
                 <button id="checkout-btn" class="mt-4 w-full bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-lg font-bold transition shadow-md">
                     ✅ Complete Sale
@@ -138,14 +141,14 @@
     // ------------------- CONFIGURATION -------------------
     const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
     let token = localStorage.getItem('access_token');
-    let products = [];            // full product list from inventory
-    let searchTerm = '';          // current SKU/name filter
+    let products = [];            // full product list
+    let searchTerm = '';          // current filter
 
-    // MULTI-TAB STATE: two independent customers
+    // MULTI-TAB STATE: two independent customers (added email)
     let activeTab = 1;   // 1 or 2
     const tabState = {
-        1: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '' },
-        2: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '' }
+        1: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' },
+        2: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' }
     };
 
     // DOM elements
@@ -156,6 +159,7 @@
     const paymentMethodSelect = document.getElementById('payment-method');
     const customerNameInput = document.getElementById('customer-name');
     const customerPhoneInput = document.getElementById('customer-phone');
+    const customerEmailInput = document.getElementById('customer-email');
     const activeCustomerLabel = document.getElementById('active-customer-label');
     const tabBadge = document.getElementById('tab-badge');
     const tab1Btn = document.getElementById('tab1-btn');
@@ -226,7 +230,6 @@
         showLoginModal();
         document.getElementById('user-badge').innerText = '';
         showToast('Logged out', 'success');
-        // reset UI
         products = [];
         renderProductGrid();
     }
@@ -252,7 +255,7 @@
         try {
             const data = await call('/inventory');
             products = data;
-            renderProductGrid();   // apply current search filter
+            renderProductGrid();
         } catch (err) {
             showToast('Failed to load products: ' + err.message, 'error');
             products = [];
@@ -307,18 +310,14 @@
 
     // ---------- CART & TAB MANAGEMENT ----------
     function syncUIWithActiveTab() {
-        // get current active tab state
         const state = tabState[activeTab];
-        // update cart display
         renderActiveCart();
-        // update payment method select (without triggering infinite events)
         paymentMethodSelect.value = state.paymentMethod;
         customerNameInput.value = state.customerName;
         customerPhoneInput.value = state.customerPhone;
-        // update label & badge
+        customerEmailInput.value = state.customerEmail;
         activeCustomerLabel.innerText = activeTab === 1 ? 'Customer A' : 'Customer B';
         tabBadge.innerText = activeTab === 1 ? 'Tab 1 active' : 'Tab 2 active';
-        // update visual tab styling
         if (activeTab === 1) {
             tab1Btn.classList.add('tab-active');
             tab1Btn.classList.remove('tab-inactive');
@@ -363,14 +362,12 @@
         if (index >= 0 && index < currentCart.length) {
             currentCart.splice(index, 1);
             renderActiveCart();
-            // persist state already updated
         }
     };
 
     window.addToCart = function(productId, productName, price, stock, skuLabel) {
         const activeCart = tabState[activeTab].cart;
         const existing = activeCart.find(i => i.id === productId);
-        // find product from global products to cross-check real-time stock
         const productRef = products.find(p => p.id === productId);
         const availableStock = productRef ? (productRef.current_qty ?? 0) : stock;
         
@@ -391,80 +388,160 @@
         showToast(`➕ Added ${productName}`, 'success');
     };
 
-    // update tab state when user edits fields
     function bindFieldEvents() {
-        paymentMethodSelect.onchange = () => {
-            tabState[activeTab].paymentMethod = paymentMethodSelect.value;
-        };
-        customerNameInput.oninput = () => {
-            tabState[activeTab].customerName = customerNameInput.value;
-        };
-        customerPhoneInput.oninput = () => {
-            tabState[activeTab].customerPhone = customerPhoneInput.value;
-        };
+        paymentMethodSelect.onchange = () => { tabState[activeTab].paymentMethod = paymentMethodSelect.value; };
+        customerNameInput.oninput = () => { tabState[activeTab].customerName = customerNameInput.value; };
+        customerPhoneInput.oninput = () => { tabState[activeTab].customerPhone = customerPhoneInput.value; };
+        customerEmailInput.oninput = () => { tabState[activeTab].customerEmail = customerEmailInput.value; };
     }
 
-    async function checkout() {
-        const activeCart = tabState[activeTab].cart;
-        if (activeCart.length === 0) {
+    // ----- NEW: clear cart for a specific tab (preserves other fields) -----
+    function clearCartForTab(tabId) {
+        tabState[tabId].cart = [];
+        if (activeTab === tabId) renderActiveCart();
+    }
+
+    // ----- MODIFIED CHECKOUT with callback_url & payment redirect -----
+    async function processCheckout() {
+        const state = tabState[activeTab];
+        const cart = state.cart;
+        if (cart.length === 0) {
             showToast('🛒 Cart is empty. Add items first.', 'error');
             return;
         }
-        const items = activeCart.map(i => ({ inventory_id: i.id, quantity: i.qty }));
-        const paymentMethod = tabState[activeTab].paymentMethod;
-        const customerName = tabState[activeTab].customerName.trim() || null;
-        const customerPhone = tabState[activeTab].customerPhone.trim() || null;
+        const paymentMethod = state.paymentMethod;
+        const customerName = state.customerName.trim() || null;
+        const customerPhone = state.customerPhone.trim() || null;
+        let customerEmail = state.customerEmail.trim() || null;
+
+        // For non-cash payments we strongly suggest email
+        if (paymentMethod !== 'cash' && !customerEmail) {
+            showToast('📧 Email is required for card/transfer payments', 'error');
+            return;
+        }
         
-        // Disable button to avoid double click
+        const itemsPayload = cart.map(i => ({ inventory_id: i.id, quantity: i.qty }));
+        const returnUrl = window.location.href.split('?')[0];
+        const callback_url = `${returnUrl}?payment=success`;
+
         checkoutBtn.disabled = true;
         checkoutBtn.innerText = 'Processing...';
+
         try {
-            const result = await call('/pos/terminal/checkout', 'POST', { 
-                items, 
-                payment_method: paymentMethod, 
-                customer_name: customerName, 
-                customer_phone: customerPhone 
-            });
-            showToast(`✅ Sale complete! Receipt: ${result.receipt_number || 'OK'}`, 'success');
-            // Reset current tab cart & fields
-            tabState[activeTab].cart = [];
-            tabState[activeTab].paymentMethod = 'cash';
-            tabState[activeTab].customerName = '';
-            tabState[activeTab].customerPhone = '';
-            // sync UI
-            syncUIWithActiveTab();
-            // refresh product list to reflect new stock levels
-            await loadProducts();
+            // CASH flow -> direct terminal checkout
+            if (paymentMethod === 'cash') {
+                const result = await call('/pos/terminal/checkout', 'POST', {
+                    items: itemsPayload,
+                    payment_method: 'cash',
+                    customer_name: customerName,
+                    customer_phone: customerPhone,
+                    customer_email: customerEmail
+                });
+                showToast(`✅ Sale complete! Receipt: ${result.receipt_number || 'OK'}`, 'success');
+                // Reset current tab cart & keep fields but clear cart
+                tabState[activeTab].cart = [];
+                // Optionally reset name/phone/email? We'll keep customer details for convenience but clear cart only.
+                syncUIWithActiveTab();
+                await loadProducts(); // refresh stock
+            } 
+            // NON-CASH (card/transfer) -> payment gateway with callback_url
+            else {
+                const payload = {
+                    items: itemsPayload,
+                    customer_name: customerName,
+                    customer_email: customerEmail,
+                    customer_phone: customerPhone,
+                    payment_method: paymentMethod,
+                    callback_url: callback_url
+                };
+                const result = await call('/pos/checkout', 'POST', payload);
+                if (result.payment_url) {
+                    // Store metadata to handle return & which tab initiated payment
+                    localStorage.setItem('pending_payment', 'true');
+                    localStorage.setItem('pending_payment_tab', activeTab.toString());
+                    localStorage.setItem('pending_tab_cart_snapshot', JSON.stringify(cart)); // optional backup
+                    // Redirect to payment gateway
+                    window.location.href = result.payment_url;
+                } else {
+                    throw new Error('Payment initiation failed: no payment URL');
+                }
+            }
         } catch (err) {
             showToast(`❌ Checkout failed: ${err.message}`, 'error');
-        } finally {
+            checkoutBtn.disabled = false;
+            checkoutBtn.innerText = '✅ Complete Sale';
+        }
+        
+        // If cash, re-enable button after reset (already done). For redirect we never reach here.
+        if (paymentMethod === 'cash') {
             checkoutBtn.disabled = false;
             checkoutBtn.innerText = '✅ Complete Sale';
         }
     }
 
-    // switch tab
+    // ----- PAYMENT RETURN HANDLER (on page load) -----
+    async function checkPaymentReturn() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const paymentSuccess = urlParams.get('payment') === 'success';
+        const wasPending = localStorage.getItem('pending_payment') === 'true';
+        
+        if (paymentSuccess && wasPending) {
+            const pendingTabRaw = localStorage.getItem('pending_payment_tab');
+            const pendingTab = pendingTabRaw ? parseInt(pendingTabRaw, 10) : null;
+            // Clear cart for the tab that made the payment
+            if (pendingTab === 1 || pendingTab === 2) {
+                clearCartForTab(pendingTab);
+                // If we are currently viewing a different tab, still clear that tab's cart silently
+                if (activeTab !== pendingTab) {
+                    // just update state without UI flicker, but ensure sync later
+                    tabState[pendingTab].cart = [];
+                } else {
+                    renderActiveCart();
+                }
+                showToast(`🎉 Payment successful! Order confirmed for ${pendingTab === 1 ? 'Customer A' : 'Customer B'}.`, 'success');
+                // Refresh stock levels after successful payment
+                await loadProducts();
+            } else {
+                // fallback: clear active tab cart
+                clearCartForTab(activeTab);
+                renderActiveCart();
+                showToast(`🎉 Payment successful! Cart cleared.`, 'success');
+                await loadProducts();
+            }
+            // Clean local storage flags
+            localStorage.removeItem('pending_payment');
+            localStorage.removeItem('pending_payment_tab');
+            localStorage.removeItem('pending_tab_cart_snapshot');
+            // Remove query param from URL without reloading page
+            const cleanUrl = window.location.href.split('?')[0];
+            window.history.replaceState({}, document.title, cleanUrl);
+        } else if (!paymentSuccess && wasPending) {
+            // Payment might have been cancelled or failed, clear pending flag anyway
+            localStorage.removeItem('pending_payment');
+            localStorage.removeItem('pending_payment_tab');
+            localStorage.removeItem('pending_tab_cart_snapshot');
+            showToast('⚠️ Payment was not completed. Your cart is unchanged.', 'error');
+        }
+    }
+
+    // switch tab with saving fields
     function setActiveTab(tabId) {
         if (tabId === activeTab) return;
-        // capture current UI fields into current tab state BEFORE switching
+        // save current UI fields into current tab state before switching
         tabState[activeTab].paymentMethod = paymentMethodSelect.value;
         tabState[activeTab].customerName = customerNameInput.value;
         tabState[activeTab].customerPhone = customerPhoneInput.value;
-        // change active
+        tabState[activeTab].customerEmail = customerEmailInput.value;
         activeTab = tabId;
-        // refresh UI from new tab state
         syncUIWithActiveTab();
-        // re-apply search filter (product grid stays same but ensure correct highlight)
-        renderProductGrid();
+        renderProductGrid(); // keep product grid as is
     }
 
-    // initial setup + event listeners for tabs
     function initTabs() {
         tab1Btn.onclick = () => setActiveTab(1);
         tab2Btn.onclick = () => setActiveTab(2);
     }
 
-    // Search listener
     function initSearch() {
         searchInput.addEventListener('input', (e) => {
             searchTerm = e.target.value;
@@ -490,12 +567,12 @@
             await loadUserInfo();
             await loadProducts();
             hideLoginModal();
-            showToast('Demo login successful — Multi-Tab ready', 'success');
-            // reset both tabs to fresh state
-            tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '' };
-            tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '' };
+            // reset both tabs
+            tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' };
+            tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' };
             activeTab = 1;
             syncUIWithActiveTab();
+            showToast('Demo login successful — Multi‑Tab & Online Payments ready', 'success');
         } catch (err) {
             showToast(err.message, 'error');
         } finally {
@@ -521,9 +598,8 @@
             await loadUserInfo();
             await loadProducts();
             hideLoginModal();
-            // reset tabs for clean state
-            tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '' };
-            tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '' };
+            tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' };
+            tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' };
             activeTab = 1;
             syncUIWithActiveTab();
             showToast('Login successful', 'success');
@@ -532,25 +608,30 @@
         }
     }
 
-    // Attach global checkout listener
-    checkoutBtn.addEventListener('click', checkout);
+    // attach global listeners
+    checkoutBtn.addEventListener('click', processCheckout);
     document.getElementById('logout-btn')?.addEventListener('click', logout);
     document.getElementById('modal-login-btn')?.addEventListener('click', handleLogin);
     document.getElementById('demo-login-btn')?.addEventListener('click', demoLogin);
     document.getElementById('close-modal-btn')?.addEventListener('click', hideLoginModal);
     
-    // initial load sequence
+    // ---------- INITIALISE APP ----------
     (async () => {
         initTabs();
         initSearch();
         bindFieldEvents();
+        // Check for payment return before login checks (so query param handled early)
+        await checkPaymentReturn();
+        
         if (token) {
             try {
                 await loadUserInfo();
                 await loadProducts();
-                // reset tab states after login
-                tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '' };
-                tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '' };
+                // reset tab states after login but preserve any existing data if needed
+                if (!tabState[1].cart.length && !tabState[2].cart.length) {
+                    tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' };
+                    tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' };
+                }
                 activeTab = 1;
                 syncUIWithActiveTab();
             } catch (e) {
