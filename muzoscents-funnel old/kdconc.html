@@ -7,24 +7,19 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
+        /* (keep all existing styles – unchanged) */
         body { background: #0B1120; font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif; }
-        .typing-indicator span {
-            width: 6px; height: 6px; background: #38BDF8; border-radius: 50%;
-            display: inline-block; animation: typing 1.4s infinite ease-in-out;
-        }
+        .typing-indicator span { width: 6px; height: 6px; background: #38BDF8; border-radius: 50%; display: inline-block; animation: typing 1.4s infinite ease-in-out; }
         .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
         .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
-        @keyframes typing {
-            0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
-            30% { transform: translateY(-6px); opacity: 1; }
-        }
+        @keyframes typing { 0%,60%,100% { transform: translateY(0); opacity: 0.5; } 30% { transform: translateY(-6px); opacity: 1; } }
         .product-card { transition: transform 0.2s ease, box-shadow 0.2s; touch-action: manipulation; }
         .product-card:active { transform: scale(0.98); }
-        .cart-sidebar { transition: transform 0.3s cubic-bezier(0.2, 0.9, 0.4, 1.1); will-change: transform; }
-        .debug-panel { background: #0F172A; border-top: 1px solid #1E293B; font-family: monospace; font-size: 10px; max-height: 140px; overflow-y: auto; transition: all 0.2s; }
+        .cart-sidebar { transition: transform 0.3s cubic-bezier(0.2,0.9,0.4,1.1); will-change: transform; }
+        .debug-panel { background: #0F172A; border-top: 1px solid #1E293B; font-family: monospace; font-size: 10px; max-height: 140px; overflow-y: auto; }
         .debug-panel.hidden-debug { display: none; }
-        .nav-stack-item, .mobile-nav-item { transition: all 0.2s; border-radius: 1rem; touch-action: manipulation; }
-        .nav-stack-item.active, .mobile-nav-item.active { background: #1E3A8A; color: white; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2); }
+        .nav-stack-item, .mobile-nav-item { transition: all 0.2s; border-radius: 1rem; }
+        .nav-stack-item.active, .mobile-nav-item.active { background: #1E3A8A; color: white; box-shadow: 0 4px 12px rgba(37,99,235,0.2); }
         .mobile-nav-item.active i, .mobile-nav-item.active span { color: white; }
         .overflow-fix { overflow-x: hidden; }
         .chat-messages-scroll { scroll-behavior: smooth; }
@@ -109,7 +104,6 @@
         </div>
         <div id="cart-items-panel" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
         <div class="p-4 border-t border-slate-800 bg-slate-900/90">
-            <!-- Payment method selector -->
             <div class="mb-3">
                 <label class="text-xs text-slate-400 block mb-1">Payment Method</label>
                 <select id="payment-method-select" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm">
@@ -184,7 +178,7 @@
         }
     }
 
-    // API helpers – FIXED: options must be an object, method inside options
+    // API helpers
     async function refreshToken() {
         const refresh = localStorage.getItem('refresh_token');
         if (!refresh) return false;
@@ -206,7 +200,6 @@
     }
 
     async function apiCall(endpoint, options = {}, retry = true) {
-        // Ensure options is an object
         if (typeof options !== 'object' || options === null) options = {};
         if (!options.headers) options.headers = {};
         options.headers['Content-Type'] = 'application/json';
@@ -256,25 +249,27 @@
         showToast(`${product.name} added to cart`, 'success');
     }
 
-    // CHECKOUT – supports both Paystack (online) and Cash (POS batch)
+    // CHECKOUT – supports Paystack (with callback) and Cash
     async function checkoutCart() {
         if (!cart.length) { showToast("Cart is empty", 'error'); return; }
         if (!token) { showLoginModal(); showToast("Please login first", 'error'); return; }
         
         const paymentMethod = document.getElementById('payment-method-select').value;
         const items = cart.map(i => ({ inventory_id: i.id, quantity: i.quantity }));
+        // Prepare the current page URL to return after payment
+        const returnUrl = window.location.href.split('?')[0]; // remove any existing query params
         const payload = {
             items: items,
             customer_name: userProfile?.first_name || null,
             customer_email: userProfile?.email || null,
             customer_phone: userProfile?.phone || null,
-            payment_method: paymentMethod
+            payment_method: paymentMethod,
+            callback_url: `${returnUrl}?payment=success`   // <-- added callback with success flag
         };
         
         try {
             let result;
             if (paymentMethod === 'cash') {
-                // Use batched cash checkout
                 result = await apiCall('/pos/terminal/checkout', {
                     method: 'POST',
                     body: JSON.stringify(payload)
@@ -284,13 +279,14 @@
                 if (currentTab === 'shop') renderShop();
                 document.getElementById('cart-drawer').classList.add('translate-x-full');
             } else {
-                // Online payment (Paystack / Flutterwave via /pos/checkout)
+                // Online payment
                 result = await apiCall('/pos/checkout', {
                     method: 'POST',
                     body: JSON.stringify(payload)
                 });
                 if (result.payment_url) {
-                    // Redirect to payment gateway
+                    // Save the current cart and a flag that we are going to payment
+                    localStorage.setItem('pending_payment', 'true');
                     window.location.href = result.payment_url;
                 } else {
                     showToast("Payment initiation failed: no URL returned", 'error');
@@ -299,6 +295,28 @@
         } catch(err) {
             showToast(`Checkout error: ${err.message}`, 'error');
             log(err);
+        }
+    }
+
+    // Check if we came back from a successful payment
+    function checkPaymentReturn() {
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('payment') === 'success') {
+            // Clear the cart and show success
+            const wasPending = localStorage.getItem('pending_payment') === 'true';
+            if (wasPending || cart.length > 0) {
+                cart = [];
+                saveCart();
+                if (currentTab === 'shop') renderShop();
+                showToast("🎉 Payment successful! Your order is confirmed.", 'success');
+                localStorage.removeItem('pending_payment');
+                // Remove the query param from URL without reloading
+                const cleanUrl = window.location.href.split('?')[0];
+                window.history.replaceState({}, document.title, cleanUrl);
+            }
+        } else {
+            // If there was a pending payment but no success flag, clear the flag
+            localStorage.removeItem('pending_payment');
         }
     }
 
@@ -349,7 +367,7 @@
         }
     }
 
-    // CHAT
+    // CHAT (unchanged, keep existing)
     let chatContainer = null;
     function addChatMessage(sender, text) { 
         if(!chatContainer) return; 
@@ -407,7 +425,7 @@
         log("Chat ready");
     }
 
-    // SUPPORT TICKETS & TRACK ORDER
+    // SUPPORT TICKETS & TRACK ORDER (unchanged)
     async function renderTickets() { 
         const panel = document.getElementById('dynamic-panel'); 
         panel.innerHTML = `<div class="text-center py-10"><i class="fa-solid fa-spinner fa-pulse"></i> Loading support requests...</div>`; 
@@ -586,8 +604,10 @@
             try { await loadUserContext(); switchTab('shop'); } 
             catch(e) { token=null; showLoginModal(); } 
         } else { showLoginModal(); }
+        // Check if we returned from a successful payment
+        checkPaymentReturn();
         window.addToCart = addToCart;
-        log("✅ Marketplace ready – Paystack & Cash supported.");
+        log("✅ Marketplace ready – Paystack with callback & auto‑clear cart.");
     })();
 </script>
 </body>
