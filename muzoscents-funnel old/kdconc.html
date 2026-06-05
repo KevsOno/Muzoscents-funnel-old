@@ -7,7 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
-        /* (keep all existing styles – unchanged) */
+        /* (keep all existing styles) */
         body { background: #0B1120; font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif; }
         .typing-indicator span { width: 6px; height: 6px; background: #38BDF8; border-radius: 50%; display: inline-block; animation: typing 1.4s infinite ease-in-out; }
         .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
@@ -25,6 +25,7 @@
         .chat-messages-scroll { scroll-behavior: smooth; }
         button, .cursor-pointer { cursor: pointer; touch-action: manipulation; }
         input, textarea { font-size: 16px; }
+        .search-highlight { background: #3b82f6; color: white; border-radius: 4px; padding: 0 2px; }
     </style>
 </head>
 <body class="text-slate-200 antialiased overflow-fix">
@@ -96,7 +97,7 @@
         <div data-tab="track" class="mobile-nav-item flex flex-col items-center py-1 px-3 rounded-xl transition text-slate-400"><i class="fa-solid fa-truck-fast text-xl"></i><span class="text-[10px] mt-0.5">Track</span></div>
     </div>
 
-    <!-- CART SIDEBAR -->
+    <!-- CART SIDEBAR (UPDATED with delivery/pickup and address) -->
     <div id="cart-drawer" class="cart-sidebar fixed top-0 right-0 w-full sm:w-96 h-full bg-slate-900 border-l border-slate-700 shadow-2xl z-50 transform translate-x-full transition-transform duration-300 flex flex-col">
         <div class="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/95">
             <h3 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-basket-shopping text-blue-400"></i> Your Cart</h3>
@@ -104,6 +105,21 @@
         </div>
         <div id="cart-items-panel" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
         <div class="p-4 border-t border-slate-800 bg-slate-900/90">
+            <!-- Delivery / Pickup toggle -->
+            <div class="mb-3">
+                <label class="text-xs text-slate-400 block mb-1">Delivery Option</label>
+                <div class="flex gap-2 bg-slate-800 rounded-lg p-1">
+                    <button id="delivery-pickup-pickup" class="flex-1 py-1.5 text-sm rounded-md transition data-active="true">📦 Pickup</button>
+                    <button id="delivery-pickup-delivery" class="flex-1 py-1.5 text-sm rounded-md transition">🚚 Delivery</button>
+                </div>
+            </div>
+            <!-- Address field (hidden initially) -->
+            <div id="delivery-address-container" class="mb-3 hidden">
+                <label class="text-xs text-slate-400 block mb-1">Delivery Address</label>
+                <input type="text" id="delivery-address" placeholder="Street, city, state" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm">
+                <div id="delivery-estimate" class="text-xs text-slate-400 mt-1"></div>
+            </div>
+            <!-- Payment method -->
             <div class="mb-3">
                 <label class="text-xs text-slate-400 block mb-1">Payment Method</label>
                 <select id="payment-method-select" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm">
@@ -111,8 +127,13 @@
                     <option value="cash">Cash (POS Terminal)</option>
                 </select>
             </div>
-            <div class="flex justify-between font-bold text-lg mb-4"><span>Total</span><span id="cart-grand-total" class="text-blue-300">₦0</span></div>
-            <button id="cart-checkout-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 py-2.5 rounded-xl font-semibold transition shadow-lg">💳 Proceed to Checkout</button>
+            <!-- Totals breakdown -->
+            <div class="border-t border-slate-700/50 pt-2 mt-1 space-y-1 text-sm">
+                <div class="flex justify-between"><span>Subtotal</span><span id="cart-subtotal">₦0</span></div>
+                <div id="delivery-fee-row" class="flex justify-between text-slate-400 hidden"><span>Delivery fee</span><span id="cart-delivery-fee">₦0</span></div>
+                <div class="flex justify-between font-bold text-lg border-t border-slate-700 pt-2 mt-1"><span>Total</span><span id="cart-grand-total" class="text-blue-300">₦0</span></div>
+            </div>
+            <button id="cart-checkout-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 py-2.5 rounded-xl font-semibold transition shadow-lg mt-2">💳 Proceed to Checkout</button>
             <p class="text-[10px] text-slate-500 text-center mt-2">Secure payment powered by your organisation's gateway</p>
         </div>
     </div>
@@ -159,6 +180,12 @@
     localStorage.setItem('pf_session', sessionId);
     let cart = [];
     let debugVisible = true;
+    
+    // New delivery state
+    let deliveryOption = 'pickup'; // 'pickup' or 'delivery'
+    let deliveryAddress = '';
+    let deliveryFee = 0;
+    let deliveryEstimateLoading = false;
 
     function log(msg) {
         const logsDiv = document.getElementById('logs-content');
@@ -178,7 +205,7 @@
         }
     }
 
-    // API helpers
+    // API helpers (unchanged)
     async function refreshToken() {
         const refresh = localStorage.getItem('refresh_token');
         if (!refresh) return false;
@@ -218,12 +245,35 @@
         return res.json();
     }
 
-    // Cart functions
+    // Cart functions (updated to support delivery)
     function saveCart() { localStorage.setItem('kevs_cart', JSON.stringify(cart)); updateCartUI(); }
     function loadCart() { const saved = localStorage.getItem('kevs_cart'); cart = saved ? JSON.parse(saved) : []; updateCartUI(); }
-    function updateCartUI() {
-        const total = cart.reduce((s,i) => s + (i.price * i.quantity), 0);
+    
+    async function updateCartUI() {
+        const subtotal = cart.reduce((s,i) => s + (i.price * i.quantity), 0);
+        let total = subtotal;
+        let deliveryFeeDisplay = 0;
+        
+        if (deliveryOption === 'delivery' && deliveryAddress.trim() !== '') {
+            // If we have a valid address, we already have deliveryFee from estimate
+            total += deliveryFee;
+            deliveryFeeDisplay = deliveryFee;
+        } else if (deliveryOption === 'delivery' && deliveryAddress.trim() === '') {
+            deliveryFeeDisplay = 0;
+        } else {
+            deliveryFeeDisplay = 0;
+        }
+        
+        document.getElementById('cart-subtotal').innerText = `₦${subtotal.toLocaleString()}`;
         document.getElementById('cart-grand-total').innerText = `₦${total.toLocaleString()}`;
+        const deliveryRow = document.getElementById('delivery-fee-row');
+        if (deliveryOption === 'delivery' && deliveryAddress.trim() !== '') {
+            deliveryRow.classList.remove('hidden');
+            document.getElementById('cart-delivery-fee').innerText = `₦${deliveryFeeDisplay.toLocaleString()}`;
+        } else {
+            deliveryRow.classList.add('hidden');
+        }
+        
         const count = cart.reduce((s,i) => s + i.quantity, 0);
         document.getElementById('cart-count-global').innerText = count;
         const container = document.getElementById('cart-items-panel');
@@ -240,32 +290,115 @@
             </div>
         `).join('');
     }
-    window.removeCartItem = (idx) => { cart.splice(idx,1); saveCart(); if(currentTab === 'shop') renderShop(); };
+    
+    window.removeCartItem = (idx) => { cart.splice(idx,1); saveCart(); if(currentTab === 'shop') renderShop(); updateCartUI(); };
     function addToCart(product) {
         let existing = cart.find(i => i.id === product.id);
         if(existing) existing.quantity++;
         else cart.push({ id: product.id, name: product.name, price: product.price, quantity: 1 });
         saveCart();
         showToast(`${product.name} added to cart`, 'success');
+        updateCartUI();
     }
 
-    // CHECKOUT – supports Paystack (with callback) and Cash
+    // Delivery estimate
+    async function estimateDelivery() {
+        const addressInput = document.getElementById('delivery-address');
+        const address = addressInput?.value.trim();
+        if (!address) {
+            deliveryFee = 0;
+            updateCartUI();
+            document.getElementById('delivery-estimate').innerHTML = '';
+            return;
+        }
+        if (cart.length === 0) return;
+        const items = cart.map(i => ({ inventory_id: i.id, quantity: i.quantity }));
+        const estimateDiv = document.getElementById('delivery-estimate');
+        estimateDiv.innerHTML = '<i class="fa-solid fa-spinner fa-pulse"></i> Calculating delivery...';
+        try {
+            const res = await apiCall('/delivery/estimate', {
+                method: 'POST',
+                body: JSON.stringify({ address, items })
+            });
+            deliveryFee = res.delivery_fee_naira;
+            updateCartUI();
+            estimateDiv.innerHTML = `🚚 Delivery fee: ₦${deliveryFee.toLocaleString()} | Handling: ₦${res.handling_fee_naira?.toLocaleString() || 0}`;
+        } catch(err) {
+            log("Delivery estimate error: " + err.message);
+            estimateDiv.innerHTML = `<span class="text-red-400">⚠️ Could not estimate delivery: ${err.message}</span>`;
+            deliveryFee = 0;
+            updateCartUI();
+        }
+    }
+    
+    // Delivery/Pickup toggle handlers
+    function setDeliveryOption(option) {
+        deliveryOption = option;
+        const pickupBtn = document.getElementById('delivery-pickup-pickup');
+        const deliveryBtn = document.getElementById('delivery-pickup-delivery');
+        const addressContainer = document.getElementById('delivery-address-container');
+        
+        if (option === 'pickup') {
+            pickupBtn.classList.add('bg-blue-600', 'text-white');
+            pickupBtn.classList.remove('bg-slate-700', 'text-slate-300');
+            deliveryBtn.classList.remove('bg-blue-600', 'text-white');
+            deliveryBtn.classList.add('bg-slate-700', 'text-slate-300');
+            addressContainer.classList.add('hidden');
+            deliveryFee = 0;
+            deliveryAddress = '';
+        } else {
+            deliveryBtn.classList.add('bg-blue-600', 'text-white');
+            deliveryBtn.classList.remove('bg-slate-700', 'text-slate-300');
+            pickupBtn.classList.remove('bg-blue-600', 'text-white');
+            pickupBtn.classList.add('bg-slate-700', 'text-slate-300');
+            addressContainer.classList.remove('hidden');
+            // Trigger estimate if address already exists
+            const addr = document.getElementById('delivery-address').value.trim();
+            if (addr) {
+                deliveryAddress = addr;
+                estimateDelivery();
+            } else {
+                deliveryFee = 0;
+                updateCartUI();
+            }
+        }
+        updateCartUI();
+    }
+    
+    // Modified checkout to include shipping_address if delivery
     async function checkoutCart() {
         if (!cart.length) { showToast("Cart is empty", 'error'); return; }
         if (!token) { showLoginModal(); showToast("Please login first", 'error'); return; }
         
+        // Validate delivery address if needed
+        if (deliveryOption === 'delivery') {
+            const addr = document.getElementById('delivery-address').value.trim();
+            if (!addr) {
+                showToast("Please enter a delivery address", 'error');
+                return;
+            }
+            // Optionally re-estimate to be safe
+            await estimateDelivery();
+            if (deliveryFee === 0 && addr) {
+                showToast("Could not calculate delivery fee. Check address.", 'error');
+                return;
+            }
+        }
+        
         const paymentMethod = document.getElementById('payment-method-select').value;
         const items = cart.map(i => ({ inventory_id: i.id, quantity: i.quantity }));
-        // Prepare the current page URL to return after payment
-        const returnUrl = window.location.href.split('?')[0]; // remove any existing query params
+        const returnUrl = window.location.href.split('?')[0];
         const payload = {
             items: items,
             customer_name: userProfile?.first_name || null,
             customer_email: userProfile?.email || null,
             customer_phone: userProfile?.phone || null,
             payment_method: paymentMethod,
-            callback_url: `${returnUrl}?payment=success`   // <-- added callback with success flag
+            callback_url: `${returnUrl}?payment=success`
         };
+        if (deliveryOption === 'delivery') {
+            payload.shipping_address = document.getElementById('delivery-address').value.trim();
+        }
         
         try {
             let result;
@@ -276,16 +409,16 @@
                 });
                 showToast(`✅ Checkout success! Receipt: ${result.receipt_number}`, 'success');
                 cart = []; saveCart();
+                deliveryFee = 0;
+                setDeliveryOption('pickup'); // reset to pickup after successful order
                 if (currentTab === 'shop') renderShop();
                 document.getElementById('cart-drawer').classList.add('translate-x-full');
             } else {
-                // Online payment
                 result = await apiCall('/pos/checkout', {
                     method: 'POST',
                     body: JSON.stringify(payload)
                 });
                 if (result.payment_url) {
-                    // Save the current cart and a flag that we are going to payment
                     localStorage.setItem('pending_payment', 'true');
                     window.location.href = result.payment_url;
                 } else {
@@ -297,66 +430,91 @@
             log(err);
         }
     }
-
-    // Check if we came back from a successful payment
+    
+    // Check payment return (clear cart after successful payment)
     function checkPaymentReturn() {
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('payment') === 'success') {
-            // Clear the cart and show success
             const wasPending = localStorage.getItem('pending_payment') === 'true';
             if (wasPending || cart.length > 0) {
                 cart = [];
                 saveCart();
+                deliveryFee = 0;
+                setDeliveryOption('pickup');
                 if (currentTab === 'shop') renderShop();
                 showToast("🎉 Payment successful! Your order is confirmed.", 'success');
                 localStorage.removeItem('pending_payment');
-                // Remove the query param from URL without reloading
                 const cleanUrl = window.location.href.split('?')[0];
                 window.history.replaceState({}, document.title, cleanUrl);
             }
         } else {
-            // If there was a pending payment but no success flag, clear the flag
             localStorage.removeItem('pending_payment');
         }
     }
-
-    // SHOP
+    
+    // SHOP with search filter
+    let allProducts = [];
+    let searchQuery = '';
+    
     async function renderShop() {
         const panel = document.getElementById('dynamic-panel');
-        panel.innerHTML = `<div class="flex justify-center py-20"><i class="fa-solid fa-spinner fa-pulse text-3xl text-blue-400"></i><span class="ml-3">loading premium inventory...</span></div>`;
-        try {
-            const items = await apiCall('/inventory/public-list');
-            if (!items || items.length === 0) { 
-                panel.innerHTML = '<div class="text-center py-16 text-slate-400 bg-slate-800/40 rounded-2xl">✨ No products available. Check back later.</div>'; 
-                return; 
-            }
-            panel.innerHTML = `
-                <div class="mb-4"><h2 class="text-2xl font-bold flex items-center gap-2"><i class="fa-solid fa-tag text-blue-400"></i> Digital Marketplace</h2><p class="text-sm text-slate-400">Intelligence-powered inventory</p></div>
-                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-5" id="products-grid">
-                    ${items.map(p => `
-                        <div class="product-card bg-slate-800/70 border border-slate-700 rounded-2xl p-3 md:p-4 backdrop-blur-sm flex flex-col" data-pid="${p.id}" data-pname="${escapeHtml(p.description)}" data-price="${p.price_naira}">
-                            <div class="h-20 md:h-28 bg-gradient-to-br from-slate-700 to-slate-800 rounded-xl flex items-center justify-center mb-2"><i class="fa-solid fa-cube text-3xl md:text-4xl text-slate-500"></i></div>
-                            <h3 class="font-semibold text-sm md:text-base truncate">${escapeHtml(p.description)}</h3>
-                            <div class="flex justify-between items-center mt-2 flex-wrap gap-1">
-                                <span class="text-blue-400 font-bold text-base md:text-xl">₦${p.price_naira.toLocaleString()}</span>
-                                <span class="text-[10px] px-2 py-0.5 rounded-full ${p.current_qty > 5 ? 'bg-emerald-500/20 text-emerald-300' : p.current_qty > 0 ? 'bg-amber-500/20 text-amber-300' : 'bg-red-500/20 text-red-300'}">
-                                    ${p.current_qty} left
-                                </span>
-                            </div>
-                            <button class="add-to-cart-btn mt-3 w-full bg-blue-600 hover:bg-blue-500 transition py-2 rounded-xl text-xs md:text-sm font-medium flex items-center justify-center gap-2"><i class="fa-regular fa-cart-plus"></i> Add</button>
-                        </div>
-                    `).join('')}
+        panel.innerHTML = `
+            <div class="mb-4">
+                <h2 class="text-2xl font-bold flex items-center gap-2"><i class="fa-solid fa-tag text-blue-400"></i> Digital Marketplace</h2>
+                <p class="text-sm text-slate-400">Intelligence-powered inventory</p>
+                <div class="mt-3 relative">
+                    <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"></i>
+                    <input type="text" id="product-search" placeholder="Search products by name, keyword..." class="w-full bg-slate-800/80 border border-slate-700 rounded-xl py-2 pl-10 pr-4 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
                 </div>
-            `;
-            document.querySelectorAll('.add-to-cart-btn').forEach(btn => {
-                btn.removeEventListener('click', productClickHandler);
-                btn.addEventListener('click', productClickHandler);
+            </div>
+            <div id="products-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-5"></div>
+        `;
+        const searchInput = document.getElementById('product-search');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                searchQuery = e.target.value.toLowerCase();
+                filterProductsAndRender();
             });
+        }
+        try {
+            allProducts = await apiCall('/inventory/public-list');
+            filterProductsAndRender();
         } catch(err) { 
-            panel.innerHTML = `<div class="bg-red-500/10 p-8 rounded-2xl text-center text-red-300">⚠️ Error loading shop: ${err.message}</div>`; 
+            document.getElementById('products-grid').innerHTML = `<div class="col-span-full text-center text-red-400 p-8">⚠️ Error loading shop: ${err.message}</div>`;
             log(err); 
         }
     }
+    
+    function filterProductsAndRender() {
+        let filtered = allProducts;
+        if (searchQuery) {
+            filtered = allProducts.filter(p => p.description.toLowerCase().includes(searchQuery));
+        }
+        const grid = document.getElementById('products-grid');
+        if (!grid) return;
+        if (filtered.length === 0) {
+            grid.innerHTML = '<div class="col-span-full text-center text-slate-400 py-12">No products match your search.</div>';
+            return;
+        }
+        grid.innerHTML = filtered.map(p => `
+            <div class="product-card bg-slate-800/70 border border-slate-700 rounded-2xl p-3 md:p-4 backdrop-blur-sm flex flex-col" data-pid="${p.id}" data-pname="${escapeHtml(p.description)}" data-price="${p.price_naira}">
+                <div class="h-20 md:h-28 bg-gradient-to-br from-slate-700 to-slate-800 rounded-xl flex items-center justify-center mb-2"><i class="fa-solid fa-cube text-3xl md:text-4xl text-slate-500"></i></div>
+                <h3 class="font-semibold text-sm md:text-base truncate">${escapeHtml(p.description)}</h3>
+                <div class="flex justify-between items-center mt-2 flex-wrap gap-1">
+                    <span class="text-blue-400 font-bold text-base md:text-xl">₦${p.price_naira.toLocaleString()}</span>
+                    <span class="text-[10px] px-2 py-0.5 rounded-full ${p.current_qty > 5 ? 'bg-emerald-500/20 text-emerald-300' : p.current_qty > 0 ? 'bg-amber-500/20 text-amber-300' : 'bg-red-500/20 text-red-300'}">
+                        ${p.current_qty} left
+                    </span>
+                </div>
+                <button class="add-to-cart-btn mt-3 w-full bg-blue-600 hover:bg-blue-500 transition py-2 rounded-xl text-xs md:text-sm font-medium flex items-center justify-center gap-2"><i class="fa-regular fa-cart-plus"></i> Add</button>
+            </div>
+        `).join('');
+        document.querySelectorAll('.add-to-cart-btn').forEach(btn => {
+            btn.removeEventListener('click', productClickHandler);
+            btn.addEventListener('click', productClickHandler);
+        });
+    }
+    
     function productClickHandler(e) {
         const card = e.currentTarget.closest('[data-pid]');
         if(card) {
@@ -366,8 +524,8 @@
             addToCart({ id, name, price });
         }
     }
-
-    // CHAT (unchanged, keep existing)
+    
+    // CHAT (unchanged)
     let chatContainer = null;
     function addChatMessage(sender, text) { 
         if(!chatContainer) return; 
@@ -424,8 +582,8 @@
         setTimeout(() => msgInput.focus(), 100);
         log("Chat ready");
     }
-
-    // SUPPORT TICKETS & TRACK ORDER (unchanged)
+    
+    // TICKETS & TRACK (unchanged)
     async function renderTickets() { 
         const panel = document.getElementById('dynamic-panel'); 
         panel.innerHTML = `<div class="text-center py-10"><i class="fa-solid fa-spinner fa-pulse"></i> Loading support requests...</div>`; 
@@ -452,8 +610,8 @@
             } catch(e) { resDiv.innerHTML = `<div class="text-red-400 p-3">${e.message}</div>`; log(e); } 
         }); 
     }
-
-    // TAB SWITCHER
+    
+    // TAB SWITCHER (updated to reset delivery state when leaving shop)
     async function switchTab(tab) {
         currentTab = tab;
         document.querySelectorAll('.nav-stack-item, .mobile-nav-item').forEach(el => el.classList.remove('active'));
@@ -486,8 +644,8 @@
             else if (tab === 'track') await renderTracking();
         }
     }
-
-    // AUTH & MODAL
+    
+    // AUTH & MODAL (unchanged)
     function showLoginModal() { document.getElementById('authModal').classList.remove('hidden'); }
     function hideLoginModal() { document.getElementById('authModal').classList.add('hidden'); }
     async function loadUserContext() { 
@@ -529,8 +687,8 @@
             log("Demo login success"); 
         } catch(e) { alert("Demo failed: "+e.message); } 
     }
-
-    // EVENT LISTENERS
+    
+    // EVENT LISTENERS (including new ones)
     document.getElementById('toggleAuthMode')?.addEventListener('click', () => { 
         isRegisterMode = !isRegisterMode; 
         document.getElementById('modalTitle').innerText = isRegisterMode ? "Register Organization" : "Sign In"; 
@@ -586,6 +744,19 @@
     document.getElementById('toggle-debug-btn')?.addEventListener('click', toggleDebugPanel);
     document.querySelectorAll('.nav-stack-item, .mobile-nav-item').forEach(el => el.addEventListener('click', () => switchTab(el.getAttribute('data-tab'))));
     
+    // Delivery toggle handlers
+    document.getElementById('delivery-pickup-pickup')?.addEventListener('click', () => setDeliveryOption('pickup'));
+    document.getElementById('delivery-pickup-delivery')?.addEventListener('click', () => setDeliveryOption('delivery'));
+    document.getElementById('delivery-address')?.addEventListener('input', (e) => {
+        deliveryAddress = e.target.value.trim();
+        if (deliveryOption === 'delivery' && deliveryAddress) {
+            estimateDelivery();
+        } else {
+            deliveryFee = 0;
+            updateCartUI();
+        }
+    });
+    
     function showToast(msg, type) { 
         const t = document.createElement('div'); 
         t.className = `fixed bottom-24 left-4 right-4 md:left-auto md:right-6 z-50 bg-${type==='success'?'green-600':'red-600'} text-white px-4 py-2 rounded-xl shadow-lg text-sm animate-pulse`; 
@@ -600,14 +771,15 @@
         const savedDebug = localStorage.getItem('debug_visible');
         if (savedDebug === 'false') { debugVisible = false; document.getElementById('debug-panel')?.classList.add('hidden-debug'); }
         loadCart();
+        // Setup delivery UI defaults
+        setDeliveryOption('pickup');
         if(token) { 
             try { await loadUserContext(); switchTab('shop'); } 
             catch(e) { token=null; showLoginModal(); } 
         } else { showLoginModal(); }
-        // Check if we returned from a successful payment
         checkPaymentReturn();
         window.addToCart = addToCart;
-        log("✅ Marketplace ready – Paystack with callback & auto‑clear cart.");
+        log("✅ Marketplace ready – delivery/pickup + search integrated.");
     })();
 </script>
 </body>
