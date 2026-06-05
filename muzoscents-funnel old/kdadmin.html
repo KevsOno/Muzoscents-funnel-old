@@ -3,13 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kevs bOS – Admin Inventory Manager</title>
+    <title>Kevs bOS – Admin Inventory Manager (Advanced CSV Validation)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         body { background: #0F172A; }
         .product-card { transition: all 0.2s; }
         .product-card:hover { transform: translateY(-2px); }
+        .field-hint { font-size: 0.7rem; line-height: 1.2; }
+        .badge-category { background: #1e293b; }
     </style>
 </head>
 <body class="text-slate-200 p-4 md:p-6">
@@ -18,7 +20,7 @@
     <div class="flex justify-between items-center mb-6 pb-4 border-b border-slate-700">
         <div>
             <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">📦 Inventory Manager</h1>
-            <p class="text-sm text-slate-400">Manage products, stock levels, and pricing</p>
+            <p class="text-sm text-slate-400">Advanced inventory: handling, cost, weight & size factor</p>
         </div>
         <div class="flex gap-3 items-center">
             <span id="admin-user-badge" class="text-xs bg-slate-800 px-3 py-1.5 rounded-full"></span>
@@ -34,30 +36,52 @@
 
     <!-- Main admin content (hidden until authenticated) -->
     <div id="admin-panel" class="hidden">
-        <!-- Add / Edit Product Form -->
+        <!-- Add / Edit Product Form (all required fields included) -->
         <div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-slate-700 shadow-xl">
             <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fa-solid fa-plus-circle text-blue-400"></i> <span id="form-title">Add New Product</span></h2>
             <form id="product-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <input type="hidden" id="edit-id" value="">
+                <!-- Core required -->
                 <div>
-                    <label class="block text-xs text-slate-400 mb-1">SKU / Item Code *</label>
-                    <input id="sku" type="text" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500">
+                    <label class="block text-xs text-slate-400 mb-1">Item Code (SKU) *</label>
+                    <input id="item_code" type="text" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
                 </div>
                 <div>
-                    <label class="block text-xs text-slate-400 mb-1">Product Name / Description *</label>
+                    <label class="block text-xs text-slate-400 mb-1">Description *</label>
                     <input id="description" type="text" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
                 </div>
                 <div>
                     <label class="block text-xs text-slate-400 mb-1">Product Group (Category)</label>
-                    <input id="product_group" type="text" placeholder="e.g., Electronics, Fashion" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                    <input id="product_group" type="text" placeholder="e.g., Electronics, Food" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
                 </div>
                 <div>
-                    <label class="block text-xs text-slate-400 mb-1">Selling Price (₦) *</label>
+                    <label class="block text-xs text-slate-400 mb-1">Selling Price (₦) * >0</label>
                     <input id="price_naira" type="number" step="1" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
                 </div>
                 <div>
-                    <label class="block text-xs text-slate-400 mb-1">Current Stock Quantity *</label>
+                    <label class="block text-xs text-slate-400 mb-1">Cost Price (₦) ≥0</label>
+                    <input id="cost_price_naira" type="number" step="1" value="0" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Current Stock Quantity * ≥0</label>
                     <input id="current_qty" type="number" step="1" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Weight (kg) ≥0</label>
+                    <input id="weight_kg" type="number" step="0.1" value="0" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Size Factor ≥ 1.0</label>
+                    <input id="size_factor" type="number" step="0.1" value="1.0" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Handling Category *</label>
+                    <select id="handling_category" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                        <option value="standard">Standard</option>
+                        <option value="fragile">Fragile</option>
+                        <option value="bulky">Bulky</option>
+                        <option value="hazardous">Hazardous</option>
+                    </select>
                 </div>
                 <div>
                     <label class="block text-xs text-slate-400 mb-1">Image URL (optional)</label>
@@ -70,20 +94,28 @@
             </form>
         </div>
         
-<!-- Bulk Upload Section -->
-<div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-slate-700 shadow-xl">
-    <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fa-solid fa-upload text-green-400"></i> Bulk Upload Products (CSV)</h2>
-    <p class="text-sm text-slate-400 mb-4">Upload a CSV file with columns: <code class="bg-slate-950 px-2 py-0.5 rounded">item_code, description, product_group, price_naira, current_qty, image_url</code><br>
-    <span class="text-amber-400">* description and price_naira are required. For existing SKUs, quantity will be ADDED to current stock.</span></p>
-    <div class="flex flex-col sm:flex-row gap-4 items-end">
-        <div class="flex-1">
-            <label class="block text-xs text-slate-400 mb-1">CSV File</label>
-            <input type="file" id="bulk-csv-file" accept=".csv" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm file:mr-2 file:py-1 file:px-3 file:rounded-md file:bg-slate-700 file:text-white file:border-0">
+        <!-- Bulk Upload Section: Updated with full column requirements & frontend validation -->
+        <div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-slate-700 shadow-xl">
+            <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fa-solid fa-upload text-green-400"></i> Bulk Upload Products (CSV)</h2>
+            <div class="bg-slate-900/60 rounded-lg p-3 mb-4 text-sm border-l-4 border-amber-500">
+                <p class="font-mono text-amber-300 mb-1">📌 REQUIRED COLUMNS (exact header names):</p>
+                <code class="text-xs text-slate-300 break-all">description, price_naira, weight_kg, handling_category, size_factor, item_code, cost_price_naira, product_group, current_qty, image_url</code>
+                <ul class="text-xs text-slate-400 mt-2 space-y-1 list-disc pl-5">
+                    <li><span class="text-red-300">⚠️ Rules:</span> handling_category ∈ {standard, fragile, bulky, hazardous}</li>
+                    <li>size_factor ≥ 1.0 &nbsp;|&nbsp; weight_kg ≥ 0 &nbsp;|&nbsp; price_naira > 0 &nbsp;|&nbsp; cost_price_naira ≥ 0 &nbsp;|&nbsp; current_qty ≥ 0</li>
+                    <li>image_url can be empty but column must exist. All fields mandatory.</li>
+                    <li>For existing item_code, quantity will be <strong>added</strong> to current stock (merge logic).</li>
+                </ul>
+            </div>
+            <div class="flex flex-col sm:flex-row gap-4 items-end">
+                <div class="flex-1">
+                    <label class="block text-xs text-slate-400 mb-1">CSV File (UTF-8, comma separated)</label>
+                    <input type="file" id="bulk-csv-file" accept=".csv" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm file:mr-2 file:py-1 file:px-3 file:rounded-md file:bg-slate-700 file:text-white file:border-0">
+                </div>
+                <button id="bulk-upload-btn" class="bg-green-600 hover:bg-green-700 px-5 py-2 rounded-lg font-medium transition flex items-center gap-2"><i class="fa-solid fa-cloud-upload-alt"></i> Validate & Upload</button>
+            </div>
+            <div id="bulk-upload-status" class="mt-3 text-sm"></div>
         </div>
-        <button id="bulk-upload-btn" class="bg-green-600 hover:bg-green-700 px-5 py-2 rounded-lg font-medium transition flex items-center gap-2"><i class="fa-solid fa-cloud-upload-alt"></i> Upload CSV</button>
-    </div>
-    <div id="bulk-upload-status" class="mt-3 text-sm"></div>
-</div>
         
         <!-- Products List -->
         <div>
@@ -103,7 +135,7 @@
     let token = localStorage.getItem('access_token');
     let currentUser = null;
 
-    // ---------- API Helpers (same as main app) ----------
+    // ---------- API Helpers ----------
     async function refreshToken() {
         const refresh = localStorage.getItem('refresh_token');
         if (!refresh) return false;
@@ -141,10 +173,9 @@
         return res.json();
     }
 
-    // ---------- Inventory CRUD (uses /inventory endpoints) ----------
+    // ---------- Inventory CRUD (full fields) ----------
     async function loadInventory() {
         try {
-            // Use authenticated /inventory endpoint to get all items (not just public)
             const items = await apiCall('/inventory');
             renderProducts(items);
         } catch (err) {
@@ -158,7 +189,14 @@
             container.innerHTML = '<div class="col-span-full text-center py-8 text-slate-400">📭 No products found. Add your first product above.</div>';
             return;
         }
-        container.innerHTML = items.map(p => `
+        container.innerHTML = items.map(p => {
+            const handlingClass = {
+                standard: 'bg-slate-600/30 text-slate-300',
+                fragile: 'bg-yellow-600/30 text-yellow-300',
+                bulky: 'bg-orange-600/30 text-orange-300',
+                hazardous: 'bg-red-600/30 text-red-300'
+            }[p.handling_category] || 'bg-slate-600/30';
+            return `
             <div class="product-card bg-slate-800/60 border border-slate-700 rounded-xl p-4 shadow-sm">
                 <div class="flex justify-between items-start">
                     <div class="flex-1">
@@ -170,6 +208,12 @@
                                 Stock: ${p.current_qty}
                             </span>
                         </div>
+                        <div class="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[11px]">
+                            <span class="inline-flex items-center gap-1"><i class="fa-solid fa-weight-hanging"></i> ${p.weight_kg || 0} kg</span>
+                            <span class="inline-flex items-center gap-1"><i class="fa-solid fa-arrow-up-wide-short"></i> SF: ${p.size_factor ?? 1.0}</span>
+                            <span class="inline-flex items-center gap-1"><i class="fa-solid fa-tag"></i> Cost: ₦${(p.cost_price_naira || 0).toLocaleString()}</span>
+                            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full ${handlingClass}"><i class="fa-regular fa-box"></i> ${p.handling_category || 'standard'}</span>
+                        </div>
                         ${p.product_group ? `<p class="text-xs text-slate-400 mt-1"><i class="fa-regular fa-folder-open mr-1"></i> ${escapeHtml(p.product_group)}</p>` : ''}
                     </div>
                     <div class="flex gap-2">
@@ -178,39 +222,42 @@
                     </div>
                 </div>
             </div>
-        `).join('');
+        `}).join('');
     }
 
     async function saveProduct(event) {
         event.preventDefault();
         const id = document.getElementById('edit-id').value;
-        const payload = {
-            item_code: document.getElementById('sku').value.trim(),
-            description: document.getElementById('description').value.trim(),
-            product_group: document.getElementById('product_group').value.trim() || null,
-            price_naira: parseFloat(document.getElementById('price_naira').value),
-            current_qty: parseInt(document.getElementById('current_qty').value),
-            image_url: document.getElementById('image_url').value.trim() || null
-        };
-        if (!payload.item_code || !payload.description || isNaN(payload.price_naira) || isNaN(payload.current_qty)) {
-            alert('Please fill all required fields (SKU, Description, Price, Stock).');
+        const item_code = document.getElementById('item_code').value.trim();
+        const description = document.getElementById('description').value.trim();
+        const price_naira = parseFloat(document.getElementById('price_naira').value);
+        const cost_price_naira = parseFloat(document.getElementById('cost_price_naira').value) || 0;
+        const current_qty = parseInt(document.getElementById('current_qty').value);
+        const weight_kg = parseFloat(document.getElementById('weight_kg').value) || 0;
+        const size_factor = parseFloat(document.getElementById('size_factor').value);
+        const handling_category = document.getElementById('handling_category').value;
+        const product_group = document.getElementById('product_group').value.trim() || null;
+        const image_url = document.getElementById('image_url').value.trim() || null;
+
+        if (!item_code || !description || isNaN(price_naira) || price_naira <= 0) {
+            alert('Item Code, Description and Price (>0) are required.');
             return;
         }
+        if (isNaN(current_qty) || current_qty < 0) { alert('Current quantity must be ≥ 0'); return; }
+        if (isNaN(weight_kg) || weight_kg < 0) { alert('Weight must be ≥ 0'); return; }
+        if (isNaN(size_factor) || size_factor < 1.0) { alert('Size factor must be ≥ 1.0'); return; }
+        if (cost_price_naira < 0) { alert('Cost price must be ≥ 0'); return; }
+        if (!['standard','fragile','bulky','hazardous'].includes(handling_category)) { alert('Handling category invalid'); return; }
+
+        const payload = { item_code, description, product_group, price_naira, current_qty, image_url, weight_kg, size_factor, handling_category, cost_price_naira };
+
         try {
             if (id) {
-                // Update existing product – backend uses PUT
-                await apiCall(`/inventory/${id}`, {
-                    method: 'PUT',
-                    body: JSON.stringify(payload)
-                });
+                await apiCall(`/inventory/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
                 alert('Product updated successfully.');
                 resetForm();
             } else {
-                // Create new product
-                await apiCall('/inventory', {
-                    method: 'POST',
-                    body: JSON.stringify(payload)
-                });
+                await apiCall('/inventory', { method: 'POST', body: JSON.stringify(payload) });
                 alert('Product added successfully.');
                 resetForm();
             }
@@ -226,12 +273,16 @@
             const product = products.find(p => p.id == id);
             if (!product) throw new Error('Product not found');
             document.getElementById('edit-id').value = product.id;
-            document.getElementById('sku').value = product.item_code || '';
+            document.getElementById('item_code').value = product.item_code || '';
             document.getElementById('description').value = product.description;
             document.getElementById('product_group').value = product.product_group || '';
             document.getElementById('price_naira').value = product.price_naira;
             document.getElementById('current_qty').value = product.current_qty;
             document.getElementById('image_url').value = product.image_url || '';
+            document.getElementById('weight_kg').value = product.weight_kg ?? 0;
+            document.getElementById('size_factor').value = product.size_factor ?? 1.0;
+            document.getElementById('handling_category').value = product.handling_category || 'standard';
+            document.getElementById('cost_price_naira').value = product.cost_price_naira ?? 0;
             document.getElementById('form-title').innerText = '✏️ Edit Product';
             document.getElementById('cancel-edit').classList.remove('hidden');
             document.querySelector('#product-form').scrollIntoView({ behavior: 'smooth' });
@@ -257,69 +308,165 @@
         document.getElementById('edit-id').value = '';
         document.getElementById('form-title').innerText = '➕ Add New Product';
         document.getElementById('cancel-edit').classList.add('hidden');
+        document.getElementById('handling_category').value = 'standard';
+        document.getElementById('size_factor').value = '1.0';
+        document.getElementById('weight_kg').value = '0';
+        document.getElementById('cost_price_naira').value = '0';
     }
 
-    // ---------- Bulk CSV Upload ----------
-const bulkFileInput = document.getElementById('bulk-csv-file');
-const bulkUploadBtn = document.getElementById('bulk-upload-btn');
-const bulkStatus = document.getElementById('bulk-upload-status');
-
-async function bulkUploadProducts() {
-    const file = bulkFileInput.files[0];
-    if (!file) {
-        bulkStatus.innerHTML = '<span class="text-red-400"><i class="fa-solid fa-circle-exclamation mr-1"></i> Please select a CSV file.</span>';
-        return;
-    }
-    if (!file.name.endsWith('.csv')) {
-        bulkStatus.innerHTML = '<span class="text-red-400"><i class="fa-solid fa-circle-exclamation mr-1"></i> Only CSV files allowed.</span>';
-        return;
-    }
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    bulkUploadBtn.disabled = true;
-    bulkUploadBtn.innerHTML = '<i class="fa-solid fa-spinner fa-pulse"></i> Uploading...';
-    bulkStatus.innerHTML = '<span class="text-blue-400">Uploading, please wait...</span>';
-
-    try {
-        let url = `${API_BASE}/inventory/bulk-upload`;
-        let headers = {};
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: headers,
-            body: formData
-        });
-
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Upload failed');
-
-        bulkStatus.innerHTML = `<span class="text-green-400"><i class="fa-solid fa-check-circle mr-1"></i> ${data.message} (${data.count} products added)</span>`;
-        bulkFileInput.value = '';
-        loadInventory();  // refresh product list
-    } catch (err) {
-        bulkStatus.innerHTML = `<span class="text-red-400"><i class="fa-solid fa-circle-exclamation mr-1"></i> Error: ${err.message}</span>`;
-    } finally {
-        bulkUploadBtn.disabled = false;
-        bulkUploadBtn.innerHTML = '<i class="fa-solid fa-cloud-upload-alt"></i> Upload CSV';
-        setTimeout(() => {
-            if (bulkStatus.innerHTML.includes('Success')) {
-                setTimeout(() => bulkStatus.innerHTML = '', 5000);
+    // ---------- Advanced CSV Validation & Parsing (strict columns & rules) ----------
+    function parseCSV(text) {
+        // Simple robust CSV parser respecting quotes
+        const rows = [];
+        const lines = text.split(/\r?\n/);
+        let inQuote = false;
+        let currentRow = [];
+        let currentField = '';
+        for (let line of lines) {
+            if (line.trim() === '' && currentRow.length === 0) continue;
+            for (let i = 0; i < line.length; i++) {
+                const ch = line[i];
+                if (ch === '"') {
+                    if (inQuote && line[i+1] === '"') { currentField += '"'; i++; }
+                    else inQuote = !inQuote;
+                } else if (ch === ',' && !inQuote) {
+                    currentRow.push(currentField);
+                    currentField = '';
+                } else {
+                    currentField += ch;
+                }
             }
-        }, 3000);
+            currentRow.push(currentField);
+            rows.push(currentRow);
+            currentRow = [];
+            currentField = '';
+            inQuote = false;
+        }
+        if (currentField !== '' || currentRow.length) rows.push(currentRow);
+        return rows.filter(row => row.length > 0 && !(row.length === 1 && row[0] === ''));
     }
-}
 
-bulkUploadBtn.addEventListener('click', bulkUploadProducts);
+    function validateCSVData(parsedRows, headers) {
+        const requiredColumns = [
+            'description', 'price_naira', 'weight_kg', 'handling_category', 'size_factor',
+            'item_code', 'cost_price_naira', 'product_group', 'current_qty', 'image_url'
+        ];
+        // check all required columns exist (case-sensitive)
+        const missingCols = requiredColumns.filter(col => !headers.includes(col));
+        if (missingCols.length) {
+            return { valid: false, error: `Missing required columns: ${missingCols.join(', ')}` };
+        }
+        const idx = {};
+        requiredColumns.forEach(col => { idx[col] = headers.indexOf(col); });
+        
+        const errors = [];
+        const validRows = [];
+        // skip header row
+        for (let rowNum = 1; rowNum < parsedRows.length; rowNum++) {
+            const row = parsedRows[rowNum];
+            if (row.length < headers.length) {
+                errors.push(`Row ${rowNum+1}: has fewer columns than headers.`);
+                continue;
+            }
+            const getVal = (col) => row[idx[col]]?.trim() || '';
+            
+            const description = getVal('description');
+            const priceStr = getVal('price_naira');
+            const weightStr = getVal('weight_kg');
+            const handling = getVal('handling_category').toLowerCase();
+            const sizeStr = getVal('size_factor');
+            const itemCode = getVal('item_code');
+            const costStr = getVal('cost_price_naira');
+            const productGroup = getVal('product_group');
+            const qtyStr = getVal('current_qty');
+            const imageUrl = getVal('image_url');
+            
+            if (!description) errors.push(`Row ${rowNum+1}: description is required.`);
+            if (!itemCode) errors.push(`Row ${rowNum+1}: item_code is required.`);
+            if (!productGroup) errors.push(`Row ${rowNum+1}: product_group is required.`);
+            
+            let price = parseFloat(priceStr);
+            if (isNaN(price) || price <= 0) errors.push(`Row ${rowNum+1}: price_naira must be >0, got "${priceStr}"`);
+            
+            let weight = parseFloat(weightStr);
+            if (isNaN(weight) || weight < 0) errors.push(`Row ${rowNum+1}: weight_kg must be ≥0, got "${weightStr}"`);
+            
+            let sizeFactor = parseFloat(sizeStr);
+            if (isNaN(sizeFactor) || sizeFactor < 1.0) errors.push(`Row ${rowNum+1}: size_factor must be ≥1.0, got "${sizeStr}"`);
+            
+            let costPrice = parseFloat(costStr);
+            if (isNaN(costPrice) || costPrice < 0) errors.push(`Row ${rowNum+1}: cost_price_naira must be ≥0, got "${costStr}"`);
+            
+            let qty = parseInt(qtyStr);
+            if (isNaN(qty) || qty < 0) errors.push(`Row ${rowNum+1}: current_qty must be ≥0, got "${qtyStr}"`);
+            
+            if (!['standard','fragile','bulky','hazardous'].includes(handling)) 
+                errors.push(`Row ${rowNum+1}: handling_category must be one of standard, fragile, bulky, hazardous, got "${handling}"`);
+            
+            // image_url column existence already checked; empty allowed.
+            if (errors.length > 10) break;
+        }
+        if (errors.length) return { valid: false, error: `Validation errors:\n${errors.slice(0, 15).join('\n')}${errors.length > 15 ? `\n... and ${errors.length-15} more` : ''}` };
+        return { valid: true, error: null };
+    }
 
-    // ---------- Admin Authentication & Role Check ----------
+    async function bulkUploadWithValidation() {
+        const fileInput = document.getElementById('bulk-csv-file');
+        const statusDiv = document.getElementById('bulk-upload-status');
+        const file = fileInput.files[0];
+        if (!file) {
+            statusDiv.innerHTML = '<span class="text-red-400"><i class="fa-solid fa-circle-exclamation mr-1"></i> Please select a CSV file.</span>';
+            return;
+        }
+        if (!file.name.endsWith('.csv')) {
+            statusDiv.innerHTML = '<span class="text-red-400"><i class="fa-solid fa-circle-exclamation mr-1"></i> Only CSV files allowed.</span>';
+            return;
+        }
+        statusDiv.innerHTML = '<span class="text-blue-400"><i class="fa-solid fa-spinner fa-pulse"></i> Reading & validating CSV...</span>';
+        try {
+            const fileText = await file.text();
+            const parsedRows = parseCSV(fileText);
+            if (parsedRows.length < 2) throw new Error('CSV must contain header row and at least one data row.');
+            const headers = parsedRows[0].map(h => h.trim().toLowerCase());
+            const validation = validateCSVData(parsedRows, headers);
+            if (!validation.valid) {
+                statusDiv.innerHTML = `<span class="text-red-400"><i class="fa-solid fa-triangle-exclamation mr-1"></i> CSV validation failed:<br><pre class="text-xs bg-slate-950 p-2 mt-1 rounded">${escapeHtml(validation.error)}</pre></span>`;
+                return;
+            }
+            // Proceed to upload after local validation
+            statusDiv.innerHTML = '<span class="text-blue-400"><i class="fa-solid fa-cloud-upload-alt"></i> Valid CSV! Uploading to server...</span>';
+            const uploadBtn = document.getElementById('bulk-upload-btn');
+            uploadBtn.disabled = true;
+            const originalText = uploadBtn.innerHTML;
+            uploadBtn.innerHTML = '<i class="fa-solid fa-spinner fa-pulse"></i> Uploading...';
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            const headersAuth = token ? { 'Authorization': `Bearer ${token}` } : {};
+            const res = await fetch(`${API_BASE}/inventory/bulk-upload`, {
+                method: 'POST',
+                headers: headersAuth,
+                body: formData
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Upload failed');
+            statusDiv.innerHTML = `<span class="text-green-400"><i class="fa-solid fa-check-circle mr-1"></i> ${data.message} (${data.count} products processed)</span>`;
+            fileInput.value = '';
+            loadInventory();
+            uploadBtn.disabled = false;
+            uploadBtn.innerHTML = originalText;
+            setTimeout(() => { if (statusDiv.innerHTML.includes('processed')) statusDiv.innerHTML = ''; }, 5000);
+        } catch (err) {
+            statusDiv.innerHTML = `<span class="text-red-400"><i class="fa-solid fa-circle-exclamation mr-1"></i> Error: ${err.message}</span>`;
+            document.getElementById('bulk-upload-btn').disabled = false;
+            document.getElementById('bulk-upload-btn').innerHTML = '<i class="fa-solid fa-cloud-upload-alt"></i> Validate & Upload';
+        }
+    }
+
+    // ---------- Admin Authentication ----------
     async function checkAdminAccess() {
         try {
             const me = await apiCall('/auth/me');
-            // For simplicity, we assume any authenticated user with an org can manage inventory.
-            // You may add a role check if needed (e.g., check org_members.role = 'admin').
             currentUser = me;
             document.getElementById('admin-user-badge').innerHTML = `<i class="fa-regular fa-user-shield mr-1"></i> ${me.user_id.substring(0,8)} (Admin)`;
             document.getElementById('auth-check-placeholder').classList.add('hidden');
@@ -330,9 +477,7 @@ bulkUploadBtn.addEventListener('click', bulkUploadProducts);
                 <div class="text-red-400"><i class="fa-solid fa-circle-exclamation text-2xl mb-2"></i><br>${err.message}</div>
                 <button id="retry-login" class="mt-4 bg-blue-600 px-4 py-2 rounded-lg">Go to Main App</button>
             `;
-            document.getElementById('retry-login')?.addEventListener('click', () => {
-                window.location.href = '/';
-            });
+            document.getElementById('retry-login')?.addEventListener('click', () => { window.location.href = '/'; });
         }
     }
 
@@ -344,18 +489,19 @@ bulkUploadBtn.addEventListener('click', bulkUploadProducts);
         window.location.href = '/';
     }
 
-    // Event Listeners
+    // Event listeners
     document.getElementById('product-form').addEventListener('submit', saveProduct);
     document.getElementById('cancel-edit').addEventListener('click', resetForm);
     document.getElementById('refresh-list').addEventListener('click', loadInventory);
     document.getElementById('admin-logout').addEventListener('click', logout);
+    document.getElementById('bulk-upload-btn').addEventListener('click', bulkUploadWithValidation);
 
     function escapeHtml(str) {
         if (!str) return '';
-        return str.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
+        return String(str).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
     }
 
-    // Initialize
+    // initialize
     if (token) {
         checkAdminAccess().catch(() => {
             document.getElementById('auth-check-placeholder').innerHTML = '<div class="text-red-400">Session invalid. Please log in again.</div><button id="relog" class="mt-3 bg-blue-600 px-4 py-2 rounded">Login</button>';
