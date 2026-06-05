@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fulfillment Dashboard | Kevs bOS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body { background: #0F172A; font-family: 'Inter', sans-serif; }
+        .status-badge { padding: 2px 8px; border-radius: 20px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; }
+        .status-pending { background: #f59e0b20; color: #f59e0b; }
+        .status-processing { background: #3b82f620; color: #3b82f6; }
+        .status-shipped { background: #8b5cf620; color: #8b5cf6; }
+        .status-delivered { background: #10b98120; color: #10b981; }
+    </style>
+</head>
+<body class="text-slate-200">
+    <div class="container mx-auto px-4 py-6 max-w-7xl">
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-6">
+            <div>
+                <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">📦 Fulfillment Dashboard</h1>
+                <p class="text-slate-400 text-sm">Manage order shipping and dispatch</p>
+            </div>
+            <div class="flex gap-3">
+                <button id="refresh-btn" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg transition"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
+                <a href="/kdconc" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-lg transition"><i class="fa-solid fa-store"></i> Customer Portal</a>
+            </div>
+        </div>
+        
+        <!-- Filters -->
+        <div class="bg-slate-800/50 rounded-xl p-4 mb-6 border border-slate-700 flex flex-wrap gap-3 items-end">
+            <div class="flex-1 min-w-[150px]">
+                <label class="text-xs text-slate-400 block mb-1">Status filter</label>
+                <select id="status-filter" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm">
+                    <option value="">All orders</option>
+                    <option value="processing">Processing</option>
+                    <option value="shipped">Shipped</option>
+                    <option value="delivered">Delivered</option>
+                </select>
+            </div>
+            <button id="apply-filter" class="bg-blue-600 hover:bg-blue-700 px-5 py-2 rounded-lg transition">Apply</button>
+        </div>
+        
+        <!-- Orders list -->
+        <div id="orders-container" class="space-y-4">
+            <div class="text-center py-12"><i class="fa-solid fa-spinner fa-pulse text-2xl"></i> Loading orders...</div>
+        </div>
+    </div>
+    
+    <!-- Update Status Modal -->
+    <div id="updateModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-800 rounded-2xl max-w-md w-full p-5 border border-slate-700">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold">Update Order Status</h3>
+                <button id="closeModalBtn" class="text-slate-400 hover:text-white text-2xl">&times;</button>
+            </div>
+            <div id="modal-order-info" class="text-sm bg-slate-900 p-2 rounded mb-3"></div>
+            <div class="space-y-3">
+                <div>
+                    <label class="text-sm block mb-1">Shipping Status</label>
+                    <select id="modal-status" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
+                        <option value="processing">Processing (picking/packing)</option>
+                        <option value="shipped">Shipped (dispatched)</option>
+                        <option value="delivered">Delivered</option>
+                    </select>
+                </div>
+                <div id="tracking-fields" class="hidden space-y-3">
+                    <div>
+                        <label class="text-sm block mb-1">Carrier</label>
+                        <input id="modal-carrier" type="text" placeholder="e.g., DHL, FedEx, GIG Logistics" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
+                    </div>
+                    <div>
+                        <label class="text-sm block mb-1">Tracking Number</label>
+                        <input id="modal-tracking" type="text" placeholder="Tracking code" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
+                    </div>
+                    <div>
+                        <label class="text-sm block mb-1">Estimated Delivery Date</label>
+                        <input id="modal-estimated" type="date" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
+                    </div>
+                </div>
+                <div>
+                    <label class="text-sm block mb-1">Internal Notes (optional)</label>
+                    <textarea id="modal-notes" rows="2" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm"></textarea>
+                </div>
+                <button id="modal-update-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 py-2 rounded-lg font-semibold transition">Update Order</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
+        let token = localStorage.getItem('access_token');
+        let currentOrderId = null;
+        
+        // Helper API call
+        async function apiCall(endpoint, options = {}) {
+            if (!options.headers) options.headers = {};
+            options.headers['Content-Type'] = 'application/json';
+            if (token) options.headers['Authorization'] = `Bearer ${token}`;
+            const res = await fetch(`${API_BASE}${endpoint}`, options);
+            if (res.status === 401) {
+                alert("Session expired. Please login again.");
+                window.location.href = "/kdconc";
+                throw new Error("Unauthorized");
+            }
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: 'Request failed' }));
+                throw new Error(err.detail || 'Error');
+            }
+            return res.json();
+        }
+        
+        // Load orders
+        async function loadOrders(status = '') {
+            const container = document.getElementById('orders-container');
+            container.innerHTML = '<div class="text-center py-12"><i class="fa-solid fa-spinner fa-pulse"></i> Loading orders...</div>';
+            try {
+                let url = '/fulfillment/orders?limit=100';
+                if (status) url += `&status=${status}`;
+                const data = await apiCall(url);
+                const orders = data.orders || [];
+                if (orders.length === 0) {
+                    container.innerHTML = '<div class="bg-slate-800/50 rounded-xl p-10 text-center text-slate-400">📭 No orders found for this status.</div>';
+                    return;
+                }
+                container.innerHTML = orders.map(order => {
+                    const statusClass = order.shipping_status || 'pending';
+                    const statusLabel = statusClass === 'processing' ? 'Processing' : statusClass === 'shipped' ? 'Shipped' : statusClass === 'delivered' ? 'Delivered' : 'Pending';
+                    return `
+                        <div class="bg-slate-800/70 border border-slate-700 rounded-xl p-4 hover:shadow-lg transition">
+                            <div class="flex flex-wrap justify-between items-start gap-3">
+                                <div>
+                                    <div class="flex items-center gap-2 flex-wrap">
+                                        <span class="font-mono text-blue-300">${order.receipt_number}</span>
+                                        <span class="status-badge status-${statusClass}">${statusLabel}</span>
+                                    </div>
+                                    <div class="text-sm text-slate-400 mt-1">
+                                        <span><i class="fa-regular fa-calendar"></i> ${new Date(order.created_at).toLocaleString()}</span>
+                                        <span class="mx-2">•</span>
+                                        <span><i class="fa-regular fa-user"></i> ${order.customer_name || 'Guest'}</span>
+                                    </div>
+                                    <div class="text-sm mt-1">₦${order.total_amount?.toLocaleString()} | Items: ${order.sale_items?.length || 0}</div>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button class="view-order-btn bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg text-sm transition" data-id="${order.id}"><i class="fa-regular fa-eye"></i> View</button>
+                                    <button class="update-status-btn bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg text-sm transition" data-id="${order.id}" data-receipt="${order.receipt_number}" data-status="${order.shipping_status || 'pending'}"><i class="fa-solid fa-truck-fast"></i> Update</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                // Attach event listeners
+                document.querySelectorAll('.view-order-btn').forEach(btn => {
+                    btn.addEventListener('click', () => viewOrder(btn.dataset.id));
+                });
+                document.querySelectorAll('.update-status-btn').forEach(btn => {
+                    btn.addEventListener('click', () => openUpdateModal(btn.dataset.id, btn.dataset.receipt, btn.dataset.status));
+                });
+            } catch (err) {
+                container.innerHTML = `<div class="bg-red-500/20 border border-red-500 p-4 rounded-xl text-red-300">⚠️ Error: ${err.message}</div>`;
+            }
+        }
+        
+        async function viewOrder(orderId) {
+            try {
+                const order = await apiCall(`/fulfillment/order/${orderId}`);
+                const itemsHtml = order.sale_items?.map(item => `<li class="flex justify-between border-b border-slate-700 py-2"><span>${item.quantity} x ${item.product_name}</span><span>₦${item.subtotal?.toLocaleString()}</span></li>`).join('');
+                alert(`Order ${order.receipt_number}\nTotal: ₦${order.total_amount}\nStatus: ${order.shipping_status || 'pending'}\nCustomer: ${order.customer_name || 'N/A'} (${order.customer_email || 'N/A'})\nAddress: ${order.shipping_address || 'Pickup'}\nItems:\n${itemsHtml}`);
+            } catch(err) {
+                alert("Could not load order details");
+            }
+        }
+        
+        function openUpdateModal(orderId, receipt, currentStatus) {
+            currentOrderId = orderId;
+            document.getElementById('modal-order-info').innerHTML = `<strong>${receipt}</strong> - Current status: ${currentStatus || 'pending'}`;
+            const statusSelect = document.getElementById('modal-status');
+            statusSelect.value = currentStatus === 'shipped' ? 'shipped' : currentStatus === 'delivered' ? 'delivered' : 'processing';
+            // Show tracking fields only if new status is shipped or delivered
+            document.getElementById('tracking-fields').classList.remove('hidden');
+            // Clear previous values
+            document.getElementById('modal-carrier').value = '';
+            document.getElementById('modal-tracking').value = '';
+            document.getElementById('modal-estimated').value = '';
+            document.getElementById('modal-notes').value = '';
+            document.getElementById('updateModal').classList.remove('hidden');
+        }
+        
+        document.getElementById('modal-update-btn')?.addEventListener('click', async () => {
+            const newStatus = document.getElementById('modal-status').value;
+            const carrier = document.getElementById('modal-carrier').value;
+            const tracking = document.getElementById('modal-tracking').value;
+            const estimated = document.getElementById('modal-estimated').value;
+            const notes = document.getElementById('modal-notes').value;
+            
+            try {
+                const payload = {
+                    shipping_status: newStatus,
+                    tracking_number: tracking || null,
+                    shipping_carrier: carrier || null,
+                    estimated_delivery: estimated || null,
+                    notes: notes || null
+                };
+                await apiCall(`/fulfillment/order/${currentOrderId}/status`, {
+                    method: 'PUT',
+                    body: JSON.stringify(payload)
+                });
+                alert(`Order status updated to ${newStatus}. Emails sent if applicable.`);
+                document.getElementById('updateModal').classList.add('hidden');
+                loadOrders(document.getElementById('status-filter').value);
+            } catch(err) {
+                alert(`Update failed: ${err.message}`);
+            }
+        });
+        
+        document.getElementById('closeModalBtn')?.addEventListener('click', () => {
+            document.getElementById('updateModal').classList.add('hidden');
+        });
+        document.getElementById('apply-filter')?.addEventListener('click', () => {
+            const status = document.getElementById('status-filter').value;
+            loadOrders(status);
+        });
+        document.getElementById('refresh-btn')?.addEventListener('click', () => {
+            loadOrders(document.getElementById('status-filter').value);
+        });
+        
+        // Auto-check auth on load
+        if (!token) {
+            alert("Please login first");
+            window.location.href = "/kdconc";
+        } else {
+            loadOrders();
+        }
+        
+        // Show/hide tracking fields based on status selection
+        document.getElementById('modal-status')?.addEventListener('change', (e) => {
+            const val = e.target.value;
+            const fields = document.getElementById('tracking-fields');
+            if (val === 'shipped' || val === 'delivered') {
+                fields.classList.remove('hidden');
+            } else {
+                fields.classList.add('hidden');
+            }
+        });
+    </script>
+</body>
+</html>
