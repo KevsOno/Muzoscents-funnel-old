@@ -97,7 +97,7 @@
         <div data-tab="track" class="mobile-nav-item flex flex-col items-center py-1 px-3 rounded-xl transition text-slate-400"><i class="fa-solid fa-truck-fast text-xl"></i><span class="text-[10px] mt-0.5">Track</span></div>
     </div>
 
-    <!-- CART SIDEBAR (UPDATED with delivery/pickup and address) -->
+    <!-- CART SIDEBAR (UPDATED with manual save button for address) -->
     <div id="cart-drawer" class="cart-sidebar fixed top-0 right-0 w-full sm:w-96 h-full bg-slate-900 border-l border-slate-700 shadow-2xl z-50 transform translate-x-full transition-transform duration-300 flex flex-col">
         <div class="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/95">
             <h3 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-basket-shopping text-blue-400"></i> Your Cart</h3>
@@ -109,14 +109,17 @@
             <div class="mb-3">
                 <label class="text-xs text-slate-400 block mb-1">Delivery Option</label>
                 <div class="flex gap-2 bg-slate-800 rounded-lg p-1">
-                    <button id="delivery-pickup-pickup" class="flex-1 py-1.5 text-sm rounded-md transition data-active="true">📦 Pickup</button>
+                    <button id="delivery-pickup-pickup" class="flex-1 py-1.5 text-sm rounded-md transition">📦 Pickup</button>
                     <button id="delivery-pickup-delivery" class="flex-1 py-1.5 text-sm rounded-md transition">🚚 Delivery</button>
                 </div>
             </div>
-            <!-- Address field (hidden initially) -->
+            <!-- Address field with Save button (hidden initially) -->
             <div id="delivery-address-container" class="mb-3 hidden">
                 <label class="text-xs text-slate-400 block mb-1">Delivery Address</label>
-                <input type="text" id="delivery-address" placeholder="Street, city, state" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm">
+                <div class="flex gap-2">
+                    <input type="text" id="delivery-address" placeholder="Street, city, state" class="flex-1 bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm">
+                    <button id="save-address-btn" class="bg-blue-600 hover:bg-blue-500 px-3 rounded-lg text-sm whitespace-nowrap">Save</button>
+                </div>
                 <div id="delivery-estimate" class="text-xs text-slate-400 mt-1"></div>
             </div>
             <!-- Payment method -->
@@ -301,17 +304,19 @@
         updateCartUI();
     }
 
-    // Delivery estimate
+    // Delivery estimate (now called only when user clicks "Save")
     async function estimateDelivery() {
-        const addressInput = document.getElementById('delivery-address');
-        const address = addressInput?.value.trim();
+        const address = deliveryAddress;
         if (!address) {
             deliveryFee = 0;
             updateCartUI();
             document.getElementById('delivery-estimate').innerHTML = '';
             return;
         }
-        if (cart.length === 0) return;
+        if (cart.length === 0) {
+            document.getElementById('delivery-estimate').innerHTML = '<span class="text-amber-400">Add items to cart first</span>';
+            return;
+        }
         const items = cart.map(i => ({ inventory_id: i.id, quantity: i.quantity }));
         const estimateDiv = document.getElementById('delivery-estimate');
         estimateDiv.innerHTML = '<i class="fa-solid fa-spinner fa-pulse"></i> Calculating delivery...';
@@ -346,23 +351,33 @@
             addressContainer.classList.add('hidden');
             deliveryFee = 0;
             deliveryAddress = '';
+            // Clear address input and estimate display
+            const addressInput = document.getElementById('delivery-address');
+            if (addressInput) addressInput.value = '';
+            document.getElementById('delivery-estimate').innerHTML = '';
         } else {
             deliveryBtn.classList.add('bg-blue-600', 'text-white');
             deliveryBtn.classList.remove('bg-slate-700', 'text-slate-300');
             pickupBtn.classList.remove('bg-blue-600', 'text-white');
             pickupBtn.classList.add('bg-slate-700', 'text-slate-300');
             addressContainer.classList.remove('hidden');
-            // Trigger estimate if address already exists
-            const addr = document.getElementById('delivery-address').value.trim();
-            if (addr) {
-                deliveryAddress = addr;
-                estimateDelivery();
-            } else {
-                deliveryFee = 0;
-                updateCartUI();
-            }
+            // Do not auto-estimate; wait for save button
+            deliveryFee = 0;
+            updateCartUI();
         }
         updateCartUI();
+    }
+    
+    // Save address and estimate delivery (triggered by button)
+    async function saveAddressAndEstimate() {
+        const addressInput = document.getElementById('delivery-address');
+        const newAddress = addressInput.value.trim();
+        if (!newAddress) {
+            showToast("Please enter a delivery address", 'error');
+            return;
+        }
+        deliveryAddress = newAddress;
+        await estimateDelivery();
     }
     
     // Modified checkout to include shipping_address if delivery
@@ -372,16 +387,17 @@
         
         // Validate delivery address if needed
         if (deliveryOption === 'delivery') {
-            const addr = document.getElementById('delivery-address').value.trim();
-            if (!addr) {
-                showToast("Please enter a delivery address", 'error');
+            if (!deliveryAddress) {
+                showToast("Please enter and save a delivery address", 'error');
                 return;
             }
-            // Optionally re-estimate to be safe
-            await estimateDelivery();
-            if (deliveryFee === 0 && addr) {
-                showToast("Could not calculate delivery fee. Check address.", 'error');
-                return;
+            // Optionally re-estimate to be safe (but already estimated)
+            if (deliveryFee === 0) {
+                await estimateDelivery();
+                if (deliveryFee === 0) {
+                    showToast("Could not calculate delivery fee. Please re-save your address.", 'error');
+                    return;
+                }
             }
         }
         
@@ -397,7 +413,7 @@
             callback_url: `${returnUrl}?payment=success`
         };
         if (deliveryOption === 'delivery') {
-            payload.shipping_address = document.getElementById('delivery-address').value.trim();
+            payload.shipping_address = deliveryAddress;
         }
         
         try {
@@ -688,7 +704,7 @@
         } catch(e) { alert("Demo failed: "+e.message); } 
     }
     
-    // EVENT LISTENERS (including new ones)
+    // EVENT LISTENERS
     document.getElementById('toggleAuthMode')?.addEventListener('click', () => { 
         isRegisterMode = !isRegisterMode; 
         document.getElementById('modalTitle').innerText = isRegisterMode ? "Register Organization" : "Sign In"; 
@@ -747,15 +763,7 @@
     // Delivery toggle handlers
     document.getElementById('delivery-pickup-pickup')?.addEventListener('click', () => setDeliveryOption('pickup'));
     document.getElementById('delivery-pickup-delivery')?.addEventListener('click', () => setDeliveryOption('delivery'));
-    document.getElementById('delivery-address')?.addEventListener('input', (e) => {
-        deliveryAddress = e.target.value.trim();
-        if (deliveryOption === 'delivery' && deliveryAddress) {
-            estimateDelivery();
-        } else {
-            deliveryFee = 0;
-            updateCartUI();
-        }
-    });
+    document.getElementById('save-address-btn')?.addEventListener('click', saveAddressAndEstimate);
     
     function showToast(msg, type) { 
         const t = document.createElement('div'); 
