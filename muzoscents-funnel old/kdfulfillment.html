@@ -13,19 +13,33 @@
         .status-processing { background: #3b82f620; color: #3b82f6; }
         .status-shipped { background: #8b5cf620; color: #8b5cf6; }
         .status-delivered { background: #10b98120; color: #10b981; }
+        /* Simple demo modal styles */
+        .modal-overlay {
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(8px);
+        }
+        .btn-demo {
+            transition: all 0.2s ease;
+        }
+        .btn-demo:hover {
+            transform: scale(1.02);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+        }
     </style>
 </head>
 <body class="text-slate-200">
     <div class="container mx-auto px-4 py-6 max-w-7xl">
-        <!-- Header -->
-        <div class="flex justify-between items-center mb-6">
+        <!-- Header with demo login button -->
+        <div class="flex justify-between items-center mb-6 flex-wrap gap-3">
             <div>
                 <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">📦 Fulfillment Dashboard</h1>
-                <p class="text-slate-400 text-sm">Manage order shipping and dispatch</p>
+                <p class="text-slate-400 text-sm">Manage order shipping and dispatch — <span class="text-emerald-400">demo access ready</span></p>
             </div>
             <div class="flex gap-3">
+                <button id="demo-login-btn" class="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg transition shadow-md flex items-center gap-2"><i class="fa-solid fa-flask"></i> Demo Login</button>
                 <button id="refresh-btn" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg transition"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
                 <a href="/kdconc" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-lg transition"><i class="fa-solid fa-store"></i> Customer Portal</a>
+                <button id="logout-fulfillment-btn" class="bg-red-700/70 hover:bg-red-700 px-3 py-2 rounded-lg text-sm transition hidden md:block"><i class="fa-solid fa-sign-out-alt"></i> Logout</button>
             </div>
         </div>
         
@@ -88,33 +102,161 @@
             </div>
         </div>
     </div>
-    
+
+    <!-- Demo / Login Modal (simple + demo logic integrated from Kevs bOS) -->
+    <div id="demoAuthModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold flex gap-2 items-center"><i class="fa-solid fa-key text-emerald-400"></i> Access Dashboard</h3>
+                <button id="closeAuthModalBtn" class="text-slate-400 hover:text-white text-2xl">&times;</button>
+            </div>
+            <div class="space-y-4">
+                <p class="text-sm text-slate-300">Use <strong class="text-emerald-300">Demo Access</strong> to instantly try the fulfillment dashboard with real order data.</p>
+                <button id="modalDemoLoginBtn" class="w-full bg-emerald-600 hover:bg-emerald-700 py-2.5 rounded-xl font-semibold flex items-center justify-center gap-2 transition btn-demo">
+                    <i class="fa-solid fa-flask"></i> Launch Demo (Auto Login)
+                </button>
+                <div class="relative my-2">
+                    <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-slate-700"></div></div>
+                    <div class="relative flex justify-center text-xs"><span class="bg-slate-800 px-2 text-slate-500">or</span></div>
+                </div>
+                <a href="/kdconc" class="w-full block text-center bg-slate-700 hover:bg-slate-600 py-2.5 rounded-xl transition">
+                    <i class="fa-regular fa-building"></i> Go to Customer Portal (Sign in)
+                </a>
+                <p class="text-xs text-center text-slate-500 mt-2">Demo uses secure test account: <span class="font-mono">demo@kevsdigital.com</span></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile logout small indicator -->
+    <div id="mobile-logout-toolbar" class="fixed bottom-4 right-4 md:hidden z-40">
+        <button id="mobile-logout-btn" class="bg-red-700/80 backdrop-blur w-10 h-10 rounded-full shadow-lg flex items-center justify-center"><i class="fa-solid fa-sign-out-alt"></i></button>
+    </div>
+
     <script>
+        // ------------- API & GLOBALS -------------
         const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
         let token = localStorage.getItem('access_token');
         let currentOrderId = null;
         
-        // Helper API call
+        // Helper: refresh token logic (same as original but robust)
+        async function refreshAccessToken() {
+            const refresh = localStorage.getItem('refresh_token');
+            if (!refresh) return false;
+            try {
+                const res = await fetch(`${API_BASE}/auth/refresh`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh_token: refresh })
+                });
+                if (res.ok) {
+                    const { access_token, refresh_token } = await res.json();
+                    localStorage.setItem('access_token', access_token);
+                    localStorage.setItem('refresh_token', refresh_token);
+                    token = access_token;
+                    return true;
+                }
+            } catch(e) { console.warn("refresh failed", e); }
+            return false;
+        }
+
+        // API call with auth & auto-refresh
         async function apiCall(endpoint, options = {}) {
             if (!options.headers) options.headers = {};
             options.headers['Content-Type'] = 'application/json';
             if (token) options.headers['Authorization'] = `Bearer ${token}`;
-            const res = await fetch(`${API_BASE}${endpoint}`, options);
+            
+            let res = await fetch(`${API_BASE}${endpoint}`, options);
             if (res.status === 401) {
-                alert("Session expired. Please login again.");
-                window.location.href = "/kdconc";
-                throw new Error("Unauthorized");
+                // Try refresh once
+                const refreshed = await refreshAccessToken();
+                if (refreshed && token) {
+                    options.headers['Authorization'] = `Bearer ${token}`;
+                    res = await fetch(`${API_BASE}${endpoint}`, options);
+                } else {
+                    // No refresh -> require demo login
+                    showDemoModal();
+                    throw new Error("Session expired. Please use demo login again.");
+                }
             }
             if (!res.ok) {
-                const err = await res.json().catch(() => ({ detail: 'Request failed' }));
-                throw new Error(err.detail || 'Error');
+                const errData = await res.json().catch(() => ({ detail: 'Request error' }));
+                throw new Error(errData.detail || `HTTP ${res.status}`);
             }
             return res.json();
         }
         
-        // Load orders
+        // ---------- DEMO LOGIN (direct from second file logic) ----------
+        async function performDemoLogin() {
+            try {
+                const res = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || "Demo credentials invalid");
+                token = data.access_token;
+                localStorage.setItem('access_token', token);
+                localStorage.setItem('refresh_token', data.refresh_token);
+                // optional: store basic user info for debugging
+                console.log("✅ Demo login successful, token stored");
+                return true;
+            } catch (err) {
+                console.error("Demo login error:", err);
+                alert("Demo login failed: " + err.message + "\nCheck network or backend availability.");
+                return false;
+            }
+        }
+        
+        // Show demo modal if not authenticated
+        function showDemoModal() {
+            const modal = document.getElementById('demoAuthModal');
+            if (modal) modal.classList.remove('hidden');
+        }
+        
+        function hideDemoModal() {
+            const modal = document.getElementById('demoAuthModal');
+            if (modal) modal.classList.add('hidden');
+        }
+        
+        // Logout routine
+        async function logoutFulfillment() {
+            try {
+                if (token) {
+                    await fetch(`${API_BASE}/auth/logout`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+                    }).catch(() => {});
+                }
+            } catch(e) {}
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
+            token = null;
+            // clear orders container and show demo modal
+            document.getElementById('orders-container').innerHTML = `<div class="bg-slate-800/70 rounded-xl p-8 text-center border border-slate-700">
+                <i class="fa-regular fa-lock text-4xl text-slate-500 mb-3 block"></i>
+                <p class="text-slate-300">Session ended. Please use <strong class="text-emerald-400">Demo Login</strong> to continue.</p>
+                <button id="reopen-demo-modal" class="mt-4 bg-emerald-600 px-4 py-2 rounded-lg text-sm">Demo Access</button>
+            </div>`;
+            showDemoModal();
+            // rebind reopen button
+            const reopenBtn = document.getElementById('reopen-demo-modal');
+            if (reopenBtn) reopenBtn.onclick = () => showDemoModal();
+        }
+        
+        // ---------- Orders loading (unchanged but with enhanced error) ----------
         async function loadOrders(status = '') {
             const container = document.getElementById('orders-container');
+            if (!token) {
+                container.innerHTML = `<div class="bg-slate-800/70 rounded-xl p-10 text-center border border-slate-700">
+                    <i class="fa-regular fa-circle-user text-3xl mb-2 text-slate-400"></i>
+                    <p>Not authenticated — click "Demo Login" to start</p>
+                    <button id="trigger-demo-from-empty" class="mt-3 bg-emerald-600 px-4 py-1.5 rounded-lg text-sm">🔑 Demo Access</button>
+                </div>`;
+                const triggerBtn = document.getElementById('trigger-demo-from-empty');
+                if (triggerBtn) triggerBtn.onclick = () => showDemoModal();
+                return;
+            }
             container.innerHTML = '<div class="text-center py-12"><i class="fa-solid fa-spinner fa-pulse"></i> Loading orders...</div>';
             try {
                 let url = '/fulfillment/orders?limit=100';
@@ -133,26 +275,26 @@
                             <div class="flex flex-wrap justify-between items-start gap-3">
                                 <div>
                                     <div class="flex items-center gap-2 flex-wrap">
-                                        <span class="font-mono text-blue-300">${order.receipt_number}</span>
+                                        <span class="font-mono text-blue-300">${escapeHtml(order.receipt_number)}</span>
                                         <span class="status-badge status-${statusClass}">${statusLabel}</span>
                                     </div>
                                     <div class="text-sm text-slate-400 mt-1">
                                         <span><i class="fa-regular fa-calendar"></i> ${new Date(order.created_at).toLocaleString()}</span>
                                         <span class="mx-2">•</span>
-                                        <span><i class="fa-regular fa-user"></i> ${order.customer_name || 'Guest'}</span>
+                                        <span><i class="fa-regular fa-user"></i> ${escapeHtml(order.customer_name || 'Guest')}</span>
                                     </div>
                                     <div class="text-sm mt-1">₦${order.total_amount?.toLocaleString()} | Items: ${order.sale_items?.length || 0}</div>
                                 </div>
                                 <div class="flex gap-2">
                                     <button class="view-order-btn bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg text-sm transition" data-id="${order.id}"><i class="fa-regular fa-eye"></i> View</button>
-                                    <button class="update-status-btn bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg text-sm transition" data-id="${order.id}" data-receipt="${order.receipt_number}" data-status="${order.shipping_status || 'pending'}"><i class="fa-solid fa-truck-fast"></i> Update</button>
+                                    <button class="update-status-btn bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg text-sm transition" data-id="${order.id}" data-receipt="${escapeHtml(order.receipt_number)}" data-status="${order.shipping_status || 'pending'}"><i class="fa-solid fa-truck-fast"></i> Update</button>
                                 </div>
                             </div>
                         </div>
                     `;
                 }).join('');
                 
-                // Attach event listeners
+                // attach event handlers
                 document.querySelectorAll('.view-order-btn').forEach(btn => {
                     btn.addEventListener('click', () => viewOrder(btn.dataset.id));
                 });
@@ -160,28 +302,30 @@
                     btn.addEventListener('click', () => openUpdateModal(btn.dataset.id, btn.dataset.receipt, btn.dataset.status));
                 });
             } catch (err) {
-                container.innerHTML = `<div class="bg-red-500/20 border border-red-500 p-4 rounded-xl text-red-300">⚠️ Error: ${err.message}</div>`;
+                console.error(err);
+                container.innerHTML = `<div class="bg-red-500/20 border border-red-500 p-4 rounded-xl text-red-300">⚠️ Error: ${err.message}. <button id="retry-load" class="underline ml-2">Retry</button></div>`;
+                const retryBtn = document.getElementById('retry-load');
+                if (retryBtn) retryBtn.onclick = () => loadOrders(document.getElementById('status-filter').value);
             }
         }
         
         async function viewOrder(orderId) {
             try {
                 const order = await apiCall(`/fulfillment/order/${orderId}`);
-                const itemsHtml = order.sale_items?.map(item => `<li class="flex justify-between border-b border-slate-700 py-2"><span>${item.quantity} x ${item.product_name}</span><span>₦${item.subtotal?.toLocaleString()}</span></li>`).join('');
+                const itemsHtml = order.sale_items?.map(item => `<li class="flex justify-between border-b border-slate-700 py-2"><span>${item.quantity} x ${escapeHtml(item.product_name)}</span><span>₦${item.subtotal?.toLocaleString()}</span></li>`).join('');
                 alert(`Order ${order.receipt_number}\nTotal: ₦${order.total_amount}\nStatus: ${order.shipping_status || 'pending'}\nCustomer: ${order.customer_name || 'N/A'} (${order.customer_email || 'N/A'})\nAddress: ${order.shipping_address || 'Pickup'}\nItems:\n${itemsHtml}`);
             } catch(err) {
-                alert("Could not load order details");
+                alert("Could not load order details: " + err.message);
             }
         }
         
         function openUpdateModal(orderId, receipt, currentStatus) {
+            if (!token) { showDemoModal(); return; }
             currentOrderId = orderId;
             document.getElementById('modal-order-info').innerHTML = `<strong>${receipt}</strong> - Current status: ${currentStatus || 'pending'}`;
             const statusSelect = document.getElementById('modal-status');
             statusSelect.value = currentStatus === 'shipped' ? 'shipped' : currentStatus === 'delivered' ? 'delivered' : 'processing';
-            // Show tracking fields only if new status is shipped or delivered
             document.getElementById('tracking-fields').classList.remove('hidden');
-            // Clear previous values
             document.getElementById('modal-carrier').value = '';
             document.getElementById('modal-tracking').value = '';
             document.getElementById('modal-estimated').value = '';
@@ -189,13 +333,14 @@
             document.getElementById('updateModal').classList.remove('hidden');
         }
         
+        // Update order status
         document.getElementById('modal-update-btn')?.addEventListener('click', async () => {
+            if (!token) { showDemoModal(); document.getElementById('updateModal').classList.add('hidden'); return; }
             const newStatus = document.getElementById('modal-status').value;
             const carrier = document.getElementById('modal-carrier').value;
             const tracking = document.getElementById('modal-tracking').value;
             const estimated = document.getElementById('modal-estimated').value;
             const notes = document.getElementById('modal-notes').value;
-            
             try {
                 const payload = {
                     shipping_status: newStatus,
@@ -208,7 +353,7 @@
                     method: 'PUT',
                     body: JSON.stringify(payload)
                 });
-                alert(`Order status updated to ${newStatus}. Emails sent if applicable.`);
+                alert(`✅ Order status updated to ${newStatus}. Emails sent if applicable.`);
                 document.getElementById('updateModal').classList.add('hidden');
                 loadOrders(document.getElementById('status-filter').value);
             } catch(err) {
@@ -216,6 +361,7 @@
             }
         });
         
+        // close modal events
         document.getElementById('closeModalBtn')?.addEventListener('click', () => {
             document.getElementById('updateModal').classList.add('hidden');
         });
@@ -227,15 +373,7 @@
             loadOrders(document.getElementById('status-filter').value);
         });
         
-        // Auto-check auth on load
-        if (!token) {
-            alert("Please login first");
-            window.location.href = "/kdconc";
-        } else {
-            loadOrders();
-        }
-        
-        // Show/hide tracking fields based on status selection
+        // show/hide tracking fields based on status selection
         document.getElementById('modal-status')?.addEventListener('change', (e) => {
             const val = e.target.value;
             const fields = document.getElementById('tracking-fields');
@@ -245,6 +383,113 @@
                 fields.classList.add('hidden');
             }
         });
+        
+        // ----- Demo login flow & modal handlers -----
+        async function onDemoLoginClick() {
+            const success = await performDemoLogin();
+            if (success) {
+                hideDemoModal();
+                // reload orders after successful demo auth
+                await loadOrders(document.getElementById('status-filter').value);
+                // show temporary toast/indicator
+                const toast = document.createElement('div');
+                toast.className = 'fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-emerald-600 text-white px-5 py-2 rounded-full shadow-lg text-sm z-50 flex items-center gap-2';
+                toast.innerHTML = '<i class="fa-regular fa-circle-check"></i> Demo mode active — full fulfillment access';
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 3000);
+            } else {
+                alert("Demo login failed. Please ensure backend is reachable.");
+            }
+        }
+        
+        // attach demo login buttons (header + modal)
+        const demoBtnHeader = document.getElementById('demo-login-btn');
+        if (demoBtnHeader) demoBtnHeader.addEventListener('click', onDemoLoginClick);
+        const modalDemoBtn = document.getElementById('modalDemoLoginBtn');
+        if (modalDemoBtn) modalDemoBtn.addEventListener('click', onDemoLoginClick);
+        const closeAuthModal = document.getElementById('closeAuthModalBtn');
+        if (closeAuthModal) closeAuthModal.addEventListener('click', () => hideDemoModal());
+        // also close when clicking outside? optional but fine.
+        
+        // Logout handler
+        const logoutBtn = document.getElementById('logout-fulfillment-btn');
+        const mobileLogout = document.getElementById('mobile-logout-btn');
+        const logoutHandler = () => logoutFulfillment();
+        if (logoutBtn) logoutBtn.addEventListener('click', logoutHandler);
+        if (mobileLogout) mobileLogout.addEventListener('click', logoutHandler);
+        
+        // Esc key closing modals
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                document.getElementById('updateModal')?.classList.add('hidden');
+                document.getElementById('demoAuthModal')?.classList.add('hidden');
+            }
+        });
+        
+        // Helper: escapeHtml
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
+            });
+        }
+        
+        // ---- INITIAL LOAD: check token, if missing show demo modal, else load orders ----
+        async function initDashboard() {
+            if (token) {
+                // validate token by trying a lightweight api call /auth/me or just load orders
+                try {
+                    await apiCall('/fulfillment/orders?limit=1'); // test
+                    await loadOrders();
+                } catch (err) {
+                    console.warn("Token invalid, clearing");
+                    localStorage.removeItem('access_token');
+                    localStorage.removeItem('refresh_token');
+                    token = null;
+                    showDemoModal();
+                    document.getElementById('orders-container').innerHTML = `<div class="text-center py-12"><i class="fa-regular fa-clock"></i> Session expired — click Demo Login</div>`;
+                }
+            } else {
+                showDemoModal();
+                document.getElementById('orders-container').innerHTML = `<div class="bg-slate-800/60 rounded-xl p-8 text-center border border-slate-700">
+                    <i class="fa-solid fa-flask text-emerald-400 text-3xl mb-2 block"></i>
+                    <p class="mb-3">Welcome to Fulfillment Dashboard</p>
+                    <button id="initial-demo-trigger" class="bg-emerald-600 hover:bg-emerald-500 px-5 py-2 rounded-lg font-medium">🔐 Launch Demo Access</button>
+                </div>`;
+                const initDemoBtn = document.getElementById('initial-demo-trigger');
+                if (initDemoBtn) initDemoBtn.addEventListener('click', () => showDemoModal());
+            }
+        }
+        
+        // Rebind the modal demo button if needed after dynamic content
+        function rebindModalTriggers() {
+            const modalDemo = document.getElementById('modalDemoLoginBtn');
+            if (modalDemo && !modalDemo._listener) {
+                modalDemo.addEventListener('click', onDemoLoginClick);
+                modalDemo._listener = true;
+            }
+        }
+        
+        // Also ensure that when demo modal shows, the inner buttons work
+        const observer = new MutationObserver(() => rebindModalTriggers());
+        observer.observe(document.body, { childList: true, subtree: true });
+        
+        // Start
+        initDashboard();
+        rebindModalTriggers();
+        
+        // Additional: refresh token handling when window gets focus
+        window.addEventListener('focus', () => {
+            if (token) {
+                // optional silent check: if 401 occurs later it will auto trigger modal
+            }
+        });
+        
+        // Hide mobile logout if needed on demo mode status change
+        console.log("Fulfillment dashboard with demo login applied ✅");
     </script>
 </body>
 </html>
