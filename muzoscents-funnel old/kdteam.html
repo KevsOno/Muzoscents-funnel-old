@@ -20,14 +20,154 @@
     </style>
 </head>
 <body class="bg-gray-50 font-sans">
+
+<!-- ========== GLOBAL NAVIGATION (Kevs bOS) ========== -->
+<div id="kevs-nav-container"></div>
+<script>
+(function() {
+    const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
+    const LOGIN_URL = '/kdsiginin';
+
+    const navItems = [
+        { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy', roles: ['owner','admin','sales_rep','finance','customer','support','logistics'] },
+        { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & online payments', roles: ['owner','admin','sales_rep'] },
+        { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', title: 'Order shipping, tracking & dispatch', roles: ['owner','admin','logistics'] },
+        { path: '/kdsupport',     name: 'Support',   icon: 'fa-headset', title: 'Ticket management & customer context', roles: ['owner','admin','support','customer'] },
+        { path: '/kddashboard',   name: 'Exec',      icon: 'fa-chart-simple', title: 'Executive revenue & profit overview', roles: ['owner','admin','finance'] },
+        { path: '/kdadmin',       name: 'Inventory', icon: 'fa-boxes', title: 'Manage products, stock, bulk CSV upload', roles: ['owner','admin','inventory_manager'] },
+        { path: '/kdteam',        name: 'Team',      icon: 'fa-users', title: 'Invite & manage team members', roles: ['owner','admin'] }
+    ];
+
+    function getUserRole() {
+        try {
+            const role = localStorage.getItem('user_role');
+            return role || 'customer';
+        } catch(e) { return 'customer'; }
+    }
+
+    function canAccess(requiredRoles) {
+        const userRole = getUserRole();
+        return requiredRoles.includes(userRole);
+    }
+
+    function buildNavbar() {
+        const currentPath = window.location.pathname;
+        let linksHtml = '';
+        navItems.forEach(item => {
+            if (!canAccess(item.roles)) return;
+            const isActive = currentPath === item.path;
+            const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
+            linksHtml += `
+                <a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}" title="${item.title}">
+                    <i class="fa-solid ${item.icon} w-4"></i> ${item.name}
+                </a>
+            `;
+        });
+        let userName = 'User';
+        try {
+            const profileStr = localStorage.getItem('user_profile_display');
+            if (profileStr) userName = profileStr;
+        } catch(e) {}
+        return `
+            <div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40">
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div class="flex flex-wrap items-center justify-between py-3 gap-3">
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i>
+                            <span class="text-xl font-bold tracking-tight">${APP_NAME}</span>
+                            <span class="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span>
+                        </div>
+                        <div class="hidden md:flex items-center gap-1 flex-wrap">
+                            ${linksHtml}
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full hidden sm:inline-block">
+                                <i class="fa-regular fa-user mr-1"></i> <span id="nav-user-name">${escapeHtml(userName)}</span>
+                            </span>
+                            <button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition flex items-center gap-1">
+                                <i class="fa-solid fa-sign-out-alt"></i> <span class="hidden sm:inline">Logout</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="md:hidden flex overflow-x-auto pb-2 gap-1 snap-x">
+                        ${linksHtml}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
+    }
+
+    async function globalLogout() {
+        const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
+        const token = localStorage.getItem('access_token');
+        if (token) {
+            try {
+                await fetch(`${BACKEND}/auth/logout`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+                });
+            } catch(e) {}
+        }
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user_role');
+        localStorage.removeItem('user_profile_display');
+        window.location.href = LOGIN_URL;
+    }
+
+    async function updateUserDisplay() {
+        const token = localStorage.getItem('access_token');
+        if (!token) return;
+        try {
+            const res = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/me', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const me = await res.json();
+                const contextRes = await fetch(`https://kevsono-kevs-digital-bos.hf.space/support/customer-context?target_user_id=${me.user_id}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (contextRes.ok) {
+                    const context = await contextRes.json();
+                    const name = context.profile?.first_name || 'User';
+                    localStorage.setItem('user_profile_display', name);
+                    const nameSpan = document.getElementById('nav-user-name');
+                    if (nameSpan) nameSpan.innerText = name;
+                }
+            }
+        } catch(e) {}
+    }
+
+    function initNavigation() {
+        const container = document.getElementById('kevs-nav-container');
+        if (container) {
+            container.innerHTML = buildNavbar();
+            const logoutBtn = document.getElementById('global-logout-btn');
+            if (logoutBtn) logoutBtn.addEventListener('click', globalLogout);
+            updateUserDisplay();
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initNavigation);
+    } else {
+        initNavigation();
+    }
+})();
+</script>
+<!-- ========== END GLOBAL NAVIGATION ========== -->
+
 <div class="max-w-6xl mx-auto p-6">
-    <!-- Header -->
     <div class="flex justify-between items-center mb-6">
         <h1 class="text-2xl font-bold text-gray-800"><i class="fas fa-users mr-2 text-orange-500"></i>Team Management</h1>
         <button id="refresh-team-btn" class="text-sm bg-white px-4 py-2 rounded-lg shadow hover:bg-gray-50"><i class="fas fa-sync-alt mr-1"></i> Refresh</button>
     </div>
 
-    <!-- Add staff form -->
     <div class="bg-white rounded-xl shadow-md p-6 mb-8">
         <h2 class="text-lg font-semibold mb-4"><i class="fas fa-user-plus mr-2 text-green-600"></i>Invite new staff member</h2>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -49,7 +189,6 @@
         <div id="form-message" class="mt-3 text-sm hidden"></div>
     </div>
 
-    <!-- Existing team members table -->
     <div class="bg-white rounded-xl shadow-md overflow-hidden">
         <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
             <h2 class="font-semibold"><i class="fas fa-users mr-2"></i>Current team</h2>
@@ -74,17 +213,9 @@
 </div>
 
 <script>
-    // ==================== CONFIGURATION ====================
-    const BACKEND_URL = window.location.origin; // assumes same origin as backend; adjust if needed
-    // For HF spaces, it's the same. If backend is separate, change this.
-    // Actually the FastAPI serves all pages, so we can use relative API calls.
+    const BACKEND_URL = window.location.origin;
+    function getToken() { return localStorage.getItem('access_token'); }
 
-    // Helper: get token from localStorage
-    function getToken() {
-        return localStorage.getItem('access_token');
-    }
-
-    // Show toast messages (simple)
     function showToast(msg, type = 'success') {
         let container = document.getElementById('toast-container');
         if (!container) {
@@ -100,7 +231,6 @@
         setTimeout(() => toast.remove(), 3500);
     }
 
-    // Authenticated fetch
     async function apiFetch(endpoint, options = {}) {
         const token = getToken();
         if (!token) {
@@ -126,11 +256,9 @@
         return res.json();
     }
 
-    // Load current user role (from localStorage) – redirect if not owner/admin
     async function checkAccess() {
         const role = localStorage.getItem('user_role');
         if (!role) {
-            // try to fetch /auth/me
             try {
                 const me = await apiFetch('/auth/me');
                 localStorage.setItem('user_role', me.role);
@@ -149,7 +277,6 @@
         return true;
     }
 
-    // Load team members
     async function loadTeam() {
         const tbody = document.getElementById('team-table-body');
         tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6"><div class="loading-spinner-sm inline-block mr-2"></div> Loading...</td></tr>`;
@@ -173,7 +300,6 @@
                 </tr>
             `).join('');
 
-            // attach events
             document.querySelectorAll('.reset-pwd-btn').forEach(btn => {
                 btn.addEventListener('click', () => resetUserPassword(btn.getAttribute('data-email')));
             });
@@ -185,7 +311,6 @@
         }
     }
 
-    // Create new staff member
     async function createStaff(payload) {
         return await apiFetch('/organisations/me/users', {
             method: 'POST',
@@ -193,7 +318,6 @@
         });
     }
 
-    // Reset password (admin)
     async function resetUserPassword(email) {
         if (!confirm(`Send password reset email to ${email}?`)) return;
         try {
@@ -204,7 +328,6 @@
         }
     }
 
-    // Remove user from organisation
     async function removeUser(userId) {
         if (!confirm('Remove this user from the organisation? They will lose access.')) return;
         try {
@@ -216,7 +339,6 @@
         }
     }
 
-    // Helper: escape HTML
     function escapeHtml(str) {
         if (!str) return '';
         return str.replace(/[&<>]/g, function(m) {
@@ -227,7 +349,6 @@
         });
     }
 
-    // Setup form submission
     document.getElementById('create-user-btn')?.addEventListener('click', async () => {
         const firstName = document.getElementById('new-firstname').value.trim();
         const lastName = document.getElementById('new-lastname').value.trim();
@@ -260,7 +381,6 @@
             msgDiv.className = 'mt-3 text-sm text-green-600';
             msgDiv.innerText = `Invitation sent to ${email}. They will receive an email with a temporary password.`;
             msgDiv.classList.remove('hidden');
-            // clear form
             document.getElementById('new-firstname').value = '';
             document.getElementById('new-lastname').value = '';
             document.getElementById('new-email').value = '';
@@ -278,7 +398,6 @@
 
     document.getElementById('refresh-team-btn')?.addEventListener('click', () => loadTeam());
 
-    // Initialization
     (async () => {
         try {
             await checkAccess();

@@ -22,27 +22,34 @@
 (function() {
     const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
     const LOGIN_URL = '/kdsiginin';
+
     const navItems = [
-        { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy' },
-        { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & online payments' },
-        { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', title: 'Order shipping, tracking & dispatch' },
-        { path: '/kdsupport',     name: 'Support',   icon: 'fa-headset', title: 'Ticket management & customer context' },
-        { path: '/kddashboard',   name: 'Exec',      icon: 'fa-chart-simple', title: 'Executive revenue & profit overview' }
+        { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy', roles: ['owner','admin','sales_rep','finance','customer','support','logistics'] },
+        { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & online payments', roles: ['owner','admin','sales_rep'] },
+        { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', title: 'Order shipping, tracking & dispatch', roles: ['owner','admin','logistics'] },
+        { path: '/kdsupport',     name: 'Support',   icon: 'fa-headset', title: 'Ticket management & customer context', roles: ['owner','admin','support','customer'] },
+        { path: '/kddashboard',   name: 'Exec',      icon: 'fa-chart-simple', title: 'Executive revenue & profit overview', roles: ['owner','admin','finance'] },
+        { path: '/kdadmin',       name: 'Inventory', icon: 'fa-boxes', title: 'Manage products, stock, bulk CSV upload', roles: ['owner','admin','inventory_manager'] },
+        { path: '/kdteam',        name: 'Team',      icon: 'fa-users', title: 'Invite & manage team members', roles: ['owner','admin'] }
     ];
-    const adminItem = { path: '/kdadmin', name: 'Admin', icon: 'fa-shield-alt', title: 'Inventory & bulk product management (admin only)' };
 
     function getUserRole() {
         try {
             const role = localStorage.getItem('user_role');
-            return role === 'admin' ? 'admin' : null;
-        } catch(e) { return null; }
+            return role || 'customer';
+        } catch(e) { return 'customer'; }
+    }
+
+    function canAccess(requiredRoles) {
+        const userRole = getUserRole();
+        return requiredRoles.includes(userRole);
     }
 
     function buildNavbar() {
         const currentPath = window.location.pathname;
-        const isAdmin = getUserRole() === 'admin';
         let linksHtml = '';
         navItems.forEach(item => {
+            if (!canAccess(item.roles)) return;
             const isActive = currentPath === item.path;
             const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
             linksHtml += `
@@ -51,15 +58,6 @@
                 </a>
             `;
         });
-        if (isAdmin) {
-            const isActive = currentPath === adminItem.path;
-            const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
-            linksHtml += `
-                <a href="${adminItem.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}" title="${adminItem.title}">
-                    <i class="fa-solid ${adminItem.icon} w-4"></i> ${adminItem.name}
-                </a>
-            `;
-        }
         let userName = 'User';
         try {
             const profileStr = localStorage.getItem('user_profile_display');
@@ -93,30 +91,45 @@
             </div>
         `;
     }
-    function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
+    }
+
     async function globalLogout() {
         const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
         const token = localStorage.getItem('access_token');
         if (token) {
             try {
-                await fetch(`${BACKEND}/auth/logout`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } });
+                await fetch(`${BACKEND}/auth/logout`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+                });
             } catch(e) {}
         }
-        localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token');
-        localStorage.removeItem('user_role'); localStorage.removeItem('user_profile_display');
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user_role');
+        localStorage.removeItem('user_profile_display');
         window.location.href = LOGIN_URL;
     }
+
     async function updateUserDisplay() {
         const token = localStorage.getItem('access_token');
         if (!token) return;
         try {
-            const res = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/me', { headers: { 'Authorization': `Bearer ${token}` } });
+            const res = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/me', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             if (res.ok) {
                 const me = await res.json();
-                const contextRes = await fetch(`https://kevsono-kevs-digital-bos.hf.space/support/customer-context?target_user_id=${me.user_id}`, { headers: { 'Authorization': `Bearer ${token}` } });
+                const contextRes = await fetch(`https://kevsono-kevs-digital-bos.hf.space/support/customer-context?target_user_id=${me.user_id}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
                 if (contextRes.ok) {
                     const context = await contextRes.json();
-                    const name = context.profile?.first_name || 'Agent';
+                    const name = context.profile?.first_name || 'User';
                     localStorage.setItem('user_profile_display', name);
                     const nameSpan = document.getElementById('nav-user-name');
                     if (nameSpan) nameSpan.innerText = name;
@@ -124,6 +137,7 @@
             }
         } catch(e) {}
     }
+
     function initNavigation() {
         const container = document.getElementById('kevs-nav-container');
         if (container) {
@@ -133,31 +147,30 @@
             updateUserDisplay();
         }
     }
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initNavigation);
-    else initNavigation();
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initNavigation);
+    } else {
+        initNavigation();
+    }
 })();
 </script>
 <!-- ========== END GLOBAL NAVIGATION ========== -->
 
 <div class="max-w-7xl mx-auto">
-    <!-- Admin Header (simplified) -->
     <div class="flex justify-between items-center mb-6 pb-4 border-b border-slate-700">
         <div>
             <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">📦 Inventory Manager</h1>
             <p class="text-sm text-slate-400">Advanced inventory: handling, cost, weight & size factor</p>
         </div>
-        <!-- Removed duplicate logout/user badge -->
     </div>
 
-    <!-- Auth placeholder (hidden when logged in) -->
     <div id="auth-check-placeholder" class="bg-slate-800/50 rounded-2xl p-8 text-center">
         <i class="fa-solid fa-spinner fa-pulse text-3xl mb-3"></i>
         <p>Verifying admin access...</p>
     </div>
 
-    <!-- Main admin content (hidden until authenticated) -->
     <div id="admin-panel" class="hidden">
-        <!-- Add / Edit Product Form -->
         <div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-slate-700 shadow-xl">
             <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fa-solid fa-plus-circle text-blue-400"></i> <span id="form-title">Add New Product</span></h2>
             <form id="product-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -214,7 +227,6 @@
             </form>
         </div>
         
-        <!-- Bulk Upload Section -->
         <div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-slate-700 shadow-xl">
             <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fa-solid fa-upload text-green-400"></i> Bulk Upload Products (CSV)</h2>
             <div class="bg-slate-900/60 rounded-lg p-3 mb-4 text-sm border-l-4 border-amber-500">
@@ -237,7 +249,6 @@
             <div id="bulk-upload-status" class="mt-3 text-sm"></div>
         </div>
         
-        <!-- Products List -->
         <div>
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-boxes text-blue-400"></i> All Inventory Items</h2>
@@ -577,7 +588,6 @@
         try {
             const me = await apiCall('/auth/me');
             currentUser = me;
-            // Store role if not already
             const role = me.role || 'admin';
             localStorage.setItem('user_role', role);
             document.getElementById('auth-check-placeholder').classList.add('hidden');
