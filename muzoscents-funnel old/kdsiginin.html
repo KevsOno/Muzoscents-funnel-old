@@ -2,496 +2,288 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Kevs Digital – Intelligence Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kevs Digital – Sign In</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
-        :root {
-            --kevs-orange: #f97316;
-            --kevs-blue: #3b82f6;
-            --sidebar-width: 260px;
-        }
-        body {
-            background: #fef9e6;
-            font-family: 'Inter', system-ui, -apple-system, sans-serif;
-        }
-        /* custom scroll */
-        .sidebar-scroll::-webkit-scrollbar {
-            width: 4px;
-        }
-        .sidebar-scroll::-webkit-scrollbar-track {
-            background: #f1f1f1;
-            border-radius: 10px;
-        }
-        .sidebar-scroll::-webkit-scrollbar-thumb {
-            background: #f97316;
-            border-radius: 10px;
-        }
-        .transition-smooth {
-            transition: all 0.2s ease;
-        }
-        .menu-active {
-            background: linear-gradient(95deg, rgba(59,130,246,0.1) 0%, rgba(249,115,22,0.08) 100%);
-            border-left: 3px solid #f97316;
-            color: #1e293b;
-            font-weight: 500;
-        }
-        .card-hover:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 12px 20px -12px rgba(0,0,0,0.1);
-        }
-        .loading-spinner-sm {
-            border: 2px solid #e2e8f0;
-            border-top: 2px solid #f97316;
-            border-radius: 50%;
-            width: 20px;
-            height: 20px;
-            animation: spin 0.7s linear infinite;
-            display: inline-block;
-        }
+        :root { --kevs-orange: #f97316; --kevs-blue: #3b82f6; }
+        body { background-color: #fef9e6; font-family: system-ui, sans-serif; }
+        .loading-spinner { border: 2px solid #e5e7eb; border-top: 2px solid var(--kevs-blue); border-radius: 50%; width: 20px; height: 20px; animation: spin 0.6s linear infinite; display: inline-block; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        #main-content {
-            min-height: calc(100vh - 72px);
-        }
-        /* Mobile sidebar */
-        @media (max-width: 768px) {
-            .sidebar {
-                transform: translateX(-100%);
-                position: fixed;
-                z-index: 40;
-                transition: transform 0.25s ease;
-            }
-            .sidebar.open {
-                transform: translateX(0);
-            }
-            .overlay {
-                display: none;
-                position: fixed;
-                inset: 0;
-                background: rgba(0,0,0,0.3);
-                z-index: 35;
-            }
-            .overlay.open {
-                display: block;
-            }
-        }
     </style>
 </head>
-<body class="antialiased">
-
-<!-- mobile overlay -->
-<div id="mobile-overlay" class="overlay"></div>
-
-<div class="flex relative">
-    <!-- SIDEBAR -->
-    <aside id="sidebar" class="sidebar fixed md:relative top-0 left-0 h-full w-[260px] bg-white border-r border-gray-200 shadow-xl flex flex-col z-50 transition-smooth">
-        <div class="p-5 border-b border-gray-100 flex items-center justify-between">
-            <div class="flex items-center gap-1">
-                <span class="text-2xl font-extrabold text-orange-500">Kevs</span>
-                <span class="text-xl font-semibold text-gray-800">BI</span>
-            </div>
-            <button id="close-sidebar-mobile" class="md:hidden text-gray-500 text-xl">&times;</button>
-        </div>
-
-        <div class="flex-1 overflow-y-auto sidebar-scroll py-4">
-            <div class="px-3 mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Main menu</div>
-            <nav id="dynamic-menu" class="space-y-1 px-2">
-                <!-- menu items injected dynamically based on role -->
-                <div class="text-center py-6 text-gray-400 text-sm"><i class="fas fa-spinner fa-pulse mr-1"></i> loading menu...</div>
-            </nav>
-        </div>
-
-        <div class="p-4 border-t border-gray-100">
-            <div class="flex items-center gap-3 mb-3">
-                <div class="w-9 h-9 rounded-full bg-gradient-to-br from-orange-400 to-blue-500 flex items-center justify-center text-white font-bold text-sm" id="user-avatar">U</div>
-                <div class="flex-1 min-w-0">
-                    <p id="user-fullname" class="text-sm font-semibold truncate">User</p>
-                    <p id="user-role" class="text-xs text-gray-500 capitalize truncate">role</p>
-                </div>
-            </div>
-            <button id="logout-btn" class="w-full flex items-center justify-center gap-2 bg-gray-100 hover:bg-red-50 text-gray-700 hover:text-red-600 py-2 rounded-lg text-sm font-medium transition">
-                <i class="fas fa-sign-out-alt"></i> Sign out
-            </button>
-        </div>
-    </aside>
-
-    <!-- MAIN PANEL -->
-    <div class="flex-1 flex flex-col min-h-screen">
-        <!-- Top navbar -->
-        <header class="bg-white/90 backdrop-blur-sm sticky top-0 z-30 border-b border-gray-200 px-4 md:px-6 py-3 flex items-center justify-between shadow-sm">
-            <div class="flex items-center gap-3">
-                <button id="menu-toggle" class="md:hidden text-gray-600 text-xl focus:outline-none">
-                    <i class="fas fa-bars"></i>
-                </button>
-                <h1 id="page-title" class="text-lg md:text-xl font-semibold text-gray-800">Dashboard</h1>
-            </div>
-            <div class="flex items-center gap-4">
-                <span class="hidden md:inline-flex text-xs bg-orange-100 text-orange-700 px-3 py-1 rounded-full"><i class="fa-regular fa-building mr-1"></i> <span id="org-badge">KevsBI</span></span>
-                <div class="relative">
-                    <i class="fa-regular fa-bell text-gray-500 text-xl cursor-pointer hover:text-orange-500"></i>
-                </div>
-            </div>
-        </header>
-
-        <!-- dynamic content area -->
-        <main id="main-content" class="p-5 md:p-6">
-            <div class="flex flex-col items-center justify-center py-20">
-                <div class="loading-spinner-sm mb-3"></div>
-                <p class="text-gray-500">Loading dashboard data...</p>
-            </div>
-        </main>
+<body class="min-h-screen flex items-center justify-center p-4">
+<div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
+<div class="max-w-md w-full bg-white rounded-2xl shadow-xl p-8">
+    <div class="text-center mb-6">
+        <span class="text-3xl font-bold text-orange-500">Kevs</span><span class="text-2xl font-semibold text-gray-800">BI</span>
+        <p class="text-xs text-gray-400 mt-1">Intelligence dashboard</p>
     </div>
+    <div class="flex border-b mb-6">
+        <button id="login-tab" class="flex-1 py-2 font-medium text-blue-600 border-b-2 border-blue-600">Login</button>
+        <button id="register-tab" class="flex-1 py-2 font-medium text-gray-500">Register</button>
+    </div>
+
+    <!-- Login form -->
+    <form id="login-form">
+        <input type="email" id="login-email" placeholder="Email" class="w-full mb-3 p-3 border rounded-lg" required>
+        <input type="password" id="login-password" placeholder="Password" class="w-full mb-2 p-3 border rounded-lg" required>
+        <div class="text-right mb-4"><button type="button" id="forgot-pwd-btn" class="text-xs text-blue-500 hover:underline">Forgot password?</button></div>
+        <button type="submit" class="w-full bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 font-medium transition">Login</button>
+        <div class="flex items-center my-4"><div class="flex-1 border-t border-gray-200"></div><span class="px-3 text-xs text-gray-400 uppercase">Or</span><div class="flex-1 border-t border-gray-200"></div></div>
+        <button type="button" id="demo-login-btn" class="w-full bg-emerald-600 text-white py-2.5 rounded-lg hover:bg-emerald-700 font-medium flex items-center justify-center gap-2"><i class="fa-solid fa-bolt"></i> One-Click Demo Access</button>
+    </form>
+
+    <!-- Register form (unchanged) -->
+    <form id="register-form" class="hidden">
+        <div class="mb-3">
+            <label class="block text-xs text-gray-500 mb-1">Invite Code (if joining existing)</label>
+            <input type="text" id="reg-invite-code" placeholder="e.g., KD001" class="w-full p-3 border rounded-lg">
+            <div id="org-name-preview" class="text-xs text-gray-500 mt-1 hidden">Organisation: <span id="preview-org-name"></span></div>
+        </div>
+        <div class="relative my-2">
+            <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-gray-200"></div></div>
+            <div class="relative flex justify-center text-xs"><span class="bg-white px-2 text-gray-400">OR create new organisation</span></div>
+        </div>
+        <div>
+            <label class="block text-xs text-gray-500 mb-1">Organisation Name *</label>
+            <input type="text" id="reg-org-name" placeholder="Your Company Name" class="w-full p-3 border rounded-lg mb-2">
+        </div>
+        <div>
+            <label class="block text-xs text-gray-500 mb-1">Location (City, Country) *</label>
+            <input type="text" id="reg-location" placeholder="e.g., Lagos, Nigeria" class="w-full p-3 border rounded-lg mb-2">
+        </div>
+        <div>
+            <label class="block text-xs text-gray-500 mb-1">Niche / Industry *</label>
+            <input type="text" id="reg-niche" placeholder="e.g., Retail, Tech, Logistics" class="w-full p-3 border rounded-lg mb-2">
+        </div>
+        <div>
+            <label class="block text-xs text-gray-500 mb-1">Store Address * (for delivery distance calculation)</label>
+            <input type="text" id="reg-store-address" placeholder="Full address, e.g., 1, Allen Avenue, Ikeja, Lagos" class="w-full p-3 border rounded-lg mb-2">
+        </div>
+        <div class="grid grid-cols-2 gap-2 mb-2">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Delivery Base Fee (₦)</label>
+                <input type="number" id="reg-base-fee" value="300" class="w-full p-3 border rounded-lg">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Per km Rate (₦)</label>
+                <input type="number" id="reg-per-km" value="80" class="w-full p-3 border rounded-lg">
+            </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2 mb-4">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Per kg Rate (₦)</label>
+                <input type="number" id="reg-per-kg" value="50" class="w-full p-3 border rounded-lg">
+            </div>
+            <div class="invisible"></div>
+        </div>
+        <div class="grid grid-cols-2 gap-2 mb-2">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">First Name *</label>
+                <input type="text" id="reg-fname" placeholder="John" class="w-full p-3 border rounded-lg">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Last Name *</label>
+                <input type="text" id="reg-lname" placeholder="Doe" class="w-full p-3 border rounded-lg">
+            </div>
+        </div>
+        <div>
+            <label class="block text-xs text-gray-500 mb-1">Phone Number *</label>
+            <input type="tel" id="reg-phone" placeholder="e.g., +2348123456789" class="w-full p-3 border rounded-lg mb-2">
+        </div>
+        <div>
+            <label class="block text-xs text-gray-500 mb-1">Estimated Budget (₦)</label>
+            <input type="number" id="reg-budget" placeholder="Optional" class="w-full p-3 border rounded-lg mb-2">
+        </div>
+        <input type="email" id="reg-email" placeholder="Email" class="w-full mb-2 p-3 border rounded-lg" required>
+        <input type="password" id="reg-password" placeholder="Password" class="w-full mb-4 p-3 border rounded-lg" required>
+        <button type="submit" class="w-full bg-green-600 text-white py-2.5 rounded-lg hover:bg-green-700 transition">Register</button>
+    </form>
+    <div id="auth-message" class="text-xs text-center mt-4 text-red-500 hidden"></div>
 </div>
 
 <script>
-    // ---------- CONFIGURATION ----------
     const BACKEND_URL = 'https://kevsono-kevs-digital-bos.hf.space';
-    const SIGNIN_PAGE = '/kdsiginin.html';  // relative redirect
+    const DASHBOARD_URL = '/kdbi';
 
-    // role-based menu definition (exactly as requirement)
-    const ROLE_MENUS = {
-        owner: ['Dashboard', 'Inventory', 'POS', 'Fulfillment', 'Support', 'Leads', 'BI', 'Settings'],
-        admin: ['Dashboard', 'Inventory', 'POS', 'Fulfillment', 'Support', 'Leads', 'BI', 'Settings'],
-        inventory_manager: ['Dashboard', 'Inventory'],
-        sales_rep: ['Dashboard', 'POS', 'Leads', 'BI'],
-        finance: ['Dashboard', 'Sales Reports', 'BI'],
-        logistics: ['Dashboard', 'Fulfillment'],
-        support: ['Dashboard', 'Support Tickets'],
-        customer: []   // no internal pages
-    };
+    function showToast(msg, type='success') {
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type==='success'?'bg-green-600':'bg-red-600'} mb-2 text-sm`;
+        toast.innerText = msg;
+        container.appendChild(toast);
+        setTimeout(() => toast.remove(), 3500);
+    }
 
-    // Icon mapping for menu items
-    const MENU_ICONS = {
-        Dashboard: 'fa-chart-line',
-        Inventory: 'fa-boxes',
-        POS: 'fa-cash-register',
-        Fulfillment: 'fa-truck-fast',
-        Support: 'fa-headset',
-        'Support Tickets': 'fa-ticket',
-        Leads: 'fa-users',
-        BI: 'fa-chart-simple',
-        'Sales Reports': 'fa-file-invoice-dollar',
-        Settings: 'fa-gear'
-    };
-
-    // Global state
-    let currentUser = null;         // store user object { role, first_name, last_name, email, org_id, ...}
-    let currentRole = 'customer';
-    let menuItemsList = [];          // array of allowed menu names
-    let activeMenuItem = 'Dashboard';
-    let orgDetails = { name: 'KevsBI', store_address: '', base_fee: 0, per_km: 0, per_kg: 0 };
-
-    // ---------- HELPER: fetch with token & auto redirect 401 ----------
-    async function apiFetch(endpoint, options = {}) {
-        const token = localStorage.getItem('access_token');
-        if (!token && !endpoint.includes('/auth/me')) {
-            // no token, but we should not be here; redirect signin
-            window.location.href = SIGNIN_PAGE;
-            throw new Error('Unauthorized');
-        }
-        const headers = {
-            'Content-Type': 'application/json',
-            ...options.headers,
-        };
+    async function apiCall(endpoint, method='GET', body=null, token=null) {
+        const headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
-        const response = await fetch(`${BACKEND_URL}${endpoint}`, {
-            ...options,
+        const res = await fetch(`${BACKEND_URL}${endpoint}`, {
+            method,
             headers,
+            body: body ? JSON.stringify(body) : undefined
         });
-        if (response.status === 401) {
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('refresh_token');
-            localStorage.removeItem('user_id');
-            window.location.href = SIGNIN_PAGE;
-            throw new Error('Session expired, please login again');
+        if (!res.ok) {
+            const err = await res.json().catch(()=>({detail:'Error'}));
+            throw new Error(err.detail || 'API error');
         }
-        if (!response.ok) {
-            let errMsg = `Request failed (${response.status})`;
-            try {
-                const errData = await response.json();
-                errMsg = errData.detail || errMsg;
-            } catch(e) {}
-            throw new Error(errMsg);
-        }
-        return response.json();
+        return res.json();
     }
 
-    // show toast (reuse style)
-    function showToast(message, type = 'success') {
-        const toastContainer = document.getElementById('toast-container');
-        if (!toastContainer) {
-            let container = document.querySelector('.fixed.top-20.right-4');
-            if (!container) {
-                container = document.createElement('div');
-                container.id = 'toast-container';
-                container.className = 'fixed top-20 right-4 z-50 space-y-2 w-80';
-                document.body.appendChild(container);
-            }
-            const toastDiv = document.createElement('div');
-            toastDiv.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} mb-2 text-sm`;
-            toastDiv.innerText = message;
-            container.appendChild(toastDiv);
-            setTimeout(() => toastDiv.remove(), 3500);
-        } else {
-            const toastDiv = document.createElement('div');
-            toastDiv.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} mb-2 text-sm`;
-            toastDiv.innerText = message;
-            toastContainer.appendChild(toastDiv);
-            setTimeout(() => toastDiv.remove(), 3500);
-        }
-    }
-
-    // load user profile & organization settings
-    async function loadUserAndOrg() {
+    // NEW: fetch user role using access token and store it
+    async function fetchAndStoreRole(accessToken) {
         try {
-            const me = await apiFetch('/auth/me');
-            currentUser = me;
-            currentRole = me.role || 'customer';
-            localStorage.setItem('user_role', currentRole);
-            // fetch organization details if possible (separate endpoint /organizations/me or from me)
-            if (me.organisation_id || me.org_id) {
+            const me = await apiCall('/auth/me', 'GET', null, accessToken);
+            const role = me.role || 'customer';
+            localStorage.setItem('user_role', role);
+            return role;
+        } catch (err) {
+            console.warn('Could not fetch role:', err);
+            localStorage.setItem('user_role', 'customer');
+            return 'customer';
+        }
+    }
+
+    async function login(email, password) {
+        const data = await apiCall('/auth/login', 'POST', { email, password });
+        localStorage.setItem('access_token', data.access_token);
+        localStorage.setItem('refresh_token', data.refresh_token);
+        localStorage.setItem('user_id', data.user_id);
+        // Store role immediately after login
+        await fetchAndStoreRole(data.access_token);
+        showToast('Login successful, redirecting...');
+        setTimeout(() => { window.location.href = DASHBOARD_URL; }, 1000);
+    }
+
+    async function register(payload) {
+        await apiCall('/auth/register', 'POST', payload);
+        showToast('Registration successful! Please verify email (if required) and then login.');
+        document.getElementById('login-tab').click();
+    }
+
+    async function resetPassword(email) {
+        await apiCall('/auth/reset-password', 'POST', { email });
+        showToast('Password reset email sent. Check your inbox.');
+    }
+
+    // Preview organisation name when typing invite code
+    let previewTimeout;
+    document.getElementById('reg-invite-code')?.addEventListener('input', async (e) => {
+        const code = e.target.value.trim();
+        const previewDiv = document.getElementById('org-name-preview');
+        const previewSpan = document.getElementById('preview-org-name');
+        if (code.length >= 3) {
+            clearTimeout(previewTimeout);
+            previewTimeout = setTimeout(async () => {
                 try {
-                    const orgInfo = await apiFetch(`/organisations/${me.organisation_id || me.org_id}`);
-                    orgDetails.name = orgInfo.name || orgInfo.org_name || 'Kevs Digital';
-                    orgDetails.store_address = orgInfo.store_address || 'Not configured';
-                    orgDetails.base_fee = orgInfo.delivery_base_fee || 0;
-                    orgDetails.per_km = orgInfo.delivery_per_km_rate || 0;
-                    orgDetails.per_kg = orgInfo.delivery_per_kg_rate || 0;
-                } catch (e) {
-                    console.warn("Could not fetch org details", e);
+                    const data = await apiCall(`/public/org-info?invite_code=${code}`);
+                    previewSpan.innerText = data.org_name;
+                    previewDiv.classList.remove('hidden');
+                } catch (err) {
+                    previewDiv.classList.add('hidden');
                 }
-            } else if (me.organisation) {
-                orgDetails.name = me.organisation.name || me.organisation.org_name;
-                orgDetails.store_address = me.organisation.store_address || '';
-            }
-            // update UI badges
-            document.getElementById('org-badge').innerText = orgDetails.name || currentUser?.organisation_name || 'KevsBI';
-            document.getElementById('user-fullname').innerText = `${currentUser.first_name || ''} ${currentUser.last_name || ''}`.trim() || currentUser.email;
-            document.getElementById('user-role').innerText = currentRole.replace(/_/g, ' ');
-            const avatarLetter = (currentUser.first_name?.[0] || currentUser.email?.[0] || 'U').toUpperCase();
-            document.getElementById('user-avatar').innerText = avatarLetter;
-            return true;
-        } catch (err) {
-            console.error('Failed to fetch user', err);
-            showToast('Could not verify user session', 'error');
-            window.location.href = SIGNIN_PAGE;
-            return false;
-        }
-    }
-
-    // dynamic sidebar generation
-    function generateSidebarMenu() {
-        const allowedMenus = ROLE_MENUS[currentRole] || [];
-        // for customer, show empty but friendly message
-        menuItemsList = allowedMenus;
-        const menuContainer = document.getElementById('dynamic-menu');
-        if (!menuContainer) return;
-        if (allowedMenus.length === 0) {
-            menuContainer.innerHTML = `<div class="text-center text-gray-400 text-sm p-4"><i class="fa-regular fa-face-frown"></i> No dashboard menus available for your role.<br>Contact administrator.</div>`;
-            return;
-        }
-        // render menu items
-        let menuHtml = '';
-        allowedMenus.forEach(menu => {
-            const iconClass = MENU_ICONS[menu] || 'fa-circle';
-            const isActive = (activeMenuItem === menu);
-            menuHtml += `
-                <button data-menu="${menu}" class="menu-item w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-orange-50 transition-all duration-150 ${isActive ? 'menu-active bg-orange-50/40' : ''}">
-                    <i class="fas ${iconClass} w-5 text-orange-500"></i>
-                    <span class="text-sm font-medium">${menu}</span>
-                </button>
-            `;
-        });
-        menuContainer.innerHTML = menuHtml;
-
-        // attach click events
-        document.querySelectorAll('.menu-item').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const menuName = btn.getAttribute('data-menu');
-                if (menuName) {
-                    setActiveMenu(menuName);
-                    loadModuleContent(menuName);
-                    // on mobile close sidebar after click
-                    if (window.innerWidth < 768) {
-                        document.getElementById('sidebar')?.classList.remove('open');
-                        document.getElementById('mobile-overlay')?.classList.remove('open');
-                    }
-                }
-            });
-        });
-    }
-
-    function setActiveMenu(menuName) {
-        activeMenuItem = menuName;
-        document.getElementById('page-title').innerText = menuName;
-        // update visual active class
-        document.querySelectorAll('.menu-item').forEach(btn => {
-            if (btn.getAttribute('data-menu') === menuName) {
-                btn.classList.add('menu-active', 'bg-orange-50/40');
-            } else {
-                btn.classList.remove('menu-active', 'bg-orange-50/40');
-            }
-        });
-    }
-
-    // ---------- MODULE CONTENT RENDERERS (API integrated) ----------
-    async function loadModuleContent(module) {
-        const mainDiv = document.getElementById('main-content');
-        if (!mainDiv) return;
-        mainDiv.innerHTML = `<div class="flex justify-center items-center py-16"><div class="loading-spinner-sm mr-2"></div><span class="text-gray-500">Loading ${module} data...</span></div>`;
-
-        try {
-            let contentHtml = '';
-            switch (module) {
-                case 'Dashboard':
-                    contentHtml = await renderDashboard();
-                    break;
-                case 'Inventory':
-                    contentHtml = await renderInventory();
-                    break;
-                case 'POS':
-                    contentHtml = await renderPOS();
-                    break;
-                case 'Fulfillment':
-                    contentHtml = await renderFulfillment();
-                    break;
-                case 'Support':
-                case 'Support Tickets':
-                    contentHtml = await renderSupport();
-                    break;
-                case 'Leads':
-                    contentHtml = await renderLeads();
-                    break;
-                case 'BI':
-                    contentHtml = await renderBI();
-                    break;
-                case 'Sales Reports':
-                    contentHtml = await renderSalesReports();
-                    break;
-                case 'Settings':
-                    contentHtml = await renderSettings();
-                    break;
-                default:
-                    contentHtml = `<div class="bg-white rounded-xl shadow p-8 text-center"><i class="fas fa-cogs text-4xl text-gray-300 mb-3"></i><h2 class="text-xl font-semibold">${module}</h2><p class="text-gray-500 mt-2">Module under construction. Data will appear here soon.</p></div>`;
-            }
-            mainDiv.innerHTML = contentHtml;
-        } catch (err) {
-            mainDiv.innerHTML = `<div class="bg-red-50 border border-red-200 rounded-xl p-6 text-red-700"><i class="fas fa-exclamation-triangle mr-2"></i> Failed to load: ${err.message}</div>`;
-        }
-    }
-
-    // DASHBOARD overview with some stats from backend if available
-    async function renderDashboard() {
-        let summary = { inventory: '?', orders: '?', leads: '?' };
-        try {
-            const inv = await apiFetch('/inventory/summary').catch(() => null);
-            if (inv) summary.inventory = inv.total_items ?? inv.count ?? 'N/A';
-            const orders = await apiFetch('/fulfillment/orders/count').catch(() => null);
-            if (orders) summary.orders = orders.count ?? 'N/A';
-        } catch(e) { /* silent fallback */ }
-        return `
-            <div class="space-y-6">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
-                    <div class="bg-white p-5 rounded-2xl shadow-sm border-l-4 border-orange-500 card-hover transition"><i class="fas fa-boxes text-2xl text-orange-500 mb-2 block"></i><p class="text-gray-500 text-sm">Total Products</p><p class="text-2xl font-bold">${summary.inventory}</p></div>
-                    <div class="bg-white p-5 rounded-2xl shadow-sm border-l-4 border-blue-500 card-hover"><i class="fas fa-truck text-2xl text-blue-500 mb-2 block"></i><p class="text-gray-500 text-sm">Active Orders</p><p class="text-2xl font-bold">${summary.orders}</p></div>
-                    <div class="bg-white p-5 rounded-2xl shadow-sm border-l-4 border-emerald-500 card-hover"><i class="fas fa-chart-line text-2xl text-emerald-500 mb-2 block"></i><p class="text-gray-500 text-sm">Monthly Revenue</p><p class="text-2xl font-bold">₦ --</p></div>
-                </div>
-                <div class="bg-white rounded-xl shadow-sm p-5"><h3 class="font-semibold text-gray-700 mb-3"><i class="fa-regular fa-clock mr-2"></i>Quick insights</h3><p class="text-sm text-gray-600">Welcome back, ${currentUser?.first_name || 'User'}! Role: <span class="capitalize font-medium">${currentRole}</span>. Use the sidebar to navigate your modules.</p><div class="mt-3 bg-orange-50 p-3 rounded-lg text-xs text-gray-600">📍 Store: ${orgDetails.store_address || 'Main store'} | Delivery: ₦${orgDetails.base_fee} base + ₦${orgDetails.per_km}/km + ₦${orgDetails.per_kg}/kg</div></div>
-            </div>
-        `;
-    }
-
-    async function renderInventory() {
-        let items = [];
-        try {
-            const data = await apiFetch('/inventory/items');
-            items = data.items || data || [];
-        } catch(e) { items = []; }
-        if (items.length === 0) {
-            return `<div class="bg-white rounded-xl shadow p-6 text-center"><i class="fas fa-box-open text-4xl text-gray-300"></i><p class="mt-2">No inventory items found. Add products to get started.</p></div>`;
-        }
-        return `
-            <div class="bg-white rounded-xl shadow overflow-hidden"><div class="p-4 border-b bg-gray-50"><h2 class="font-semibold"><i class="fas fa-boxes mr-2 text-orange-500"></i>Inventory items</h2></div>
-            <div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500">Product</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500">SKU</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500">Stock</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500">Price (₦)</th></tr></thead><tbody>
-            ${items.slice(0,10).map(i => `<tr class="border-t"><td class="px-6 py-3">${i.name || 'Item'}</td><td class="px-6 py-3">${i.sku || 'N/A'}</td><td class="px-6 py-3">${i.quantity ?? i.stock ?? 0}</td><td class="px-6 py-3">${i.price?.toLocaleString() || '0'}</td></tr>`).join('')}
-            </tbody></table></div></div>`;
-    }
-
-    async function renderPOS() { return `<div class="bg-white rounded-xl shadow p-6"><div class="flex items-center gap-3 mb-4"><i class="fas fa-cash-register text-3xl text-orange-500"></i><h2 class="text-xl font-bold">Point of Sale</h2></div><p class="mb-4">Quick sale interface (demo integration). Products & cart will appear after backend integration.</p><div class="border rounded-lg p-4 bg-gray-50"><div class="flex gap-2"><input type="text" placeholder="Scan product barcode" class="border rounded px-3 py-2 flex-1"><button class="bg-orange-500 text-white px-4 rounded">Add</button></div><div class="mt-4 text-sm text-gray-500">Cart preview: POS module ready for real-time transactions.</div></div></div>`; }
-    async function renderFulfillment() {
-        let orders = [];
-        try { const data = await apiFetch('/fulfillment/orders'); orders = data.orders || data || []; } catch(e) { orders = []; }
-        return `<div class="bg-white rounded-xl shadow p-5"><h2 class="font-semibold text-lg mb-3"><i class="fas fa-truck-fast mr-2"></i>Fulfillment queue</h2>${orders.length ? `<ul class="divide-y">${orders.slice(0,5).map(o => `<li class="py-2 flex justify-between"><span>#${o.id}</span><span class="text-sm">${o.status || 'pending'}</span></li>`).join('')}</ul>` : `<p class="text-gray-400">No active deliveries. Orders will appear here.</p>`}<div class="mt-4 text-sm bg-blue-50 p-3 rounded">📍 Store address for distance: ${orgDetails.store_address || 'Not set'}</div></div>`;
-    }
-    async function renderSupport() { return `<div class="bg-white rounded-xl shadow p-6"><i class="fas fa-headset text-3xl text-blue-500 mb-3"></i><h2 class="text-xl font-bold">Support tickets</h2><p class="text-gray-500">View and respond to customer inquiries. Coming soon: integrated ticket system.</p><div class="mt-4 bg-gray-100 p-3 rounded"><span class="text-xs">📞 Contact support: support@kevsdigital.com</span></div></div>`; }
-    async function renderLeads() {
-        let leads = [];
-        try { const data = await apiFetch('/crm/leads'); leads = data.leads || data || []; } catch(e) { leads = []; }
-        return `<div class="bg-white rounded-xl shadow p-5"><h2 class="font-semibold"><i class="fas fa-users mr-2"></i>Sales Leads</h2>${leads.length ? `<ul>${leads.map(l => `<li class="border-b py-2">${l.name} - ${l.status || 'new'}</li>`).join('')}</ul>` : `<p class="text-gray-400 mt-2">No leads fetched. Use CRM tools.</p>`}<button class="mt-4 text-orange-600 text-sm">+ Import leads</button></div>`;
-    }
-    async function renderBI() {
-        return `<div class="bg-white rounded-xl shadow p-5"><div class="flex items-center gap-2"><i class="fas fa-chart-simple text-2xl text-purple-500"></i><h2 class="text-xl font-bold">Business Intelligence</h2></div><p class="text-gray-500 mt-1">Key metrics & AI insights will reflect KPIs based on your sales and inventory.</p><div class="grid grid-cols-2 gap-3 mt-5"><div class="bg-gray-50 p-3 rounded">📊 Avg order value: ₦12,450</div><div class="bg-gray-50 p-3 rounded">📈 Growth (MoM): +18%</div></div></div>`;
-    }
-    async function renderSalesReports() {
-        return `<div class="bg-white rounded-xl shadow p-6"><i class="fas fa-file-invoice-dollar text-2xl text-green-600 mb-2"></i><h2 class="text-xl font-bold">Sales Reports</h2><p class="text-gray-500">Daily, weekly, monthly aggregated sales performance.</p><div class="mt-4"><div class="flex justify-between border-b py-2"><span>Today</span><span>₦ 124,500</span></div><div class="flex justify-between border-b py-2"><span>This week</span><span>₦ 872,300</span></div><div class="flex justify-between py-2"><span>This month</span><span>₦ 3.2M</span></div></div></div>`;
-    }
-    async function renderSettings() {
-        const hasAccess = (currentRole === 'owner' || currentRole === 'admin');
-        if (!hasAccess) return `<div class="bg-yellow-50 border rounded-xl p-6 text-center text-yellow-700"><i class="fas fa-lock"></i> Settings restricted to owners/admins.</div>`;
-        return `<div class="bg-white rounded-xl shadow p-6"><h2 class="text-xl font-bold mb-4"><i class="fas fa-gear"></i> Organisation Settings</h2><div class="space-y-3"><div><label class="text-sm font-medium">Store address</label><p class="bg-gray-50 p-2 rounded">${orgDetails.store_address || 'Not set'}</p></div><div class="grid grid-cols-2 gap-3"><div><label class="text-sm">Base fee (₦)</label><p class="font-semibold">${orgDetails.base_fee}</p></div><div><label class="text-sm">Per km rate (₦)</label><p class="font-semibold">${orgDetails.per_km}</p></div><div><label class="text-sm">Per kg rate (₦)</label><p class="font-semibold">${orgDetails.per_kg}</p></div></div><button class="mt-4 bg-orange-500 text-white px-4 py-2 rounded text-sm">Update Settings (API)</button></div></div>`;
-    }
-
-    // initialize dashboard after auth
-    async function initDashboard() {
-        const token = localStorage.getItem('access_token');
-        if (!token) {
-            window.location.href = SIGNIN_PAGE;
-            return;
-        }
-        const userLoaded = await loadUserAndOrg();
-        if (!userLoaded) return;
-        generateSidebarMenu();
-        // load default module (first allowed or Dashboard)
-        let defaultModule = 'Dashboard';
-        if (menuItemsList.length && menuItemsList.includes('Dashboard')) defaultModule = 'Dashboard';
-        else if (menuItemsList.length) defaultModule = menuItemsList[0];
-        setActiveMenu(defaultModule);
-        await loadModuleContent(defaultModule);
-    }
-
-    // logout handler
-    document.addEventListener('click', (e) => {
-        if (e.target.closest('#logout-btn')) {
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('refresh_token');
-            localStorage.removeItem('user_id');
-            localStorage.removeItem('user_role');
-            window.location.href = SIGNIN_PAGE;
+            }, 500);
+        } else {
+            previewDiv.classList.add('hidden');
         }
     });
 
-    // mobile sidebar toggling
-    const menuToggle = document.getElementById('menu-toggle');
-    const sidebar = document.getElementById('sidebar');
-    const overlay = document.getElementById('mobile-overlay');
-    if (menuToggle) {
-        menuToggle.addEventListener('click', () => {
-            sidebar.classList.add('open');
-            overlay.classList.add('open');
-        });
-    }
-    const closeBtn = document.getElementById('close-sidebar-mobile');
-    if (closeBtn) closeBtn.addEventListener('click', () => { sidebar.classList.remove('open'); overlay.classList.remove('open'); });
-    if (overlay) overlay.addEventListener('click', () => { sidebar.classList.remove('open'); overlay.classList.remove('open'); });
+    document.getElementById('demo-login-btn')?.addEventListener('click', async () => {
+        const btn = document.getElementById('demo-login-btn');
+        const original = btn.innerHTML;
+        btn.innerHTML = '<i class="fa-solid fa-circle-notch animate-spin"></i> Authenticating...';
+        btn.disabled = true;
+        try {
+            const data = await apiCall('/auth/login', 'POST', { email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' });
+            localStorage.setItem('access_token', data.access_token);
+            localStorage.setItem('refresh_token', data.refresh_token);
+            localStorage.setItem('user_id', data.user_id);
+            await fetchAndStoreRole(data.access_token);
+            showToast('Demo login successful!');
+            setTimeout(() => window.location.href = DASHBOARD_URL, 1000);
+        } catch (err) {
+            showToast('Demo failed: ' + err.message, 'error');
+            btn.innerHTML = original;
+            btn.disabled = false;
+        }
+    });
 
-    // start app
-    initDashboard().catch(err => {
-        console.error(err);
-        showToast('Initialization error', 'error');
+    document.getElementById('login-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('login-email').value;
+        const pwd = document.getElementById('login-password').value;
+        try { await login(email, pwd); } catch (err) { showToast(err.message, 'error'); }
+    });
+
+    document.getElementById('register-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const inviteCode = document.getElementById('reg-invite-code').value.trim();
+        const orgName = document.getElementById('reg-org-name').value.trim();
+        const location = document.getElementById('reg-location').value.trim();
+        const niche = document.getElementById('reg-niche').value.trim();
+        const storeAddress = document.getElementById('reg-store-address').value.trim();
+        const baseFee = parseFloat(document.getElementById('reg-base-fee').value) || 300;
+        const perKm = parseFloat(document.getElementById('reg-per-km').value) || 80;
+        const perKg = parseFloat(document.getElementById('reg-per-kg').value) || 50;
+        const budget = parseInt(document.getElementById('reg-budget').value) || 0;
+        const firstName = document.getElementById('reg-fname').value.trim();
+        const lastName = document.getElementById('reg-lname').value.trim();
+        const phone = document.getElementById('reg-phone').value.trim();
+        const email = document.getElementById('reg-email').value.trim();
+        const password = document.getElementById('reg-password').value.trim();
+
+        if (!email || !password) { showToast('Email and password are required', 'error'); return; }
+        if (!firstName || !lastName || !phone) { showToast('First name, last name, and phone number are required', 'error'); return; }
+        if (!inviteCode && (!orgName || !location || !niche || !storeAddress)) {
+            showToast('When creating a new organisation, please fill organisation name, location, niche, and store address.', 'error');
+            return;
+        }
+
+        const payload = {
+            email, password,
+            first_name: firstName,
+            last_name: lastName,
+            phone: phone
+        };
+        if (inviteCode) {
+            payload.invite_code = inviteCode;
+        } else {
+            payload.org_name = orgName;
+            payload.location = location;
+            payload.niche = niche;
+            payload.budget = budget;
+            payload.store_address = storeAddress;
+            payload.delivery_base_fee = baseFee;
+            payload.delivery_per_km_rate = perKm;
+            payload.delivery_per_kg_rate = perKg;
+        }
+        try {
+            await register(payload);
+        } catch (err) { showToast(err.message, 'error'); }
+    });
+
+    document.getElementById('forgot-pwd-btn')?.addEventListener('click', async () => {
+        const email = document.getElementById('login-email').value;
+        if (!email) { showToast('Enter your email first', 'error'); return; }
+        try { await resetPassword(email); } catch (err) { showToast(err.message, 'error'); }
+    });
+
+    document.getElementById('login-tab')?.addEventListener('click', () => {
+        document.getElementById('login-form').classList.remove('hidden');
+        document.getElementById('register-form').classList.add('hidden');
+        document.getElementById('login-tab').classList.add('border-blue-600', 'text-blue-600');
+        document.getElementById('register-tab').classList.remove('border-blue-600', 'text-blue-600');
+        document.getElementById('register-tab').classList.add('text-gray-500');
+    });
+    document.getElementById('register-tab')?.addEventListener('click', () => {
+        document.getElementById('login-form').classList.add('hidden');
+        document.getElementById('register-form').classList.remove('hidden');
+        document.getElementById('register-tab').classList.add('border-blue-600', 'text-blue-600');
+        document.getElementById('login-tab').classList.remove('border-blue-600', 'text-blue-600');
+        document.getElementById('login-tab').classList.add('text-gray-500');
     });
 </script>
-<!-- toast container hidden but will be created dynamically -->
-<div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
 </body>
 </html>
