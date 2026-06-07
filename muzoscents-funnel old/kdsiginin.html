@@ -11,7 +11,6 @@
         body { background-color: #fef9e6; font-family: system-ui, sans-serif; }
         .loading-spinner { border: 2px solid #e5e7eb; border-top: 2px solid var(--kevs-blue); border-radius: 50%; width: 20px; height: 20px; animation: spin 0.6s linear infinite; display: inline-block; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        /* autocomplete dropdown styling */
         .address-suggestions {
             position: absolute;
             z-index: 1000;
@@ -30,6 +29,31 @@
         }
         .suggestion-item:hover {
             background-color: #f0f0f0;
+        }
+        /* Map modal styles */
+        .map-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 10000;
+            align-items: center;
+            justify-content: center;
+        }
+        .map-modal.active {
+            display: flex;
+        }
+        .map-container {
+            background: white;
+            border-radius: 16px;
+            width: 90%;
+            max-width: 800px;
+            padding: 16px;
+        }
+        #map {
+            height: 400px;
+            width: 100%;
+            border-radius: 12px;
         }
     </style>
 </head>
@@ -70,7 +94,6 @@
             <div class="relative flex justify-center text-xs"><span class="bg-white px-2 text-gray-400">OR create new organisation</span></div>
         </div>
         
-        <!-- New Organisation Fields (all required if no invite code) -->
         <div>
             <label class="block text-xs text-gray-500 mb-1">Organisation Name *</label>
             <input type="text" id="reg-org-name" placeholder="Your Company Name" class="w-full p-3 border rounded-lg mb-2">
@@ -84,17 +107,24 @@
             <input type="text" id="reg-niche" placeholder="e.g., Retail, Tech, Logistics" class="w-full p-3 border rounded-lg mb-2">
         </div>
         
-        <!-- Store Address with Autocomplete + Map Fallback -->
+        <!-- Store Address with Autocomplete + GPS + Map -->
         <div class="relative mb-2">
             <label class="block text-xs text-gray-500 mb-1">Store Address * (for delivery distance calculation)</label>
-            <input type="text" id="reg-store-address" placeholder="e.g., 12, Allen Avenue, Ikeja, Lagos" class="w-full p-3 border rounded-lg" autocomplete="off">
-            <div id="address-suggestions" class="address-suggestions hidden"></div>
-            <div class="flex justify-between items-center mt-1">
-                <p id="address-status" class="text-xs text-amber-600 hidden">⚠️ Please select an address from the dropdown</p>
-                <button type="button" id="fallback-map-btn" class="text-xs text-blue-500 underline hover:text-blue-700">Can't find your address? Use map picker</button>
+            <div class="flex gap-2">
+                <div class="relative flex-1">
+                    <input type="text" id="reg-store-address" placeholder="Start typing your full address..." class="w-full p-3 border rounded-lg" autocomplete="off">
+                    <div id="address-suggestions" class="address-suggestions hidden"></div>
+                </div>
+                <button type="button" id="gps-locate-btn" class="bg-indigo-600 text-white px-3 rounded-lg hover:bg-indigo-700 transition" title="Use my current location">
+                    <i class="fa-solid fa-location-dot"></i> GPS
+                </button>
+                <button type="button" id="map-picker-btn" class="bg-emerald-600 text-white px-3 rounded-lg hover:bg-emerald-700 transition" title="Select on map">
+                    <i class="fa-solid fa-map"></i> Map
+                </button>
             </div>
             <input type="hidden" id="reg-store-latitude">
             <input type="hidden" id="reg-store-longitude">
+            <p id="address-status" class="text-xs text-amber-600 mt-1 hidden">⚠️ Please select an address from the dropdown, use GPS, or pick on map</p>
         </div>
 
         <div class="grid grid-cols-2 gap-2 mb-2">
@@ -114,7 +144,6 @@
             </div>
         </div>
         
-        <!-- User details -->
         <div class="grid grid-cols-2 gap-2 mb-2">
             <div>
                 <label class="block text-xs text-gray-500 mb-1">First Name *</label>
@@ -160,18 +189,18 @@
     <div id="auth-message" class="text-xs text-center mt-4 text-red-500 hidden"></div>
 </div>
 
-<!-- Modal for Map Picker (free, using Leaflet + OSM) -->
-<div id="map-modal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden items-center justify-center">
-    <div class="bg-white rounded-xl w-full max-w-2xl p-4">
-        <div class="flex justify-between mb-2">
-            <h3 class="font-semibold">Select your store location on map</h3>
-            <button id="close-map-modal" class="text-gray-500 text-xl">&times;</button>
+<!-- Map Modal -->
+<div id="map-modal" class="map-modal">
+    <div class="map-container">
+        <div class="flex justify-between items-center mb-3">
+            <h3 class="font-bold text-gray-800">📍 Select your store location on map</h3>
+            <button id="close-map-modal" class="text-gray-500 text-2xl">&times;</button>
         </div>
-        <div id="map" style="height: 400px; width: 100%; border-radius: 8px;"></div>
-        <div class="mt-3 flex justify-end gap-2">
-            <button id="confirm-map-location" class="bg-blue-600 text-white px-4 py-2 rounded-lg">Use this location</button>
+        <div id="map"></div>
+        <div class="flex justify-end mt-3 gap-2">
+            <button id="confirm-map-btn" class="bg-blue-600 text-white px-4 py-2 rounded-lg">Use this location</button>
         </div>
-        <p class="text-xs text-gray-500 mt-2">Click on the map to set your store coordinates. The address will be reverse‑geocoded.</p>
+        <p class="text-xs text-gray-500 mt-2">Click on the map to drop a pin. The address will be filled automatically.</p>
     </div>
 </div>
 
@@ -279,7 +308,7 @@
         }
     });
 
-    // ---------- IMPROVED OSM NOMINATIM AUTOCOMPLETE (no API key, global search) ----------
+    // ---------- OSM AUTOCOMPLETE ----------
     const addressInput = document.getElementById('reg-store-address');
     const suggestionsDiv = document.getElementById('address-suggestions');
     const latInput = document.getElementById('reg-store-latitude');
@@ -301,7 +330,6 @@
         items.forEach(item => {
             const div = document.createElement('div');
             div.className = 'suggestion-item';
-            // Show a short version: first 3 parts of display_name
             const parts = item.display_name.split(',');
             const shortName = parts.slice(0, 3).join(',');
             div.textContent = shortName;
@@ -323,7 +351,6 @@
             hideSuggestions();
             return;
         }
-        // No country restriction – search worldwide; Nigerian addresses will appear if query includes city/state
         const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=10&dedupe=1`;
         try {
             const response = await fetch(url, {
@@ -344,7 +371,7 @@
         latInput.value = '';
         lngInput.value = '';
         addressStatus.classList.remove('hidden');
-        addressStatus.innerText = '⚠️ Please select an address from the dropdown';
+        addressStatus.innerText = '⚠️ Please select an address from the dropdown, use GPS, or pick on map';
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
             fetchAddressSuggestions(e.target.value);
@@ -357,14 +384,44 @@
         }
     });
 
-    // ---------- FREE MAP PICKER FALLBACK (Leaflet + OSM, no keys) ----------
-    let selectedLat = null, selectedLng = null;
-    let map = null;
-    let marker = null;
+    // ---------- GPS GEOLOCATION ----------
+    async function useCurrentLocation() {
+        if (!navigator.geolocation) {
+            showToast("Geolocation not supported by your browser", 'error');
+            return;
+        }
+        showToast("Fetching your location...", 'success');
+        navigator.geolocation.getCurrentPosition(async (position) => {
+            const { latitude, longitude } = position.coords;
+            try {
+                const revUrl = `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`;
+                const resp = await fetch(revUrl, { headers: { 'User-Agent': 'KevsDigital/1.0' } });
+                const data = await resp.json();
+                const fullAddress = data.display_name || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+                addressInput.value = fullAddress;
+                latInput.value = latitude;
+                lngInput.value = longitude;
+                addressStatus.classList.add('hidden');
+                showToast("Address set from GPS! Please verify.", 'success');
+                hideSuggestions();
+            } catch (err) {
+                showToast("Reverse geocoding failed: " + err.message, 'error');
+            }
+        }, (err) => {
+            showToast("GPS error: " + err.message, 'error');
+        });
+    }
+    document.getElementById('gps-locate-btn')?.addEventListener('click', useCurrentLocation);
+
+    // ---------- MAP PICKER (Leaflet + OSM) ----------
+    let map = null, marker = null, selectedLat = null, selectedLng = null;
+    let leafletLoaded = false;
 
     function loadLeaflet() {
         return new Promise((resolve) => {
+            if (leafletLoaded) { resolve(); return; }
             if (document.querySelector('#leaflet-css')) {
+                leafletLoaded = true;
                 resolve();
                 return;
             }
@@ -375,17 +432,20 @@
             document.head.appendChild(link);
             const script = document.createElement('script');
             script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-            script.onload = () => resolve();
+            script.onload = () => {
+                leafletLoaded = true;
+                resolve();
+            };
             document.head.appendChild(script);
         });
     }
 
-    document.getElementById('fallback-map-btn').addEventListener('click', async () => {
+    async function openMapPicker() {
         await loadLeaflet();
         const modal = document.getElementById('map-modal');
-        modal.classList.remove('hidden');
-        modal.classList.add('flex');
+        modal.classList.add('active');
         
+        // Center on Lagos or last selected coordinate
         const centerLat = selectedLat || 6.5244;
         const centerLng = selectedLng || 3.3792;
         if (!map) {
@@ -410,18 +470,17 @@
             selectedLng = e.latlng.lng;
             marker.setLatLng(e.latlng);
         });
-    });
+    }
 
-    document.getElementById('close-map-modal').addEventListener('click', () => {
-        document.getElementById('map-modal').classList.add('hidden');
-        document.getElementById('map-modal').classList.remove('flex');
+    document.getElementById('map-picker-btn')?.addEventListener('click', openMapPicker);
+    document.getElementById('close-map-modal')?.addEventListener('click', () => {
+        document.getElementById('map-modal').classList.remove('active');
     });
-
-    document.getElementById('confirm-map-location').addEventListener('click', async () => {
+    document.getElementById('confirm-map-btn')?.addEventListener('click', async () => {
         if (selectedLat && selectedLng) {
             latInput.value = selectedLat;
             lngInput.value = selectedLng;
-            // Reverse geocode to get an address string
+            // Reverse geocode to get address
             try {
                 const revUrl = `https://nominatim.openstreetmap.org/reverse?lat=${selectedLat}&lon=${selectedLng}&format=json`;
                 const resp = await fetch(revUrl, { headers: { 'User-Agent': 'KevsDigital/1.0' } });
@@ -431,17 +490,17 @@
                 addressInput.value = `Selected location (${selectedLat.toFixed(4)}, ${selectedLng.toFixed(4)})`;
             }
             addressStatus.classList.add('hidden');
-            document.getElementById('close-map-modal').click();
-            showToast('Location set from map!', 'success');
+            document.getElementById('map-modal').classList.remove('active');
+            showToast("Location set from map!", 'success');
         } else {
-            showToast('Please click on the map first to select a point.', 'error');
+            showToast("Please click on the map first to select a point.", 'error');
         }
     });
 
-    // ---------- ADDRESS VALIDATION FOR NEW ORG (compulsory lat/lng) ----------
+    // ---------- ADDRESS VALIDATION FOR NEW ORG ----------
     function isAddressValidForNewOrg() {
         const inviteCode = document.getElementById('reg-invite-code').value.trim();
-        if (inviteCode) return true; // Invite mode doesn't need address
+        if (inviteCode) return true;
         const address = addressInput.value.trim();
         const lat = latInput.value;
         const lng = lngInput.value;
@@ -452,7 +511,7 @@
         }
         if (!lat || !lng) {
             addressStatus.classList.remove('hidden');
-            addressStatus.innerText = '❌ Please select a valid address from the dropdown or use the map picker.';
+            addressStatus.innerText = '❌ Please select a valid address from dropdown, use GPS, or pick on map.';
             return false;
         }
         addressStatus.classList.add('hidden');
@@ -488,7 +547,7 @@
         try { await login(email, pwd); } catch (err) { showToast(err.message, 'error'); }
     });
 
-    // ---------- REGISTER SUBMIT (with address validation & lat/lng) ----------
+    // ---------- REGISTER SUBMIT ----------
     document.getElementById('register-form')?.addEventListener('submit', async (e) => {
         e.preventDefault();
         const inviteCode = document.getElementById('reg-invite-code').value.trim();
@@ -509,19 +568,17 @@
         const latitude = latInput.value ? parseFloat(latInput.value) : null;
         const longitude = lngInput.value ? parseFloat(lngInput.value) : null;
 
-        // Basic validation
         if (!email || !password) { showToast('Email and password are required', 'error'); return; }
         if (password !== confirmPassword) { showToast('Passwords do not match!', 'error'); return; }
         if (!firstName || !lastName || !phone) { showToast('First name, last name, and phone number are required', 'error'); return; }
 
         if (!inviteCode) {
-            // New organisation mode: all fields required including valid address
             if (!orgName || !location || !niche || !storeAddress) {
                 showToast('When creating a new organisation, please fill organisation name, location, niche, and store address.', 'error');
                 return;
             }
             if (!isAddressValidForNewOrg()) {
-                showToast('Please select a valid store address from the dropdown or use the map picker.', 'error');
+                showToast('Please select a valid store address from dropdown, use GPS, or pick on map.', 'error');
                 return;
             }
         }
