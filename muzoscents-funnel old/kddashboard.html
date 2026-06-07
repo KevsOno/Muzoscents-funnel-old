@@ -146,6 +146,7 @@
         <div><label class="block text-sm">Start Date</label><input type="date" id="start-date" class="border rounded p-2"></div>
         <div><label class="block text-sm">End Date</label><input type="date" id="end-date" class="border rounded p-2"></div>
         <button id="update-dates" class="bg-blue-600 text-white px-4 py-2 rounded">Update</button>
+        <button id="refresh-product-stats" class="bg-green-600 text-white px-4 py-2 rounded ml-2">⟳ Refresh Breakdown</button>
         <div class="ml-auto"><span class="text-sm text-gray-500">Default: last 30 days</span></div>
     </div>
 
@@ -163,12 +164,16 @@
 
     <div class="bg-white rounded shadow p-4 mb-6">
         <h2 class="text-xl font-semibold mb-3">Expenditure Breakdown (COGS by Product)</h2>
-        <div id="expenditure-table" class="overflow-x-auto"></div>
+        <div id="expenditure-table" class="overflow-x-auto">
+            <p class="text-gray-400 text-center py-4">Loading...</p>
+        </div>
     </div>
 
     <div class="bg-white rounded shadow p-4">
         <h2 class="text-xl font-semibold mb-3">🏆 Top Selling Products (units)</h2>
-        <div id="top-products" class="overflow-x-auto"></div>
+        <div id="top-products" class="overflow-x-auto">
+            <p class="text-gray-400 text-center py-4">Loading...</p>
+        </div>
     </div>
 </div>
 
@@ -232,17 +237,67 @@
     document.getElementById('start-date').value = defaultStart;
     document.getElementById('end-date').value = defaultEnd;
 
+    async function loadProductStats() {
+        const start = document.getElementById('start-date').value;
+        const end = document.getElementById('end-date').value;
+        if (!start || !end) return;
+
+        console.log(`Fetching product stats from ${start} to ${end}...`);
+        try {
+            const result = await apiCall(`/sales/product-stats?start_date=${start}&end_date=${end}`);
+            console.log("Product stats response:", result);
+
+            // Backend returns: { "product_stats": [ { "product_name": ..., "quantity_sold": ..., "cost_of_goods_sold": ..., ... } ] }
+            const statsArray = result.product_stats || [];
+            
+            if (statsArray.length === 0) {
+                document.getElementById('expenditure-table').innerHTML = '<p class="text-gray-500 text-center py-4">📭 No COGS data for selected period.</p>';
+                document.getElementById('top-products').innerHTML = '<p class="text-gray-500 text-center py-4">📭 No product sales data for selected period.</p>';
+                return;
+            }
+
+            // Build COGS table (expenditure breakdown)
+            let expendHtml = '<table class="min-w-full"><thead><tr><th class="text-left p-2">Product</th><th class="text-left p-2">Total COGS (₦)</th></tr></thead><tbody>';
+            for (let item of statsArray) {
+                const productName = item.product_name || 'Unknown';
+                const cogs = item.cost_of_goods_sold || 0;
+                expendHtml += `<tr><td class="p-2 border-b">${escapeHtml(productName)}</td><td class="p-2 border-b">₦${cogs.toLocaleString()}</td></tr>`;
+            }
+            expendHtml += '</tbody></table>';
+            document.getElementById('expenditure-table').innerHTML = expendHtml;
+
+            // Build top products table (by quantity)
+            // Sort by quantity_sold descending
+            const sorted = [...statsArray].sort((a,b) => (b.quantity_sold || 0) - (a.quantity_sold || 0));
+            let topHtml = '<table class="min-w-full"><thead><tr><th class="text-left p-2">Product</th><th class="text-left p-2">Units Sold</th></tr></thead><tbody>';
+            for (let item of sorted.slice(0,10)) {
+                const productName = item.product_name || 'Unknown';
+                const qty = item.quantity_sold || 0;
+                topHtml += `<tr><td class="p-2 border-b">${escapeHtml(productName)}</td><td class="p-2 border-b">${qty}</td></tr>`;
+            }
+            topHtml += '</tbody></table>';
+            document.getElementById('top-products').innerHTML = topHtml;
+
+        } catch (err) {
+            console.error("Failed to load product stats:", err);
+            document.getElementById('expenditure-table').innerHTML = `<p class="text-red-500 text-center py-4">⚠️ Error loading COGS data: ${err.message}</p>`;
+            document.getElementById('top-products').innerHTML = `<p class="text-red-500 text-center py-4">⚠️ Error loading top products: ${err.message}</p>`;
+        }
+    }
+
     async function loadDashboard() {
         const start = document.getElementById('start-date').value;
         const end = document.getElementById('end-date').value;
         if (!start || !end) return;
 
         try {
+            // KPI summary
             const summary = await apiCall(`/sales/summary?start_date=${start}&end_date=${end}`);
             document.getElementById('kpi-revenue').innerHTML = `₦${summary.total_revenue.toLocaleString()}`;
             document.getElementById('kpi-cogs').innerHTML = `₦${summary.total_cogs.toLocaleString()}`;
             document.getElementById('kpi-profit').innerHTML = `₦${summary.total_profit.toLocaleString()}`;
 
+            // Inventory value
             const inventory = await apiCall('/inventory');
             let inventoryValue = 0;
             for (let item of inventory) {
@@ -250,6 +305,7 @@
             }
             document.getElementById('kpi-inventory-value').innerHTML = `₦${inventoryValue.toLocaleString()}`;
 
+            // Revenue trend charts
             const trend = await apiCall(`/sales/trend?days=30`);
             const labels = trend.map(t => t.date);
             const revenues = trend.map(t => t.revenue);
@@ -264,27 +320,11 @@
                 data: { labels, datasets: [{ label: 'Daily Profit (est.)', data: revenues.map(r => r * 0.25), borderColor: '#10b981', fill: false }] }
             });
 
-            const productStats = await apiCall(`/sales/product-stats?start_date=${start}&end_date=${end}`);
-            const cogsByProduct = productStats.cogs_by_product || {};
-            const qtyByProduct = productStats.qty_by_product || {};
-
-            let expendHtml = '<table class="min-w-full"><thead><tr><th>Product</th><th>Total COGS (₦)</th></tr></thead><tbody>';
-            for (let [prod, cogs] of Object.entries(cogsByProduct)) {
-                expendHtml += `<tr><td class="p-2">${escapeHtml(prod)}</td><td>₦${cogs.toLocaleString()}</td></tr>`;
-            }
-            expendHtml += '</tbody></table>';
-            document.getElementById('expenditure-table').innerHTML = expendHtml || '<p>No sales in period.</p>';
-
-            const top = Object.entries(qtyByProduct).sort((a,b) => b[1]-a[1]).slice(0,10);
-            let topHtml = '<table class="min-w-full"><thead><tr><th>Product</th><th>Units Sold</th></tr></thead><tbody>';
-            for (let [prod, qty] of top) {
-                topHtml += `<tr><td class="p-2">${escapeHtml(prod)}</td><td>${qty}</td></tr>`;
-            }
-            topHtml += '</tbody></table>';
-            document.getElementById('top-products').innerHTML = topHtml;
+            // Load product breakdown
+            await loadProductStats();
         } catch (err) {
             console.error('Dashboard load error:', err);
-            document.getElementById('expenditure-table').innerHTML = '<p class="text-red-500">Failed to load data. Check that you added the /sales/product-stats endpoint to main.py.</p>';
+            document.getElementById('expenditure-table').innerHTML = '<p class="text-red-500">Failed to load dashboard data. Check console.</p>';
         }
     }
 
@@ -294,6 +334,7 @@
     }
 
     document.getElementById('update-dates').onclick = () => loadDashboard();
+    document.getElementById('refresh-product-stats').onclick = () => loadProductStats();
 
     (async () => {
         if (!token) {
