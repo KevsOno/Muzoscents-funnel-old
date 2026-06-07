@@ -13,23 +13,14 @@
         .status-processing { background: #3b82f620; color: #3b82f6; }
         .status-shipped { background: #8b5cf620; color: #8b5cf6; }
         .status-delivered { background: #10b98120; color: #10b981; }
-        /* Simple demo modal styles */
-        .modal-overlay {
-            background: rgba(0,0,0,0.8);
-            backdrop-filter: blur(8px);
-        }
-        .btn-demo {
-            transition: all 0.2s ease;
-        }
-        .btn-demo:hover {
-            transform: scale(1.02);
-            box-shadow: 0 8px 20px rgba(0,0,0,0.3);
-        }
+        .modal-overlay { background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); }
+        .btn-demo { transition: all 0.2s ease; }
+        .btn-demo:hover { transform: scale(1.02); box-shadow: 0 8px 20px rgba(0,0,0,0.3); }
     </style>
 </head>
 <body class="text-slate-200">
     <div class="container mx-auto px-4 py-6 max-w-7xl">
-        <!-- Header with demo login button -->
+        <!-- Header -->
         <div class="flex justify-between items-center mb-6 flex-wrap gap-3">
             <div>
                 <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">📦 Fulfillment Dashboard</h1>
@@ -103,7 +94,32 @@
         </div>
     </div>
 
-    <!-- Demo / Login Modal (simple + demo logic integrated from Kevs bOS) -->
+    <!-- VIEW ORDER DETAILS MODAL (new) -->
+    <div id="viewModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-800 rounded-2xl max-w-md w-full p-5 border border-slate-700">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent" id="view-modal-title">Order Details</h3>
+                <button id="closeViewModalBtn" class="text-slate-400 hover:text-white text-2xl">&times;</button>
+            </div>
+            <div class="space-y-4">
+                <div class="grid grid-cols-2 gap-2 text-xs bg-slate-900 p-3 rounded-lg border border-slate-700/50">
+                    <div><span class="text-slate-500 block">Customer</span><strong id="view-customer-name" class="text-slate-300">-</strong></div>
+                    <div><span class="text-slate-500 block">Shipping Status</span><span id="view-shipping-status" class="status-badge mt-1 inline-block">-</span></div>
+                    <div class="col-span-2 mt-1"><span class="text-slate-500 block">Delivery Address</span><p id="view-shipping-address" class="text-slate-300">-</p></div>
+                </div>
+                <div>
+                    <h4 class="text-sm font-semibold text-slate-400 mb-2 border-b border-slate-700 pb-1"><i class="fa-solid fa-list-ul text-xs"></i> Items Ordered</h4>
+                    <ul id="view-modal-items" class="max-h-48 overflow-y-auto space-y-1 pr-1"></ul>
+                </div>
+                <div class="flex justify-between items-center pt-2 border-t border-slate-700 text-sm">
+                    <span class="font-medium text-slate-400">Total Billable Amount:</span>
+                    <strong id="view-total-amount" class="text-xl text-emerald-400 font-mono">-</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Demo / Login Modal -->
     <div id="demoAuthModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
         <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-md w-full p-6 shadow-2xl">
             <div class="flex justify-between items-center mb-4">
@@ -127,7 +143,7 @@
         </div>
     </div>
 
-    <!-- Mobile logout small indicator -->
+    <!-- Mobile logout -->
     <div id="mobile-logout-toolbar" class="fixed bottom-4 right-4 md:hidden z-40">
         <button id="mobile-logout-btn" class="bg-red-700/80 backdrop-blur w-10 h-10 rounded-full shadow-lg flex items-center justify-center"><i class="fa-solid fa-sign-out-alt"></i></button>
     </div>
@@ -138,7 +154,6 @@
         let token = localStorage.getItem('access_token');
         let currentOrderId = null;
         
-        // Helper: refresh token logic (same as original but robust)
         async function refreshAccessToken() {
             const refresh = localStorage.getItem('refresh_token');
             if (!refresh) return false;
@@ -159,7 +174,6 @@
             return false;
         }
 
-        // API call with auth & auto-refresh
         async function apiCall(endpoint, options = {}) {
             if (!options.headers) options.headers = {};
             options.headers['Content-Type'] = 'application/json';
@@ -167,13 +181,11 @@
             
             let res = await fetch(`${API_BASE}${endpoint}`, options);
             if (res.status === 401) {
-                // Try refresh once
                 const refreshed = await refreshAccessToken();
                 if (refreshed && token) {
                     options.headers['Authorization'] = `Bearer ${token}`;
                     res = await fetch(`${API_BASE}${endpoint}`, options);
                 } else {
-                    // No refresh -> require demo login
                     showDemoModal();
                     throw new Error("Session expired. Please use demo login again.");
                 }
@@ -185,7 +197,7 @@
             return res.json();
         }
         
-        // ---------- DEMO LOGIN (direct from second file logic) ----------
+        // ---------- DEMO LOGIN ----------
         async function performDemoLogin() {
             try {
                 const res = await fetch(`${API_BASE}/auth/login`, {
@@ -198,28 +210,22 @@
                 token = data.access_token;
                 localStorage.setItem('access_token', token);
                 localStorage.setItem('refresh_token', data.refresh_token);
-                // optional: store basic user info for debugging
-                console.log("✅ Demo login successful, token stored");
                 return true;
             } catch (err) {
                 console.error("Demo login error:", err);
-                alert("Demo login failed: " + err.message + "\nCheck network or backend availability.");
+                alert("Demo login failed: " + err.message);
                 return false;
             }
         }
         
-        // Show demo modal if not authenticated
         function showDemoModal() {
-            const modal = document.getElementById('demoAuthModal');
-            if (modal) modal.classList.remove('hidden');
+            document.getElementById('demoAuthModal')?.classList.remove('hidden');
         }
         
         function hideDemoModal() {
-            const modal = document.getElementById('demoAuthModal');
-            if (modal) modal.classList.add('hidden');
+            document.getElementById('demoAuthModal')?.classList.add('hidden');
         }
         
-        // Logout routine
         async function logoutFulfillment() {
             try {
                 if (token) {
@@ -232,19 +238,17 @@
             localStorage.removeItem('access_token');
             localStorage.removeItem('refresh_token');
             token = null;
-            // clear orders container and show demo modal
             document.getElementById('orders-container').innerHTML = `<div class="bg-slate-800/70 rounded-xl p-8 text-center border border-slate-700">
                 <i class="fa-regular fa-lock text-4xl text-slate-500 mb-3 block"></i>
                 <p class="text-slate-300">Session ended. Please use <strong class="text-emerald-400">Demo Login</strong> to continue.</p>
                 <button id="reopen-demo-modal" class="mt-4 bg-emerald-600 px-4 py-2 rounded-lg text-sm">Demo Access</button>
             </div>`;
             showDemoModal();
-            // rebind reopen button
             const reopenBtn = document.getElementById('reopen-demo-modal');
             if (reopenBtn) reopenBtn.onclick = () => showDemoModal();
         }
         
-        // ---------- Orders loading (unchanged but with enhanced error) ----------
+        // ---------- LOAD ORDERS ----------
         async function loadOrders(status = '') {
             const container = document.getElementById('orders-container');
             if (!token) {
@@ -294,7 +298,6 @@
                     `;
                 }).join('');
                 
-                // attach event handlers
                 document.querySelectorAll('.view-order-btn').forEach(btn => {
                     btn.addEventListener('click', () => viewOrder(btn.dataset.id));
                 });
@@ -309,16 +312,35 @@
             }
         }
         
+        // ---------- VIEW ORDER (UPDATED: uses modal instead of alert) ----------
         async function viewOrder(orderId) {
             try {
                 const order = await apiCall(`/fulfillment/order/${orderId}`);
-                const itemsHtml = order.sale_items?.map(item => `<li class="flex justify-between border-b border-slate-700 py-2"><span>${item.quantity} x ${escapeHtml(item.product_name)}</span><span>₦${item.subtotal?.toLocaleString()}</span></li>`).join('');
-                alert(`Order ${order.receipt_number}\nTotal: ₦${order.total_amount}\nStatus: ${order.shipping_status || 'pending'}\nCustomer: ${order.customer_name || 'N/A'} (${order.customer_email || 'N/A'})\nAddress: ${order.shipping_address || 'Pickup'}\nItems:\n${itemsHtml}`);
+                document.getElementById('view-modal-title').innerText = `Order: ${order.receipt_number || 'N/A'}`;
+                document.getElementById('view-customer-name').innerText = order.customer_name || 'Guest User';
+                document.getElementById('view-shipping-address').innerText = order.shipping_address || 'Pickup Arrangement';
+                document.getElementById('view-total-amount').innerText = `₦${order.total_amount?.toLocaleString()}`;
+                
+                const statusElement = document.getElementById('view-shipping-status');
+                const rawStatus = order.shipping_status || 'pending';
+                statusElement.innerText = rawStatus.toUpperCase();
+                statusElement.className = `status-badge status-${rawStatus}`;
+                
+                const itemsHtml = order.sale_items?.map(item => `
+                    <li class="flex justify-between border-b border-slate-700/40 py-2 text-sm text-slate-300">
+                        <span><strong class="text-blue-400">${item.quantity}x</strong> ${escapeHtml(item.product_name)}</span>
+                        <span class="font-mono text-slate-400">₦${item.subtotal?.toLocaleString()}</span>
+                    </li>
+                `).join('') || '<li class="text-slate-500 text-xs py-2">No items inside order logs</li>';
+                
+                document.getElementById('view-modal-items').innerHTML = itemsHtml;
+                document.getElementById('viewModal').classList.remove('hidden');
             } catch(err) {
                 alert("Could not load order details: " + err.message);
             }
         }
         
+        // ---------- UPDATE MODAL LOGIC ----------
         function openUpdateModal(orderId, receipt, currentStatus) {
             if (!token) { showDemoModal(); return; }
             currentOrderId = orderId;
@@ -333,7 +355,6 @@
             document.getElementById('updateModal').classList.remove('hidden');
         }
         
-        // Update order status
         document.getElementById('modal-update-btn')?.addEventListener('click', async () => {
             if (!token) { showDemoModal(); document.getElementById('updateModal').classList.add('hidden'); return; }
             const newStatus = document.getElementById('modal-status').value;
@@ -361,19 +382,19 @@
             }
         });
         
-        // close modal events
         document.getElementById('closeModalBtn')?.addEventListener('click', () => {
             document.getElementById('updateModal').classList.add('hidden');
         });
+        document.getElementById('closeViewModalBtn')?.addEventListener('click', () => {
+            document.getElementById('viewModal').classList.add('hidden');
+        });
         document.getElementById('apply-filter')?.addEventListener('click', () => {
-            const status = document.getElementById('status-filter').value;
-            loadOrders(status);
+            loadOrders(document.getElementById('status-filter').value);
         });
         document.getElementById('refresh-btn')?.addEventListener('click', () => {
             loadOrders(document.getElementById('status-filter').value);
         });
         
-        // show/hide tracking fields based on status selection
         document.getElementById('modal-status')?.addEventListener('change', (e) => {
             const val = e.target.value;
             const fields = document.getElementById('tracking-fields');
@@ -384,14 +405,12 @@
             }
         });
         
-        // ----- Demo login flow & modal handlers -----
+        // ----- Demo login handlers -----
         async function onDemoLoginClick() {
             const success = await performDemoLogin();
             if (success) {
                 hideDemoModal();
-                // reload orders after successful demo auth
                 await loadOrders(document.getElementById('status-filter').value);
-                // show temporary toast/indicator
                 const toast = document.createElement('div');
                 toast.className = 'fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-emerald-600 text-white px-5 py-2 rounded-full shadow-lg text-sm z-50 flex items-center gap-2';
                 toast.innerHTML = '<i class="fa-regular fa-circle-check"></i> Demo mode active — full fulfillment access';
@@ -402,31 +421,24 @@
             }
         }
         
-        // attach demo login buttons (header + modal)
-        const demoBtnHeader = document.getElementById('demo-login-btn');
-        if (demoBtnHeader) demoBtnHeader.addEventListener('click', onDemoLoginClick);
-        const modalDemoBtn = document.getElementById('modalDemoLoginBtn');
-        if (modalDemoBtn) modalDemoBtn.addEventListener('click', onDemoLoginClick);
-        const closeAuthModal = document.getElementById('closeAuthModalBtn');
-        if (closeAuthModal) closeAuthModal.addEventListener('click', () => hideDemoModal());
-        // also close when clicking outside? optional but fine.
+        document.getElementById('demo-login-btn')?.addEventListener('click', onDemoLoginClick);
+        document.getElementById('modalDemoLoginBtn')?.addEventListener('click', onDemoLoginClick);
+        document.getElementById('closeAuthModalBtn')?.addEventListener('click', () => hideDemoModal());
         
-        // Logout handler
-        const logoutBtn = document.getElementById('logout-fulfillment-btn');
-        const mobileLogout = document.getElementById('mobile-logout-btn');
+        // Logout
         const logoutHandler = () => logoutFulfillment();
-        if (logoutBtn) logoutBtn.addEventListener('click', logoutHandler);
-        if (mobileLogout) mobileLogout.addEventListener('click', logoutHandler);
+        document.getElementById('logout-fulfillment-btn')?.addEventListener('click', logoutHandler);
+        document.getElementById('mobile-logout-btn')?.addEventListener('click', logoutHandler);
         
-        // Esc key closing modals
+        // Escape to close modals
         window.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 document.getElementById('updateModal')?.classList.add('hidden');
+                document.getElementById('viewModal')?.classList.add('hidden');
                 document.getElementById('demoAuthModal')?.classList.add('hidden');
             }
         });
         
-        // Helper: escapeHtml
         function escapeHtml(str) {
             if (!str) return '';
             return str.replace(/[&<>]/g, function(m) {
@@ -437,12 +449,10 @@
             });
         }
         
-        // ---- INITIAL LOAD: check token, if missing show demo modal, else load orders ----
         async function initDashboard() {
             if (token) {
-                // validate token by trying a lightweight api call /auth/me or just load orders
                 try {
-                    await apiCall('/fulfillment/orders?limit=1'); // test
+                    await apiCall('/fulfillment/orders?limit=1');
                     await loadOrders();
                 } catch (err) {
                     console.warn("Token invalid, clearing");
@@ -464,32 +474,7 @@
             }
         }
         
-        // Rebind the modal demo button if needed after dynamic content
-        function rebindModalTriggers() {
-            const modalDemo = document.getElementById('modalDemoLoginBtn');
-            if (modalDemo && !modalDemo._listener) {
-                modalDemo.addEventListener('click', onDemoLoginClick);
-                modalDemo._listener = true;
-            }
-        }
-        
-        // Also ensure that when demo modal shows, the inner buttons work
-        const observer = new MutationObserver(() => rebindModalTriggers());
-        observer.observe(document.body, { childList: true, subtree: true });
-        
-        // Start
         initDashboard();
-        rebindModalTriggers();
-        
-        // Additional: refresh token handling when window gets focus
-        window.addEventListener('focus', () => {
-            if (token) {
-                // optional silent check: if 401 occurs later it will auto trigger modal
-            }
-        });
-        
-        // Hide mobile logout if needed on demo mode status change
-        console.log("Fulfillment dashboard with demo login applied ✅");
     </script>
 </body>
 </html>
