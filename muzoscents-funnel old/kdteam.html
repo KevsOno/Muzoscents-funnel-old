@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kevs Digital – Team Management</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        .loading-spinner-sm {
+            border: 2px solid #e2e8f0;
+            border-top: 2px solid #f97316;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 0.6s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans">
+<div class="max-w-6xl mx-auto p-6">
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold text-gray-800"><i class="fas fa-users mr-2 text-orange-500"></i>Team Management</h1>
+        <button id="refresh-team-btn" class="text-sm bg-white px-4 py-2 rounded-lg shadow hover:bg-gray-50"><i class="fas fa-sync-alt mr-1"></i> Refresh</button>
+    </div>
+
+    <!-- Add staff form -->
+    <div class="bg-white rounded-xl shadow-md p-6 mb-8">
+        <h2 class="text-lg font-semibold mb-4"><i class="fas fa-user-plus mr-2 text-green-600"></i>Invite new staff member</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <input type="text" id="new-firstname" placeholder="First name *" class="border rounded-lg p-2">
+            <input type="text" id="new-lastname" placeholder="Last name *" class="border rounded-lg p-2">
+            <input type="email" id="new-email" placeholder="Email *" class="border rounded-lg p-2" required>
+            <select id="new-role" class="border rounded-lg p-2">
+                <option value="admin">Admin</option>
+                <option value="inventory_manager">Inventory Manager</option>
+                <option value="sales_rep">Sales Representative</option>
+                <option value="finance">Finance</option>
+                <option value="logistics">Logistics</option>
+                <option value="support">Support</option>
+                <option value="customer">Customer (no dashboard)</option>
+            </select>
+            <input type="tel" id="new-phone" placeholder="Phone (optional)" class="border rounded-lg p-2">
+            <button id="create-user-btn" class="bg-orange-500 text-white rounded-lg px-4 py-2 hover:bg-orange-600 transition"><i class="fas fa-paper-plane mr-1"></i> Send Invite</button>
+        </div>
+        <div id="form-message" class="mt-3 text-sm hidden"></div>
+    </div>
+
+    <!-- Existing team members table -->
+    <div class="bg-white rounded-xl shadow-md overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
+            <h2 class="font-semibold"><i class="fas fa-users mr-2"></i>Current team</h2>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="team-table-body" class="divide-y divide-gray-200">
+                    <tr><td colspan="5" class="text-center py-6 text-gray-400"><div class="loading-spinner-sm inline-block mr-2"></div> Loading team...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ==================== CONFIGURATION ====================
+    const BACKEND_URL = window.location.origin; // assumes same origin as backend; adjust if needed
+    // For HF spaces, it's the same. If backend is separate, change this.
+    // Actually the FastAPI serves all pages, so we can use relative API calls.
+
+    // Helper: get token from localStorage
+    function getToken() {
+        return localStorage.getItem('access_token');
+    }
+
+    // Show toast messages (simple)
+    function showToast(msg, type = 'success') {
+        let container = document.getElementById('toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'toast-container';
+            container.className = 'fixed top-20 right-4 z-50 space-y-2 w-80';
+            document.body.appendChild(container);
+        }
+        const toast = document.createElement('div');
+        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} mb-2 text-sm`;
+        toast.innerText = msg;
+        container.appendChild(toast);
+        setTimeout(() => toast.remove(), 3500);
+    }
+
+    // Authenticated fetch
+    async function apiFetch(endpoint, options = {}) {
+        const token = getToken();
+        if (!token) {
+            window.location.href = '/kdsiginin';
+            throw new Error('No token');
+        }
+        const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            ...options.headers
+        };
+        const res = await fetch(`${BACKEND_URL}${endpoint}`, { ...options, headers });
+        if (res.status === 401) {
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('user_role');
+            window.location.href = '/kdsiginin';
+            throw new Error('Session expired');
+        }
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({ detail: 'Request failed' }));
+            throw new Error(err.detail || `HTTP ${res.status}`);
+        }
+        return res.json();
+    }
+
+    // Load current user role (from localStorage) – redirect if not owner/admin
+    async function checkAccess() {
+        const role = localStorage.getItem('user_role');
+        if (!role) {
+            // try to fetch /auth/me
+            try {
+                const me = await apiFetch('/auth/me');
+                localStorage.setItem('user_role', me.role);
+                if (!['owner', 'admin'].includes(me.role)) {
+                    document.body.innerHTML = `<div class="p-8 text-center text-red-600"><i class="fas fa-lock text-4xl mb-2"></i><p>Access denied. Only owners and admins can manage team members.</p></div>`;
+                    throw new Error('Unauthorized');
+                }
+            } catch (e) {
+                document.body.innerHTML = `<div class="p-8 text-center text-red-600">Access denied or not logged in.</div>`;
+                throw e;
+            }
+        } else if (!['owner', 'admin'].includes(role)) {
+            document.body.innerHTML = `<div class="p-8 text-center text-red-600"><i class="fas fa-lock text-4xl mb-2"></i><p>Access denied. Only owners and admins can manage team members.</p></div>`;
+            throw new Error('Unauthorized');
+        }
+        return true;
+    }
+
+    // Load team members
+    async function loadTeam() {
+        const tbody = document.getElementById('team-table-body');
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6"><div class="loading-spinner-sm inline-block mr-2"></div> Loading...</td></tr>`;
+        try {
+            const data = await apiFetch('/organisations/me/users');
+            const users = data.users || [];
+            if (users.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-gray-400">No team members yet. Invite your first staff member above.</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = users.map(user => `
+                <tr>
+                    <td class="px-6 py-3">${escapeHtml(user.first_name || '')} ${escapeHtml(user.last_name || '')}</td>
+                    <td class="px-6 py-3">${escapeHtml(user.email)}</td>
+                    <td class="px-6 py-3"><span class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800 capitalize">${user.role}</span></td>
+                    <td class="px-6 py-3"><span class="px-2 py-1 text-xs rounded-full ${user.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}">${user.status || 'active'}</span></td>
+                    <td class="px-6 py-3 text-right">
+                        <button class="reset-pwd-btn text-blue-600 hover:text-blue-800 mr-2" data-email="${user.email}" title="Reset password"><i class="fas fa-key"></i></button>
+                        <button class="remove-user-btn text-red-600 hover:text-red-800" data-user-id="${user.id}" title="Remove user"><i class="fas fa-trash-alt"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+
+            // attach events
+            document.querySelectorAll('.reset-pwd-btn').forEach(btn => {
+                btn.addEventListener('click', () => resetUserPassword(btn.getAttribute('data-email')));
+            });
+            document.querySelectorAll('.remove-user-btn').forEach(btn => {
+                btn.addEventListener('click', () => removeUser(btn.getAttribute('data-user-id')));
+            });
+        } catch (err) {
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-red-500">Error: ${err.message}</td></tr>`;
+        }
+    }
+
+    // Create new staff member
+    async function createStaff(payload) {
+        return await apiFetch('/organisations/me/users', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+    }
+
+    // Reset password (admin)
+    async function resetUserPassword(email) {
+        if (!confirm(`Send password reset email to ${email}?`)) return;
+        try {
+            await apiFetch(`/auth/admin-reset-password?email=${encodeURIComponent(email)}`, { method: 'POST' });
+            showToast(`Password reset email sent to ${email}`, 'success');
+        } catch (err) {
+            showToast(err.message, 'error');
+        }
+    }
+
+    // Remove user from organisation
+    async function removeUser(userId) {
+        if (!confirm('Remove this user from the organisation? They will lose access.')) return;
+        try {
+            await apiFetch(`/organisations/me/users/${userId}`, { method: 'DELETE' });
+            showToast('User removed', 'success');
+            loadTeam();
+        } catch (err) {
+            showToast(err.message, 'error');
+        }
+    }
+
+    // Helper: escape HTML
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    // Setup form submission
+    document.getElementById('create-user-btn')?.addEventListener('click', async () => {
+        const firstName = document.getElementById('new-firstname').value.trim();
+        const lastName = document.getElementById('new-lastname').value.trim();
+        const email = document.getElementById('new-email').value.trim();
+        const role = document.getElementById('new-role').value;
+        const phone = document.getElementById('new-phone').value.trim();
+        const msgDiv = document.getElementById('form-message');
+
+        if (!firstName || !lastName || !email) {
+            msgDiv.className = 'mt-3 text-sm text-red-600';
+            msgDiv.innerText = 'First name, last name and email are required.';
+            msgDiv.classList.remove('hidden');
+            return;
+        }
+        msgDiv.classList.add('hidden');
+        const btn = document.getElementById('create-user-btn');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<div class="loading-spinner-sm inline-block mr-1"></div> Creating...';
+        btn.disabled = true;
+
+        try {
+            await createStaff({
+                first_name: firstName,
+                last_name: lastName,
+                email: email,
+                role: role,
+                phone: phone || null,
+                send_invite_email: true
+            });
+            msgDiv.className = 'mt-3 text-sm text-green-600';
+            msgDiv.innerText = `Invitation sent to ${email}. They will receive an email with a temporary password.`;
+            msgDiv.classList.remove('hidden');
+            // clear form
+            document.getElementById('new-firstname').value = '';
+            document.getElementById('new-lastname').value = '';
+            document.getElementById('new-email').value = '';
+            document.getElementById('new-phone').value = '';
+            loadTeam();
+        } catch (err) {
+            msgDiv.className = 'mt-3 text-sm text-red-600';
+            msgDiv.innerText = err.message;
+            msgDiv.classList.remove('hidden');
+        } finally {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    });
+
+    document.getElementById('refresh-team-btn')?.addEventListener('click', () => loadTeam());
+
+    // Initialization
+    (async () => {
+        try {
+            await checkAccess();
+            await loadTeam();
+        } catch (err) {
+            console.error(err);
+        }
+    })();
+</script>
+</body>
+</html>
