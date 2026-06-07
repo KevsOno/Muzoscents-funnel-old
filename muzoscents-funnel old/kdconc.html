@@ -7,7 +7,6 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
-        /* (keep all existing styles) */
         body { background: #0B1120; font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif; }
         .typing-indicator span { width: 6px; height: 6px; background: #38BDF8; border-radius: 50%; display: inline-block; animation: typing 1.4s infinite ease-in-out; }
         .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
@@ -26,6 +25,28 @@
         button, .cursor-pointer { cursor: pointer; touch-action: manipulation; }
         input, textarea { font-size: 16px; }
         .search-highlight { background: #3b82f6; color: white; border-radius: 4px; padding: 0 2px; }
+        /* Autocomplete dropdown styles */
+        .address-suggestions {
+            position: absolute;
+            z-index: 1000;
+            background: #1E293B;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            width: 100%;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        .suggestion-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #334155;
+            color: #E2E8F0;
+            font-size: 0.85rem;
+        }
+        .suggestion-item:hover {
+            background-color: #2D3A5E;
+        }
     </style>
 </head>
 <body class="text-slate-200 antialiased overflow-fix">
@@ -97,7 +118,7 @@
         <div data-tab="track" class="mobile-nav-item flex flex-col items-center py-1 px-3 rounded-xl transition text-slate-400"><i class="fa-solid fa-truck-fast text-xl"></i><span class="text-[10px] mt-0.5">Track</span></div>
     </div>
 
-    <!-- CART SIDEBAR (UPDATED with manual save button for address) -->
+    <!-- CART SIDEBAR (UPDATED: autocomplete + GPS for delivery address) -->
     <div id="cart-drawer" class="cart-sidebar fixed top-0 right-0 w-full sm:w-96 h-full bg-slate-900 border-l border-slate-700 shadow-2xl z-50 transform translate-x-full transition-transform duration-300 flex flex-col">
         <div class="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/95">
             <h3 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-basket-shopping text-blue-400"></i> Your Cart</h3>
@@ -113,13 +134,19 @@
                     <button id="delivery-pickup-delivery" class="flex-1 py-1.5 text-sm rounded-md transition">🚚 Delivery</button>
                 </div>
             </div>
-            <!-- Address field with Save button (hidden initially) -->
+            <!-- Address field with Autocomplete + GPS (hidden initially) -->
             <div id="delivery-address-container" class="mb-3 hidden">
                 <label class="text-xs text-slate-400 block mb-1">Delivery Address</label>
-                <div class="flex gap-2">
-                    <input type="text" id="delivery-address" placeholder="Street, city, state" class="flex-1 bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm">
-                    <button id="save-address-btn" class="bg-blue-600 hover:bg-blue-500 px-3 rounded-lg text-sm whitespace-nowrap">Save</button>
+                <div class="relative">
+                    <div class="flex gap-2">
+                        <input type="text" id="delivery-address" placeholder="Start typing your address..." class="flex-1 bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm" autocomplete="off">
+                        <button id="gps-locate-btn" class="bg-indigo-600 hover:bg-indigo-500 px-3 rounded-lg text-sm whitespace-nowrap" title="Use my current location">
+                            <i class="fa-solid fa-location-dot"></i> GPS
+                        </button>
+                    </div>
+                    <div id="address-suggestions" class="address-suggestions hidden"></div>
                 </div>
+                <button id="save-address-btn" class="mt-2 w-full bg-blue-600 hover:bg-blue-500 py-1.5 rounded-lg text-sm transition">Save Address & Estimate Delivery</button>
                 <div id="delivery-estimate" class="text-xs text-slate-400 mt-1"></div>
             </div>
             <!-- Payment method -->
@@ -147,7 +174,7 @@
         <div id="logs-content" class="break-words font-mono leading-relaxed max-h-[100px] overflow-y-auto">⚡ System ready. Kevs bOS online.</div>
     </div>
 
-    <!-- LOGIN / REGISTER MODAL -->
+    <!-- LOGIN / REGISTER MODAL (unchanged) -->
     <div id="authModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
         <div class="bg-slate-800 border border-slate-700 p-6 rounded-2xl shadow-2xl w-full max-w-md text-slate-200">
             <div class="flex justify-between items-center mb-4"><h3 id="modalTitle" class="text-xl font-bold">Sign In</h3><button id="closeModalBtn" class="text-2xl">&times;</button></div>
@@ -184,13 +211,12 @@
     let cart = [];
     let debugVisible = true;
     
-    // Delivery state (NEW: handlingFee added)
-    let deliveryOption = 'pickup'; // 'pickup' or 'delivery'
+    let deliveryOption = 'pickup';
     let deliveryAddress = '';
     let deliveryFee = 0;
-    let handlingFee = 0;            // <-- NEW GLOBAL for handling fee
-    let deliveryEstimateLoading = false;
-
+    let handlingFee = 0;
+    
+    // ---------- DEBUG LOG ----------
     function log(msg) {
         const logsDiv = document.getElementById('logs-content');
         if (logsDiv) {
@@ -199,7 +225,6 @@
         }
         console.log(msg);
     }
-
     function toggleDebugPanel() {
         const panel = document.getElementById('debug-panel');
         if (panel) {
@@ -208,8 +233,8 @@
             localStorage.setItem('debug_visible', debugVisible);
         }
     }
-
-    // API helpers (unchanged)
+    
+    // ---------- API HELPERS ----------
     async function refreshToken() {
         const refresh = localStorage.getItem('refresh_token');
         if (!refresh) return false;
@@ -229,7 +254,6 @@
         } catch(e) { log("refresh failed"); }
         return false;
     }
-
     async function apiCall(endpoint, options = {}, retry = true) {
         if (typeof options !== 'object' || options === null) options = {};
         if (!options.headers) options.headers = {};
@@ -248,8 +272,8 @@
         }
         return res.json();
     }
-
-    // Cart functions (updated to support delivery)
+    
+    // ---------- CART FUNCTIONS ----------
     function saveCart() { localStorage.setItem('kevs_cart', JSON.stringify(cart)); updateCartUI(); }
     function loadCart() { const saved = localStorage.getItem('kevs_cart'); cart = saved ? JSON.parse(saved) : []; updateCartUI(); }
     
@@ -259,7 +283,6 @@
         let deliveryFeeDisplay = 0;
         
         if (deliveryOption === 'delivery' && deliveryAddress.trim() !== '') {
-            // If we have a valid address, we already have deliveryFee from estimate
             total += deliveryFee;
             deliveryFeeDisplay = deliveryFee;
         } else if (deliveryOption === 'delivery' && deliveryAddress.trim() === '') {
@@ -294,7 +317,6 @@
             </div>
         `).join('');
     }
-    
     window.removeCartItem = (idx) => { cart.splice(idx,1); saveCart(); if(currentTab === 'shop') renderShop(); updateCartUI(); };
     function addToCart(product) {
         let existing = cart.find(i => i.id === product.id);
@@ -304,8 +326,88 @@
         showToast(`${product.name} added to cart`, 'success');
         updateCartUI();
     }
-
-    // Delivery estimate (UPDATED: store handlingFee)
+    
+    // ---------- DELIVERY AUTOCOMPLETE & GPS (FREE OSM) ----------
+    const addressInput = document.getElementById('delivery-address');
+    const suggestionsDiv = document.getElementById('address-suggestions');
+    let debounceTimer;
+    
+    function hideSuggestions() {
+        suggestionsDiv.classList.add('hidden');
+        suggestionsDiv.innerHTML = '';
+    }
+    function showSuggestions(items) {
+        if (!items.length) { hideSuggestions(); return; }
+        suggestionsDiv.innerHTML = '';
+        items.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'suggestion-item';
+            const parts = item.display_name.split(',');
+            const shortName = parts.slice(0, 3).join(',');
+            div.textContent = shortName;
+            div.title = item.display_name;
+            div.addEventListener('click', () => {
+                addressInput.value = item.display_name;
+                deliveryAddress = item.display_name; // update global
+                hideSuggestions();
+                // Optionally auto-save? We'll keep manual save button.
+            });
+            suggestionsDiv.appendChild(div);
+        });
+        suggestionsDiv.classList.remove('hidden');
+    }
+    async function fetchAddressSuggestions(query) {
+        if (query.length < 3) { hideSuggestions(); return; }
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=8&dedupe=1`;
+        try {
+            const response = await fetch(url, {
+                headers: { 'Accept-Language': 'en', 'User-Agent': 'KevsDigital-Cart/1.0' }
+            });
+            const data = await response.json();
+            showSuggestions(data);
+        } catch (err) {
+            console.error('Nominatim error:', err);
+            hideSuggestions();
+        }
+    }
+    if (addressInput) {
+        addressInput.addEventListener('input', (e) => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => fetchAddressSuggestions(e.target.value), 500);
+        });
+        document.addEventListener('click', (e) => {
+            if (!addressInput.contains(e.target) && !suggestionsDiv.contains(e.target)) hideSuggestions();
+        });
+    }
+    
+    // GPS geolocation + reverse geocode
+    async function useCurrentLocation() {
+        if (!navigator.geolocation) {
+            showToast("Geolocation not supported by your browser", 'error');
+            return;
+        }
+        showToast("Fetching your location...", 'success');
+        navigator.geolocation.getCurrentPosition(async (position) => {
+            const { latitude, longitude } = position.coords;
+            try {
+                const revUrl = `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`;
+                const resp = await fetch(revUrl, { headers: { 'User-Agent': 'KevsDigital/1.0' } });
+                const data = await resp.json();
+                const fullAddress = data.display_name || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+                addressInput.value = fullAddress;
+                deliveryAddress = fullAddress;
+                hideSuggestions();
+                showToast("Address set from GPS. Click 'Save Address & Estimate Delivery'", 'success');
+            } catch (err) {
+                showToast("Reverse geocoding failed: " + err.message, 'error');
+            }
+        }, (err) => {
+            showToast("GPS error: " + err.message, 'error');
+        });
+    }
+    document.getElementById('gps-locate-btn')?.addEventListener('click', useCurrentLocation);
+    
+    // Delivery estimate using backend (uses address string)
     async function estimateDelivery() {
         const address = deliveryAddress;
         if (!address) {
@@ -328,7 +430,7 @@
                 body: JSON.stringify({ address, items })
             });
             deliveryFee = res.delivery_fee_naira;
-            handlingFee = res.handling_fee_naira || 0;   // <-- store handling fee
+            handlingFee = res.handling_fee_naira || 0;
             updateCartUI();
             estimateDiv.innerHTML = `🚚 Delivery fee: ₦${deliveryFee.toLocaleString()} | Handling: ₦${handlingFee.toLocaleString()}`;
         } catch(err) {
@@ -340,7 +442,17 @@
         }
     }
     
-    // Delivery/Pickup toggle handlers
+    async function saveAddressAndEstimate() {
+        const newAddress = addressInput.value.trim();
+        if (!newAddress) {
+            showToast("Please enter or select a delivery address", 'error');
+            return;
+        }
+        deliveryAddress = newAddress;
+        await estimateDelivery();
+    }
+    
+    // Delivery/Pickup toggle
     function setDeliveryOption(option) {
         deliveryOption = option;
         const pickupBtn = document.getElementById('delivery-pickup-pickup');
@@ -356,9 +468,7 @@
             deliveryFee = 0;
             handlingFee = 0;
             deliveryAddress = '';
-            // Clear address input and estimate display
-            const addressInput = document.getElementById('delivery-address');
-            if (addressInput) addressInput.value = '';
+            if(addressInput) addressInput.value = '';
             document.getElementById('delivery-estimate').innerHTML = '';
         } else {
             deliveryBtn.classList.add('bg-blue-600', 'text-white');
@@ -366,7 +476,6 @@
             pickupBtn.classList.remove('bg-blue-600', 'text-white');
             pickupBtn.classList.add('bg-slate-700', 'text-slate-300');
             addressContainer.classList.remove('hidden');
-            // Do not auto-estimate; wait for save button
             deliveryFee = 0;
             handlingFee = 0;
             updateCartUI();
@@ -374,30 +483,15 @@
         updateCartUI();
     }
     
-    // Save address and estimate delivery (triggered by button)
-    async function saveAddressAndEstimate() {
-        const addressInput = document.getElementById('delivery-address');
-        const newAddress = addressInput.value.trim();
-        if (!newAddress) {
-            showToast("Please enter a delivery address", 'error');
-            return;
-        }
-        deliveryAddress = newAddress;
-        await estimateDelivery();
-    }
-    
-    // Modified checkout to include delivery_fee and handling_fee in payload
+    // ---------- CHECKOUT (unchanged except delivery/handling fees already included) ----------
     async function checkoutCart() {
         if (!cart.length) { showToast("Cart is empty", 'error'); return; }
         if (!token) { showLoginModal(); showToast("Please login first", 'error'); return; }
-        
-        // Validate delivery address if needed
         if (deliveryOption === 'delivery') {
             if (!deliveryAddress) {
                 showToast("Please enter and save a delivery address", 'error');
                 return;
             }
-            // Optionally re-estimate to be safe (but already estimated)
             if (deliveryFee === 0) {
                 await estimateDelivery();
                 if (deliveryFee === 0) {
@@ -406,7 +500,6 @@
                 }
             }
         }
-        
         const paymentMethod = document.getElementById('payment-method-select').value;
         const items = cart.map(i => ({ inventory_id: i.id, quantity: i.quantity }));
         const returnUrl = window.location.href.split('?')[0];
@@ -418,17 +511,14 @@
             payment_method: paymentMethod,
             callback_url: `${returnUrl}?payment=success`
         };
-        
         if (deliveryOption === 'delivery') {
             payload.shipping_address = deliveryAddress;
-            payload.delivery_fee = deliveryFee;     // <-- ADDED
-            payload.handling_fee = handlingFee;     // <-- ADDED
+            payload.delivery_fee = deliveryFee;
+            payload.handling_fee = handlingFee;
         } else {
-            // For pickup, send zero fees (backend may ignore)
             payload.delivery_fee = 0;
             payload.handling_fee = 0;
         }
-        
         try {
             let result;
             if (paymentMethod === 'cash') {
@@ -438,9 +528,8 @@
                 });
                 showToast(`✅ Checkout success! Receipt: ${result.receipt_number}`, 'success');
                 cart = []; saveCart();
-                deliveryFee = 0;
-                handlingFee = 0;
-                setDeliveryOption('pickup'); // reset to pickup after successful order
+                deliveryFee = 0; handlingFee = 0;
+                setDeliveryOption('pickup');
                 if (currentTab === 'shop') renderShop();
                 document.getElementById('cart-drawer').classList.add('translate-x-full');
             } else {
@@ -452,7 +541,7 @@
                     localStorage.setItem('pending_payment', 'true');
                     window.location.href = result.payment_url;
                 } else {
-                    showToast("Payment initiation failed: no URL returned", 'error');
+                    showToast("Payment initiation failed", 'error');
                 }
             }
         } catch(err) {
@@ -461,16 +550,13 @@
         }
     }
     
-    // Check payment return (clear cart after successful payment)
     function checkPaymentReturn() {
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('payment') === 'success') {
             const wasPending = localStorage.getItem('pending_payment') === 'true';
             if (wasPending || cart.length > 0) {
-                cart = [];
-                saveCart();
-                deliveryFee = 0;
-                handlingFee = 0;
+                cart = []; saveCart();
+                deliveryFee = 0; handlingFee = 0;
                 setDeliveryOption('pickup');
                 if (currentTab === 'shop') renderShop();
                 showToast("🎉 Payment successful! Your order is confirmed.", 'success');
@@ -483,10 +569,9 @@
         }
     }
     
-    // SHOP with search filter
+    // ---------- SHOP, CHAT, TICKETS, TRACK (unchanged) ----------
     let allProducts = [];
     let searchQuery = '';
-    
     async function renderShop() {
         const panel = document.getElementById('dynamic-panel');
         panel.innerHTML = `
@@ -515,18 +600,12 @@
             log(err); 
         }
     }
-    
     function filterProductsAndRender() {
         let filtered = allProducts;
-        if (searchQuery) {
-            filtered = allProducts.filter(p => p.description.toLowerCase().includes(searchQuery));
-        }
+        if (searchQuery) filtered = allProducts.filter(p => p.description.toLowerCase().includes(searchQuery));
         const grid = document.getElementById('products-grid');
         if (!grid) return;
-        if (filtered.length === 0) {
-            grid.innerHTML = '<div class="col-span-full text-center text-slate-400 py-12">No products match your search.</div>';
-            return;
-        }
+        if (filtered.length === 0) { grid.innerHTML = '<div class="col-span-full text-center text-slate-400 py-12">No products match your search.</div>'; return; }
         grid.innerHTML = filtered.map(p => `
             <div class="product-card bg-slate-800/70 border border-slate-700 rounded-2xl p-3 md:p-4 backdrop-blur-sm flex flex-col" data-pid="${p.id}" data-pname="${escapeHtml(p.description)}" data-price="${p.price_naira}">
                 <div class="h-20 md:h-28 bg-gradient-to-br from-slate-700 to-slate-800 rounded-xl flex items-center justify-center mb-2"><i class="fa-solid fa-cube text-3xl md:text-4xl text-slate-500"></i></div>
@@ -545,7 +624,6 @@
             btn.addEventListener('click', productClickHandler);
         });
     }
-    
     function productClickHandler(e) {
         const card = e.currentTarget.closest('[data-pid]');
         if(card) {
@@ -555,8 +633,6 @@
             addToCart({ id, name, price });
         }
     }
-    
-    // CHAT (unchanged)
     let chatContainer = null;
     function addChatMessage(sender, text) { 
         if(!chatContainer) return; 
@@ -613,8 +689,6 @@
         setTimeout(() => msgInput.focus(), 100);
         log("Chat ready");
     }
-    
-    // TICKETS & TRACK (unchanged)
     async function renderTickets() { 
         const panel = document.getElementById('dynamic-panel'); 
         panel.innerHTML = `<div class="text-center py-10"><i class="fa-solid fa-spinner fa-pulse"></i> Loading support requests...</div>`; 
@@ -642,7 +716,7 @@
         }); 
     }
     
-    // TAB SWITCHER (updated to reset delivery state when leaving shop)
+    // ---------- TAB SWITCHER ----------
     async function switchTab(tab) {
         currentTab = tab;
         document.querySelectorAll('.nav-stack-item, .mobile-nav-item').forEach(el => el.classList.remove('active'));
@@ -676,7 +750,7 @@
         }
     }
     
-    // AUTH & MODAL (unchanged)
+    // ---------- AUTH & MODAL ----------
     function showLoginModal() { document.getElementById('authModal').classList.remove('hidden'); }
     function hideLoginModal() { document.getElementById('authModal').classList.add('hidden'); }
     async function loadUserContext() { 
@@ -719,7 +793,7 @@
         } catch(e) { alert("Demo failed: "+e.message); } 
     }
     
-    // EVENT LISTENERS
+    // ---------- EVENT LISTENERS (UI) ----------
     document.getElementById('toggleAuthMode')?.addEventListener('click', () => { 
         isRegisterMode = !isRegisterMode; 
         document.getElementById('modalTitle').innerText = isRegisterMode ? "Register Organization" : "Sign In"; 
@@ -774,8 +848,6 @@
     document.getElementById('cart-checkout-btn')?.addEventListener('click', checkoutCart);
     document.getElementById('toggle-debug-btn')?.addEventListener('click', toggleDebugPanel);
     document.querySelectorAll('.nav-stack-item, .mobile-nav-item').forEach(el => el.addEventListener('click', () => switchTab(el.getAttribute('data-tab'))));
-    
-    // Delivery toggle handlers
     document.getElementById('delivery-pickup-pickup')?.addEventListener('click', () => setDeliveryOption('pickup'));
     document.getElementById('delivery-pickup-delivery')?.addEventListener('click', () => setDeliveryOption('delivery'));
     document.getElementById('save-address-btn')?.addEventListener('click', saveAddressAndEstimate);
@@ -789,12 +861,11 @@
     }
     function escapeHtml(str) { if(!str) return ''; return str.replace(/[&<>]/g, m => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[m])); }
     
-    // INITIALISE
+    // ---------- INIT ----------
     (async () => {
         const savedDebug = localStorage.getItem('debug_visible');
         if (savedDebug === 'false') { debugVisible = false; document.getElementById('debug-panel')?.classList.add('hidden-debug'); }
         loadCart();
-        // Setup delivery UI defaults
         setDeliveryOption('pickup');
         if(token) { 
             try { await loadUserContext(); switchTab('shop'); } 
@@ -802,7 +873,7 @@
         } else { showLoginModal(); }
         checkPaymentReturn();
         window.addToCart = addToCart;
-        log("✅ Marketplace ready – delivery/pickup + search integrated. Delivery & handling fees added to checkout payload.");
+        log("✅ Marketplace ready – delivery address autocomplete + GPS integrated.");
     })();
 </script>
 </body>
