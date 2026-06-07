@@ -34,16 +34,21 @@
             </div>
         </div>
         
-        <!-- Filters -->
+        <!-- Filters (updated) -->
         <div class="bg-slate-800/50 rounded-xl p-4 mb-6 border border-slate-700 flex flex-wrap gap-3 items-end">
             <div class="flex-1 min-w-[150px]">
                 <label class="text-xs text-slate-400 block mb-1">Status filter</label>
                 <select id="status-filter" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm">
                     <option value="">All orders</option>
+                    <option value="pending">Pending (unpaid)</option>
                     <option value="processing">Processing</option>
                     <option value="shipped">Shipped</option>
                     <option value="delivered">Delivered</option>
                 </select>
+            </div>
+            <div class="flex items-center gap-2">
+                <input type="checkbox" id="include-pending-checkbox" class="w-4 h-4 rounded border-slate-600 bg-slate-800">
+                <label for="include-pending-checkbox" class="text-xs text-slate-300">Show unpaid orders (pending payment)</label>
             </div>
             <button id="apply-filter" class="bg-blue-600 hover:bg-blue-700 px-5 py-2 rounded-lg transition">Apply</button>
         </div>
@@ -54,7 +59,7 @@
         </div>
     </div>
     
-    <!-- Update Status Modal -->
+    <!-- Update Status Modal (updated with payment confirmation) -->
     <div id="updateModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
         <div class="bg-slate-800 rounded-2xl max-w-md w-full p-5 border border-slate-700">
             <div class="flex justify-between items-center mb-4">
@@ -89,12 +94,17 @@
                     <label class="text-sm block mb-1">Internal Notes (optional)</label>
                     <textarea id="modal-notes" rows="2" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm"></textarea>
                 </div>
+                <!-- Payment confirmation checkbox (only for pending orders) -->
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" id="modal-confirm-payment" class="w-4 h-4 rounded border-slate-600">
+                    <label for="modal-confirm-payment" class="text-sm text-emerald-400">✅ Confirm payment (mark as paid)</label>
+                </div>
                 <button id="modal-update-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 py-2 rounded-lg font-semibold transition">Update Order</button>
             </div>
         </div>
     </div>
 
-    <!-- VIEW ORDER DETAILS MODAL (new) -->
+    <!-- VIEW ORDER DETAILS MODAL (unchanged) -->
     <div id="viewModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
         <div class="bg-slate-800 rounded-2xl max-w-md w-full p-5 border border-slate-700">
             <div class="flex justify-between items-center mb-4">
@@ -153,6 +163,7 @@
         const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
         let token = localStorage.getItem('access_token');
         let currentOrderId = null;
+        let currentOrderStatus = null;  // store current shipping status
         
         async function refreshAccessToken() {
             const refresh = localStorage.getItem('refresh_token');
@@ -248,8 +259,8 @@
             if (reopenBtn) reopenBtn.onclick = () => showDemoModal();
         }
         
-        // ---------- LOAD ORDERS ----------
-        async function loadOrders(status = '') {
+        // ---------- LOAD ORDERS (with include_pending flag) ----------
+        async function loadOrders(status = '', includePending = false) {
             const container = document.getElementById('orders-container');
             if (!token) {
                 container.innerHTML = `<div class="bg-slate-800/70 rounded-xl p-10 text-center border border-slate-700">
@@ -263,7 +274,7 @@
             }
             container.innerHTML = '<div class="text-center py-12"><i class="fa-solid fa-spinner fa-pulse"></i> Loading orders...</div>';
             try {
-                let url = '/fulfillment/orders?limit=100';
+                let url = `/fulfillment/orders?limit=100&include_pending=${includePending}`;
                 if (status) url += `&status=${status}`;
                 const data = await apiCall(url);
                 const orders = data.orders || [];
@@ -274,6 +285,8 @@
                 container.innerHTML = orders.map(order => {
                     const statusClass = order.shipping_status || 'pending';
                     const statusLabel = statusClass === 'processing' ? 'Processing' : statusClass === 'shipped' ? 'Shipped' : statusClass === 'delivered' ? 'Delivered' : 'Pending';
+                    // Highlight if payment is still pending
+                    const paymentBadge = order.status === 'pending' ? '<span class="ml-2 text-[10px] bg-amber-600/30 text-amber-300 px-1.5 py-0.5 rounded-full">⚠️ unpaid</span>' : '';
                     return `
                         <div class="bg-slate-800/70 border border-slate-700 rounded-xl p-4 hover:shadow-lg transition">
                             <div class="flex flex-wrap justify-between items-start gap-3">
@@ -281,6 +294,7 @@
                                     <div class="flex items-center gap-2 flex-wrap">
                                         <span class="font-mono text-blue-300">${escapeHtml(order.receipt_number)}</span>
                                         <span class="status-badge status-${statusClass}">${statusLabel}</span>
+                                        ${paymentBadge}
                                     </div>
                                     <div class="text-sm text-slate-400 mt-1">
                                         <span><i class="fa-regular fa-calendar"></i> ${new Date(order.created_at).toLocaleString()}</span>
@@ -291,7 +305,7 @@
                                 </div>
                                 <div class="flex gap-2">
                                     <button class="view-order-btn bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg text-sm transition" data-id="${order.id}"><i class="fa-regular fa-eye"></i> View</button>
-                                    <button class="update-status-btn bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg text-sm transition" data-id="${order.id}" data-receipt="${escapeHtml(order.receipt_number)}" data-status="${order.shipping_status || 'pending'}"><i class="fa-solid fa-truck-fast"></i> Update</button>
+                                    <button class="update-status-btn bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg text-sm transition" data-id="${order.id}" data-receipt="${escapeHtml(order.receipt_number)}" data-status="${order.shipping_status || 'pending'}" data-payment="${order.status}"><i class="fa-solid fa-truck-fast"></i> Update</button>
                                 </div>
                             </div>
                         </div>
@@ -302,17 +316,17 @@
                     btn.addEventListener('click', () => viewOrder(btn.dataset.id));
                 });
                 document.querySelectorAll('.update-status-btn').forEach(btn => {
-                    btn.addEventListener('click', () => openUpdateModal(btn.dataset.id, btn.dataset.receipt, btn.dataset.status));
+                    btn.addEventListener('click', () => openUpdateModal(btn.dataset.id, btn.dataset.receipt, btn.dataset.status, btn.dataset.payment));
                 });
             } catch (err) {
                 console.error(err);
                 container.innerHTML = `<div class="bg-red-500/20 border border-red-500 p-4 rounded-xl text-red-300">⚠️ Error: ${err.message}. <button id="retry-load" class="underline ml-2">Retry</button></div>`;
                 const retryBtn = document.getElementById('retry-load');
-                if (retryBtn) retryBtn.onclick = () => loadOrders(document.getElementById('status-filter').value);
+                if (retryBtn) retryBtn.onclick = () => loadOrders(document.getElementById('status-filter').value, document.getElementById('include-pending-checkbox').checked);
             }
         }
         
-        // ---------- VIEW ORDER (UPDATED: uses modal instead of alert) ----------
+        // ---------- VIEW ORDER (unchanged) ----------
         async function viewOrder(orderId) {
             try {
                 const order = await apiCall(`/fulfillment/order/${orderId}`);
@@ -340,11 +354,12 @@
             }
         }
         
-        // ---------- UPDATE MODAL LOGIC ----------
-        function openUpdateModal(orderId, receipt, currentStatus) {
+        // ---------- UPDATE MODAL LOGIC (with payment confirmation) ----------
+        function openUpdateModal(orderId, receipt, currentStatus, paymentStatus) {
             if (!token) { showDemoModal(); return; }
             currentOrderId = orderId;
-            document.getElementById('modal-order-info').innerHTML = `<strong>${receipt}</strong> - Current status: ${currentStatus || 'pending'}`;
+            currentOrderStatus = currentStatus;
+            document.getElementById('modal-order-info').innerHTML = `<strong>${receipt}</strong> - Current status: ${currentStatus || 'pending'} | Payment: ${paymentStatus === 'pending' ? '⚠️ Unpaid' : '✅ Paid'}`;
             const statusSelect = document.getElementById('modal-status');
             statusSelect.value = currentStatus === 'shipped' ? 'shipped' : currentStatus === 'delivered' ? 'delivered' : 'processing';
             document.getElementById('tracking-fields').classList.remove('hidden');
@@ -352,9 +367,20 @@
             document.getElementById('modal-tracking').value = '';
             document.getElementById('modal-estimated').value = '';
             document.getElementById('modal-notes').value = '';
+            
+            // Show/hide payment confirmation checkbox based on payment status
+            const confirmCheckbox = document.getElementById('modal-confirm-payment');
+            if (paymentStatus === 'pending') {
+                confirmCheckbox.checked = false;
+                confirmCheckbox.parentElement.classList.remove('hidden');
+            } else {
+                confirmCheckbox.checked = false;
+                confirmCheckbox.parentElement.classList.add('hidden');
+            }
             document.getElementById('updateModal').classList.remove('hidden');
         }
         
+        // Update order status (with optional payment confirmation)
         document.getElementById('modal-update-btn')?.addEventListener('click', async () => {
             if (!token) { showDemoModal(); document.getElementById('updateModal').classList.add('hidden'); return; }
             const newStatus = document.getElementById('modal-status').value;
@@ -362,21 +388,25 @@
             const tracking = document.getElementById('modal-tracking').value;
             const estimated = document.getElementById('modal-estimated').value;
             const notes = document.getElementById('modal-notes').value;
+            const confirmPayment = document.getElementById('modal-confirm-payment')?.checked || false;
+            
             try {
                 const payload = {
                     shipping_status: newStatus,
                     tracking_number: tracking || null,
                     shipping_carrier: carrier || null,
                     estimated_delivery: estimated || null,
-                    notes: notes || null
+                    notes: notes || null,
+                    confirm_payment: confirmPayment   // send to backend
                 };
                 await apiCall(`/fulfillment/order/${currentOrderId}/status`, {
                     method: 'PUT',
                     body: JSON.stringify(payload)
                 });
-                alert(`✅ Order status updated to ${newStatus}. Emails sent if applicable.`);
+                alert(`✅ Order status updated to ${newStatus}${confirmPayment ? ' and payment confirmed.' : '.'}`);
                 document.getElementById('updateModal').classList.add('hidden');
-                loadOrders(document.getElementById('status-filter').value);
+                const includePending = document.getElementById('include-pending-checkbox').checked;
+                loadOrders(document.getElementById('status-filter').value, includePending);
             } catch(err) {
                 alert(`Update failed: ${err.message}`);
             }
@@ -388,11 +418,16 @@
         document.getElementById('closeViewModalBtn')?.addEventListener('click', () => {
             document.getElementById('viewModal').classList.add('hidden');
         });
+        
         document.getElementById('apply-filter')?.addEventListener('click', () => {
-            loadOrders(document.getElementById('status-filter').value);
+            const status = document.getElementById('status-filter').value;
+            const includePending = document.getElementById('include-pending-checkbox').checked;
+            loadOrders(status, includePending);
         });
         document.getElementById('refresh-btn')?.addEventListener('click', () => {
-            loadOrders(document.getElementById('status-filter').value);
+            const status = document.getElementById('status-filter').value;
+            const includePending = document.getElementById('include-pending-checkbox').checked;
+            loadOrders(status, includePending);
         });
         
         document.getElementById('modal-status')?.addEventListener('change', (e) => {
@@ -410,7 +445,8 @@
             const success = await performDemoLogin();
             if (success) {
                 hideDemoModal();
-                await loadOrders(document.getElementById('status-filter').value);
+                const includePending = document.getElementById('include-pending-checkbox').checked;
+                await loadOrders(document.getElementById('status-filter').value, includePending);
                 const toast = document.createElement('div');
                 toast.className = 'fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-emerald-600 text-white px-5 py-2 rounded-full shadow-lg text-sm z-50 flex items-center gap-2';
                 toast.innerHTML = '<i class="fa-regular fa-circle-check"></i> Demo mode active — full fulfillment access';
