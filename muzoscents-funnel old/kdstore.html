@@ -7,10 +7,12 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
-        /* Custom bright theme */
         body {
             background: linear-gradient(135deg, #fff9f0 0%, #fff5e6 100%);
             font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+        .hero-gradient {
+            background: linear-gradient(90deg, #f97316 0%, #f59e0b 100%);
         }
         .product-card {
             transition: all 0.25s ease;
@@ -52,7 +54,6 @@
         .suggestion-item:hover {
             background-color: #fff3e6;
         }
-        /* Chat modal */
         .chat-modal {
             display: none;
             position: fixed;
@@ -84,28 +85,35 @@
             animation: typing 1.4s infinite ease-in-out;
         }
         @keyframes typing { 0%,60%,100% { transform: translateY(0); opacity: 0.5; } 30% { transform: translateY(-6px); opacity: 1; } }
-        
-        /* Hero Slider Styles */
         .hero-slider {
             position: relative;
             overflow: hidden;
+            width: 100%;
         }
         .slider-container {
             display: flex;
+            width: 100%;
             transition: transform 0.5s ease-in-out;
+            will-change: transform;
         }
         .hero-slide {
             flex: 0 0 100%;
             min-height: 500px;
+            position: relative;
+            width: 100%;
+        }
+        .hero-slide.image-slide {
             background-size: cover;
             background-position: center;
-            position: relative;
         }
-        .hero-slide::before {
+        .hero-slide.image-slide::before {
             content: '';
             position: absolute;
             inset: 0;
             background: linear-gradient(90deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.3) 100%);
+        }
+        .hero-slide.gradient-slide {
+            background: linear-gradient(90deg, #f97316 0%, #f59e0b 100%);
         }
         .slide-content {
             position: relative;
@@ -151,22 +159,15 @@
             z-index: 20;
             transition: background 0.2s;
         }
-        .slider-arrow:hover {
-            background: rgba(0,0,0,0.8);
-        }
-        .slider-arrow.left {
-            left: 20px;
-        }
-        .slider-arrow.right {
-            right: 20px;
-        }
+        .slider-arrow:hover { background: rgba(0,0,0,0.8); }
+        .slider-arrow.left { left: 20px; }
+        .slider-arrow.right { right: 20px; }
         @media (max-width: 768px) {
             .hero-slide { min-height: 400px; }
             .slide-content h1 { font-size: 2rem; }
             .slider-arrow { width: 32px; height: 32px; }
         }
-        /* Product Detail Modal */
-        .product-modal {
+        .product-modal, .track-modal {
             display: none;
             position: fixed;
             inset: 0;
@@ -177,10 +178,10 @@
             justify-content: center;
             padding: 1rem;
         }
-        .product-modal.active {
+        .product-modal.active, .track-modal.active {
             display: flex;
         }
-        .product-modal-content {
+        .product-modal-content, .track-modal-content {
             background: white;
             border-radius: 2rem;
             max-width: 600px;
@@ -190,7 +191,7 @@
             position: relative;
             box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
         }
-        .product-modal-close {
+        .product-modal-close, .track-modal-close {
             position: absolute;
             top: 1rem;
             right: 1rem;
@@ -205,7 +206,6 @@
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
             z-index: 10;
         }
-        /* Search clear button */
         .search-container {
             position: relative;
         }
@@ -218,14 +218,19 @@
             cursor: pointer;
             display: none;
         }
-        .search-clear:hover {
-            color: #f97316;
+        .search-clear:hover { color: #f97316; }
+        .ticket-card {
+            transition: all 0.2s;
+        }
+        .ticket-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
         }
     </style>
 </head>
 <body class="text-gray-800">
 
-    <!-- Header / Navigation -->
+    <!-- Header -->
     <header class="sticky top-0 z-30 bg-white/90 backdrop-blur-md shadow-sm border-b border-orange-100">
         <div class="container mx-auto px-4 py-3 flex justify-between items-center">
             <div class="flex items-center gap-2">
@@ -245,6 +250,7 @@
                         <div class="p-3 border-b" id="user-info-dropdown">Guest</div>
                         <button id="login-dropdown-btn" class="w-full text-left px-4 py-2 hover:bg-gray-100">Sign In / Register</button>
                         <button id="track-order-dropdown" class="w-full text-left px-4 py-2 hover:bg-gray-100">Track Order</button>
+                        <button id="complaints-dropdown" class="w-full text-left px-4 py-2 hover:bg-gray-100">My Tickets</button>
                         <button id="logout-dropdown" class="w-full text-left px-4 py-2 text-red-600 hover:bg-gray-100 hidden">Logout</button>
                     </div>
                 </div>
@@ -252,68 +258,70 @@
         </div>
     </header>
 
-    <!-- Hero Slider Section -->
+    <!-- Hero Slider (5 slides) -->
     <section class="hero-slider relative">
         <div class="slider-container" id="heroSlider">
-            <!-- Slide 1 -->
-            <div class="hero-slide" style="background-image: url('https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?w=1600&h=500&fit=crop');">
+            <!-- Slide 1: Gradient Welcome -->
+            <div class="hero-slide gradient-slide">
                 <div class="container mx-auto px-4 h-full flex items-center">
                     <div class="slide-content text-white">
                         <h1 class="text-4xl md:text-6xl font-extrabold leading-tight">Shop Smarter <br>with AI Intelligence</h1>
                         <p class="text-lg md:text-xl mt-4 opacity-90">Discover thousands of products, instant delivery estimates, and a personal concierge.</p>
                         <div class="mt-8 flex gap-4">
-                            <button id="hero-shop-btn-1" class="bg-white text-orange-600 font-semibold px-8 py-3 rounded-full shadow-lg hover:shadow-xl transition">Explore Now →</button>
-                            <button id="hero-chat-btn-1" class="border border-white text-white px-8 py-3 rounded-full hover:bg-white/10 transition">💬 Ask AI</button>
+                            <button class="hero-shop-btn bg-white text-orange-600 font-semibold px-8 py-3 rounded-full shadow-lg hover:shadow-xl transition">Explore Now →</button>
+                            <button class="hero-chat-btn border border-white text-white px-8 py-3 rounded-full hover:bg-white/10 transition">💬 Ask AI</button>
                         </div>
                     </div>
                 </div>
             </div>
-            <!-- Slide 2 -->
-            <div class="hero-slide" style="background-image: url('https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=1600&h=500&fit=crop');">
-                <div class="container mx-auto px-4 h-full flex items-center">
-                    <div class="slide-content text-white">
-                        <h1 class="text-4xl md:text-6xl font-extrabold leading-tight">Fast Delivery <br>To Your Doorstep</h1>
-                        <p class="text-lg md:text-xl mt-4 opacity-90">Real-time tracking, affordable rates, and reliable logistics partners.</p>
-                        <div class="mt-8 flex gap-4">
-                            <button id="hero-shop-btn-2" class="bg-white text-orange-600 font-semibold px-8 py-3 rounded-full shadow-lg hover:shadow-xl transition">Shop Now</button>
-                            <button id="hero-chat-btn-2" class="border border-white text-white px-8 py-3 rounded-full hover:bg-white/10 transition">💬 Track Order</button>
-                        </div>
-                    </div>
-                </div>
+            <!-- Slide 2: Marketplace (image) -->
+            <div class="hero-slide image-slide" style="background-image: url('https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=1600&h=500&fit=crop');">
+                <div class="container mx-auto px-4 h-full flex items-center"><div class="slide-content text-white"><h1 class="text-4xl md:text-6xl font-extrabold">Marketplace</h1><p class="text-lg mt-4">Thousands of products at your fingertips.</p><div class="mt-8 flex gap-4"><button class="hero-shop-btn bg-white text-orange-600 font-semibold px-8 py-3 rounded-full shadow-lg">Explore</button><button class="hero-chat-btn border border-white px-8 py-3 rounded-full">💬 Find Products</button></div></div></div>
             </div>
-            <!-- Slide 3 -->
-            <div class="hero-slide" style="background-image: url('https://images.unsplash.com/photo-1557821552-17105176677c?w=1600&h=500&fit=crop');">
-                <div class="container mx-auto px-4 h-full flex items-center">
-                    <div class="slide-content text-white">
-                        <h1 class="text-4xl md:text-6xl font-extrabold leading-tight">AI Concierge <br>Always Here For You</h1>
-                        <p class="text-lg md:text-xl mt-4 opacity-90">24/7 support, personalised recommendations, and seamless checkout.</p>
-                        <div class="mt-8 flex gap-4">
-                            <button id="hero-shop-btn-3" class="bg-white text-orange-600 font-semibold px-8 py-3 rounded-full shadow-lg hover:shadow-xl transition">Start Shopping</button>
-                            <button id="hero-chat-btn-3" class="border border-white text-white px-8 py-3 rounded-full hover:bg-white/10 transition">💬 Chat Now</button>
-                        </div>
-                    </div>
-                </div>
+            <!-- Slide 3: Track Order (image) -->
+            <div class="hero-slide image-slide" style="background-image: url('https://images.unsplash.com/photo-1566576912321-d58ddd7a6088?w=1600&h=500&fit=crop');">
+                <div class="container mx-auto px-4 h-full flex items-center"><div class="slide-content text-white"><h1 class="text-4xl md:text-6xl font-extrabold">Track Your Order</h1><p class="text-lg mt-4">Real‑time updates from dispatch to delivery.</p><div class="mt-8 flex gap-4"><button class="hero-track-btn bg-white text-orange-600 font-semibold px-8 py-3 rounded-full shadow-lg">Track Now</button><button class="hero-chat-btn border border-white px-8 py-3 rounded-full">💬 Order Help</button></div></div></div>
+            </div>
+            <!-- Slide 4: Support Tickets (image) -->
+            <div class="hero-slide image-slide" style="background-image: url('https://images.unsplash.com/photo-1557804506-669a67965ba0?w=1600&h=500&fit=crop');">
+                <div class="container mx-auto px-4 h-full flex items-center"><div class="slide-content text-white"><h1 class="text-4xl md:text-6xl font-extrabold">Support Tickets</h1><p class="text-lg mt-4">File complaints, track resolutions, get help fast.</p><div class="mt-8 flex gap-4"><button class="hero-tickets-btn bg-white text-orange-600 font-semibold px-8 py-3 rounded-full shadow-lg">My Tickets</button><button class="hero-chat-btn border border-white px-8 py-3 rounded-full">💬 Live Support</button></div></div></div>
+            </div>
+            <!-- Slide 5: AI Concierge (image) -->
+            <div class="hero-slide image-slide" style="background-image: url('https://images.unsplash.com/photo-1531746790731-6c087fecd65a?w=1600&h=500&fit=crop');">
+                <div class="container mx-auto px-4 h-full flex items-center"><div class="slide-content text-white"><h1 class="text-4xl md:text-6xl font-extrabold">AI Concierge 24/7</h1><p class="text-lg mt-4">Your personal shopping & support assistant.</p><div class="mt-8 flex gap-4"><button class="hero-chat-btn bg-white text-orange-600 font-semibold px-8 py-3 rounded-full shadow-lg">Chat Now</button><button class="hero-shop-btn border border-white px-8 py-3 rounded-full">Shop</button></div></div></div>
             </div>
         </div>
-        <!-- Arrows -->
         <div class="slider-arrow left" id="sliderPrev"><i class="fa-solid fa-chevron-left"></i></div>
         <div class="slider-arrow right" id="sliderNext"><i class="fa-solid fa-chevron-right"></i></div>
-        <!-- Dots -->
         <div class="slider-dots" id="sliderDots"></div>
     </section>
 
-    <!-- Main Content: Products Grid -->
-    <main class="container mx-auto px-4 py-12">
-        <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
-            <h2 class="text-2xl md:text-3xl font-bold text-gray-800">🔥 Featured Products</h2>
-            <div class="search-container w-full md:w-72">
-                <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
-                <input type="text" id="product-search" placeholder="Search products..." class="w-full pl-10 pr-8 py-2 border border-gray-300 rounded-full focus:ring-2 focus:ring-orange-400 outline-none">
-                <span id="search-clear" class="search-clear"><i class="fa-solid fa-times-circle"></i></span>
+    <!-- Main Dynamic Panel -->
+    <main id="dynamic-main" class="container mx-auto px-4 py-12">
+        <!-- Shop View (default) -->
+        <div id="shop-view">
+            <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+                <h2 class="text-2xl md:text-3xl font-bold text-gray-800">🔥 Featured Products</h2>
+                <div class="search-container w-full md:w-72">
+                    <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                    <input type="text" id="product-search" placeholder="Search products..." class="w-full pl-10 pr-8 py-2 border border-gray-300 rounded-full focus:ring-2 focus:ring-orange-400 outline-none">
+                    <span id="search-clear" class="search-clear"><i class="fa-solid fa-times-circle"></i></span>
+                </div>
+            </div>
+            <div id="products-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+                <div class="col-span-full text-center py-12 text-gray-500"><i class="fa-solid fa-spinner fa-pulse"></i> Loading amazing deals...</div>
             </div>
         </div>
-        <div id="products-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-            <div class="col-span-full text-center py-12 text-gray-500"><i class="fa-solid fa-spinner fa-pulse"></i> Loading amazing deals...</div>
+
+        <!-- Tickets View (hidden initially) -->
+        <div id="tickets-view" class="hidden">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-2xl md:text-3xl font-bold text-gray-800"><i class="fa-regular fa-ticket-alt text-orange-500"></i> My Support Tickets</h2>
+                <button id="refresh-tickets" class="bg-orange-500 text-white px-4 py-2 rounded-full text-sm hover:bg-orange-600"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
+            </div>
+            <div id="tickets-list" class="space-y-3">
+                <div class="text-center py-10 text-gray-500"><i class="fa-solid fa-spinner fa-pulse"></i> Loading your tickets...</div>
+            </div>
         </div>
     </main>
 
@@ -342,22 +350,13 @@
             </div>
             <div id="delivery-address-section" class="mb-3 hidden">
                 <label class="text-xs text-gray-600 block mb-1">Delivery Address</label>
-                <div class="relative">
-                    <div class="flex gap-2">
-                        <input type="text" id="delivery-address" placeholder="Start typing address..." class="flex-1 bg-white border border-gray-300 rounded-lg p-2 text-sm" autocomplete="off">
-                        <button id="gps-locate-cart" class="bg-indigo-600 text-white px-3 rounded-lg text-sm whitespace-nowrap"><i class="fa-solid fa-location-dot"></i> GPS</button>
-                    </div>
-                    <div id="cart-address-suggestions" class="address-suggestions hidden"></div>
-                </div>
+                <div class="relative"><div class="flex gap-2"><input type="text" id="delivery-address" placeholder="Start typing address..." class="flex-1 bg-white border border-gray-300 rounded-lg p-2 text-sm" autocomplete="off"><button id="gps-locate-cart" class="bg-indigo-600 text-white px-3 rounded-lg text-sm whitespace-nowrap"><i class="fa-solid fa-location-dot"></i> GPS</button></div><div id="cart-address-suggestions" class="address-suggestions hidden"></div></div>
                 <button id="save-address-btn" class="mt-2 w-full bg-orange-500 hover:bg-orange-600 text-white py-1.5 rounded-lg text-sm transition">Save & Estimate Delivery</button>
                 <div id="delivery-fee-estimate" class="text-xs text-gray-500 mt-1"></div>
             </div>
             <div class="mb-3">
                 <label class="text-xs text-gray-600 block mb-1">Payment Method</label>
-                <select id="payment-method" class="w-full bg-white border border-gray-300 rounded-lg p-2 text-sm">
-                    <option value="paystack">Paystack (Card / Bank)</option>
-                    <option value="cash">Cash (POS Terminal)</option>
-                </select>
+                <select id="payment-method" class="w-full bg-white border border-gray-300 rounded-lg p-2 text-sm"><option value="paystack">Paystack (Card / Bank)</option><option value="cash">Cash (POS Terminal)</option></select>
             </div>
             <div class="border-t border-gray-200 pt-2 mt-2 space-y-1 text-sm">
                 <div class="flex justify-between"><span>Subtotal</span><span id="cart-subtotal">₦0</span></div>
@@ -370,64 +369,20 @@
 
     <!-- Product Detail Modal -->
     <div id="product-detail-modal" class="product-modal">
-        <div class="product-modal-content">
-            <div class="product-modal-close" id="close-product-modal">
-                <i class="fa-solid fa-times"></i>
-            </div>
-            <div class="p-6">
-                <div id="product-detail-content">
-                    <!-- Dynamic content loaded here -->
-                </div>
-                <div class="mt-6 flex gap-3">
-                    <button id="modal-add-to-cart" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl font-semibold transition"><i class="fa-regular fa-cart-plus mr-2"></i> Add to Cart</button>
-                    <button id="modal-close-btn" class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-3 rounded-xl font-semibold transition">Continue Shopping</button>
-                </div>
-            </div>
-        </div>
+        <div class="product-modal-content"><div class="product-modal-close" id="close-product-modal"><i class="fa-solid fa-times"></i></div><div class="p-6"><div id="product-detail-content"></div><div class="mt-6 flex gap-3"><button id="modal-add-to-cart" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl font-semibold transition"><i class="fa-solid fa-cart-plus mr-2"></i> Add to Cart</button><button id="modal-close-btn" class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-3 rounded-xl font-semibold transition">Continue Shopping</button></div></div></div>
     </div>
 
-    <!-- Floating AI Chat Bubble -->
-    <button id="chat-bubble" class="floating-chat fixed bottom-6 right-6 bg-orange-500 text-white p-4 rounded-full shadow-xl z-40">
-        <i class="fa-regular fa-message text-2xl"></i>
-    </button>
-
-    <!-- Chat Modal (AI Concierge) -->
-    <div id="chat-modal" class="chat-modal">
-        <div class="flex justify-between items-center p-3 border-b border-orange-200 bg-orange-50 rounded-t-2xl">
-            <span class="font-bold text-gray-800"><i class="fa-regular fa-comment-dots text-orange-500"></i> Kevs AI Concierge</span>
-            <button id="close-chat-modal" class="text-gray-500">&times;</button>
-        </div>
-        <div id="chat-messages" class="chat-messages p-3 space-y-2"></div>
-        <div class="p-3 border-t border-gray-200 bg-white rounded-b-2xl">
-            <div class="flex gap-2">
-                <input id="chat-input" type="text" placeholder="Ask about products, orders..." class="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm focus:ring-2 focus:ring-orange-400 outline-none">
-                <button id="chat-send" class="bg-orange-500 text-white px-4 rounded-full"><i class="fa-regular fa-paper-plane"></i></button>
-            </div>
-        </div>
+    <!-- Track Order Modal -->
+    <div id="track-modal" class="track-modal">
+        <div class="track-modal-content"><div class="track-modal-close" id="close-track-modal"><i class="fa-solid fa-times"></i></div><div class="p-6"><h3 class="text-xl font-bold mb-4"><i class="fa-solid fa-truck-fast text-orange-500"></i> Track Your Order</h3><div class="space-y-4"><div><label class="block text-sm font-medium text-gray-700">Receipt Number</label><input type="text" id="track-receipt" class="w-full border border-gray-300 rounded-lg p-2" placeholder="e.g., REC-12345"></div><div><label class="block text-sm font-medium text-gray-700">Email Address</label><input type="email" id="track-email" class="w-full border border-gray-300 rounded-lg p-2" placeholder="your@email.com"></div><button id="track-submit" class="w-full bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600">Track Order</button><div id="track-result" class="mt-4 text-sm hidden"></div></div></div></div>
     </div>
 
-    <!-- Login / Register Modal -->
-    <div id="auth-modal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
-        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl">
-            <div class="flex justify-between items-center mb-4"><h3 id="modal-title" class="text-xl font-bold">Sign In</h3><button id="close-auth-modal" class="text-2xl">&times;</button></div>
-            <div class="space-y-3">
-                <input id="auth-email" type="email" placeholder="Email address" class="w-full border border-gray-300 rounded-lg p-2.5">
-                <input id="auth-password" type="password" placeholder="Password" class="w-full border border-gray-300 rounded-lg p-2.5">
-                <div id="reg-extra" class="hidden space-y-3 border-t pt-3">
-                    <input id="invite-code" placeholder="Invite code (optional)" class="w-full border border-gray-300 rounded-lg p-2">
-                    <div class="text-xs text-center">— OR create new org —</div>
-                    <input id="org-name" placeholder="Organization name *" class="w-full border border-gray-300 rounded-lg p-2">
-                    <div class="grid grid-cols-2 gap-2"><input id="org-location" placeholder="City, Country *" class="border rounded p-2"><input id="org-niche" placeholder="Industry *" class="border rounded p-2"></div>
-                    <input id="budget" type="number" placeholder="Budget (₦)" class="border p-2 rounded">
-                    <div class="grid grid-cols-2 gap-2"><input id="first-name" placeholder="First name *" class="border p-2 rounded"><input id="last-name" placeholder="Last name *" class="border p-2 rounded"></div>
-                    <input id="phone-number" placeholder="Phone number *" class="border p-2 rounded">
-                </div>
-                <button id="auth-submit" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2.5 rounded-lg">Sign In</button>
-                <button id="demo-access" class="w-full bg-emerald-500 text-white py-2.5 rounded-lg flex items-center justify-center gap-2"><i class="fa-solid fa-flask"></i> Demo Access</button>
-                <div class="text-center"><button id="toggle-auth-mode" class="text-sm text-orange-500 hover:underline">Don't have an account? Register</button></div>
-            </div>
-        </div>
-    </div>
+    <!-- Floating AI Chat -->
+    <button id="chat-bubble" class="floating-chat fixed bottom-6 right-6 bg-orange-500 text-white p-4 rounded-full shadow-xl z-40"><i class="fa-regular fa-message text-2xl"></i></button>
+    <div id="chat-modal" class="chat-modal"><div class="flex justify-between items-center p-3 border-b border-orange-200 bg-orange-50 rounded-t-2xl"><span class="font-bold"><i class="fa-regular fa-comment-dots text-orange-500"></i> Kevs AI Concierge</span><button id="close-chat-modal" class="text-gray-500">&times;</button></div><div id="chat-messages" class="chat-messages p-3 space-y-2"></div><div class="p-3 border-t border-gray-200 bg-white rounded-b-2xl"><div class="flex gap-2"><input id="chat-input" type="text" placeholder="Ask about products, orders..." class="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm"><button id="chat-send" class="bg-orange-500 text-white px-4 rounded-full"><i class="fa-regular fa-paper-plane"></i></button></div></div></div>
+
+    <!-- Login/Register Modal -->
+    <div id="auth-modal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[100]"><div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl"><div class="flex justify-between items-center mb-4"><h3 id="modal-title" class="text-xl font-bold">Sign In</h3><button id="close-auth-modal" class="text-2xl">&times;</button></div><div class="space-y-3"><input id="auth-email" type="email" placeholder="Email address" class="w-full border border-gray-300 rounded-lg p-2.5"><input id="auth-password" type="password" placeholder="Password" class="w-full border border-gray-300 rounded-lg p-2.5"><div id="reg-extra" class="hidden space-y-3 border-t pt-3"><input id="invite-code" placeholder="Invite code (optional)" class="w-full border border-gray-300 rounded-lg p-2"><div class="text-xs text-center">— OR create new org —</div><input id="org-name" placeholder="Organization name *" class="w-full border border-gray-300 rounded-lg p-2"><div class="grid grid-cols-2 gap-2"><input id="org-location" placeholder="City, Country *" class="border rounded p-2"><input id="org-niche" placeholder="Industry *" class="border rounded p-2"></div><input id="budget" type="number" placeholder="Budget (₦)" class="border p-2 rounded"><div class="grid grid-cols-2 gap-2"><input id="first-name" placeholder="First name *" class="border p-2 rounded"><input id="last-name" placeholder="Last name *" class="border p-2 rounded"></div><input id="phone-number" placeholder="Phone number *" class="border p-2 rounded"></div><button id="auth-submit" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2.5 rounded-lg">Sign In</button><button id="demo-access" class="w-full bg-emerald-500 text-white py-2.5 rounded-lg flex items-center justify-center gap-2"><i class="fa-solid fa-flask"></i> Demo Access</button><div class="text-center"><button id="toggle-auth-mode" class="text-sm text-orange-500 hover:underline">Don't have an account? Register</button></div></div></div></div>
 
     <script>
         // ---------- API & GLOBALS ----------
@@ -441,61 +396,12 @@
         let handlingFee = 0;
         let allProducts = [];
         let searchQuery = '';
-        let searchDebounceTimer;
         let sessionId = localStorage.getItem('pf_session') || ('web_' + Date.now() + '_' + Math.random().toString(36).substr(2, 10));
         localStorage.setItem('pf_session', sessionId);
-        let chatMessagesDiv = null;
+        let currentView = 'shop';
         let currentProductForModal = null;
 
-        // ---------- Hero Slider Logic (unchanged) ----------
-        let currentSlide = 0;
-        const slides = document.querySelectorAll('.hero-slide');
-        const totalSlides = slides.length;
-        const sliderContainer = document.getElementById('heroSlider');
-        const prevBtn = document.getElementById('sliderPrev');
-        const nextBtn = document.getElementById('sliderNext');
-        const dotsContainer = document.getElementById('sliderDots');
-        let autoSlideInterval;
-
-        function updateSlider() {
-            sliderContainer.style.transform = `translateX(-${currentSlide * 100}%)`;
-            document.querySelectorAll('.slider-dot').forEach((dot, idx) => {
-                if (idx === currentSlide) dot.classList.add('active');
-                else dot.classList.remove('active');
-            });
-        }
-        function goToSlide(index) {
-            currentSlide = (index + totalSlides) % totalSlides;
-            updateSlider();
-            resetAutoSlide();
-        }
-        function nextSlide() { goToSlide(currentSlide + 1); }
-        function prevSlide() { goToSlide(currentSlide - 1); }
-        function resetAutoSlide() {
-            if (autoSlideInterval) clearInterval(autoSlideInterval);
-            autoSlideInterval = setInterval(() => { nextSlide(); }, 5000);
-        }
-        function createDots() {
-            dotsContainer.innerHTML = '';
-            for (let i = 0; i < totalSlides; i++) {
-                const dot = document.createElement('div');
-                dot.classList.add('slider-dot');
-                if (i === 0) dot.classList.add('active');
-                dot.addEventListener('click', () => goToSlide(i));
-                dotsContainer.appendChild(dot);
-            }
-        }
-        if (totalSlides > 0) {
-            createDots();
-            prevBtn.addEventListener('click', prevSlide);
-            nextBtn.addEventListener('click', nextSlide);
-            resetAutoSlide();
-            const heroSection = document.querySelector('.hero-slider');
-            heroSection.addEventListener('mouseenter', () => clearInterval(autoSlideInterval));
-            heroSection.addEventListener('mouseleave', resetAutoSlide);
-        }
-
-        // ---------- Helper Functions ----------
+        // Helper: apiCall
         async function apiCall(endpoint, options = {}, retry = true) {
             if (!options.headers) options.headers = {};
             options.headers['Content-Type'] = 'application/json';
@@ -514,6 +420,7 @@
             return res.json();
         }
 
+        // Cart functions
         function saveCart() { localStorage.setItem('kevs_cart', JSON.stringify(cart)); updateCartUI(); }
         function loadCart() { const saved = localStorage.getItem('kevs_cart'); cart = saved ? JSON.parse(saved) : []; updateCartUI(); }
         function updateCartUI() {
@@ -523,260 +430,210 @@
             document.getElementById('cart-subtotal').innerText = `₦${subtotal.toLocaleString()}`;
             document.getElementById('cart-total').innerText = `₦${total.toLocaleString()}`;
             const feeRow = document.getElementById('delivery-fee-row');
-            if (deliveryOption === 'delivery' && deliveryAddress && deliveryFee) {
-                feeRow.classList.remove('hidden');
-                document.getElementById('cart-delivery-fee').innerText = `₦${deliveryFee.toLocaleString()}`;
-            } else feeRow.classList.add('hidden');
+            if (deliveryOption === 'delivery' && deliveryAddress && deliveryFee) { feeRow.classList.remove('hidden'); document.getElementById('cart-delivery-fee').innerText = `₦${deliveryFee.toLocaleString()}`; } else feeRow.classList.add('hidden');
             const count = cart.reduce((s,i) => s + i.quantity, 0);
             document.getElementById('cart-count-badge').innerText = count;
             const container = document.getElementById('cart-items-list');
             if (!container) return;
             if (cart.length === 0) { container.innerHTML = '<div class="text-center text-gray-400 py-8"><i class="fa-regular fa-basket-shopping text-4xl mb-2"></i><p>Cart is empty</p></div>'; return; }
-            container.innerHTML = cart.map((item, idx) => `
-                <div class="flex justify-between items-center bg-gray-50 p-3 rounded-xl">
-                    <div><span class="font-medium">${escapeHtml(item.name)}</span> <span class="text-xs text-gray-500">x${item.quantity}</span></div>
-                    <div class="font-mono text-orange-600">₦${(item.price * item.quantity).toLocaleString()}</div>
-                    <button onclick="removeCartItem(${idx})" class="text-red-500"><i class="fa-regular fa-trash-can"></i></button>
-                </div>
-            `).join('');
+            container.innerHTML = cart.map((item, idx) => `<div class="flex justify-between items-center bg-gray-50 p-3 rounded-xl"><div><span class="font-medium">${escapeHtml(item.name)}</span> <span class="text-xs text-gray-500">x${item.quantity}</span></div><div class="font-mono text-orange-600">₦${(item.price * item.quantity).toLocaleString()}</div><button onclick="removeCartItem(${idx})" class="text-red-500"><i class="fa-regular fa-trash-can"></i></button></div>`).join('');
         }
         window.removeCartItem = (idx) => { cart.splice(idx,1); saveCart(); renderProducts(); updateCartUI(); };
-        function addToCart(product) { 
-            let existing = cart.find(i => i.id === product.id); 
-            if(existing) existing.quantity++; 
-            else cart.push({ id: product.id, name: product.name, price: product.price, quantity: 1 }); 
-            saveCart(); 
-            showToast(`${product.name} added to cart!`, 'success'); 
-            updateCartUI(); 
-        }
+        function addToCart(product) { let existing = cart.find(i => i.id === product.id); if(existing) existing.quantity++; else cart.push({ id: product.id, name: product.name, price: product.price, quantity: 1 }); saveCart(); showToast(`${product.name} added to cart!`, 'success'); updateCartUI(); }
 
-        // ---------- Product Rendering with Search Fix ----------
-        async function loadProducts() { 
-            try { 
-                allProducts = await apiCall('/inventory/public-list'); 
-                renderProducts(); 
-            } catch(e) { 
-                document.getElementById('products-grid').innerHTML = `<div class="col-span-full text-red-500">⚠️ ${e.message}</div>`; 
-            } 
-        }
-        
+        // Product rendering
+        async function loadProducts() { try { allProducts = await apiCall('/inventory/public-list'); renderProducts(); } catch(e) { document.getElementById('products-grid').innerHTML = `<div class="col-span-full text-red-500">⚠️ ${e.message}</div>`; } }
         function renderProducts() {
             let filtered = allProducts;
-            if (searchQuery.trim() !== '') {
-                filtered = allProducts.filter(p => 
-                    p.description.toLowerCase().includes(searchQuery.toLowerCase())
-                );
-            }
+            if (searchQuery.trim() !== '') filtered = allProducts.filter(p => p.description.toLowerCase().includes(searchQuery.toLowerCase()));
             const grid = document.getElementById('products-grid');
             if (!grid) return;
-            if (filtered.length === 0) { 
-                grid.innerHTML = `<div class="col-span-full text-center py-12 text-gray-500"><i class="fa-regular fa-face-frown"></i> No products match "${escapeHtml(searchQuery)}".</div>`; 
-                return; 
-            }
-            grid.innerHTML = filtered.map(p => `
-                <div class="product-card bg-white rounded-2xl p-4 shadow-sm hover:shadow-lg transition flex flex-col" data-product='${JSON.stringify(p).replace(/'/g, "&#39;")}'>
-                    <div class="h-28 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl flex items-center justify-center mb-3">
-                        ${p.image_url ? `<img src="${p.image_url}" class="h-24 object-contain rounded" alt="${escapeHtml(p.description)}">` : `<i class="fa-solid fa-box-open text-4xl text-orange-400"></i>`}
-                    </div>
-                    <h3 class="font-bold text-gray-800 truncate">${escapeHtml(p.description)}</h3>
-                    <div class="flex justify-between items-center mt-2">
-                        <span class="text-orange-600 font-bold text-xl">₦${p.price_naira.toLocaleString()}</span>
-                        <span class="text-xs bg-gray-100 px-2 py-1 rounded-full">${p.current_qty} left</span>
-                    </div>
-                    <div class="flex gap-2 mt-3">
-                        <button class="view-details-btn flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-xl text-sm font-semibold transition"><i class="fa-regular fa-eye"></i> Details</button>
-                        <button class="add-to-cart-btn flex-1 bg-orange-500 hover:bg-orange-600 text-white py-2 rounded-xl text-sm font-semibold transition"><i class="fa-regular fa-cart-plus"></i> Add</button>
-                    </div>
-                </div>
-            `).join('');
-            
-            // Attach event listeners
+            if (filtered.length === 0) { grid.innerHTML = `<div class="col-span-full text-center py-12 text-gray-500"><i class="fa-regular fa-face-frown"></i> No products match "${escapeHtml(searchQuery)}".</div>`; return; }
+            grid.innerHTML = filtered.map(p => `<div class="product-card bg-white rounded-2xl p-4 shadow-sm hover:shadow-lg transition flex flex-col" data-product='${JSON.stringify(p).replace(/'/g, "&#39;")}'><div class="h-28 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl flex items-center justify-center mb-3">${p.image_url ? `<img src="${p.image_url}" class="h-24 object-contain rounded">` : `<i class="fa-solid fa-box-open text-4xl text-orange-400"></i>`}</div><h3 class="font-bold text-gray-800 truncate">${escapeHtml(p.description)}</h3><div class="flex justify-between items-center mt-2"><span class="text-orange-600 font-bold text-xl">₦${p.price_naira.toLocaleString()}</span><span class="text-xs bg-gray-100 px-2 py-1 rounded-full">${p.current_qty} left</span></div><div class="flex gap-2 mt-3"><button class="view-details-btn flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-xl text-sm font-semibold"><i class="fa-regular fa-eye"></i> Details</button><button class="add-to-cart-btn flex-1 bg-orange-500 hover:bg-orange-600 text-white py-2 rounded-xl text-sm font-semibold"><i class="fa-solid fa-cart-plus"></i> Add</button></div></div>`).join('');
             document.querySelectorAll('.product-card').forEach(card => {
                 const productData = JSON.parse(card.getAttribute('data-product'));
-                const viewBtn = card.querySelector('.view-details-btn');
-                const addBtn = card.querySelector('.add-to-cart-btn');
-                viewBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    showProductDetail(productData);
-                });
-                addBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    addToCart({ id: productData.id, name: productData.description, price: productData.price_naira });
-                });
-                card.addEventListener('click', (e) => {
-                    if (e.target === viewBtn || e.target === addBtn || viewBtn.contains(e.target) || addBtn.contains(e.target)) return;
-                    showProductDetail(productData);
-                });
+                card.querySelector('.view-details-btn').onclick = (e) => { e.stopPropagation(); showProductDetail(productData); };
+                card.querySelector('.add-to-cart-btn').onclick = (e) => { e.stopPropagation(); addToCart({ id: productData.id, name: productData.description, price: productData.price_naira }); };
+                card.onclick = (e) => { if (e.target.tagName !== 'BUTTON' && !e.target.closest('button')) showProductDetail(productData); };
             });
         }
-        
-        // Search with debounce and clear button
+
+        // Search debounce
+        let searchDebounce;
         const searchInput = document.getElementById('product-search');
         const searchClear = document.getElementById('search-clear');
-        
-        function handleSearch() {
-            clearTimeout(searchDebounceTimer);
-            searchDebounceTimer = setTimeout(() => {
-                searchQuery = searchInput.value;
-                renderProducts();
-                // Show/hide clear button
-                if (searchClear) {
-                    searchClear.style.display = searchQuery ? 'block' : 'none';
-                }
-            }, 300);
-        }
-        
-        function clearSearch() {
-            searchInput.value = '';
-            searchQuery = '';
-            renderProducts();
-            if (searchClear) searchClear.style.display = 'none';
-            searchInput.focus();
-        }
-        
-        if (searchInput) {
-            searchInput.addEventListener('input', handleSearch);
-        }
-        if (searchClear) {
-            searchClear.addEventListener('click', clearSearch);
-        }
-        
+        function handleSearch() { clearTimeout(searchDebounce); searchDebounce = setTimeout(() => { searchQuery = searchInput.value; renderProducts(); searchClear.style.display = searchQuery ? 'block' : 'none'; }, 300); }
+        function clearSearch() { searchInput.value = ''; searchQuery = ''; renderProducts(); searchClear.style.display = 'none'; searchInput.focus(); }
+        if (searchInput) searchInput.addEventListener('input', handleSearch);
+        if (searchClear) searchClear.addEventListener('click', clearSearch);
+
         // Product detail modal
         function showProductDetail(product) {
             currentProductForModal = product;
             const modal = document.getElementById('product-detail-modal');
-            const contentDiv = document.getElementById('product-detail-content');
-            
-            const hasImage = product.image_url;
-            const dimensions = (product.length_cm || product.width_cm || product.height_cm) ? 
-                `${product.length_cm || '?'}cm × ${product.width_cm || '?'}cm × ${product.height_cm || '?'}cm` : 'Not specified';
-            const weight = product.weight_kg ? `${product.weight_kg} kg` : 'Not specified';
-            const fragile = product.fragile ? '<span class="bg-red-100 text-red-700 px-2 py-1 rounded-full text-xs">Fragile</span>' : '';
-            const hazardous = product.hazardous ? '<span class="bg-amber-100 text-amber-700 px-2 py-1 rounded-full text-xs">Hazardous</span>' : '';
-            const handling = product.handling_category ? `<span class="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs">${product.handling_category}</span>` : '';
-            const sizeFactor = product.size_factor ? `${product.size_factor}` : 'Standard';
-            
-            contentDiv.innerHTML = `
-                <div class="flex flex-col gap-4">
-                    ${hasImage ? `<img src="${product.image_url}" class="w-full h-48 object-contain rounded-xl bg-gray-50" alt="${escapeHtml(product.description)}">` : `<div class="w-full h-48 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl flex items-center justify-center"><i class="fa-solid fa-cube text-5xl text-orange-400"></i></div>`}
-                    <h2 class="text-2xl font-bold text-gray-800">${escapeHtml(product.description)}</h2>
-                    <div class="flex justify-between items-center">
-                        <span class="text-3xl font-bold text-orange-600">₦${product.price_naira.toLocaleString()}</span>
-                        <span class="bg-gray-100 px-3 py-1 rounded-full text-sm">Stock: ${product.current_qty ?? 0}</span>
-                    </div>
-                    <div class="border-t border-gray-100 pt-3 grid grid-cols-2 gap-3 text-sm">
-                        <div><span class="text-gray-500">Weight:</span> ${weight}</div>
-                        <div><span class="text-gray-500">Dimensions:</span> ${dimensions}</div>
-                        <div><span class="text-gray-500">Handling:</span> ${handling || 'Standard'}</div>
-                        <div><span class="text-gray-500">Size factor:</span> ${sizeFactor}</div>
-                        <div class="col-span-2 flex gap-2 mt-1">${fragile} ${hazardous}</div>
-                        ${product.product_group ? `<div><span class="text-gray-500">Group:</span> ${escapeHtml(product.product_group)}</div>` : ''}
-                        ${product.item_code ? `<div><span class="text-gray-500">Item code:</span> ${escapeHtml(product.item_code)}</div>` : ''}
-                    </div>
-                    <div class="bg-orange-50 p-3 rounded-xl text-sm text-gray-700">
-                        <i class="fa-regular fa-truck-fast text-orange-500 mr-2"></i> Delivery fees calculated based on weight, dimensions, and distance.
-                    </div>
-                </div>
-            `;
+            const content = document.getElementById('product-detail-content');
+            const dim = product.length_cm || product.width_cm || product.height_cm ? `${product.length_cm||'?'}cm × ${product.width_cm||'?'}cm × ${product.height_cm||'?'}cm` : 'Not specified';
+            content.innerHTML = `<div class="flex flex-col gap-4">${product.image_url ? `<img src="${product.image_url}" class="w-full h-48 object-contain rounded-xl">` : `<div class="w-full h-48 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl flex items-center justify-center"><i class="fa-solid fa-cube text-5xl text-orange-400"></i></div>`}<h2 class="text-2xl font-bold">${escapeHtml(product.description)}</h2><div class="flex justify-between"><span class="text-3xl font-bold text-orange-600">₦${product.price_naira.toLocaleString()}</span><span class="bg-gray-100 px-3 py-1 rounded-full">Stock: ${product.current_qty||0}</span></div><div class="border-t pt-3 grid grid-cols-2 gap-3 text-sm"><div><span class="text-gray-500">Weight:</span> ${product.weight_kg ? product.weight_kg+' kg' : 'Not specified'}</div><div><span class="text-gray-500">Dimensions:</span> ${dim}</div><div><span class="text-gray-500">Handling:</span> ${product.handling_category || 'Standard'}</div><div><span class="text-gray-500">Size factor:</span> ${product.size_factor || 'Standard'}</div><div class="col-span-2 flex gap-2">${product.fragile ? '<span class="bg-red-100 text-red-700 px-2 py-1 rounded-full text-xs">Fragile</span>' : ''}${product.hazardous ? '<span class="bg-amber-100 text-amber-700 px-2 py-1 rounded-full text-xs">Hazardous</span>' : ''}</div>${product.product_group ? `<div><span class="text-gray-500">Group:</span> ${escapeHtml(product.product_group)}</div>` : ''}${product.item_code ? `<div><span class="text-gray-500">Item code:</span> ${escapeHtml(product.item_code)}</div>` : ''}</div><div class="bg-orange-50 p-3 rounded-xl text-sm"><i class="fa-regular fa-truck-fast text-orange-500 mr-2"></i> Delivery fees calculated based on weight, dimensions, and distance.</div></div>`;
             modal.classList.add('active');
         }
-        
-        function closeProductModal() {
-            document.getElementById('product-detail-modal').classList.remove('active');
-            currentProductForModal = null;
-        }
-        
-        function modalAddToCart() {
-            if (currentProductForModal) {
-                addToCart({ id: currentProductForModal.id, name: currentProductForModal.description, price: currentProductForModal.price_naira });
-                closeProductModal();
-            }
-        }
-        
-        // Delivery Address Autocomplete & GPS (unchanged)
-        const cartAddressInput = document.getElementById('delivery-address');
-        const cartSuggestionsDiv = document.getElementById('cart-address-suggestions');
-        let debounceTimer;
-        function hideSuggestions() { cartSuggestionsDiv.classList.add('hidden'); cartSuggestionsDiv.innerHTML = ''; }
-        function showSuggestions(items) {
-            if (!items.length) return hideSuggestions();
-            cartSuggestionsDiv.innerHTML = items.map(item => `<div class="suggestion-item">${item.display_name.split(',').slice(0,3).join(',')}</div>`).join('');
-            cartSuggestionsDiv.classList.remove('hidden');
-            document.querySelectorAll('.suggestion-item').forEach((el, idx) => { el.addEventListener('click', () => { cartAddressInput.value = items[idx].display_name; deliveryAddress = items[idx].display_name; hideSuggestions(); }); });
-        }
-        async function fetchAddressSuggestions(query) {
-            if (query.length < 3) { hideSuggestions(); return; }
-            const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=6`;
-            const resp = await fetch(url, { headers: { 'User-Agent': 'KevsStore/1.0' } });
-            const data = await resp.json();
-            showSuggestions(data);
-        }
-        cartAddressInput?.addEventListener('input', (e) => { clearTimeout(debounceTimer); debounceTimer = setTimeout(() => fetchAddressSuggestions(e.target.value), 500); });
-        document.getElementById('gps-locate-cart')?.addEventListener('click', () => {
-            if (navigator.geolocation) navigator.geolocation.getCurrentPosition(async pos => {
-                const rev = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json`, { headers: { 'User-Agent': 'KevsStore' } });
-                const data = await rev.json();
-                cartAddressInput.value = data.display_name;
-                deliveryAddress = data.display_name;
-                hideSuggestions();
-                showToast("GPS address loaded! Click 'Save & Estimate'.", 'success');
-            }, () => showToast("GPS failed", 'error'));
-        });
-        async function estimateDelivery() {
-            if (!deliveryAddress) { showToast("Enter address first", 'error'); return; }
-            const items = cart.map(i => ({ inventory_id: i.id, quantity: i.quantity }));
+        function closeProductModal() { document.getElementById('product-detail-modal').classList.remove('active'); currentProductForModal = null; }
+        document.getElementById('close-product-modal')?.addEventListener('click', closeProductModal);
+        document.getElementById('modal-close-btn')?.addEventListener('click', closeProductModal);
+        document.getElementById('modal-add-to-cart')?.addEventListener('click', () => { if(currentProductForModal) addToCart({ id: currentProductForModal.id, name: currentProductForModal.description, price: currentProductForModal.price_naira }); closeProductModal(); });
+
+        // Track Order Modal
+        const trackModal = document.getElementById('track-modal');
+        function openTrackModal() { trackModal.classList.add('active'); }
+        function closeTrackModal() { trackModal.classList.remove('active'); document.getElementById('track-result').classList.add('hidden'); }
+        document.getElementById('close-track-modal')?.addEventListener('click', closeTrackModal);
+        document.getElementById('track-submit')?.addEventListener('click', async () => {
+            const receipt = document.getElementById('track-receipt').value.trim();
+            const email = document.getElementById('track-email').value.trim();
+            if (!receipt || !email) { showToast("Please enter both receipt number and email", 'error'); return; }
+            const resultDiv = document.getElementById('track-result');
+            resultDiv.innerHTML = '<i class="fa-solid fa-spinner fa-pulse"></i> Tracking...';
+            resultDiv.classList.remove('hidden');
             try {
-                const res = await apiCall('/delivery/estimate', { method: 'POST', body: JSON.stringify({ address: deliveryAddress, items }) });
-                deliveryFee = res.delivery_fee_naira;
-                handlingFee = res.handling_fee_naira || 0;
-                document.getElementById('delivery-fee-estimate').innerHTML = `🚚 Delivery fee: ₦${deliveryFee.toLocaleString()} | Handling: ₦${handlingFee.toLocaleString()}`;
-                updateCartUI();
-            } catch(e) { showToast("Estimate failed: "+e.message, 'error'); }
+                const data = await apiCall(`/track-order?receipt_number=${receipt}&email=${email}`);
+                const statusMap = { pending:"⏳ Pending", completed:"📦 Ready", shipped:"🚚 In transit", delivered:"✅ Delivered" };
+                resultDiv.innerHTML = `<div class="bg-gray-100 p-3 rounded-lg space-y-1 text-sm"><div><strong>Receipt:</strong> ${data.receipt_number}</div><div><strong>Total:</strong> ₦${data.total_amount?.toLocaleString()}</div><div><strong>Status:</strong> <span class="text-orange-600 font-semibold">${statusMap[data.shipping_status] || data.shipping_status}</span></div><div><strong>Carrier:</strong> ${data.shipping_carrier || '—'}</div><div><strong>Tracking #:</strong> ${data.tracking_number || 'N/A'}</div></div>`;
+            } catch(e) { resultDiv.innerHTML = `<div class="text-red-500">${e.message}</div>`; }
+        });
+
+        // Tickets View
+        async function loadTickets() {
+            if (!token) { showAuthModal(); showToast("Please login to view tickets", 'error'); return; }
+            const container = document.getElementById('tickets-list');
+            container.innerHTML = '<div class="text-center py-10"><i class="fa-solid fa-spinner fa-pulse"></i> Loading tickets...</div>';
+            try {
+                const data = await apiCall('/support/tickets');
+                const tickets = data.tickets || [];
+                if (tickets.length === 0) { container.innerHTML = '<div class="bg-white rounded-xl p-8 text-center text-gray-500"><i class="fa-regular fa-ticket-alt text-4xl mb-2 opacity-50"></i><p>No support tickets yet. Start a chat with AI to create one.</p></div>'; return; }
+                container.innerHTML = tickets.map(t => `<div class="ticket-card bg-white rounded-xl p-4 shadow-sm border border-gray-100"><div class="flex justify-between items-start"><div><span class="text-xs font-mono text-blue-500">#${t.id.slice(0,8)}</span><span class="ml-2 text-xs uppercase px-2 py-0.5 rounded-full ${t.status==='open'?'bg-amber-100 text-amber-700':'bg-green-100 text-green-700'}">${t.status}</span></div><span class="text-xs text-gray-400">Priority: ${t.priority}</span></div><p class="font-semibold mt-1">${escapeHtml(t.subject || 'General inquiry')}</p><p class="text-sm text-gray-600 mt-1">${escapeHtml(t.message?.substring(0,100) || '')}</p>${t.resolution ? `<div class="mt-2 text-xs bg-gray-50 p-2 rounded"><span class="font-medium">Resolution:</span> ${escapeHtml(t.resolution)}</div>` : ''}<div class="mt-2 text-xs text-gray-400">Created: ${new Date(t.created_at).toLocaleString()}</div></div>`).join('');
+            } catch(e) { container.innerHTML = `<div class="text-red-500 p-4">Error: ${e.message}</div>`; }
         }
-        document.getElementById('save-address-btn')?.addEventListener('click', estimateDelivery);
-        function setDeliveryOption(option) {
-            deliveryOption = option;
-            const pickupBtn = document.getElementById('pickup-option'), delBtn = document.getElementById('delivery-option');
-            if (option === 'pickup') {
-                pickupBtn.classList.add('bg-orange-500', 'text-white'); delBtn.classList.remove('bg-orange-500', 'text-white'); delBtn.classList.add('bg-gray-200');
-                document.getElementById('delivery-address-section').classList.add('hidden');
-                deliveryFee = 0; deliveryAddress = '';
-            } else {
-                delBtn.classList.add('bg-orange-500', 'text-white'); pickupBtn.classList.remove('bg-orange-500', 'text-white'); pickupBtn.classList.add('bg-gray-200');
-                document.getElementById('delivery-address-section').classList.remove('hidden');
+
+        // View switcher
+        function showView(view) {
+            currentView = view;
+            const shopDiv = document.getElementById('shop-view');
+            const ticketsDiv = document.getElementById('tickets-view');
+            if (view === 'shop') { shopDiv.classList.remove('hidden'); ticketsDiv.classList.add('hidden'); if (allProducts.length === 0) loadProducts(); }
+            else if (view === 'tickets') { shopDiv.classList.add('hidden'); ticketsDiv.classList.remove('hidden'); loadTickets(); }
+        }
+        document.getElementById('refresh-tickets')?.addEventListener('click', loadTickets);
+        document.getElementById('complaints-dropdown')?.addEventListener('click', () => showView('tickets'));
+
+        // ---------- HERO SLIDER (FIXED) ----------
+        function initHeroSlider() {
+            const sliderContainer = document.getElementById('heroSlider');
+            const slides = document.querySelectorAll('.hero-slide');
+            const prevBtn = document.getElementById('sliderPrev');
+            const nextBtn = document.getElementById('sliderNext');
+            const dotsContainer = document.getElementById('sliderDots');
+            
+            if (!sliderContainer || slides.length === 0) return;
+            
+            let currentIndex = 0;
+            const total = slides.length;
+            let autoInterval;
+            
+            // Set slider container width explicitly
+            sliderContainer.style.width = '100%';
+            
+            function updateSlider() {
+                sliderContainer.style.transform = `translateX(-${currentIndex * 100}%)`;
+                // Update dots
+                document.querySelectorAll('.slider-dot').forEach((dot, idx) => {
+                    if (idx === currentIndex) dot.classList.add('active');
+                    else dot.classList.remove('active');
+                });
             }
-            updateCartUI();
+            
+            function goToSlide(index) {
+                currentIndex = (index + total) % total;
+                updateSlider();
+                resetAutoSlide();
+            }
+            
+            function nextSlide() { goToSlide(currentIndex + 1); }
+            function prevSlide() { goToSlide(currentIndex - 1); }
+            
+            function resetAutoSlide() {
+                if (autoInterval) clearInterval(autoInterval);
+                autoInterval = setInterval(() => nextSlide(), 5000);
+            }
+            
+            // Create dots
+            dotsContainer.innerHTML = '';
+            for (let i = 0; i < total; i++) {
+                const dot = document.createElement('div');
+                dot.classList.add('slider-dot');
+                if (i === 0) dot.classList.add('active');
+                dot.addEventListener('click', () => goToSlide(i));
+                dotsContainer.appendChild(dot);
+            }
+            
+            // Add event listeners
+            if (prevBtn) prevBtn.addEventListener('click', prevSlide);
+            if (nextBtn) nextBtn.addEventListener('click', nextSlide);
+            
+            // Pause on hover
+            const sliderSection = document.querySelector('.hero-slider');
+            if (sliderSection) {
+                sliderSection.addEventListener('mouseenter', () => {
+                    if (autoInterval) clearInterval(autoInterval);
+                });
+                sliderSection.addEventListener('mouseleave', resetAutoSlide);
+            }
+            
+            // Start auto sliding
+            resetAutoSlide();
         }
+        
+        // Run slider after DOM is fully ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initHeroSlider);
+        } else {
+            initHeroSlider();
+        }
+
+        // Hero button actions (must be attached after elements exist)
+        function bindHeroButtons() {
+            document.querySelectorAll('.hero-shop-btn').forEach(btn => btn.addEventListener('click', () => showView('shop')));
+            document.querySelectorAll('.hero-track-btn').forEach(btn => btn.addEventListener('click', openTrackModal));
+            document.querySelectorAll('.hero-tickets-btn').forEach(btn => btn.addEventListener('click', () => showView('tickets')));
+            document.querySelectorAll('.hero-chat-btn').forEach(btn => btn.addEventListener('click', () => { document.getElementById('chat-modal').classList.add('active'); initChat(); }));
+        }
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', bindHeroButtons);
+        } else {
+            bindHeroButtons();
+        }
+
+        // Delivery autocomplete & GPS
+        const cartAddressInput = document.getElementById('delivery-address');
+        const cartSuggestions = document.getElementById('cart-address-suggestions');
+        let addrDebounce;
+        function hideAddrSuggestions() { cartSuggestions.classList.add('hidden'); cartSuggestions.innerHTML = ''; }
+        function showAddrSuggestions(items) { if (!items.length) return hideAddrSuggestions(); cartSuggestions.innerHTML = items.map(item => `<div class="suggestion-item">${item.display_name.split(',').slice(0,3).join(',')}</div>`).join(''); cartSuggestions.classList.remove('hidden'); document.querySelectorAll('#cart-address-suggestions .suggestion-item').forEach((el, idx) => { el.addEventListener('click', () => { cartAddressInput.value = items[idx].display_name; deliveryAddress = items[idx].display_name; hideAddrSuggestions(); }); }); }
+        async function fetchAddrSuggestions(q) { if (q.length < 3) return hideAddrSuggestions(); const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5`, { headers: { 'User-Agent': 'KevsStore' } }); const data = await resp.json(); showAddrSuggestions(data); }
+        cartAddressInput?.addEventListener('input', (e) => { clearTimeout(addrDebounce); addrDebounce = setTimeout(() => fetchAddrSuggestions(e.target.value), 400); });
+        document.getElementById('gps-locate-cart')?.addEventListener('click', () => { if (navigator.geolocation) navigator.geolocation.getCurrentPosition(async pos => { const rev = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json`, { headers: { 'User-Agent': 'KevsStore' } }); const data = await rev.json(); cartAddressInput.value = data.display_name; deliveryAddress = data.display_name; hideAddrSuggestions(); showToast("GPS address loaded! Click 'Save & Estimate'.", 'success'); }, () => showToast("GPS failed", 'error')); } });
+        async function estimateDelivery() { if (!deliveryAddress) return showToast("Enter address first", 'error'); try { const items = cart.map(i => ({ inventory_id: i.id, quantity: i.quantity })); const res = await apiCall('/delivery/estimate', { method: 'POST', body: JSON.stringify({ address: deliveryAddress, items }) }); deliveryFee = res.delivery_fee_naira; handlingFee = res.handling_fee_naira || 0; document.getElementById('delivery-fee-estimate').innerHTML = `🚚 Delivery fee: ₦${deliveryFee.toLocaleString()} | Handling: ₦${handlingFee.toLocaleString()}`; updateCartUI(); } catch(e) { showToast(e.message, 'error'); } }
+        document.getElementById('save-address-btn')?.addEventListener('click', estimateDelivery);
+        function setDeliveryOption(opt) { deliveryOption = opt; const pickup = document.getElementById('pickup-option'), deliv = document.getElementById('delivery-option'); if (opt === 'pickup') { pickup.classList.add('bg-orange-500','text-white'); deliv.classList.remove('bg-orange-500','text-white'); deliv.classList.add('bg-gray-200'); document.getElementById('delivery-address-section').classList.add('hidden'); deliveryFee = 0; deliveryAddress = ''; } else { deliv.classList.add('bg-orange-500','text-white'); pickup.classList.remove('bg-orange-500','text-white'); pickup.classList.add('bg-gray-200'); document.getElementById('delivery-address-section').classList.remove('hidden'); } updateCartUI(); }
         document.getElementById('pickup-option')?.addEventListener('click', () => setDeliveryOption('pickup'));
         document.getElementById('delivery-option')?.addEventListener('click', () => setDeliveryOption('delivery'));
 
         // Checkout
-        async function checkout() {
-            if (!cart.length) { showToast("Cart empty", 'error'); return; }
-            if (!token) { showAuthModal(); return; }
-            if (deliveryOption === 'delivery' && (!deliveryAddress || deliveryFee === 0)) { showToast("Please save your delivery address first", 'error'); return; }
-            const paymentMethod = document.getElementById('payment-method').value;
-            const items = cart.map(i => ({ inventory_id: i.id, quantity: i.quantity }));
-            const payload = { items, customer_name: userProfile?.first_name || null, customer_email: userProfile?.email || null, customer_phone: userProfile?.phone || null, payment_method: paymentMethod, callback_url: window.location.href.split('?')[0] };
-            if (deliveryOption === 'delivery') { payload.shipping_address = deliveryAddress; payload.delivery_fee = deliveryFee; payload.handling_fee = handlingFee; }
-            try {
-                if (paymentMethod === 'cash') {
-                    const result = await apiCall('/pos/terminal/checkout', { method: 'POST', body: JSON.stringify(payload) });
-                    showToast(`✅ Checkout success! Receipt: ${result.receipt_number}`, 'success');
-                    cart = []; saveCart(); setDeliveryOption('pickup'); renderProducts(); document.getElementById('cart-drawer').classList.add('translate-x-full');
-                } else {
-                    const result = await apiCall('/pos/checkout', { method: 'POST', body: JSON.stringify(payload) });
-                    if (result.payment_url) { localStorage.setItem('pending_payment', 'true'); window.location.href = result.payment_url; }
-                    else showToast("Payment initiation failed", 'error');
-                }
-            } catch(e) { showToast(e.message, 'error'); }
-        }
+        async function checkout() { if (!cart.length) return showToast("Cart empty", 'error'); if (!token) return showAuthModal(); if (deliveryOption === 'delivery' && (!deliveryAddress || deliveryFee === 0)) return showToast("Please save delivery address", 'error'); const paymentMethod = document.getElementById('payment-method').value; const items = cart.map(i => ({ inventory_id: i.id, quantity: i.quantity })); const payload = { items, customer_name: userProfile?.first_name || null, customer_email: userProfile?.email || null, customer_phone: userProfile?.phone || null, payment_method: paymentMethod, callback_url: window.location.href.split('?')[0] }; if (deliveryOption === 'delivery') { payload.shipping_address = deliveryAddress; payload.delivery_fee = deliveryFee; payload.handling_fee = handlingFee; } try { if (paymentMethod === 'cash') { const result = await apiCall('/pos/terminal/checkout', { method: 'POST', body: JSON.stringify(payload) }); showToast(`✅ Checkout success! Receipt: ${result.receipt_number}`, 'success'); cart = []; saveCart(); setDeliveryOption('pickup'); renderProducts(); document.getElementById('cart-drawer').classList.add('translate-x-full'); } else { const result = await apiCall('/pos/checkout', { method: 'POST', body: JSON.stringify(payload) }); if (result.payment_url) { localStorage.setItem('pending_payment', 'true'); window.location.href = result.payment_url; } else showToast("Payment initiation failed", 'error'); } } catch(e) { showToast(e.message, 'error'); } }
 
-        // Auth, User, Modal
+        // Auth, User, Chat
         async function loadUser() { try { const me = await apiCall('/auth/me'); userProfile = me; document.getElementById('user-info-dropdown').innerHTML = `<i class="fa-regular fa-user"></i> ${me.first_name || me.email}`; document.getElementById('logout-dropdown').classList.remove('hidden'); } catch(e) { userProfile = null; } }
         function showAuthModal() { document.getElementById('auth-modal').classList.remove('hidden'); }
         function hideAuthModal() { document.getElementById('auth-modal').classList.add('hidden'); }
-        async function demoLogin() { try { const res = await fetch(`${API_BASE}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' }) }); const data = await res.json(); if (!res.ok) throw new Error(data.detail); token = data.access_token; localStorage.setItem('access_token', token); localStorage.setItem('refresh_token', data.refresh_token); await loadUser(); hideAuthModal(); showToast("Demo login success", 'success'); } catch(e) { alert(e.message); } }
+        async function demoLogin() { try { const res = await fetch(`${API_BASE}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' }) }); const data = await res.json(); if (!res.ok) throw new Error(data.detail); token = data.access_token; localStorage.setItem('access_token', token); localStorage.setItem('refresh_token', data.refresh_token); await loadUser(); hideAuthModal(); showToast("Demo login success", 'success'); showView('shop'); } catch(e) { alert(e.message); } }
         async function logout() { try { await apiCall('/auth/logout', { method: 'POST' }); } catch(e) {} localStorage.clear(); token = null; userProfile = null; cart = []; saveCart(); location.reload(); }
         document.getElementById('login-dropdown-btn')?.addEventListener('click', showAuthModal);
         document.getElementById('logout-dropdown')?.addEventListener('click', logout);
@@ -806,42 +663,26 @@
             const data = await loginRes.json();
             if (!loginRes.ok) throw new Error(data.detail);
             token = data.access_token; localStorage.setItem('access_token', token); localStorage.setItem('refresh_token', data.refresh_token);
-            await loadUser(); hideAuthModal(); showToast("Logged in", 'success');
+            await loadUser(); hideAuthModal(); showToast("Logged in", 'success'); showView('shop');
         });
 
-        // Chat AI (floating)
-        let chatSessionId = sessionId;
+        // Chat
+        let chatMessagesDiv = null, chatSessionId = sessionId;
         function addChatMsg(sender, text) { if (!chatMessagesDiv) return; const div = document.createElement('div'); div.className = `p-2 rounded-xl max-w-[85%] text-sm mb-1 ${sender === 'user' ? 'bg-orange-500 text-white ml-auto rounded-br-none' : 'bg-gray-100 text-gray-800 mr-auto rounded-bl-none'}`; div.innerText = text; chatMessagesDiv.appendChild(div); chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight; }
         async function sendChatMessage() { const input = document.getElementById('chat-input'); const msg = input.value.trim(); if (!msg) return; addChatMsg('user', msg); input.value = ''; addChatMsg('assistant', '🤖 Thinking...'); try { const data = await apiCall('/support/chat-stream', { method: 'POST', body: JSON.stringify({ session_id: chatSessionId, message: msg }) }); chatMessagesDiv.lastChild?.remove(); addChatMsg('assistant', data.response || "Got it!"); } catch(e) { chatMessagesDiv.lastChild?.remove(); addChatMsg('assistant', "Sorry, AI is busy."); } }
-        function initChat() { chatMessagesDiv = document.getElementById('chat-messages'); if (chatMessagesDiv && chatMessagesDiv.children.length === 0) addChatMsg('assistant', "Hi! I'm your AI shopping assistant. Need help finding something?"); }
+        function initChat() { chatMessagesDiv = document.getElementById('chat-messages'); if (chatMessagesDiv && chatMessagesDiv.children.length === 0) addChatMsg('assistant', "Hi! I'm your AI shopping assistant. Need help?"); }
         document.getElementById('chat-bubble')?.addEventListener('click', () => { const modal = document.getElementById('chat-modal'); modal.classList.toggle('active'); if (modal.classList.contains('active')) initChat(); });
         document.getElementById('close-chat-modal')?.addEventListener('click', () => document.getElementById('chat-modal').classList.remove('active'));
         document.getElementById('chat-send')?.addEventListener('click', sendChatMessage);
         document.getElementById('chat-input')?.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendChatMessage(); });
 
-        // UI events for slider buttons
-        document.getElementById('hero-shop-btn-1')?.addEventListener('click', () => document.getElementById('products-grid').scrollIntoView({ behavior: 'smooth' }));
-        document.getElementById('hero-shop-btn-2')?.addEventListener('click', () => document.getElementById('products-grid').scrollIntoView({ behavior: 'smooth' }));
-        document.getElementById('hero-shop-btn-3')?.addEventListener('click', () => document.getElementById('products-grid').scrollIntoView({ behavior: 'smooth' }));
-        document.getElementById('hero-chat-btn-1')?.addEventListener('click', () => { document.getElementById('chat-modal').classList.add('active'); initChat(); });
-        document.getElementById('hero-chat-btn-2')?.addEventListener('click', () => { document.getElementById('track-order-dropdown').click(); });
-        document.getElementById('hero-chat-btn-3')?.addEventListener('click', () => { document.getElementById('chat-modal').classList.add('active'); initChat(); });
-
+        // UI event listeners
         document.getElementById('cart-icon-btn')?.addEventListener('click', () => document.getElementById('cart-drawer').classList.remove('translate-x-full'));
         document.getElementById('close-drawer')?.addEventListener('click', () => document.getElementById('cart-drawer').classList.add('translate-x-full'));
         document.getElementById('checkout-btn')?.addEventListener('click', checkout);
-        document.getElementById('track-order-dropdown')?.addEventListener('click', () => { alert("Track your order: use receipt number from your email."); });
-        document.addEventListener('click', (e) => { if (!e.target.closest('#user-menu-btn') && !e.target.closest('#user-dropdown')) document.getElementById('user-dropdown')?.classList.add('hidden'); });
+        document.getElementById('track-order-dropdown')?.addEventListener('click', openTrackModal);
         document.getElementById('user-menu-btn')?.addEventListener('click', () => document.getElementById('user-dropdown')?.classList.toggle('hidden'));
-        
-        // Modal close handlers
-        document.getElementById('close-product-modal')?.addEventListener('click', closeProductModal);
-        document.getElementById('modal-close-btn')?.addEventListener('click', closeProductModal);
-        document.getElementById('modal-add-to-cart')?.addEventListener('click', modalAddToCart);
-        document.getElementById('product-detail-modal')?.addEventListener('click', (e) => {
-            if (e.target === document.getElementById('product-detail-modal')) closeProductModal();
-        });
-        
+        document.addEventListener('click', (e) => { if (!e.target.closest('#user-menu-btn') && !e.target.closest('#user-dropdown')) document.getElementById('user-dropdown')?.classList.add('hidden'); });
         function showToast(msg, type) { const t = document.createElement('div'); t.className = `fixed bottom-20 left-4 right-4 md:left-auto md:right-6 z-50 bg-${type==='success'?'green-600':'red-600'} text-white px-4 py-2 rounded-xl shadow-lg text-sm`; t.innerText = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3000); }
         function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, m => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[m])); }
 
@@ -853,6 +694,7 @@
             await loadProducts();
             const urlParams = new URLSearchParams(window.location.search);
             if (urlParams.get('payment') === 'success') { cart = []; saveCart(); showToast("Payment successful! Thank you.", 'success'); window.history.replaceState({}, '', window.location.pathname); }
+            showView('shop');
         })();
     </script>
 </body>
