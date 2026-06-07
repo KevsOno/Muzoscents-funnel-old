@@ -184,10 +184,11 @@
     let cart = [];
     let debugVisible = true;
     
-    // New delivery state
+    // Delivery state (NEW: handlingFee added)
     let deliveryOption = 'pickup'; // 'pickup' or 'delivery'
     let deliveryAddress = '';
     let deliveryFee = 0;
+    let handlingFee = 0;            // <-- NEW GLOBAL for handling fee
     let deliveryEstimateLoading = false;
 
     function log(msg) {
@@ -304,11 +305,12 @@
         updateCartUI();
     }
 
-    // Delivery estimate (now called only when user clicks "Save")
+    // Delivery estimate (UPDATED: store handlingFee)
     async function estimateDelivery() {
         const address = deliveryAddress;
         if (!address) {
             deliveryFee = 0;
+            handlingFee = 0;
             updateCartUI();
             document.getElementById('delivery-estimate').innerHTML = '';
             return;
@@ -326,12 +328,14 @@
                 body: JSON.stringify({ address, items })
             });
             deliveryFee = res.delivery_fee_naira;
+            handlingFee = res.handling_fee_naira || 0;   // <-- store handling fee
             updateCartUI();
-            estimateDiv.innerHTML = `🚚 Delivery fee: ₦${deliveryFee.toLocaleString()} | Handling: ₦${res.handling_fee_naira?.toLocaleString() || 0}`;
+            estimateDiv.innerHTML = `🚚 Delivery fee: ₦${deliveryFee.toLocaleString()} | Handling: ₦${handlingFee.toLocaleString()}`;
         } catch(err) {
             log("Delivery estimate error: " + err.message);
             estimateDiv.innerHTML = `<span class="text-red-400">⚠️ Could not estimate delivery: ${err.message}</span>`;
             deliveryFee = 0;
+            handlingFee = 0;
             updateCartUI();
         }
     }
@@ -350,6 +354,7 @@
             deliveryBtn.classList.add('bg-slate-700', 'text-slate-300');
             addressContainer.classList.add('hidden');
             deliveryFee = 0;
+            handlingFee = 0;
             deliveryAddress = '';
             // Clear address input and estimate display
             const addressInput = document.getElementById('delivery-address');
@@ -363,6 +368,7 @@
             addressContainer.classList.remove('hidden');
             // Do not auto-estimate; wait for save button
             deliveryFee = 0;
+            handlingFee = 0;
             updateCartUI();
         }
         updateCartUI();
@@ -380,7 +386,7 @@
         await estimateDelivery();
     }
     
-    // Modified checkout to include shipping_address if delivery
+    // Modified checkout to include delivery_fee and handling_fee in payload
     async function checkoutCart() {
         if (!cart.length) { showToast("Cart is empty", 'error'); return; }
         if (!token) { showLoginModal(); showToast("Please login first", 'error'); return; }
@@ -412,8 +418,15 @@
             payment_method: paymentMethod,
             callback_url: `${returnUrl}?payment=success`
         };
+        
         if (deliveryOption === 'delivery') {
             payload.shipping_address = deliveryAddress;
+            payload.delivery_fee = deliveryFee;     // <-- ADDED
+            payload.handling_fee = handlingFee;     // <-- ADDED
+        } else {
+            // For pickup, send zero fees (backend may ignore)
+            payload.delivery_fee = 0;
+            payload.handling_fee = 0;
         }
         
         try {
@@ -426,6 +439,7 @@
                 showToast(`✅ Checkout success! Receipt: ${result.receipt_number}`, 'success');
                 cart = []; saveCart();
                 deliveryFee = 0;
+                handlingFee = 0;
                 setDeliveryOption('pickup'); // reset to pickup after successful order
                 if (currentTab === 'shop') renderShop();
                 document.getElementById('cart-drawer').classList.add('translate-x-full');
@@ -456,6 +470,7 @@
                 cart = [];
                 saveCart();
                 deliveryFee = 0;
+                handlingFee = 0;
                 setDeliveryOption('pickup');
                 if (currentTab === 'shop') renderShop();
                 showToast("🎉 Payment successful! Your order is confirmed.", 'success');
@@ -787,7 +802,7 @@
         } else { showLoginModal(); }
         checkPaymentReturn();
         window.addToCart = addToCart;
-        log("✅ Marketplace ready – delivery/pickup + search integrated.");
+        log("✅ Marketplace ready – delivery/pickup + search integrated. Delivery & handling fees added to checkout payload.");
     })();
 </script>
 </body>
