@@ -77,7 +77,7 @@
         </div>
     </header>
 
-    <!-- Hero Slider (5 slides) - Working Slider -->
+    <!-- Hero Slider (5 slides) - Working -->
     <section class="hero-slider relative">
         <div class="slider-container" id="heroSlider">
             <!-- Slide 1: Gradient Welcome -->
@@ -117,7 +117,6 @@
 
     <!-- Main Dynamic Panel -->
     <main id="dynamic-main" class="container mx-auto px-4 py-12">
-        <!-- Shop View (default) -->
         <div id="shop-view">
             <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
                 <h2 class="text-2xl md:text-3xl font-bold text-gray-800">🔥 Featured Products</h2>
@@ -132,7 +131,6 @@
             </div>
         </div>
 
-        <!-- Tickets View -->
         <div id="tickets-view" class="hidden">
             <div class="flex items-center justify-between mb-6">
                 <h2 class="text-2xl md:text-3xl font-bold text-gray-800"><i class="fa-regular fa-ticket-alt text-orange-500"></i> My Support Tickets</h2>
@@ -144,7 +142,7 @@
 
     <footer class="bg-gray-800 text-white mt-16 py-8"><div class="container mx-auto px-4 text-center text-sm"><p>© 2026 Kevs Digital bOS – AI‑powered marketplace</p><p class="text-gray-400 mt-2"><i class="fa-regular fa-clock"></i> 24/7 AI Concierge | Fast Delivery</p></div></footer>
 
-    <!-- Cart Drawer (same as before) -->
+    <!-- Cart Drawer -->
     <div id="cart-drawer" class="cart-sidebar fixed top-0 right-0 w-full sm:w-96 h-full bg-white shadow-2xl z-50 transform translate-x-full transition-transform duration-300 flex flex-col">
         <div class="p-4 border-b border-orange-100 flex justify-between items-center bg-orange-50"><h3 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-basket-shopping text-orange-500"></i> Your Cart</h3><button id="close-drawer" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button></div>
         <div id="cart-items-list" class="flex-1 overflow-y-auto p-4 space-y-3 bg-white"></div>
@@ -163,7 +161,7 @@
     <!-- Track Order Modal -->
     <div id="track-modal" class="track-modal"><div class="track-modal-content"><div class="track-modal-close" id="close-track-modal"><i class="fa-solid fa-times"></i></div><div class="p-6"><h3 class="text-xl font-bold mb-4"><i class="fa-solid fa-truck-fast text-orange-500"></i> Track Your Order</h3><div class="space-y-4"><div><label class="block text-sm font-medium text-gray-700">Receipt Number</label><input type="text" id="track-receipt" class="w-full border border-gray-300 rounded-lg p-2" placeholder="e.g., REC-12345"></div><div><label class="block text-sm font-medium text-gray-700">Email Address</label><input type="email" id="track-email" class="w-full border border-gray-300 rounded-lg p-2" placeholder="your@email.com"></div><button id="track-submit" class="w-full bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600">Track Order</button><div id="track-result" class="mt-4 text-sm hidden"></div></div></div></div></div>
 
-    <!-- Floating AI Chat Bubble & Modal -->
+    <!-- Floating AI Chat -->
     <button id="chat-bubble" class="floating-chat fixed bottom-6 right-6 bg-orange-500 text-white p-4 rounded-full shadow-xl z-40"><i class="fa-regular fa-message text-2xl"></i></button>
     <div id="chat-modal" class="chat-modal"><div class="flex justify-between items-center p-3 border-b border-orange-200 bg-orange-50 rounded-t-2xl"><span class="font-bold"><i class="fa-regular fa-comment-dots text-orange-500"></i> Kevs AI Concierge</span><button id="close-chat-modal" class="text-gray-500">&times;</button></div><div id="chat-messages" class="chat-messages p-3 space-y-2"></div><div class="p-3 border-t border-gray-200 bg-white rounded-b-2xl"><div class="flex gap-2"><input id="chat-input" type="text" placeholder="Ask about products, orders..." class="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm"><button id="chat-send" class="bg-orange-500 text-white px-4 rounded-full"><i class="fa-regular fa-paper-plane"></i></button></div></div></div>
 
@@ -304,7 +302,7 @@
         document.getElementById('refresh-tickets')?.addEventListener('click', loadTickets);
         document.getElementById('complaints-dropdown')?.addEventListener('click', () => showView('tickets'));
 
-        // Hero Slider (working)
+        // Hero Slider (fixed)
         function initHeroSlider() {
             const slider = document.getElementById('heroSlider'), slides = document.querySelectorAll('.hero-slide');
             const prev = document.getElementById('sliderPrev'), next = document.getElementById('sliderNext'), dots = document.getElementById('sliderDots');
@@ -332,7 +330,7 @@
         document.querySelectorAll('.hero-tickets-btn').forEach(btn => btn.addEventListener('click', () => showView('tickets')));
         document.querySelectorAll('.hero-chat-btn').forEach(btn => btn.addEventListener('click', () => { document.getElementById('chat-modal').classList.add('active'); initChat(); }));
 
-        // Delivery & GPS (unchanged from working version)
+        // Delivery & GPS
         const addrInput = document.getElementById('delivery-address'), addrSugg = document.getElementById('cart-address-suggestions');
         let addrDeb;
         function hideAddrSugg() { addrSugg.classList.add('hidden'); addrSugg.innerHTML = ''; }
@@ -346,8 +344,49 @@
         document.getElementById('pickup-option')?.addEventListener('click',()=>setDeliveryOpt('pickup'));
         document.getElementById('delivery-option')?.addEventListener('click',()=>setDeliveryOpt('delivery'));
 
-        // Checkout
-        async function checkout() { if(!cart.length) return showToast("Cart empty",'error'); if(!token) return showAuthModal(); if(deliveryOption==='delivery' && (!deliveryAddress || deliveryFee===0)) return showToast("Save delivery address first",'error'); const payMethod=document.getElementById('payment-method').value; const items=cart.map(i=>({inventory_id:i.id,quantity:i.quantity})); const payload={items, customer_name:userProfile?.first_name||null, customer_email:userProfile?.email||null, customer_phone:userProfile?.phone||null, payment_method:payMethod, callback_url:window.location.href.split('?')[0]}; if(deliveryOption==='delivery'){ payload.shipping_address=deliveryAddress; payload.delivery_fee=deliveryFee; payload.handling_fee=handlingFee; } try{ if(payMethod==='cash'){ const result=await apiCall('/pos/terminal/checkout',{method:'POST',body:JSON.stringify(payload)}); showToast(`✅ Success! Receipt: ${result.receipt_number}`,'success'); cart=[]; saveCart(); setDeliveryOpt('pickup'); renderProducts(); document.getElementById('cart-drawer').classList.add('translate-x-full'); } else { const result=await apiCall('/pos/checkout',{method:'POST',body:JSON.stringify(payload)}); if(result.payment_url){ localStorage.setItem('pending_payment','true'); window.location.href=result.payment_url; } else showToast("Payment initiation failed",'error'); } } catch(e){ showToast(e.message,'error'); } }
+        // Checkout - with improved cart clearing
+        async function checkout() {
+            if (!cart.length) return showToast("Cart empty", 'error');
+            if (!token) return showAuthModal();
+            if (deliveryOption === 'delivery' && (!deliveryAddress || deliveryFee === 0)) return showToast("Save delivery address first", 'error');
+            const payMethod = document.getElementById('payment-method').value;
+            const items = cart.map(i => ({ inventory_id: i.id, quantity: i.quantity }));
+            const payload = {
+                items,
+                customer_name: userProfile?.first_name || null,
+                customer_email: userProfile?.email || null,
+                customer_phone: userProfile?.phone || null,
+                payment_method: payMethod,
+                callback_url: window.location.href.split('?')[0]
+            };
+            if (deliveryOption === 'delivery') {
+                payload.shipping_address = deliveryAddress;
+                payload.delivery_fee = deliveryFee;
+                payload.handling_fee = handlingFee;
+            }
+            try {
+                if (payMethod === 'cash') {
+                    const result = await apiCall('/pos/terminal/checkout', { method: 'POST', body: JSON.stringify(payload) });
+                    showToast(`✅ Checkout success! Receipt: ${result.receipt_number}`, 'success');
+                    // Clear cart immediately for cash
+                    cart = [];
+                    saveCart();
+                    setDeliveryOpt('pickup');
+                    renderProducts();
+                    document.getElementById('cart-drawer').classList.add('translate-x-full');
+                } else {
+                    const result = await apiCall('/pos/checkout', { method: 'POST', body: JSON.stringify(payload) });
+                    if (result.payment_url) {
+                        localStorage.setItem('pending_payment', 'true');
+                        window.location.href = result.payment_url;
+                    } else {
+                        showToast("Payment initiation failed", 'error');
+                    }
+                }
+            } catch (e) {
+                showToast(e.message, 'error');
+            }
+        }
 
         // Auth, Chat
         async function loadUser(){ try{ const me=await apiCall('/auth/me'); userProfile=me; document.getElementById('user-info-dropdown').innerHTML=`<i class="fa-regular fa-user"></i> ${me.first_name||me.email}`; document.getElementById('logout-dropdown').classList.remove('hidden'); } catch(e){ userProfile=null; } }
@@ -379,7 +418,33 @@
         function showToast(msg,type){ const t=document.createElement('div'); t.className=`fixed bottom-20 left-4 right-4 md:left-auto md:right-6 z-50 bg-${type==='success'?'green-600':'red-600'} text-white px-4 py-2 rounded-xl shadow-lg text-sm`; t.innerText=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),3000); }
         function escapeHtml(str){ if(!str) return ''; return str.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
 
-        (async()=>{ loadCart(); setDeliveryOpt('pickup'); if(token){ try{ await loadUser(); } catch(e){ token=null; } } await loadProducts(); const urlParams=new URLSearchParams(window.location.search); if(urlParams.get('payment')==='success'){ cart=[]; saveCart(); showToast("Payment successful! Thank you.",'success'); window.history.replaceState({},'',window.location.pathname); } showView('shop'); })();
+        // Initialization with robust cart clearing after payment
+        (async() => {
+            loadCart();
+            setDeliveryOpt('pickup');
+            if (token) { try { await loadUser(); } catch(e) { token = null; } }
+            await loadProducts();
+
+            // Clear cart if returning from a successful payment (Paystack redirect)
+            const urlParams = new URLSearchParams(window.location.search);
+            const paymentSuccess = urlParams.get('payment') === 'success';
+            const pendingFlag = localStorage.getItem('pending_payment') === 'true';
+
+            if (paymentSuccess || pendingFlag) {
+                // Clear cart no matter what
+                cart = [];
+                saveCart();
+                showToast("Payment successful! Your cart has been cleared.", 'success');
+                // Remove the flag to avoid double clearing on refresh
+                localStorage.removeItem('pending_payment');
+                // Clean URL if needed
+                if (paymentSuccess) {
+                    window.history.replaceState({}, '', window.location.pathname);
+                }
+            }
+
+            showView('shop');
+        })();
     </script>
 </body>
 </html>
