@@ -163,11 +163,13 @@
 <!-- ========== END GLOBAL NAVIGATION ========== -->
 
 <div class="max-w-6xl mx-auto p-6">
+    <!-- Header -->
     <div class="flex justify-between items-center mb-6">
         <h1 class="text-2xl font-bold text-gray-800"><i class="fas fa-users mr-2 text-orange-500"></i>Team Management</h1>
         <button id="refresh-team-btn" class="text-sm bg-white px-4 py-2 rounded-lg shadow hover:bg-gray-50"><i class="fas fa-sync-alt mr-1"></i> Refresh</button>
     </div>
 
+    <!-- Add staff form -->
     <div class="bg-white rounded-xl shadow-md p-6 mb-8">
         <h2 class="text-lg font-semibold mb-4"><i class="fas fa-user-plus mr-2 text-green-600"></i>Invite new staff member</h2>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -189,6 +191,7 @@
         <div id="form-message" class="mt-3 text-sm hidden"></div>
     </div>
 
+    <!-- Existing team members table -->
     <div class="bg-white rounded-xl shadow-md overflow-hidden">
         <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
             <h2 class="font-semibold"><i class="fas fa-users mr-2"></i>Current team</h2>
@@ -213,9 +216,15 @@
 </div>
 
 <script>
-    const BACKEND_URL = window.location.origin;
-    function getToken() { return localStorage.getItem('access_token'); }
+    // ==================== FIXED BACKEND URL ====================
+    const BACKEND_URL = "https://kevsono-kevs-digital-bos.hf.space";
 
+    // Helper: get token from localStorage
+    function getToken() {
+        return localStorage.getItem('access_token');
+    }
+
+    // Show toast messages
     function showToast(msg, type = 'success') {
         let container = document.getElementById('toast-container');
         if (!container) {
@@ -231,6 +240,7 @@
         setTimeout(() => toast.remove(), 3500);
     }
 
+    // Authenticated fetch
     async function apiFetch(endpoint, options = {}) {
         const token = getToken();
         if (!token) {
@@ -256,9 +266,11 @@
         return res.json();
     }
 
+    // Load current user role – redirect if not owner/admin
     async function checkAccess() {
         const role = localStorage.getItem('user_role');
         if (!role) {
+            // try to fetch /auth/me
             try {
                 const me = await apiFetch('/auth/me');
                 localStorage.setItem('user_role', me.role);
@@ -277,6 +289,7 @@
         return true;
     }
 
+    // Load team members
     async function loadTeam() {
         const tbody = document.getElementById('team-table-body');
         tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6"><div class="loading-spinner-sm inline-block mr-2"></div> Loading...</td></tr>`;
@@ -300,6 +313,7 @@
                 </tr>
             `).join('');
 
+            // attach events
             document.querySelectorAll('.reset-pwd-btn').forEach(btn => {
                 btn.addEventListener('click', () => resetUserPassword(btn.getAttribute('data-email')));
             });
@@ -307,10 +321,11 @@
                 btn.addEventListener('click', () => removeUser(btn.getAttribute('data-user-id')));
             });
         } catch (err) {
-            tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-red-500">Error: ${err.message}</td></tr>`;
+            tbody.innerHTML = `<td><td colspan="5" class="text-center py-6 text-red-500">Error: ${err.message}</td></tr>`;
         }
     }
 
+    // Create new staff member
     async function createStaff(payload) {
         return await apiFetch('/organisations/me/users', {
             method: 'POST',
@@ -318,6 +333,7 @@
         });
     }
 
+    // Reset password (admin)
     async function resetUserPassword(email) {
         if (!confirm(`Send password reset email to ${email}?`)) return;
         try {
@@ -328,6 +344,7 @@
         }
     }
 
+    // Remove user from organisation
     async function removeUser(userId) {
         if (!confirm('Remove this user from the organisation? They will lose access.')) return;
         try {
@@ -339,6 +356,7 @@
         }
     }
 
+    // Helper: escape HTML
     function escapeHtml(str) {
         if (!str) return '';
         return str.replace(/[&<>]/g, function(m) {
@@ -349,6 +367,7 @@
         });
     }
 
+    // Setup form submission
     document.getElementById('create-user-btn')?.addEventListener('click', async () => {
         const firstName = document.getElementById('new-firstname').value.trim();
         const lastName = document.getElementById('new-lastname').value.trim();
@@ -381,6 +400,7 @@
             msgDiv.className = 'mt-3 text-sm text-green-600';
             msgDiv.innerText = `Invitation sent to ${email}. They will receive an email with a temporary password.`;
             msgDiv.classList.remove('hidden');
+            // clear form
             document.getElementById('new-firstname').value = '';
             document.getElementById('new-lastname').value = '';
             document.getElementById('new-email').value = '';
@@ -398,6 +418,7 @@
 
     document.getElementById('refresh-team-btn')?.addEventListener('click', () => loadTeam());
 
+    // Initialization
     (async () => {
         try {
             await checkAccess();
