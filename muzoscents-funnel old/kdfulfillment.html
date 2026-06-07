@@ -19,498 +19,577 @@
     </style>
 </head>
 <body class="text-slate-200">
-    <div class="container mx-auto px-4 py-6 max-w-7xl">
-        <!-- Header -->
-        <div class="flex justify-between items-center mb-6 flex-wrap gap-3">
-            <div>
-                <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">📦 Fulfillment Dashboard</h1>
-                <p class="text-slate-400 text-sm">Manage order shipping and dispatch — <span class="text-emerald-400">demo access ready</span></p>
+
+<!-- ========== GLOBAL NAVIGATION (Kevs bOS) ========== -->
+<div id="kevs-nav-container"></div>
+<script>
+(function() {
+    const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
+    const LOGIN_URL = '/kdsiginin';
+    const navItems = [
+        { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy' },
+        { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & online payments' },
+        { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', title: 'Order shipping, tracking & dispatch' },
+        { path: '/kdsupport',     name: 'Support',   icon: 'fa-headset', title: 'Ticket management & customer context' },
+        { path: '/kddashboard',   name: 'Exec',      icon: 'fa-chart-simple', title: 'Executive revenue & profit overview' }
+    ];
+    const adminItem = { path: '/kdadmin', name: 'Admin', icon: 'fa-shield-alt', title: 'Inventory & bulk product management (admin only)' };
+
+    function getUserRole() {
+        try {
+            const role = localStorage.getItem('user_role');
+            return role === 'admin' ? 'admin' : null;
+        } catch(e) { return null; }
+    }
+
+    function buildNavbar() {
+        const currentPath = window.location.pathname;
+        const isAdmin = getUserRole() === 'admin';
+        let linksHtml = '';
+        navItems.forEach(item => {
+            const isActive = currentPath === item.path;
+            const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
+            linksHtml += `
+                <a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}" title="${item.title}">
+                    <i class="fa-solid ${item.icon} w-4"></i> ${item.name}
+                </a>
+            `;
+        });
+        if (isAdmin) {
+            const isActive = currentPath === adminItem.path;
+            const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
+            linksHtml += `
+                <a href="${adminItem.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}" title="${adminItem.title}">
+                    <i class="fa-solid ${adminItem.icon} w-4"></i> ${adminItem.name}
+                </a>
+            `;
+        }
+        let userName = 'User';
+        try {
+            const profileStr = localStorage.getItem('user_profile_display');
+            if (profileStr) userName = profileStr;
+        } catch(e) {}
+        return `
+            <div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40">
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div class="flex flex-wrap items-center justify-between py-3 gap-3">
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i>
+                            <span class="text-xl font-bold tracking-tight">${APP_NAME}</span>
+                            <span class="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span>
+                        </div>
+                        <div class="hidden md:flex items-center gap-1 flex-wrap">
+                            ${linksHtml}
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full hidden sm:inline-block">
+                                <i class="fa-regular fa-user mr-1"></i> <span id="nav-user-name">${escapeHtml(userName)}</span>
+                            </span>
+                            <button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition flex items-center gap-1">
+                                <i class="fa-solid fa-sign-out-alt"></i> <span class="hidden sm:inline">Logout</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="md:hidden flex overflow-x-auto pb-2 gap-1 snap-x">
+                        ${linksHtml}
+                    </div>
+                </div>
             </div>
-            <div class="flex gap-3">
-                <button id="demo-login-btn" class="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg transition shadow-md flex items-center gap-2"><i class="fa-solid fa-flask"></i> Demo Login</button>
-                <button id="refresh-btn" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg transition"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
-                <a href="/kdconc" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-lg transition"><i class="fa-solid fa-store"></i> Customer Portal</a>
-                <button id="logout-fulfillment-btn" class="bg-red-700/70 hover:bg-red-700 px-3 py-2 rounded-lg text-sm transition hidden md:block"><i class="fa-solid fa-sign-out-alt"></i> Logout</button>
-            </div>
+        `;
+    }
+    function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
+    async function globalLogout() {
+        const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
+        const token = localStorage.getItem('access_token');
+        if (token) {
+            try {
+                await fetch(`${BACKEND}/auth/logout`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } });
+            } catch(e) {}
+        }
+        localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user_role'); localStorage.removeItem('user_profile_display');
+        window.location.href = LOGIN_URL;
+    }
+    async function updateUserDisplay() {
+        const token = localStorage.getItem('access_token');
+        if (!token) return;
+        try {
+            const res = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/me', { headers: { 'Authorization': `Bearer ${token}` } });
+            if (res.ok) {
+                const me = await res.json();
+                const contextRes = await fetch(`https://kevsono-kevs-digital-bos.hf.space/support/customer-context?target_user_id=${me.user_id}`, { headers: { 'Authorization': `Bearer ${token}` } });
+                if (contextRes.ok) {
+                    const context = await contextRes.json();
+                    const name = context.profile?.first_name || 'Agent';
+                    localStorage.setItem('user_profile_display', name);
+                    const nameSpan = document.getElementById('nav-user-name');
+                    if (nameSpan) nameSpan.innerText = name;
+                }
+            }
+        } catch(e) {}
+    }
+    function initNavigation() {
+        const container = document.getElementById('kevs-nav-container');
+        if (container) {
+            container.innerHTML = buildNavbar();
+            const logoutBtn = document.getElementById('global-logout-btn');
+            if (logoutBtn) logoutBtn.addEventListener('click', globalLogout);
+            updateUserDisplay();
+        }
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initNavigation);
+    else initNavigation();
+})();
+</script>
+<!-- ========== END GLOBAL NAVIGATION ========== -->
+
+<div class="container mx-auto px-4 py-6 max-w-7xl">
+    <!-- Header (simplified, no duplicate logout) -->
+    <div class="flex justify-between items-center mb-6 flex-wrap gap-3">
+        <div>
+            <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">📦 Fulfillment Dashboard</h1>
+            <p class="text-slate-400 text-sm">Manage order shipping and dispatch — <span class="text-emerald-400">demo access ready</span></p>
         </div>
-        
-        <!-- Filters (updated) -->
-        <div class="bg-slate-800/50 rounded-xl p-4 mb-6 border border-slate-700 flex flex-wrap gap-3 items-end">
-            <div class="flex-1 min-w-[150px]">
-                <label class="text-xs text-slate-400 block mb-1">Status filter</label>
-                <select id="status-filter" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm">
-                    <option value="">All orders</option>
-                    <option value="pending">Pending (unpaid)</option>
-                    <option value="processing">Processing</option>
-                    <option value="shipped">Shipped</option>
-                    <option value="delivered">Delivered</option>
-                </select>
-            </div>
-            <div class="flex items-center gap-2">
-                <input type="checkbox" id="include-pending-checkbox" class="w-4 h-4 rounded border-slate-600 bg-slate-800">
-                <label for="include-pending-checkbox" class="text-xs text-slate-300">Show unpaid orders (pending payment)</label>
-            </div>
-            <button id="apply-filter" class="bg-blue-600 hover:bg-blue-700 px-5 py-2 rounded-lg transition">Apply</button>
-        </div>
-        
-        <!-- Orders list -->
-        <div id="orders-container" class="space-y-4">
-            <div class="text-center py-12"><i class="fa-solid fa-spinner fa-pulse text-2xl"></i> Loading orders...</div>
+        <div class="flex gap-3">
+            <button id="refresh-btn" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg transition"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
+            <a href="/kdconc" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-lg transition"><i class="fa-solid fa-store"></i> Customer Portal</a>
         </div>
     </div>
     
-    <!-- Update Status Modal (updated with payment confirmation) -->
-    <div id="updateModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div class="bg-slate-800 rounded-2xl max-w-md w-full p-5 border border-slate-700">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-xl font-bold">Update Order Status</h3>
-                <button id="closeModalBtn" class="text-slate-400 hover:text-white text-2xl">&times;</button>
+    <!-- Filters -->
+    <div class="bg-slate-800/50 rounded-xl p-4 mb-6 border border-slate-700 flex flex-wrap gap-3 items-end">
+        <div class="flex-1 min-w-[150px]">
+            <label class="text-xs text-slate-400 block mb-1">Status filter</label>
+            <select id="status-filter" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm">
+                <option value="">All orders</option>
+                <option value="pending">Pending (unpaid)</option>
+                <option value="processing">Processing</option>
+                <option value="shipped">Shipped</option>
+                <option value="delivered">Delivered</option>
+            </select>
+        </div>
+        <div class="flex items-center gap-2">
+            <input type="checkbox" id="include-pending-checkbox" class="w-4 h-4 rounded border-slate-600 bg-slate-800">
+            <label for="include-pending-checkbox" class="text-xs text-slate-300">Show unpaid orders (pending payment)</label>
+        </div>
+        <button id="apply-filter" class="bg-blue-600 hover:bg-blue-700 px-5 py-2 rounded-lg transition">Apply</button>
+    </div>
+    
+    <!-- Orders list -->
+    <div id="orders-container" class="space-y-4">
+        <div class="text-center py-12"><i class="fa-solid fa-spinner fa-pulse text-2xl"></i> Loading orders...</div>
+    </div>
+</div>
+
+<!-- Update Status Modal -->
+<div id="updateModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+    <div class="bg-slate-800 rounded-2xl max-w-md w-full p-5 border border-slate-700">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-bold">Update Order Status</h3>
+            <button id="closeModalBtn" class="text-slate-400 hover:text-white text-2xl">&times;</button>
+        </div>
+        <div id="modal-order-info" class="text-sm bg-slate-900 p-2 rounded mb-3"></div>
+        <div class="space-y-3">
+            <div>
+                <label class="text-sm block mb-1">Shipping Status</label>
+                <select id="modal-status" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
+                    <option value="processing">Processing (picking/packing)</option>
+                    <option value="shipped">Shipped (dispatched)</option>
+                    <option value="delivered">Delivered</option>
+                </select>
             </div>
-            <div id="modal-order-info" class="text-sm bg-slate-900 p-2 rounded mb-3"></div>
-            <div class="space-y-3">
+            <div id="tracking-fields" class="hidden space-y-3">
                 <div>
-                    <label class="text-sm block mb-1">Shipping Status</label>
-                    <select id="modal-status" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
-                        <option value="processing">Processing (picking/packing)</option>
-                        <option value="shipped">Shipped (dispatched)</option>
-                        <option value="delivered">Delivered</option>
-                    </select>
-                </div>
-                <div id="tracking-fields" class="hidden space-y-3">
-                    <div>
-                        <label class="text-sm block mb-1">Carrier</label>
-                        <input id="modal-carrier" type="text" placeholder="e.g., DHL, FedEx, GIG Logistics" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
-                    </div>
-                    <div>
-                        <label class="text-sm block mb-1">Tracking Number</label>
-                        <input id="modal-tracking" type="text" placeholder="Tracking code" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
-                    </div>
-                    <div>
-                        <label class="text-sm block mb-1">Estimated Delivery Date</label>
-                        <input id="modal-estimated" type="date" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
-                    </div>
+                    <label class="text-sm block mb-1">Carrier</label>
+                    <input id="modal-carrier" type="text" placeholder="e.g., DHL, FedEx, GIG Logistics" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
                 </div>
                 <div>
-                    <label class="text-sm block mb-1">Internal Notes (optional)</label>
-                    <textarea id="modal-notes" rows="2" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm"></textarea>
+                    <label class="text-sm block mb-1">Tracking Number</label>
+                    <input id="modal-tracking" type="text" placeholder="Tracking code" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
                 </div>
-                <!-- Payment confirmation checkbox (only for pending orders) -->
-                <div class="flex items-center gap-2">
-                    <input type="checkbox" id="modal-confirm-payment" class="w-4 h-4 rounded border-slate-600">
-                    <label for="modal-confirm-payment" class="text-sm text-emerald-400">✅ Confirm payment (mark as paid)</label>
+                <div>
+                    <label class="text-sm block mb-1">Estimated Delivery Date</label>
+                    <input id="modal-estimated" type="date" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
                 </div>
-                <button id="modal-update-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 py-2 rounded-lg font-semibold transition">Update Order</button>
+            </div>
+            <div>
+                <label class="text-sm block mb-1">Internal Notes (optional)</label>
+                <textarea id="modal-notes" rows="2" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm"></textarea>
+            </div>
+            <div class="flex items-center gap-2">
+                <input type="checkbox" id="modal-confirm-payment" class="w-4 h-4 rounded border-slate-600">
+                <label for="modal-confirm-payment" class="text-sm text-emerald-400">✅ Confirm payment (mark as paid)</label>
+            </div>
+            <button id="modal-update-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 py-2 rounded-lg font-semibold transition">Update Order</button>
+        </div>
+    </div>
+</div>
+
+<!-- View Order Modal -->
+<div id="viewModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+    <div class="bg-slate-800 rounded-2xl max-w-md w-full p-5 border border-slate-700">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent" id="view-modal-title">Order Details</h3>
+            <button id="closeViewModalBtn" class="text-slate-400 hover:text-white text-2xl">&times;</button>
+        </div>
+        <div class="space-y-4">
+            <div class="grid grid-cols-2 gap-2 text-xs bg-slate-900 p-3 rounded-lg border border-slate-700/50">
+                <div><span class="text-slate-500 block">Customer</span><strong id="view-customer-name" class="text-slate-300">-</strong></div>
+                <div><span class="text-slate-500 block">Shipping Status</span><span id="view-shipping-status" class="status-badge mt-1 inline-block">-</span></div>
+                <div class="col-span-2 mt-1"><span class="text-slate-500 block">Delivery Address</span><p id="view-shipping-address" class="text-slate-300">-</p></div>
+            </div>
+            <div>
+                <h4 class="text-sm font-semibold text-slate-400 mb-2 border-b border-slate-700 pb-1"><i class="fa-solid fa-list-ul text-xs"></i> Items Ordered</h4>
+                <ul id="view-modal-items" class="max-h-48 overflow-y-auto space-y-1 pr-1"></ul>
+            </div>
+            <div class="flex justify-between items-center pt-2 border-t border-slate-700 text-sm">
+                <span class="font-medium text-slate-400">Total Billable Amount:</span>
+                <strong id="view-total-amount" class="text-xl text-emerald-400 font-mono">-</strong>
             </div>
         </div>
     </div>
+</div>
 
-    <!-- VIEW ORDER DETAILS MODAL (unchanged) -->
-    <div id="viewModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div class="bg-slate-800 rounded-2xl max-w-md w-full p-5 border border-slate-700">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent" id="view-modal-title">Order Details</h3>
-                <button id="closeViewModalBtn" class="text-slate-400 hover:text-white text-2xl">&times;</button>
+<!-- Demo / Login Modal (kept for session expiry) -->
+<div id="demoAuthModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
+    <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-md w-full p-6 shadow-2xl">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-bold flex gap-2 items-center"><i class="fa-solid fa-key text-emerald-400"></i> Access Dashboard</h3>
+            <button id="closeAuthModalBtn" class="text-slate-400 hover:text-white text-2xl">&times;</button>
+        </div>
+        <div class="space-y-4">
+            <p class="text-sm text-slate-300">Use <strong class="text-emerald-300">Demo Access</strong> to instantly try the fulfillment dashboard with real order data.</p>
+            <button id="modalDemoLoginBtn" class="w-full bg-emerald-600 hover:bg-emerald-700 py-2.5 rounded-xl font-semibold flex items-center justify-center gap-2 transition btn-demo">
+                <i class="fa-solid fa-flask"></i> Launch Demo (Auto Login)
+            </button>
+            <div class="relative my-2">
+                <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-slate-700"></div></div>
+                <div class="relative flex justify-center text-xs"><span class="bg-slate-800 px-2 text-slate-500">or</span></div>
             </div>
-            <div class="space-y-4">
-                <div class="grid grid-cols-2 gap-2 text-xs bg-slate-900 p-3 rounded-lg border border-slate-700/50">
-                    <div><span class="text-slate-500 block">Customer</span><strong id="view-customer-name" class="text-slate-300">-</strong></div>
-                    <div><span class="text-slate-500 block">Shipping Status</span><span id="view-shipping-status" class="status-badge mt-1 inline-block">-</span></div>
-                    <div class="col-span-2 mt-1"><span class="text-slate-500 block">Delivery Address</span><p id="view-shipping-address" class="text-slate-300">-</p></div>
-                </div>
-                <div>
-                    <h4 class="text-sm font-semibold text-slate-400 mb-2 border-b border-slate-700 pb-1"><i class="fa-solid fa-list-ul text-xs"></i> Items Ordered</h4>
-                    <ul id="view-modal-items" class="max-h-48 overflow-y-auto space-y-1 pr-1"></ul>
-                </div>
-                <div class="flex justify-between items-center pt-2 border-t border-slate-700 text-sm">
-                    <span class="font-medium text-slate-400">Total Billable Amount:</span>
-                    <strong id="view-total-amount" class="text-xl text-emerald-400 font-mono">-</strong>
-                </div>
-            </div>
+            <a href="/kdconc" class="w-full block text-center bg-slate-700 hover:bg-slate-600 py-2.5 rounded-xl transition">
+                <i class="fa-regular fa-building"></i> Go to Customer Portal (Sign in)
+            </a>
+            <p class="text-xs text-center text-slate-500 mt-2">Demo uses secure test account: <span class="font-mono">demo@kevsdigital.com</span></p>
         </div>
     </div>
+</div>
 
-    <!-- Demo / Login Modal -->
-    <div id="demoAuthModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
-        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-md w-full p-6 shadow-2xl">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-xl font-bold flex gap-2 items-center"><i class="fa-solid fa-key text-emerald-400"></i> Access Dashboard</h3>
-                <button id="closeAuthModalBtn" class="text-slate-400 hover:text-white text-2xl">&times;</button>
-            </div>
-            <div class="space-y-4">
-                <p class="text-sm text-slate-300">Use <strong class="text-emerald-300">Demo Access</strong> to instantly try the fulfillment dashboard with real order data.</p>
-                <button id="modalDemoLoginBtn" class="w-full bg-emerald-600 hover:bg-emerald-700 py-2.5 rounded-xl font-semibold flex items-center justify-center gap-2 transition btn-demo">
-                    <i class="fa-solid fa-flask"></i> Launch Demo (Auto Login)
-                </button>
-                <div class="relative my-2">
-                    <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-slate-700"></div></div>
-                    <div class="relative flex justify-center text-xs"><span class="bg-slate-800 px-2 text-slate-500">or</span></div>
-                </div>
-                <a href="/kdconc" class="w-full block text-center bg-slate-700 hover:bg-slate-600 py-2.5 rounded-xl transition">
-                    <i class="fa-regular fa-building"></i> Go to Customer Portal (Sign in)
-                </a>
-                <p class="text-xs text-center text-slate-500 mt-2">Demo uses secure test account: <span class="font-mono">demo@kevsdigital.com</span></p>
-            </div>
-        </div>
-    </div>
-
-    <!-- Mobile logout -->
-    <div id="mobile-logout-toolbar" class="fixed bottom-4 right-4 md:hidden z-40">
-        <button id="mobile-logout-btn" class="bg-red-700/80 backdrop-blur w-10 h-10 rounded-full shadow-lg flex items-center justify-center"><i class="fa-solid fa-sign-out-alt"></i></button>
-    </div>
-
-    <script>
-        // ------------- API & GLOBALS -------------
-        const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
-        let token = localStorage.getItem('access_token');
-        let currentOrderId = null;
-        let currentOrderStatus = null;  // store current shipping status
-        
-        async function refreshAccessToken() {
-            const refresh = localStorage.getItem('refresh_token');
-            if (!refresh) return false;
-            try {
-                const res = await fetch(`${API_BASE}/auth/refresh`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ refresh_token: refresh })
-                });
-                if (res.ok) {
-                    const { access_token, refresh_token } = await res.json();
-                    localStorage.setItem('access_token', access_token);
-                    localStorage.setItem('refresh_token', refresh_token);
-                    token = access_token;
-                    return true;
-                }
-            } catch(e) { console.warn("refresh failed", e); }
-            return false;
-        }
-
-        async function apiCall(endpoint, options = {}) {
-            if (!options.headers) options.headers = {};
-            options.headers['Content-Type'] = 'application/json';
-            if (token) options.headers['Authorization'] = `Bearer ${token}`;
-            
-            let res = await fetch(`${API_BASE}${endpoint}`, options);
-            if (res.status === 401) {
-                const refreshed = await refreshAccessToken();
-                if (refreshed && token) {
-                    options.headers['Authorization'] = `Bearer ${token}`;
-                    res = await fetch(`${API_BASE}${endpoint}`, options);
-                } else {
-                    showDemoModal();
-                    throw new Error("Session expired. Please use demo login again.");
-                }
-            }
-            if (!res.ok) {
-                const errData = await res.json().catch(() => ({ detail: 'Request error' }));
-                throw new Error(errData.detail || `HTTP ${res.status}`);
-            }
-            return res.json();
-        }
-        
-        // ---------- DEMO LOGIN ----------
-        async function performDemoLogin() {
-            try {
-                const res = await fetch(`${API_BASE}/auth/login`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' })
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.detail || "Demo credentials invalid");
-                token = data.access_token;
-                localStorage.setItem('access_token', token);
-                localStorage.setItem('refresh_token', data.refresh_token);
-                return true;
-            } catch (err) {
-                console.error("Demo login error:", err);
-                alert("Demo login failed: " + err.message);
-                return false;
-            }
-        }
-        
-        function showDemoModal() {
-            document.getElementById('demoAuthModal')?.classList.remove('hidden');
-        }
-        
-        function hideDemoModal() {
-            document.getElementById('demoAuthModal')?.classList.add('hidden');
-        }
-        
-        async function logoutFulfillment() {
-            try {
-                if (token) {
-                    await fetch(`${API_BASE}/auth/logout`, {
-                        method: 'POST',
-                        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-                    }).catch(() => {});
-                }
-            } catch(e) {}
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('refresh_token');
-            token = null;
-            document.getElementById('orders-container').innerHTML = `<div class="bg-slate-800/70 rounded-xl p-8 text-center border border-slate-700">
-                <i class="fa-regular fa-lock text-4xl text-slate-500 mb-3 block"></i>
-                <p class="text-slate-300">Session ended. Please use <strong class="text-emerald-400">Demo Login</strong> to continue.</p>
-                <button id="reopen-demo-modal" class="mt-4 bg-emerald-600 px-4 py-2 rounded-lg text-sm">Demo Access</button>
-            </div>`;
-            showDemoModal();
-            const reopenBtn = document.getElementById('reopen-demo-modal');
-            if (reopenBtn) reopenBtn.onclick = () => showDemoModal();
-        }
-        
-        // ---------- LOAD ORDERS (with include_pending flag) ----------
-        async function loadOrders(status = '', includePending = false) {
-            const container = document.getElementById('orders-container');
-            if (!token) {
-                container.innerHTML = `<div class="bg-slate-800/70 rounded-xl p-10 text-center border border-slate-700">
-                    <i class="fa-regular fa-circle-user text-3xl mb-2 text-slate-400"></i>
-                    <p>Not authenticated — click "Demo Login" to start</p>
-                    <button id="trigger-demo-from-empty" class="mt-3 bg-emerald-600 px-4 py-1.5 rounded-lg text-sm">🔑 Demo Access</button>
-                </div>`;
-                const triggerBtn = document.getElementById('trigger-demo-from-empty');
-                if (triggerBtn) triggerBtn.onclick = () => showDemoModal();
-                return;
-            }
-            container.innerHTML = '<div class="text-center py-12"><i class="fa-solid fa-spinner fa-pulse"></i> Loading orders...</div>';
-            try {
-                let url = `/fulfillment/orders?limit=100&include_pending=${includePending}`;
-                if (status) url += `&status=${status}`;
-                const data = await apiCall(url);
-                const orders = data.orders || [];
-                if (orders.length === 0) {
-                    container.innerHTML = '<div class="bg-slate-800/50 rounded-xl p-10 text-center text-slate-400">📭 No orders found for this status.</div>';
-                    return;
-                }
-                container.innerHTML = orders.map(order => {
-                    const statusClass = order.shipping_status || 'pending';
-                    const statusLabel = statusClass === 'processing' ? 'Processing' : statusClass === 'shipped' ? 'Shipped' : statusClass === 'delivered' ? 'Delivered' : 'Pending';
-                    // Highlight if payment is still pending
-                    const paymentBadge = order.status === 'pending' ? '<span class="ml-2 text-[10px] bg-amber-600/30 text-amber-300 px-1.5 py-0.5 rounded-full">⚠️ unpaid</span>' : '';
-                    return `
-                        <div class="bg-slate-800/70 border border-slate-700 rounded-xl p-4 hover:shadow-lg transition">
-                            <div class="flex flex-wrap justify-between items-start gap-3">
-                                <div>
-                                    <div class="flex items-center gap-2 flex-wrap">
-                                        <span class="font-mono text-blue-300">${escapeHtml(order.receipt_number)}</span>
-                                        <span class="status-badge status-${statusClass}">${statusLabel}</span>
-                                        ${paymentBadge}
-                                    </div>
-                                    <div class="text-sm text-slate-400 mt-1">
-                                        <span><i class="fa-regular fa-calendar"></i> ${new Date(order.created_at).toLocaleString()}</span>
-                                        <span class="mx-2">•</span>
-                                        <span><i class="fa-regular fa-user"></i> ${escapeHtml(order.customer_name || 'Guest')}</span>
-                                    </div>
-                                    <div class="text-sm mt-1">₦${order.total_amount?.toLocaleString()} | Items: ${order.sale_items?.length || 0}</div>
-                                </div>
-                                <div class="flex gap-2">
-                                    <button class="view-order-btn bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg text-sm transition" data-id="${order.id}"><i class="fa-regular fa-eye"></i> View</button>
-                                    <button class="update-status-btn bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg text-sm transition" data-id="${order.id}" data-receipt="${escapeHtml(order.receipt_number)}" data-status="${order.shipping_status || 'pending'}" data-payment="${order.status}"><i class="fa-solid fa-truck-fast"></i> Update</button>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-                
-                document.querySelectorAll('.view-order-btn').forEach(btn => {
-                    btn.addEventListener('click', () => viewOrder(btn.dataset.id));
-                });
-                document.querySelectorAll('.update-status-btn').forEach(btn => {
-                    btn.addEventListener('click', () => openUpdateModal(btn.dataset.id, btn.dataset.receipt, btn.dataset.status, btn.dataset.payment));
-                });
-            } catch (err) {
-                console.error(err);
-                container.innerHTML = `<div class="bg-red-500/20 border border-red-500 p-4 rounded-xl text-red-300">⚠️ Error: ${err.message}. <button id="retry-load" class="underline ml-2">Retry</button></div>`;
-                const retryBtn = document.getElementById('retry-load');
-                if (retryBtn) retryBtn.onclick = () => loadOrders(document.getElementById('status-filter').value, document.getElementById('include-pending-checkbox').checked);
-            }
-        }
-        
-        // ---------- VIEW ORDER (unchanged) ----------
-        async function viewOrder(orderId) {
-            try {
-                const order = await apiCall(`/fulfillment/order/${orderId}`);
-                document.getElementById('view-modal-title').innerText = `Order: ${order.receipt_number || 'N/A'}`;
-                document.getElementById('view-customer-name').innerText = order.customer_name || 'Guest User';
-                document.getElementById('view-shipping-address').innerText = order.shipping_address || 'Pickup Arrangement';
-                document.getElementById('view-total-amount').innerText = `₦${order.total_amount?.toLocaleString()}`;
-                
-                const statusElement = document.getElementById('view-shipping-status');
-                const rawStatus = order.shipping_status || 'pending';
-                statusElement.innerText = rawStatus.toUpperCase();
-                statusElement.className = `status-badge status-${rawStatus}`;
-                
-                const itemsHtml = order.sale_items?.map(item => `
-                    <li class="flex justify-between border-b border-slate-700/40 py-2 text-sm text-slate-300">
-                        <span><strong class="text-blue-400">${item.quantity}x</strong> ${escapeHtml(item.product_name)}</span>
-                        <span class="font-mono text-slate-400">₦${item.subtotal?.toLocaleString()}</span>
-                    </li>
-                `).join('') || '<li class="text-slate-500 text-xs py-2">No items inside order logs</li>';
-                
-                document.getElementById('view-modal-items').innerHTML = itemsHtml;
-                document.getElementById('viewModal').classList.remove('hidden');
-            } catch(err) {
-                alert("Could not load order details: " + err.message);
-            }
-        }
-        
-        // ---------- UPDATE MODAL LOGIC (with payment confirmation) ----------
-        function openUpdateModal(orderId, receipt, currentStatus, paymentStatus) {
-            if (!token) { showDemoModal(); return; }
-            currentOrderId = orderId;
-            currentOrderStatus = currentStatus;
-            document.getElementById('modal-order-info').innerHTML = `<strong>${receipt}</strong> - Current status: ${currentStatus || 'pending'} | Payment: ${paymentStatus === 'pending' ? '⚠️ Unpaid' : '✅ Paid'}`;
-            const statusSelect = document.getElementById('modal-status');
-            statusSelect.value = currentStatus === 'shipped' ? 'shipped' : currentStatus === 'delivered' ? 'delivered' : 'processing';
-            document.getElementById('tracking-fields').classList.remove('hidden');
-            document.getElementById('modal-carrier').value = '';
-            document.getElementById('modal-tracking').value = '';
-            document.getElementById('modal-estimated').value = '';
-            document.getElementById('modal-notes').value = '';
-            
-            // Show/hide payment confirmation checkbox based on payment status
-            const confirmCheckbox = document.getElementById('modal-confirm-payment');
-            if (paymentStatus === 'pending') {
-                confirmCheckbox.checked = false;
-                confirmCheckbox.parentElement.classList.remove('hidden');
-            } else {
-                confirmCheckbox.checked = false;
-                confirmCheckbox.parentElement.classList.add('hidden');
-            }
-            document.getElementById('updateModal').classList.remove('hidden');
-        }
-        
-        // Update order status (with optional payment confirmation)
-        document.getElementById('modal-update-btn')?.addEventListener('click', async () => {
-            if (!token) { showDemoModal(); document.getElementById('updateModal').classList.add('hidden'); return; }
-            const newStatus = document.getElementById('modal-status').value;
-            const carrier = document.getElementById('modal-carrier').value;
-            const tracking = document.getElementById('modal-tracking').value;
-            const estimated = document.getElementById('modal-estimated').value;
-            const notes = document.getElementById('modal-notes').value;
-            const confirmPayment = document.getElementById('modal-confirm-payment')?.checked || false;
-            
-            try {
-                const payload = {
-                    shipping_status: newStatus,
-                    tracking_number: tracking || null,
-                    shipping_carrier: carrier || null,
-                    estimated_delivery: estimated || null,
-                    notes: notes || null,
-                    confirm_payment: confirmPayment   // send to backend
-                };
-                await apiCall(`/fulfillment/order/${currentOrderId}/status`, {
-                    method: 'PUT',
-                    body: JSON.stringify(payload)
-                });
-                alert(`✅ Order status updated to ${newStatus}${confirmPayment ? ' and payment confirmed.' : '.'}`);
-                document.getElementById('updateModal').classList.add('hidden');
-                const includePending = document.getElementById('include-pending-checkbox').checked;
-                loadOrders(document.getElementById('status-filter').value, includePending);
-            } catch(err) {
-                alert(`Update failed: ${err.message}`);
-            }
-        });
-        
-        document.getElementById('closeModalBtn')?.addEventListener('click', () => {
-            document.getElementById('updateModal').classList.add('hidden');
-        });
-        document.getElementById('closeViewModalBtn')?.addEventListener('click', () => {
-            document.getElementById('viewModal').classList.add('hidden');
-        });
-        
-        document.getElementById('apply-filter')?.addEventListener('click', () => {
-            const status = document.getElementById('status-filter').value;
-            const includePending = document.getElementById('include-pending-checkbox').checked;
-            loadOrders(status, includePending);
-        });
-        document.getElementById('refresh-btn')?.addEventListener('click', () => {
-            const status = document.getElementById('status-filter').value;
-            const includePending = document.getElementById('include-pending-checkbox').checked;
-            loadOrders(status, includePending);
-        });
-        
-        document.getElementById('modal-status')?.addEventListener('change', (e) => {
-            const val = e.target.value;
-            const fields = document.getElementById('tracking-fields');
-            if (val === 'shipped' || val === 'delivered') {
-                fields.classList.remove('hidden');
-            } else {
-                fields.classList.add('hidden');
-            }
-        });
-        
-        // ----- Demo login handlers -----
-        async function onDemoLoginClick() {
-            const success = await performDemoLogin();
-            if (success) {
-                hideDemoModal();
-                const includePending = document.getElementById('include-pending-checkbox').checked;
-                await loadOrders(document.getElementById('status-filter').value, includePending);
-                const toast = document.createElement('div');
-                toast.className = 'fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-emerald-600 text-white px-5 py-2 rounded-full shadow-lg text-sm z-50 flex items-center gap-2';
-                toast.innerHTML = '<i class="fa-regular fa-circle-check"></i> Demo mode active — full fulfillment access';
-                document.body.appendChild(toast);
-                setTimeout(() => toast.remove(), 3000);
-            } else {
-                alert("Demo login failed. Please ensure backend is reachable.");
-            }
-        }
-        
-        document.getElementById('demo-login-btn')?.addEventListener('click', onDemoLoginClick);
-        document.getElementById('modalDemoLoginBtn')?.addEventListener('click', onDemoLoginClick);
-        document.getElementById('closeAuthModalBtn')?.addEventListener('click', () => hideDemoModal());
-        
-        // Logout
-        const logoutHandler = () => logoutFulfillment();
-        document.getElementById('logout-fulfillment-btn')?.addEventListener('click', logoutHandler);
-        document.getElementById('mobile-logout-btn')?.addEventListener('click', logoutHandler);
-        
-        // Escape to close modals
-        window.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                document.getElementById('updateModal')?.classList.add('hidden');
-                document.getElementById('viewModal')?.classList.add('hidden');
-                document.getElementById('demoAuthModal')?.classList.add('hidden');
-            }
-        });
-        
-        function escapeHtml(str) {
-            if (!str) return '';
-            return str.replace(/[&<>]/g, function(m) {
-                if (m === '&') return '&amp;';
-                if (m === '<') return '&lt;';
-                if (m === '>') return '&gt;';
-                return m;
+<script>
+    // ------------- API & GLOBALS -------------
+    const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
+    let token = localStorage.getItem('access_token');
+    let currentOrderId = null;
+    let currentOrderStatus = null;
+    
+    async function refreshAccessToken() {
+        const refresh = localStorage.getItem('refresh_token');
+        if (!refresh) return false;
+        try {
+            const res = await fetch(`${API_BASE}/auth/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: refresh })
             });
-        }
+            if (res.ok) {
+                const { access_token, refresh_token } = await res.json();
+                localStorage.setItem('access_token', access_token);
+                localStorage.setItem('refresh_token', refresh_token);
+                token = access_token;
+                return true;
+            }
+        } catch(e) { console.warn("refresh failed", e); }
+        return false;
+    }
+
+    async function apiCall(endpoint, options = {}) {
+        if (!options.headers) options.headers = {};
+        options.headers['Content-Type'] = 'application/json';
+        if (token) options.headers['Authorization'] = `Bearer ${token}`;
         
-        async function initDashboard() {
-            if (token) {
-                try {
-                    await apiCall('/fulfillment/orders?limit=1');
-                    await loadOrders();
-                } catch (err) {
-                    console.warn("Token invalid, clearing");
-                    localStorage.removeItem('access_token');
-                    localStorage.removeItem('refresh_token');
-                    token = null;
-                    showDemoModal();
-                    document.getElementById('orders-container').innerHTML = `<div class="text-center py-12"><i class="fa-regular fa-clock"></i> Session expired — click Demo Login</div>`;
-                }
+        let res = await fetch(`${API_BASE}${endpoint}`, options);
+        if (res.status === 401) {
+            const refreshed = await refreshAccessToken();
+            if (refreshed && token) {
+                options.headers['Authorization'] = `Bearer ${token}`;
+                res = await fetch(`${API_BASE}${endpoint}`, options);
             } else {
                 showDemoModal();
-                document.getElementById('orders-container').innerHTML = `<div class="bg-slate-800/60 rounded-xl p-8 text-center border border-slate-700">
-                    <i class="fa-solid fa-flask text-emerald-400 text-3xl mb-2 block"></i>
-                    <p class="mb-3">Welcome to Fulfillment Dashboard</p>
-                    <button id="initial-demo-trigger" class="bg-emerald-600 hover:bg-emerald-500 px-5 py-2 rounded-lg font-medium">🔐 Launch Demo Access</button>
-                </div>`;
-                const initDemoBtn = document.getElementById('initial-demo-trigger');
-                if (initDemoBtn) initDemoBtn.addEventListener('click', () => showDemoModal());
+                throw new Error("Session expired. Please use demo login again.");
             }
         }
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({ detail: 'Request error' }));
+            throw new Error(errData.detail || `HTTP ${res.status}`);
+        }
+        return res.json();
+    }
+    
+    async function performDemoLogin() {
+        try {
+            const res = await fetch(`${API_BASE}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || "Demo credentials invalid");
+            token = data.access_token;
+            localStorage.setItem('access_token', token);
+            localStorage.setItem('refresh_token', data.refresh_token);
+            // Fetch role
+            const me = await apiCall('/auth/me');
+            const role = me.role || 'customer';
+            localStorage.setItem('user_role', role);
+            return true;
+        } catch (err) {
+            console.error("Demo login error:", err);
+            alert("Demo login failed: " + err.message);
+            return false;
+        }
+    }
+    
+    function showDemoModal() { document.getElementById('demoAuthModal')?.classList.remove('hidden'); }
+    function hideDemoModal() { document.getElementById('demoAuthModal')?.classList.add('hidden'); }
+    
+    async function loadOrders(status = '', includePending = false) {
+        const container = document.getElementById('orders-container');
+        if (!token) {
+            container.innerHTML = `<div class="bg-slate-800/70 rounded-xl p-10 text-center border border-slate-700">
+                <i class="fa-regular fa-circle-user text-3xl mb-2 text-slate-400"></i>
+                <p>Not authenticated — click "Demo Login" to start</p>
+                <button id="trigger-demo-from-empty" class="mt-3 bg-emerald-600 px-4 py-1.5 rounded-lg text-sm">🔑 Demo Access</button>
+            </div>`;
+            const triggerBtn = document.getElementById('trigger-demo-from-empty');
+            if (triggerBtn) triggerBtn.onclick = () => showDemoModal();
+            return;
+        }
+        container.innerHTML = '<div class="text-center py-12"><i class="fa-solid fa-spinner fa-pulse"></i> Loading orders...</div>';
+        try {
+            let url = `/fulfillment/orders?limit=100&include_pending=${includePending}`;
+            if (status) url += `&status=${status}`;
+            const data = await apiCall(url);
+            const orders = data.orders || [];
+            if (orders.length === 0) {
+                container.innerHTML = '<div class="bg-slate-800/50 rounded-xl p-10 text-center text-slate-400">📭 No orders found for this status.</div>';
+                return;
+            }
+            container.innerHTML = orders.map(order => {
+                const statusClass = order.shipping_status || 'pending';
+                const statusLabel = statusClass === 'processing' ? 'Processing' : statusClass === 'shipped' ? 'Shipped' : statusClass === 'delivered' ? 'Delivered' : 'Pending';
+                const paymentBadge = order.status === 'pending' ? '<span class="ml-2 text-[10px] bg-amber-600/30 text-amber-300 px-1.5 py-0.5 rounded-full">⚠️ unpaid</span>' : '';
+                return `
+                    <div class="bg-slate-800/70 border border-slate-700 rounded-xl p-4 hover:shadow-lg transition">
+                        <div class="flex flex-wrap justify-between items-start gap-3">
+                            <div>
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="font-mono text-blue-300">${escapeHtml(order.receipt_number)}</span>
+                                    <span class="status-badge status-${statusClass}">${statusLabel}</span>
+                                    ${paymentBadge}
+                                </div>
+                                <div class="text-sm text-slate-400 mt-1">
+                                    <span><i class="fa-regular fa-calendar"></i> ${new Date(order.created_at).toLocaleString()}</span>
+                                    <span class="mx-2">•</span>
+                                    <span><i class="fa-regular fa-user"></i> ${escapeHtml(order.customer_name || 'Guest')}</span>
+                                </div>
+                                <div class="text-sm mt-1">₦${order.total_amount?.toLocaleString()} | Items: ${order.sale_items?.length || 0}</div>
+                            </div>
+                            <div class="flex gap-2">
+                                <button class="view-order-btn bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg text-sm transition" data-id="${order.id}"><i class="fa-regular fa-eye"></i> View</button>
+                                <button class="update-status-btn bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg text-sm transition" data-id="${order.id}" data-receipt="${escapeHtml(order.receipt_number)}" data-status="${order.shipping_status || 'pending'}" data-payment="${order.status}"><i class="fa-solid fa-truck-fast"></i> Update</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            document.querySelectorAll('.view-order-btn').forEach(btn => {
+                btn.addEventListener('click', () => viewOrder(btn.dataset.id));
+            });
+            document.querySelectorAll('.update-status-btn').forEach(btn => {
+                btn.addEventListener('click', () => openUpdateModal(btn.dataset.id, btn.dataset.receipt, btn.dataset.status, btn.dataset.payment));
+            });
+        } catch (err) {
+            console.error(err);
+            container.innerHTML = `<div class="bg-red-500/20 border border-red-500 p-4 rounded-xl text-red-300">⚠️ Error: ${err.message}. <button id="retry-load" class="underline ml-2">Retry</button></div>`;
+            const retryBtn = document.getElementById('retry-load');
+            if (retryBtn) retryBtn.onclick = () => loadOrders(document.getElementById('status-filter').value, document.getElementById('include-pending-checkbox').checked);
+        }
+    }
+    
+    async function viewOrder(orderId) {
+        try {
+            const order = await apiCall(`/fulfillment/order/${orderId}`);
+            document.getElementById('view-modal-title').innerText = `Order: ${order.receipt_number || 'N/A'}`;
+            document.getElementById('view-customer-name').innerText = order.customer_name || 'Guest User';
+            document.getElementById('view-shipping-address').innerText = order.shipping_address || 'Pickup Arrangement';
+            document.getElementById('view-total-amount').innerText = `₦${order.total_amount?.toLocaleString()}`;
+            
+            const statusElement = document.getElementById('view-shipping-status');
+            const rawStatus = order.shipping_status || 'pending';
+            statusElement.innerText = rawStatus.toUpperCase();
+            statusElement.className = `status-badge status-${rawStatus}`;
+            
+            const itemsHtml = order.sale_items?.map(item => `
+                <li class="flex justify-between border-b border-slate-700/40 py-2 text-sm text-slate-300">
+                    <span><strong class="text-blue-400">${item.quantity}x</strong> ${escapeHtml(item.product_name)}</span>
+                    <span class="font-mono text-slate-400">₦${item.subtotal?.toLocaleString()}</span>
+                </li>
+            `).join('') || '<li class="text-slate-500 text-xs py-2">No items inside order logs</li>';
+            
+            document.getElementById('view-modal-items').innerHTML = itemsHtml;
+            document.getElementById('viewModal').classList.remove('hidden');
+        } catch(err) {
+            alert("Could not load order details: " + err.message);
+        }
+    }
+    
+    function openUpdateModal(orderId, receipt, currentStatus, paymentStatus) {
+        if (!token) { showDemoModal(); return; }
+        currentOrderId = orderId;
+        currentOrderStatus = currentStatus;
+        document.getElementById('modal-order-info').innerHTML = `<strong>${receipt}</strong> - Current status: ${currentStatus || 'pending'} | Payment: ${paymentStatus === 'pending' ? '⚠️ Unpaid' : '✅ Paid'}`;
+        const statusSelect = document.getElementById('modal-status');
+        statusSelect.value = currentStatus === 'shipped' ? 'shipped' : currentStatus === 'delivered' ? 'delivered' : 'processing';
+        document.getElementById('tracking-fields').classList.remove('hidden');
+        document.getElementById('modal-carrier').value = '';
+        document.getElementById('modal-tracking').value = '';
+        document.getElementById('modal-estimated').value = '';
+        document.getElementById('modal-notes').value = '';
         
-        initDashboard();
-    </script>
+        const confirmCheckbox = document.getElementById('modal-confirm-payment');
+        if (paymentStatus === 'pending') {
+            confirmCheckbox.checked = false;
+            confirmCheckbox.parentElement.classList.remove('hidden');
+        } else {
+            confirmCheckbox.checked = false;
+            confirmCheckbox.parentElement.classList.add('hidden');
+        }
+        document.getElementById('updateModal').classList.remove('hidden');
+    }
+    
+    document.getElementById('modal-update-btn')?.addEventListener('click', async () => {
+        if (!token) { showDemoModal(); document.getElementById('updateModal').classList.add('hidden'); return; }
+        const newStatus = document.getElementById('modal-status').value;
+        const carrier = document.getElementById('modal-carrier').value;
+        const tracking = document.getElementById('modal-tracking').value;
+        const estimated = document.getElementById('modal-estimated').value;
+        const notes = document.getElementById('modal-notes').value;
+        const confirmPayment = document.getElementById('modal-confirm-payment')?.checked || false;
+        
+        try {
+            const payload = {
+                shipping_status: newStatus,
+                tracking_number: tracking || null,
+                shipping_carrier: carrier || null,
+                estimated_delivery: estimated || null,
+                notes: notes || null,
+                confirm_payment: confirmPayment
+            };
+            await apiCall(`/fulfillment/order/${currentOrderId}/status`, {
+                method: 'PUT',
+                body: JSON.stringify(payload)
+            });
+            alert(`✅ Order status updated to ${newStatus}${confirmPayment ? ' and payment confirmed.' : '.'}`);
+            document.getElementById('updateModal').classList.add('hidden');
+            const includePending = document.getElementById('include-pending-checkbox').checked;
+            loadOrders(document.getElementById('status-filter').value, includePending);
+        } catch(err) {
+            alert(`Update failed: ${err.message}`);
+        }
+    });
+    
+    document.getElementById('closeModalBtn')?.addEventListener('click', () => {
+        document.getElementById('updateModal').classList.add('hidden');
+    });
+    document.getElementById('closeViewModalBtn')?.addEventListener('click', () => {
+        document.getElementById('viewModal').classList.add('hidden');
+    });
+    
+    document.getElementById('apply-filter')?.addEventListener('click', () => {
+        const status = document.getElementById('status-filter').value;
+        const includePending = document.getElementById('include-pending-checkbox').checked;
+        loadOrders(status, includePending);
+    });
+    document.getElementById('refresh-btn')?.addEventListener('click', () => {
+        const status = document.getElementById('status-filter').value;
+        const includePending = document.getElementById('include-pending-checkbox').checked;
+        loadOrders(status, includePending);
+    });
+    
+    document.getElementById('modal-status')?.addEventListener('change', (e) => {
+        const val = e.target.value;
+        const fields = document.getElementById('tracking-fields');
+        if (val === 'shipped' || val === 'delivered') {
+            fields.classList.remove('hidden');
+        } else {
+            fields.classList.add('hidden');
+        }
+    });
+    
+    async function onDemoLoginClick() {
+        const success = await performDemoLogin();
+        if (success) {
+            hideDemoModal();
+            const includePending = document.getElementById('include-pending-checkbox').checked;
+            await loadOrders(document.getElementById('status-filter').value, includePending);
+            const toast = document.createElement('div');
+            toast.className = 'fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-emerald-600 text-white px-5 py-2 rounded-full shadow-lg text-sm z-50 flex items-center gap-2';
+            toast.innerHTML = '<i class="fa-regular fa-circle-check"></i> Demo mode active — full fulfillment access';
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+            location.reload();
+        } else {
+            alert("Demo login failed. Please ensure backend is reachable.");
+        }
+    }
+    
+    document.getElementById('modalDemoLoginBtn')?.addEventListener('click', onDemoLoginClick);
+    document.getElementById('closeAuthModalBtn')?.addEventListener('click', () => hideDemoModal());
+    
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            document.getElementById('updateModal')?.classList.add('hidden');
+            document.getElementById('viewModal')?.classList.add('hidden');
+            document.getElementById('demoAuthModal')?.classList.add('hidden');
+        }
+    });
+    
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+    
+    async function initDashboard() {
+        if (token) {
+            try {
+                await apiCall('/fulfillment/orders?limit=1');
+                await loadOrders();
+            } catch (err) {
+                console.warn("Token invalid, clearing");
+                localStorage.removeItem('access_token');
+                localStorage.removeItem('refresh_token');
+                token = null;
+                showDemoModal();
+                document.getElementById('orders-container').innerHTML = `<div class="text-center py-12"><i class="fa-regular fa-clock"></i> Session expired — click Demo Login</div>`;
+            }
+        } else {
+            showDemoModal();
+            document.getElementById('orders-container').innerHTML = `<div class="bg-slate-800/60 rounded-xl p-8 text-center border border-slate-700">
+                <i class="fa-solid fa-flask text-emerald-400 text-3xl mb-2 block"></i>
+                <p class="mb-3">Welcome to Fulfillment Dashboard</p>
+                <button id="initial-demo-trigger" class="bg-emerald-600 hover:bg-emerald-500 px-5 py-2 rounded-lg font-medium">🔐 Launch Demo Access</button>
+            </div>`;
+            const initDemoBtn = document.getElementById('initial-demo-trigger');
+            if (initDemoBtn) initDemoBtn.addEventListener('click', () => showDemoModal());
+        }
+    }
+    
+    initDashboard();
+</script>
 </body>
 </html>

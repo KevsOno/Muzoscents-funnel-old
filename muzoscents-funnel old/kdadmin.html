@@ -15,17 +15,138 @@
     </style>
 </head>
 <body class="text-slate-200 p-4 md:p-6">
+
+<!-- ========== GLOBAL NAVIGATION (Kevs bOS) ========== -->
+<div id="kevs-nav-container"></div>
+<script>
+(function() {
+    const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
+    const LOGIN_URL = '/kdsiginin';
+    const navItems = [
+        { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy' },
+        { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & online payments' },
+        { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', title: 'Order shipping, tracking & dispatch' },
+        { path: '/kdsupport',     name: 'Support',   icon: 'fa-headset', title: 'Ticket management & customer context' },
+        { path: '/kddashboard',   name: 'Exec',      icon: 'fa-chart-simple', title: 'Executive revenue & profit overview' }
+    ];
+    const adminItem = { path: '/kdadmin', name: 'Admin', icon: 'fa-shield-alt', title: 'Inventory & bulk product management (admin only)' };
+
+    function getUserRole() {
+        try {
+            const role = localStorage.getItem('user_role');
+            return role === 'admin' ? 'admin' : null;
+        } catch(e) { return null; }
+    }
+
+    function buildNavbar() {
+        const currentPath = window.location.pathname;
+        const isAdmin = getUserRole() === 'admin';
+        let linksHtml = '';
+        navItems.forEach(item => {
+            const isActive = currentPath === item.path;
+            const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
+            linksHtml += `
+                <a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}" title="${item.title}">
+                    <i class="fa-solid ${item.icon} w-4"></i> ${item.name}
+                </a>
+            `;
+        });
+        if (isAdmin) {
+            const isActive = currentPath === adminItem.path;
+            const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
+            linksHtml += `
+                <a href="${adminItem.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}" title="${adminItem.title}">
+                    <i class="fa-solid ${adminItem.icon} w-4"></i> ${adminItem.name}
+                </a>
+            `;
+        }
+        let userName = 'User';
+        try {
+            const profileStr = localStorage.getItem('user_profile_display');
+            if (profileStr) userName = profileStr;
+        } catch(e) {}
+        return `
+            <div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40">
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div class="flex flex-wrap items-center justify-between py-3 gap-3">
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i>
+                            <span class="text-xl font-bold tracking-tight">${APP_NAME}</span>
+                            <span class="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span>
+                        </div>
+                        <div class="hidden md:flex items-center gap-1 flex-wrap">
+                            ${linksHtml}
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full hidden sm:inline-block">
+                                <i class="fa-regular fa-user mr-1"></i> <span id="nav-user-name">${escapeHtml(userName)}</span>
+                            </span>
+                            <button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition flex items-center gap-1">
+                                <i class="fa-solid fa-sign-out-alt"></i> <span class="hidden sm:inline">Logout</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="md:hidden flex overflow-x-auto pb-2 gap-1 snap-x">
+                        ${linksHtml}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
+    async function globalLogout() {
+        const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
+        const token = localStorage.getItem('access_token');
+        if (token) {
+            try {
+                await fetch(`${BACKEND}/auth/logout`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } });
+            } catch(e) {}
+        }
+        localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user_role'); localStorage.removeItem('user_profile_display');
+        window.location.href = LOGIN_URL;
+    }
+    async function updateUserDisplay() {
+        const token = localStorage.getItem('access_token');
+        if (!token) return;
+        try {
+            const res = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/me', { headers: { 'Authorization': `Bearer ${token}` } });
+            if (res.ok) {
+                const me = await res.json();
+                const contextRes = await fetch(`https://kevsono-kevs-digital-bos.hf.space/support/customer-context?target_user_id=${me.user_id}`, { headers: { 'Authorization': `Bearer ${token}` } });
+                if (contextRes.ok) {
+                    const context = await contextRes.json();
+                    const name = context.profile?.first_name || 'Agent';
+                    localStorage.setItem('user_profile_display', name);
+                    const nameSpan = document.getElementById('nav-user-name');
+                    if (nameSpan) nameSpan.innerText = name;
+                }
+            }
+        } catch(e) {}
+    }
+    function initNavigation() {
+        const container = document.getElementById('kevs-nav-container');
+        if (container) {
+            container.innerHTML = buildNavbar();
+            const logoutBtn = document.getElementById('global-logout-btn');
+            if (logoutBtn) logoutBtn.addEventListener('click', globalLogout);
+            updateUserDisplay();
+        }
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initNavigation);
+    else initNavigation();
+})();
+</script>
+<!-- ========== END GLOBAL NAVIGATION ========== -->
+
 <div class="max-w-7xl mx-auto">
-    <!-- Header -->
+    <!-- Admin Header (simplified) -->
     <div class="flex justify-between items-center mb-6 pb-4 border-b border-slate-700">
         <div>
             <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">📦 Inventory Manager</h1>
             <p class="text-sm text-slate-400">Advanced inventory: handling, cost, weight & size factor</p>
         </div>
-        <div class="flex gap-3 items-center">
-            <span id="admin-user-badge" class="text-xs bg-slate-800 px-3 py-1.5 rounded-full"></span>
-            <button id="admin-logout" class="bg-red-600/80 hover:bg-red-700 text-sm px-4 py-1.5 rounded-lg transition"><i class="fa-solid fa-sign-out-alt mr-1"></i> Logout</button>
-        </div>
+        <!-- Removed duplicate logout/user badge -->
     </div>
 
     <!-- Auth placeholder (hidden when logged in) -->
@@ -36,12 +157,11 @@
 
     <!-- Main admin content (hidden until authenticated) -->
     <div id="admin-panel" class="hidden">
-        <!-- Add / Edit Product Form (all required fields included) -->
+        <!-- Add / Edit Product Form -->
         <div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-slate-700 shadow-xl">
             <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fa-solid fa-plus-circle text-blue-400"></i> <span id="form-title">Add New Product</span></h2>
             <form id="product-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <input type="hidden" id="edit-id" value="">
-                <!-- Core required -->
                 <div>
                     <label class="block text-xs text-slate-400 mb-1">Item Code (SKU) *</label>
                     <input id="item_code" type="text" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
@@ -94,7 +214,7 @@
             </form>
         </div>
         
-        <!-- Bulk Upload Section: Updated with full column requirements & frontend validation -->
+        <!-- Bulk Upload Section -->
         <div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-slate-700 shadow-xl">
             <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fa-solid fa-upload text-green-400"></i> Bulk Upload Products (CSV)</h2>
             <div class="bg-slate-900/60 rounded-lg p-3 mb-4 text-sm border-l-4 border-amber-500">
@@ -135,7 +255,6 @@
     let token = localStorage.getItem('access_token');
     let currentUser = null;
 
-    // ---------- API Helpers ----------
     async function refreshToken() {
         const refresh = localStorage.getItem('refresh_token');
         if (!refresh) return false;
@@ -173,7 +292,6 @@
         return res.json();
     }
 
-    // ---------- Inventory CRUD (full fields) ----------
     async function loadInventory() {
         try {
             const items = await apiCall('/inventory');
@@ -314,9 +432,7 @@
         document.getElementById('cost_price_naira').value = '0';
     }
 
-    // ---------- Advanced CSV Validation & Parsing (strict columns & rules) ----------
     function parseCSV(text) {
-        // Simple robust CSV parser respecting quotes
         const rows = [];
         const lines = text.split(/\r?\n/);
         let inQuote = false;
@@ -351,7 +467,6 @@
             'description', 'price_naira', 'weight_kg', 'handling_category', 'size_factor',
             'item_code', 'cost_price_naira', 'product_group', 'current_qty', 'image_url'
         ];
-        // check all required columns exist (case-sensitive)
         const missingCols = requiredColumns.filter(col => !headers.includes(col));
         if (missingCols.length) {
             return { valid: false, error: `Missing required columns: ${missingCols.join(', ')}` };
@@ -360,8 +475,6 @@
         requiredColumns.forEach(col => { idx[col] = headers.indexOf(col); });
         
         const errors = [];
-        const validRows = [];
-        // skip header row
         for (let rowNum = 1; rowNum < parsedRows.length; rowNum++) {
             const row = parsedRows[rowNum];
             if (row.length < headers.length) {
@@ -379,7 +492,6 @@
             const costStr = getVal('cost_price_naira');
             const productGroup = getVal('product_group');
             const qtyStr = getVal('current_qty');
-            const imageUrl = getVal('image_url');
             
             if (!description) errors.push(`Row ${rowNum+1}: description is required.`);
             if (!itemCode) errors.push(`Row ${rowNum+1}: item_code is required.`);
@@ -403,7 +515,6 @@
             if (!['standard','fragile','bulky','hazardous'].includes(handling)) 
                 errors.push(`Row ${rowNum+1}: handling_category must be one of standard, fragile, bulky, hazardous, got "${handling}"`);
             
-            // image_url column existence already checked; empty allowed.
             if (errors.length > 10) break;
         }
         if (errors.length) return { valid: false, error: `Validation errors:\n${errors.slice(0, 15).join('\n')}${errors.length > 15 ? `\n... and ${errors.length-15} more` : ''}` };
@@ -433,7 +544,6 @@
                 statusDiv.innerHTML = `<span class="text-red-400"><i class="fa-solid fa-triangle-exclamation mr-1"></i> CSV validation failed:<br><pre class="text-xs bg-slate-950 p-2 mt-1 rounded">${escapeHtml(validation.error)}</pre></span>`;
                 return;
             }
-            // Proceed to upload after local validation
             statusDiv.innerHTML = '<span class="text-blue-400"><i class="fa-solid fa-cloud-upload-alt"></i> Valid CSV! Uploading to server...</span>';
             const uploadBtn = document.getElementById('bulk-upload-btn');
             uploadBtn.disabled = true;
@@ -463,12 +573,13 @@
         }
     }
 
-    // ---------- Admin Authentication ----------
     async function checkAdminAccess() {
         try {
             const me = await apiCall('/auth/me');
             currentUser = me;
-            document.getElementById('admin-user-badge').innerHTML = `<i class="fa-regular fa-user-shield mr-1"></i> ${me.user_id.substring(0,8)} (Admin)`;
+            // Store role if not already
+            const role = me.role || 'admin';
+            localStorage.setItem('user_role', role);
             document.getElementById('auth-check-placeholder').classList.add('hidden');
             document.getElementById('admin-panel').classList.remove('hidden');
             loadInventory();
@@ -481,19 +592,9 @@
         }
     }
 
-    async function logout() {
-        try { await apiCall('/auth/logout', { method: 'POST' }); } catch(e) {}
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        token = null;
-        window.location.href = '/';
-    }
-
-    // Event listeners
     document.getElementById('product-form').addEventListener('submit', saveProduct);
     document.getElementById('cancel-edit').addEventListener('click', resetForm);
     document.getElementById('refresh-list').addEventListener('click', loadInventory);
-    document.getElementById('admin-logout').addEventListener('click', logout);
     document.getElementById('bulk-upload-btn').addEventListener('click', bulkUploadWithValidation);
 
     function escapeHtml(str) {
@@ -501,7 +602,6 @@
         return String(str).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
     }
 
-    // initialize
     if (token) {
         checkAdminAccess().catch(() => {
             document.getElementById('auth-check-placeholder').innerHTML = '<div class="text-red-400">Session invalid. Please log in again.</div><button id="relog" class="mt-3 bg-blue-600 px-4 py-2 rounded">Login</button>';

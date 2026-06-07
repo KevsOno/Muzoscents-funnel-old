@@ -16,20 +16,133 @@
     </style>
 </head>
 <body class="h-screen flex flex-col overflow-hidden">
-<div id="toast-container" class="fixed top-6 right-4 z-50 space-y-2 w-80"></div>
-<header class="bg-[#1E3A5F] text-white px-6 py-4 flex items-center justify-between shrink-0 shadow-md">
-    <div class="flex items-center gap-3">
-        <div class="font-bold text-xl tracking-tight"><span class="text-orange-500">Kevs</span>BI</div>
-        <div class="text-xs bg-white/10 px-2.5 py-1 rounded-full">Support Desk</div>
-    </div>
-    <div class="flex items-center gap-4">
-        <span id="user-badge" class="text-sm bg-white/10 px-2 py-1 rounded-full"></span>
-        <button id="logout-btn" class="text-xs bg-red-500/20 hover:bg-red-500/30 px-3 py-2 rounded-lg transition"><i class="fa-solid fa-sign-out-alt mr-1"></i> Logout</button>
-        <button onclick="window.location.href='/kdbi'" class="text-xs bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg transition">Marketing Dashboard</button>
-    </div>
-</header>
 
-<main class="flex-1 flex overflow-hidden">
+<!-- ========== GLOBAL NAVIGATION (Kevs bOS) ========== -->
+<div id="kevs-nav-container"></div>
+<script>
+(function() {
+    const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
+    const LOGIN_URL = '/kdsiginin';
+    const navItems = [
+        { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy' },
+        { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & online payments' },
+        { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', title: 'Order shipping, tracking & dispatch' },
+        { path: '/kdsupport',     name: 'Support',   icon: 'fa-headset', title: 'Ticket management & customer context' },
+        { path: '/kddashboard',   name: 'Exec',      icon: 'fa-chart-simple', title: 'Executive revenue & profit overview' }
+    ];
+    const adminItem = { path: '/kdadmin', name: 'Admin', icon: 'fa-shield-alt', title: 'Inventory & bulk product management (admin only)' };
+
+    function getUserRole() {
+        try {
+            const role = localStorage.getItem('user_role');
+            return role === 'admin' ? 'admin' : null;
+        } catch(e) { return null; }
+    }
+
+    function buildNavbar() {
+        const currentPath = window.location.pathname;
+        const isAdmin = getUserRole() === 'admin';
+        let linksHtml = '';
+        navItems.forEach(item => {
+            const isActive = currentPath === item.path;
+            const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
+            linksHtml += `
+                <a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}" title="${item.title}">
+                    <i class="fa-solid ${item.icon} w-4"></i> ${item.name}
+                </a>
+            `;
+        });
+        if (isAdmin) {
+            const isActive = currentPath === adminItem.path;
+            const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
+            linksHtml += `
+                <a href="${adminItem.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}" title="${adminItem.title}">
+                    <i class="fa-solid ${adminItem.icon} w-4"></i> ${adminItem.name}
+                </a>
+            `;
+        }
+        let userName = 'User';
+        try {
+            const profileStr = localStorage.getItem('user_profile_display');
+            if (profileStr) userName = profileStr;
+        } catch(e) {}
+        return `
+            <div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40">
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div class="flex flex-wrap items-center justify-between py-3 gap-3">
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i>
+                            <span class="text-xl font-bold tracking-tight">${APP_NAME}</span>
+                            <span class="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span>
+                        </div>
+                        <div class="hidden md:flex items-center gap-1 flex-wrap">
+                            ${linksHtml}
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full hidden sm:inline-block">
+                                <i class="fa-regular fa-user mr-1"></i> <span id="nav-user-name">${escapeHtml(userName)}</span>
+                            </span>
+                            <button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition flex items-center gap-1">
+                                <i class="fa-solid fa-sign-out-alt"></i> <span class="hidden sm:inline">Logout</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="md:hidden flex overflow-x-auto pb-2 gap-1 snap-x">
+                        ${linksHtml}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
+    async function globalLogout() {
+        const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
+        const token = localStorage.getItem('access_token');
+        if (token) {
+            try {
+                await fetch(`${BACKEND}/auth/logout`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } });
+            } catch(e) {}
+        }
+        localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user_role'); localStorage.removeItem('user_profile_display');
+        window.location.href = LOGIN_URL;
+    }
+    async function updateUserDisplay() {
+        const token = localStorage.getItem('access_token');
+        if (!token) return;
+        try {
+            const res = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/me', { headers: { 'Authorization': `Bearer ${token}` } });
+            if (res.ok) {
+                const me = await res.json();
+                const contextRes = await fetch(`https://kevsono-kevs-digital-bos.hf.space/support/customer-context?target_user_id=${me.user_id}`, { headers: { 'Authorization': `Bearer ${token}` } });
+                if (contextRes.ok) {
+                    const context = await contextRes.json();
+                    const name = context.profile?.first_name || 'Agent';
+                    localStorage.setItem('user_profile_display', name);
+                    const nameSpan = document.getElementById('nav-user-name');
+                    if (nameSpan) nameSpan.innerText = name;
+                }
+            }
+        } catch(e) {}
+    }
+    function initNavigation() {
+        const container = document.getElementById('kevs-nav-container');
+        if (container) {
+            container.innerHTML = buildNavbar();
+            const logoutBtn = document.getElementById('global-logout-btn');
+            if (logoutBtn) logoutBtn.addEventListener('click', globalLogout);
+            updateUserDisplay();
+        }
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initNavigation);
+    else initNavigation();
+})();
+</script>
+<!-- ========== END GLOBAL NAVIGATION ========== -->
+
+<div id="toast-container" class="fixed top-6 right-4 z-50 space-y-2 w-80"></div>
+
+<main class="flex-1 flex overflow-hidden pt-2">
     <section class="w-80 bg-white border-r border-slate-200 flex flex-col shrink-0 overflow-hidden">
         <div class="p-4 border-b bg-slate-50"><select id="queue-status-filter" class="w-full border rounded-lg p-1.5 text-xs"><option value="open">🟢 Open Tickets</option><option value="pending">🟡 Escalated</option><option value="resolved">⚫ Resolved</option></select></div>
         <div id="ticket-feed" class="flex-1 overflow-y-auto divide-y divide-slate-100"><div class="p-8 text-center text-xs">Loading tickets...</div></div>
@@ -139,7 +252,6 @@
         localStorage.removeItem('refresh_token');
         token = null;
         showLoginModal();
-        document.getElementById('user-badge').innerText = '';
         showToast('Logged out');
     }
 
@@ -157,10 +269,14 @@
             token = data.access_token;
             localStorage.setItem('access_token', token);
             localStorage.setItem('refresh_token', data.refresh_token);
-            await loadUserInfo();
+            // Store role
+            const me = await req('/auth/me');
+            const role = me.role || 'customer';
+            localStorage.setItem('user_role', role);
             hideLoginModal();
             loadTickets();
             showToast('Demo login successful');
+            location.reload();
         } catch (err) { showToast(err.message, 'error'); }
         finally { btn.disabled = false; }
     }
@@ -170,8 +286,8 @@
             const me = await req('/auth/me');
             const context = await req(`/support/customer-context?target_user_id=${me.user_id}`);
             const name = context.profile?.first_name || 'Agent';
-            document.getElementById('user-badge').innerHTML = `<i class="fa-regular fa-user mr-1"></i> ${name}`;
-        } catch (e) { document.getElementById('user-badge').innerHTML = 'Agent'; }
+            // No local user badge anymore; handled by global nav
+        } catch (e) {}
     }
 
     async function loadTickets() {
@@ -254,7 +370,6 @@
     });
 
     document.getElementById('queue-status-filter')?.addEventListener('change', loadTickets);
-    document.getElementById('logout-btn')?.addEventListener('click', logout);
     document.getElementById('modal-login-btn')?.addEventListener('click', async () => {
         const email = document.getElementById('login-email').value.trim();
         const pwd = document.getElementById('login-password').value.trim();
@@ -270,9 +385,12 @@
             token = data.access_token;
             localStorage.setItem('access_token', token);
             localStorage.setItem('refresh_token', data.refresh_token);
-            await loadUserInfo();
+            const me = await req('/auth/me');
+            const role = me.role || 'customer';
+            localStorage.setItem('user_role', role);
             hideLoginModal();
             loadTickets();
+            location.reload();
         } catch(err) { showToast(err.message, 'error'); }
     });
     document.getElementById('demo-login-btn')?.addEventListener('click', demoLogin);

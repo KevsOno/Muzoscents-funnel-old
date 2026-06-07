@@ -17,511 +17,658 @@
     </style>
 </head>
 <body class="antialiased">
-    <!-- Top user bar -->
-    <div class="flex items-center justify-end gap-3 px-6 pt-3">
-        <span id="user-badge" class="text-sm bg-gray-100 px-3 py-1.5 rounded-full"></span>
-        <button id="logout-btn" class="text-red-600 text-sm hover:underline"><i class="fas fa-sign-out-alt"></i> Logout</button>
-    </div>
-    <div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
 
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <!-- Dashboard header -->
-        <div class="bg-white rounded-2xl shadow-sm p-5 mb-6 flex flex-wrap justify-between items-center border-l-8 border-orange-500">
-            <div>
-                <h1 id="org-name" class="text-2xl font-bold text-gray-800">Kevs Digital BI</h1>
-                <p id="org-meta" class="text-gray-600 text-sm">Loading organisation data...</p>
-            </div>
-            <div class="text-right flex items-center gap-3">
-                <div id="usage-badge" class="bg-gray-100 px-3 py-1.5 rounded-full text-sm"><i class="fas fa-chart-line"></i> Loading...</div>
-                <button onclick="window.location.href='/kdsupport'" class="bg-slate-800 hover:bg-slate-900 text-white text-xs py-1.5 px-3 rounded-full flex items-center gap-1"><i class="fa-solid fa-headset"></i> Support Desk</button>
-            </div>
-        </div>
+<!-- ========== GLOBAL NAVIGATION (Kevs bOS) ========== -->
+<div id="kevs-nav-container"></div>
+<script>
+(function() {
+    // --- CONFIGURATION -------------------------------------------------
+    const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
+    const LOGIN_URL = '/kdsiginin';
+    const navItems = [
+        { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy' },
+        { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & online payments' },
+        { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', title: 'Order shipping, tracking & dispatch' },
+        { path: '/kdsupport',     name: 'Support',   icon: 'fa-headset', title: 'Ticket management & customer context' },
+        { path: '/kddashboard',   name: 'Exec',      icon: 'fa-chart-simple', title: 'Executive revenue & profit overview' }
+    ];
+    const adminItem = { path: '/kdadmin', name: 'Admin', icon: 'fa-shield-alt', title: 'Inventory & bulk product management (admin only)' };
 
-        <!-- Tabs navigation -->
-        <div class="border-b border-gray-200 mb-6 overflow-x-auto">
-            <nav class="flex space-x-1">
-                <button data-tab="leads" class="tab-btn px-5 py-2.5 text-sm font-medium rounded-t-lg bg-orange-50 text-orange-700">📋 Leads</button>
-                <button data-tab="metrics" class="tab-btn px-5 py-2.5 text-sm font-medium text-gray-600">📊 Metrics</button>
-                <button data-tab="chat" class="tab-btn px-5 py-2.5 text-sm font-medium text-gray-600">🤖 Strategy Chat</button>
-                <button data-tab="cac" class="tab-btn px-5 py-2.5 text-sm font-medium text-gray-600">🎯 CAC Target</button>
-                <button data-tab="forecast" class="tab-btn px-5 py-2.5 text-sm font-medium text-gray-600">📈 Forecast</button>
-            </nav>
-        </div>
+    // --- Helper: get current role ---------------------------------------
+    function getUserRole() {
+        try {
+            const role = localStorage.getItem('user_role');
+            return role === 'admin' ? 'admin' : null;
+        } catch(e) { return null; }
+    }
 
-        <!-- ========================= LEADS TAB ========================= -->
-        <div id="tab-leads" class="tab-content">
-            <div class="flex justify-between items-center flex-wrap gap-3 mb-5">
-                <h2 class="text-xl font-semibold">Lead Management</h2>
-                <div class="flex gap-2">
-                    <select id="lead-status-filter" class="border rounded-lg p-2 text-sm"><option value="">All status</option><option value="cold">Cold</option><option value="warm">Warm</option><option value="converted">Converted</option></select>
-                    <select id="lead-source-filter" class="border rounded-lg p-2 text-sm"><option value="">All sources</option></select>
-                    <button id="add-lead-btn" class="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm"><i class="fas fa-plus"></i> Add Lead</button>
-                    <label class="bg-gray-200 px-4 py-2 rounded-lg text-sm cursor-pointer"><i class="fas fa-upload"></i> CSV Upload <input type="file" id="csv-upload" accept=".csv" class="hidden"></label>
-                </div>
-            </div>
-            <div id="leads-loading" class="hidden text-center py-10"><div class="loading-spinner mx-auto"></div><p class="mt-2">Loading leads...</p></div>
-            <div class="overflow-x-auto bg-white rounded-xl shadow"><table class="min-w-full"><thead class="bg-gray-50"><tr><th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th><th>Email</th><th>Source</th><th>Status</th><th>Deal (₦)</th><th>Ad Spend</th><th>Actions</th></tr></thead><tbody id="leads-table-body"></tbody></table></div>
-            <div class="mt-4 flex justify-between items-center"><button id="prev-page" class="px-3 py-1 border rounded disabled:opacity-50">Prev</button><span id="page-info"></span><button id="next-page" class="px-3 py-1 border rounded disabled:opacity-50">Next</button></div>
-        </div>
-
-        <!-- ========================= METRICS TAB ========================= -->
-        <div id="tab-metrics" class="tab-content hidden">
-            <div id="metrics-loading" class="hidden text-center py-10"><div class="loading-spinner mx-auto"></div></div>
-            <div id="metrics-content" class="hidden">
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                    <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Total Leads</div><div id="metric-total-leads" class="text-2xl font-bold">-</div></div>
-                    <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Conversion Rate</div><div id="metric-conversion-rate" class="text-2xl font-bold">-</div></div>
-                    <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Actual CAC (₦)</div><div id="metric-cac" class="text-2xl font-bold">-</div></div>
-                    <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">ROI (%)</div><div id="metric-roi" class="text-2xl font-bold">-</div></div>
-                    <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Pipeline Value (₦)</div><div id="metric-pipeline" class="text-2xl font-bold">-</div></div>
-                    <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Data Quality</div><div id="metric-dq" class="text-2xl font-bold">-</div></div>
-                </div>
-                <div class="bg-white p-5 rounded-xl shadow-sm"><h3 class="font-semibold mb-3">🏆 Top Lead Sources</h3><div id="top-sources-list"></div></div>
-                <button id="refresh-metrics" class="mt-4 bg-blue-500 text-white px-4 py-2 rounded-lg text-sm"><i class="fas fa-sync-alt"></i> Refresh Metrics</button>
-            </div>
-        </div>
-
-        <!-- ========================= STRATEGY CHAT TAB (MERGED) ========================= -->
-        <div id="tab-chat" class="tab-content hidden">
-            <div class="bg-white rounded-xl shadow-md p-5">
-                <div class="flex flex-wrap gap-3 mb-4 items-center justify-between">
-                    <div class="flex gap-3 items-center">
-                        <select id="chat-mode" class="border rounded-lg p-2 text-sm bg-white">
-                            <option value="chat">💬 Conversational Chat</option>
-                            <option value="report">📄 Strategic Report</option>
-                            <option value="dashboard">📊 Dashboard Summary</option>
-                        </select>
+    // --- Build navbar HTML ----------------------------------------------
+    function buildNavbar() {
+        const currentPath = window.location.pathname;
+        const isAdmin = getUserRole() === 'admin';
+        
+        let linksHtml = '';
+        // Standard links
+        navItems.forEach(item => {
+            const isActive = currentPath === item.path;
+            const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
+            linksHtml += `
+                <a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}" title="${item.title}">
+                    <i class="fa-solid ${item.icon} w-4"></i> ${item.name}
+                </a>
+            `;
+        });
+        // Admin link (only for admin users)
+        if (isAdmin) {
+            const isActive = currentPath === adminItem.path;
+            const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
+            linksHtml += `
+                <a href="${adminItem.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}" title="${adminItem.title}">
+                    <i class="fa-solid ${adminItem.icon} w-4"></i> ${adminItem.name}
+                </a>
+            `;
+        }
+        
+        // Get user display name (if available)
+        let userName = 'User';
+        try {
+            const profileStr = localStorage.getItem('user_profile_display');
+            if (profileStr) userName = profileStr;
+        } catch(e) {}
+        
+        return `
+            <div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40">
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div class="flex flex-wrap items-center justify-between py-3 gap-3">
+                        <!-- Logo + app name -->
                         <div class="flex items-center gap-2">
-                            <label class="text-sm font-medium text-gray-700">🎯 Strategic lens:</label>
-                            <select id="force-pillar" class="border rounded-lg p-2 text-sm bg-white">
-                                <option value="">Auto (detect from question)</option>
-                                <option value="1">1 – Customer intelligence</option>
-                                <option value="2">2 – Market & competitive</option>
-                                <option value="3">3 – Operations & capabilities</option>
-                                <option value="4">4 – Growth economics</option>
-                            </select>
+                            <i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i>
+                            <span class="text-xl font-bold tracking-tight">${APP_NAME}</span>
+                            <span class="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span>
+                        </div>
+                        <!-- Navigation links (centered on desktop) -->
+                        <div class="hidden md:flex items-center gap-1 flex-wrap">
+                            ${linksHtml}
+                        </div>
+                        <!-- Right side: user badge + logout -->
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full hidden sm:inline-block">
+                                <i class="fa-regular fa-user mr-1"></i> <span id="nav-user-name">${escapeHtml(userName)}</span>
+                            </span>
+                            <button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition flex items-center gap-1">
+                                <i class="fa-solid fa-sign-out-alt"></i> <span class="hidden sm:inline">Logout</span>
+                            </button>
                         </div>
                     </div>
-                    <button id="clear-chat" class="text-gray-500 text-sm hover:text-red-500"><i class="fas fa-trash-alt"></i> Clear conversation</button>
-                </div>
-                <div id="chat-messages" class="h-96 overflow-y-auto border rounded-xl p-3 bg-gray-50 mb-3 space-y-2"></div>
-                <div class="flex gap-2">
-                    <input type="text" id="chat-input" placeholder="Ask a strategic question about leads, conversion, CAC, or market trends..." class="flex-1 border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-orange-300">
-                    <button id="send-chat" class="bg-orange-600 hover:bg-orange-700 text-white px-5 rounded-lg transition"><i class="fas fa-paper-plane"></i> Send</button>
-                </div>
-                <div id="chat-usage" class="text-xs text-gray-400 mt-2 flex justify-between items-center">
-                    <span><i class="fas fa-brain"></i> AI strategic advisor</span>
-                    <span id="chat-usage-stats">Ready</span>
+                    <!-- Mobile navigation (horizontal scroll) -->
+                    <div class="md:hidden flex overflow-x-auto pb-2 gap-1 snap-x">
+                        ${linksHtml}
+                    </div>
                 </div>
             </div>
-        </div>
+        `;
+    }
+    
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+    
+    // --- Logout handler -------------------------------------------------
+    async function globalLogout() {
+        const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
+        const token = localStorage.getItem('access_token');
+        if (token) {
+            try {
+                await fetch(`${BACKEND}/auth/logout`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+                });
+            } catch(e) {}
+        }
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user_role');
+        localStorage.removeItem('user_profile_display');
+        window.location.href = LOGIN_URL;
+    }
+    
+    // --- Try to load user display name from API -------------------------
+    async function updateUserDisplay() {
+        const token = localStorage.getItem('access_token');
+        if (!token) return;
+        try {
+            const res = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/me', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const me = await res.json();
+                const contextRes = await fetch(`https://kevsono-kevs-digital-bos.hf.space/support/customer-context?target_user_id=${me.user_id}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (contextRes.ok) {
+                    const context = await contextRes.json();
+                    const name = context.profile?.first_name || 'Agent';
+                    localStorage.setItem('user_profile_display', name);
+                    const nameSpan = document.getElementById('nav-user-name');
+                    if (nameSpan) nameSpan.innerText = name;
+                }
+            }
+        } catch(e) {}
+    }
+    
+    // --- Inject navbar and attach logout --------------------------------
+    function initNavigation() {
+        const container = document.getElementById('kevs-nav-container');
+        if (container) {
+            container.innerHTML = buildNavbar();
+            const logoutBtn = document.getElementById('global-logout-btn');
+            if (logoutBtn) logoutBtn.addEventListener('click', globalLogout);
+            updateUserDisplay();
+        }
+    }
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initNavigation);
+    } else {
+        initNavigation();
+    }
+})();
+</script>
+<!-- ========== END GLOBAL NAVIGATION ========== -->
 
-        <!-- ========================= CAC TARGET TAB ========================= -->
-        <div id="tab-cac" class="tab-content hidden">
-            <div class="bg-white p-6 rounded-xl shadow-md">
-                <h2 class="text-xl font-semibold mb-4">CAC Target & Leads Needed</h2>
-                <div class="grid md:grid-cols-3 gap-4 mb-4">
-                    <div><label class="block text-sm font-medium">Target CAC (₦)</label><input type="number" id="target-cac" class="border rounded-lg w-full p-2"></div>
-                    <div><label class="block text-sm font-medium">Target Revenue (₦)</label><input type="number" id="target-rev" class="border rounded-lg w-full p-2"></div>
-                    <div><label class="block text-sm font-medium">Budget available (₦)</label><input type="number" id="target-budget" class="border rounded-lg w-full p-2"></div>
-                </div>
-                <button id="run-cac" class="bg-purple-600 text-white px-5 py-2 rounded-lg">Calculate & Advise</button>
-                <div id="cac-result" class="mt-5 p-4 bg-gray-50 rounded-lg hidden"></div>
+<div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
+
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <!-- Dashboard header -->
+    <div class="bg-white rounded-2xl shadow-sm p-5 mb-6 flex flex-wrap justify-between items-center border-l-8 border-orange-500">
+        <div>
+            <h1 id="org-name" class="text-2xl font-bold text-gray-800">Kevs Digital BI</h1>
+            <p id="org-meta" class="text-gray-600 text-sm">Loading organisation data...</p>
+        </div>
+        <div class="text-right flex items-center gap-3">
+            <div id="usage-badge" class="bg-gray-100 px-3 py-1.5 rounded-full text-sm"><i class="fas fa-chart-line"></i> Loading...</div>
+            <button onclick="window.location.href='/kdsupport'" class="bg-slate-800 hover:bg-slate-900 text-white text-xs py-1.5 px-3 rounded-full flex items-center gap-1"><i class="fa-solid fa-headset"></i> Support Desk</button>
+        </div>
+    </div>
+
+    <!-- Tabs navigation -->
+    <div class="border-b border-gray-200 mb-6 overflow-x-auto">
+        <nav class="flex space-x-1">
+            <button data-tab="leads" class="tab-btn px-5 py-2.5 text-sm font-medium rounded-t-lg bg-orange-50 text-orange-700">📋 Leads</button>
+            <button data-tab="metrics" class="tab-btn px-5 py-2.5 text-sm font-medium text-gray-600">📊 Metrics</button>
+            <button data-tab="chat" class="tab-btn px-5 py-2.5 text-sm font-medium text-gray-600">🤖 Strategy Chat</button>
+            <button data-tab="cac" class="tab-btn px-5 py-2.5 text-sm font-medium text-gray-600">🎯 CAC Target</button>
+            <button data-tab="forecast" class="tab-btn px-5 py-2.5 text-sm font-medium text-gray-600">📈 Forecast</button>
+        </nav>
+    </div>
+
+    <!-- ========================= LEADS TAB ========================= -->
+    <div id="tab-leads" class="tab-content">
+        <div class="flex justify-between items-center flex-wrap gap-3 mb-5">
+            <h2 class="text-xl font-semibold">Lead Management</h2>
+            <div class="flex gap-2">
+                <select id="lead-status-filter" class="border rounded-lg p-2 text-sm"><option value="">All status</option><option value="cold">Cold</option><option value="warm">Warm</option><option value="converted">Converted</option></select>
+                <select id="lead-source-filter" class="border rounded-lg p-2 text-sm"><option value="">All sources</option></select>
+                <button id="add-lead-btn" class="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm"><i class="fas fa-plus"></i> Add Lead</button>
+                <label class="bg-gray-200 px-4 py-2 rounded-lg text-sm cursor-pointer"><i class="fas fa-upload"></i> CSV Upload <input type="file" id="csv-upload" accept=".csv" class="hidden"></label>
             </div>
         </div>
+        <div id="leads-loading" class="hidden text-center py-10"><div class="loading-spinner mx-auto"></div><p class="mt-2">Loading leads...</p></div>
+        <div class="overflow-x-auto bg-white rounded-xl shadow"><table class="min-w-full"><thead class="bg-gray-50"><tr><th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th><th>Email</th><th>Source</th><th>Status</th><th>Deal (₦)</th><th>Ad Spend</th><th>Actions</th></tr></thead><tbody id="leads-table-body"></tbody></table></div>
+        <div class="mt-4 flex justify-between items-center"><button id="prev-page" class="px-3 py-1 border rounded disabled:opacity-50">Prev</button><span id="page-info"></span><button id="next-page" class="px-3 py-1 border rounded disabled:opacity-50">Next</button></div>
+    </div>
 
-        <!-- ========================= FORECAST TAB ========================= -->
-        <div id="tab-forecast" class="tab-content hidden">
-            <div class="bg-white p-6 rounded-xl shadow-md">
-                <h2 class="text-xl font-semibold mb-4">Revenue Forecast</h2>
-                <div class="grid md:grid-cols-3 gap-4 mb-5">
-                    <div><label class="text-sm">Months</label><input type="number" id="forecast-months" value="6" class="border rounded-lg w-full p-2"></div>
-                    <div><label class="text-sm">Monthly growth (%)</label><input type="number" id="forecast-growth" step="0.5" class="border rounded-lg w-full p-2"></div>
-                    <div><label class="text-sm">Extra ad spend (₦)</label><input type="number" id="forecast-add-spend" class="border rounded-lg w-full p-2"></div>
+    <!-- ========================= METRICS TAB ========================= -->
+    <div id="tab-metrics" class="tab-content hidden">
+        <div id="metrics-loading" class="hidden text-center py-10"><div class="loading-spinner mx-auto"></div></div>
+        <div id="metrics-content" class="hidden">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Total Leads</div><div id="metric-total-leads" class="text-2xl font-bold">-</div></div>
+                <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Conversion Rate</div><div id="metric-conversion-rate" class="text-2xl font-bold">-</div></div>
+                <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Actual CAC (₦)</div><div id="metric-cac" class="text-2xl font-bold">-</div></div>
+                <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">ROI (%)</div><div id="metric-roi" class="text-2xl font-bold">-</div></div>
+                <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Pipeline Value (₦)</div><div id="metric-pipeline" class="text-2xl font-bold">-</div></div>
+                <div class="bg-white p-5 rounded-xl shadow-sm"><div class="text-sm text-gray-500">Data Quality</div><div id="metric-dq" class="text-2xl font-bold">-</div></div>
+            </div>
+            <div class="bg-white p-5 rounded-xl shadow-sm"><h3 class="font-semibold mb-3">🏆 Top Lead Sources</h3><div id="top-sources-list"></div></div>
+            <button id="refresh-metrics" class="mt-4 bg-blue-500 text-white px-4 py-2 rounded-lg text-sm"><i class="fas fa-sync-alt"></i> Refresh Metrics</button>
+        </div>
+    </div>
+
+    <!-- ========================= STRATEGY CHAT TAB ========================= -->
+    <div id="tab-chat" class="tab-content hidden">
+        <div class="bg-white rounded-xl shadow-md p-5">
+            <div class="flex flex-wrap gap-3 mb-4 items-center justify-between">
+                <div class="flex gap-3 items-center">
+                    <select id="chat-mode" class="border rounded-lg p-2 text-sm bg-white">
+                        <option value="chat">💬 Conversational Chat</option>
+                        <option value="report">📄 Strategic Report</option>
+                        <option value="dashboard">📊 Dashboard Summary</option>
+                    </select>
+                    <div class="flex items-center gap-2">
+                        <label class="text-sm font-medium text-gray-700">🎯 Strategic lens:</label>
+                        <select id="force-pillar" class="border rounded-lg p-2 text-sm bg-white">
+                            <option value="">Auto (detect from question)</option>
+                            <option value="1">1 – Customer intelligence</option>
+                            <option value="2">2 – Market & competitive</option>
+                            <option value="3">3 – Operations & capabilities</option>
+                            <option value="4">4 – Growth economics</option>
+                        </select>
+                    </div>
                 </div>
-                <button id="run-forecast" class="bg-green-600 text-white px-5 py-2 rounded-lg">Generate forecast</button>
-                <div id="forecast-loading" class="hidden text-center py-4"><div class="loading-spinner mx-auto"></div></div>
-                <div class="mt-6"><canvas id="forecastChart" height="200"></canvas></div>
-                <div id="forecast-table" class="mt-5 overflow-x-auto"></div>
+                <button id="clear-chat" class="text-gray-500 text-sm hover:text-red-500"><i class="fas fa-trash-alt"></i> Clear conversation</button>
+            </div>
+            <div id="chat-messages" class="h-96 overflow-y-auto border rounded-xl p-3 bg-gray-50 mb-3 space-y-2"></div>
+            <div class="flex gap-2">
+                <input type="text" id="chat-input" placeholder="Ask a strategic question about leads, conversion, CAC, or market trends..." class="flex-1 border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-orange-300">
+                <button id="send-chat" class="bg-orange-600 hover:bg-orange-700 text-white px-5 rounded-lg transition"><i class="fas fa-paper-plane"></i> Send</button>
+            </div>
+            <div id="chat-usage" class="text-xs text-gray-400 mt-2 flex justify-between items-center">
+                <span><i class="fas fa-brain"></i> AI strategic advisor</span>
+                <span id="chat-usage-stats">Ready</span>
             </div>
         </div>
     </div>
 
-    <!-- Lead Modal -->
-    <div id="lead-modal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50"><div class="bg-white rounded-2xl p-6 w-full max-w-md"><h3 id="modal-title" class="text-xl font-bold mb-3">Add Lead</h3><form id="lead-form"><input type="hidden" id="lead-id"><input id="lead-name" placeholder="Name*" class="w-full border p-2 rounded mb-2" required><input id="lead-email" placeholder="Email" class="w-full border p-2 rounded mb-2"><input id="lead-phone" placeholder="Phone" class="w-full border p-2 rounded mb-2"><input id="lead-source" placeholder="Source" class="w-full border p-2 rounded mb-2"><select id="lead-status" class="w-full border p-2 rounded mb-2"><option value="cold">Cold</option><option value="warm">Warm</option><option value="converted">Converted</option></select><input id="lead-deal" placeholder="Deal Value (₦)" class="w-full border p-2 rounded mb-2"><input id="lead-spend" placeholder="Ad Spend (₦)" class="w-full border p-2 rounded mb-2"><input id="lead-acquired" type="date" class="w-full border p-2 rounded mb-2"><input id="lead-converted" type="date" class="w-full border p-2 rounded mb-2"><textarea id="lead-notes" rows="2" placeholder="Notes" class="w-full border p-2 rounded mb-3"></textarea><div class="flex justify-end gap-2"><button type="button" id="close-modal" class="px-3 py-1 border rounded">Cancel</button><button type="submit" class="px-3 py-1 bg-blue-600 text-white rounded">Save</button></div></form></div></div>
-    <div id="delete-modal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50"><div class="bg-white rounded-xl p-6 max-w-sm"><h3 class="text-lg font-bold">Confirm delete</h3><p>Delete this lead?</p><div class="flex justify-end gap-3 mt-5"><button id="cancel-delete" class="px-3 py-1 border rounded">Cancel</button><button id="confirm-delete" class="bg-red-600 text-white px-3 py-1 rounded">Delete</button></div></div></div>
+    <!-- ========================= CAC TARGET TAB ========================= -->
+    <div id="tab-cac" class="tab-content hidden">
+        <div class="bg-white p-6 rounded-xl shadow-md">
+            <h2 class="text-xl font-semibold mb-4">CAC Target & Leads Needed</h2>
+            <div class="grid md:grid-cols-3 gap-4 mb-4">
+                <div><label class="block text-sm font-medium">Target CAC (₦)</label><input type="number" id="target-cac" class="border rounded-lg w-full p-2"></div>
+                <div><label class="block text-sm font-medium">Target Revenue (₦)</label><input type="number" id="target-rev" class="border rounded-lg w-full p-2"></div>
+                <div><label class="block text-sm font-medium">Budget available (₦)</label><input type="number" id="target-budget" class="border rounded-lg w-full p-2"></div>
+            </div>
+            <button id="run-cac" class="bg-purple-600 text-white px-5 py-2 rounded-lg">Calculate & Advise</button>
+            <div id="cac-result" class="mt-5 p-4 bg-gray-50 rounded-lg hidden"></div>
+        </div>
+    </div>
 
-    <script>
-        // ==================== BACKEND CONFIGURATION ====================
-        const BACKEND_URL = 'https://kevsono-kevs-digital-bos.hf.space';
-        
-        // Auth & helpers
-        function forceLogout() {
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('refresh_token');
-            window.location.href = '/kdsiginin';
-        }
+    <!-- ========================= FORECAST TAB ========================= -->
+    <div id="tab-forecast" class="tab-content hidden">
+        <div class="bg-white p-6 rounded-xl shadow-md">
+            <h2 class="text-xl font-semibold mb-4">Revenue Forecast</h2>
+            <div class="grid md:grid-cols-3 gap-4 mb-5">
+                <div><label class="text-sm">Months</label><input type="number" id="forecast-months" value="6" class="border rounded-lg w-full p-2"></div>
+                <div><label class="text-sm">Monthly growth (%)</label><input type="number" id="forecast-growth" step="0.5" class="border rounded-lg w-full p-2"></div>
+                <div><label class="text-sm">Extra ad spend (₦)</label><input type="number" id="forecast-add-spend" class="border rounded-lg w-full p-2"></div>
+            </div>
+            <button id="run-forecast" class="bg-green-600 text-white px-5 py-2 rounded-lg">Generate forecast</button>
+            <div id="forecast-loading" class="hidden text-center py-4"><div class="loading-spinner mx-auto"></div></div>
+            <div class="mt-6"><canvas id="forecastChart" height="200"></canvas></div>
+            <div id="forecast-table" class="mt-5 overflow-x-auto"></div>
+        </div>
+    </div>
+</div>
 
-        let token = localStorage.getItem('access_token');
-        if (!token) forceLogout();
+<!-- Lead Modal -->
+<div id="lead-modal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50"><div class="bg-white rounded-2xl p-6 w-full max-w-md"><h3 id="modal-title" class="text-xl font-bold mb-3">Add Lead</h3><form id="lead-form"><input type="hidden" id="lead-id"><input id="lead-name" placeholder="Name*" class="w-full border p-2 rounded mb-2" required><input id="lead-email" placeholder="Email" class="w-full border p-2 rounded mb-2"><input id="lead-phone" placeholder="Phone" class="w-full border p-2 rounded mb-2"><input id="lead-source" placeholder="Source" class="w-full border p-2 rounded mb-2"><select id="lead-status" class="w-full border p-2 rounded mb-2"><option value="cold">Cold</option><option value="warm">Warm</option><option value="converted">Converted</option></select><input id="lead-deal" placeholder="Deal Value (₦)" class="w-full border p-2 rounded mb-2"><input id="lead-spend" placeholder="Ad Spend (₦)" class="w-full border p-2 rounded mb-2"><input id="lead-acquired" type="date" class="w-full border p-2 rounded mb-2"><input id="lead-converted" type="date" class="w-full border p-2 rounded mb-2"><textarea id="lead-notes" rows="2" placeholder="Notes" class="w-full border p-2 rounded mb-3"></textarea><div class="flex justify-end gap-2"><button type="button" id="close-modal" class="px-3 py-1 border rounded">Cancel</button><button type="submit" class="px-3 py-1 bg-blue-600 text-white rounded">Save</button></div></form></div></div>
+<div id="delete-modal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50"><div class="bg-white rounded-xl p-6 max-w-sm"><h3 class="text-lg font-bold">Confirm delete</h3><p>Delete this lead?</p><div class="flex justify-end gap-3 mt-5"><button id="cancel-delete" class="px-3 py-1 border rounded">Cancel</button><button id="confirm-delete" class="bg-red-600 text-white px-3 py-1 rounded">Delete</button></div></div></div>
 
-        let leadsCache = [], leadsPage = 0, limit = 20;
-        let pendingDeleteId = null;
-        let forecastChart = null;
+<script>
+    // ==================== BACKEND CONFIGURATION ====================
+    const BACKEND_URL = 'https://kevsono-kevs-digital-bos.hf.space';
+    
+    // Auth & helpers
+    function forceLogout() {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        window.location.href = '/kdsiginin';
+    }
 
-        // Pillar mapping for UI
-        const pillarNames = { 1: 'Customer intelligence', 2: 'Market & competitive', 3: 'Operations & capabilities', 4: 'Growth economics' };
-        
-        // Chat specific state
-        let chatHistory = [];   // stored for context
+    let token = localStorage.getItem('access_token');
+    if (!token) forceLogout();
 
-        // Toast notifications
-        function showToast(msg, type='success') {
-            const container = document.getElementById('toast-container');
-            const toast = document.createElement('div');
-            toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type==='success'?'bg-green-600':'bg-red-600'} mb-2 text-sm`;
-            toast.innerText = msg;
-            container.appendChild(toast);
-            setTimeout(() => toast.remove(), 3500);
-        }
+    let leadsCache = [], leadsPage = 0, limit = 20;
+    let pendingDeleteId = null;
+    let forecastChart = null;
 
-        // Unified API caller with refresh
-        async function apiCall(endpoint, method='GET', body=null, retry=true) {
-            const accessToken = localStorage.getItem('access_token');
-            const headers = { 'Content-Type': 'application/json' };
-            if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+    // Pillar mapping for UI
+    const pillarNames = { 1: 'Customer intelligence', 2: 'Market & competitive', 3: 'Operations & capabilities', 4: 'Growth economics' };
+    
+    // Chat specific state
+    let chatHistory = [];
 
-            const res = await fetch(`${BACKEND_URL}${endpoint}`, {
-                method,
-                headers,
-                body: body ? JSON.stringify(body) : undefined
-            });
+    // Toast notifications
+    function showToast(msg, type='success') {
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type==='success'?'bg-green-600':'bg-red-600'} mb-2 text-sm`;
+        toast.innerText = msg;
+        container.appendChild(toast);
+        setTimeout(() => toast.remove(), 3500);
+    }
 
-            if (res.status === 401) {
-                const refreshToken = localStorage.getItem('refresh_token');
-                if (refreshToken && retry) {
-                    try {
-                        const refreshRes = await fetch(`${BACKEND_URL}/auth/refresh`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ refresh_token: refreshToken })
-                        });
-                        if (refreshRes.ok) {
-                            const { access_token, refresh_token } = await refreshRes.json();
-                            localStorage.setItem('access_token', access_token);
-                            localStorage.setItem('refresh_token', refresh_token);
-                            return apiCall(endpoint, method, body, false);
-                        }
-                    } catch (e) {}
-                }
-                forceLogout();
-                throw new Error('Session expired');
-            }
+    // Unified API caller with refresh
+    async function apiCall(endpoint, method='GET', body=null, retry=true) {
+        const accessToken = localStorage.getItem('access_token');
+        const headers = { 'Content-Type': 'application/json' };
+        if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
 
-            if (!res.ok) {
-                const err = await res.json().catch(()=>({detail:'API error'}));
-                throw new Error(err.detail || 'API error');
-            }
-            return res.json();
-        }
-
-        // Escape HTML for chat safety
-        function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, function(m) { if (m === '&') return '&amp;'; if (m === '<') return '&lt;'; if (m === '>') return '&gt;'; return m; }); }
-
-        // ==================== ORGANISATION CONTEXT ====================
-        async function loadOrgContext() {
-            try {
-                const me = await apiCall('/auth/me');
-                const profile = await apiCall(`/support/customer-context?target_user_id=${me.user_id}`);
-                document.getElementById('org-name').innerText = profile.profile?.first_name ? `${profile.profile.first_name}'s Marketing Strategy Dashboard` : 'Kevs Digital BI';
-                document.getElementById('org-meta').innerHTML = `${profile.profile?.email || ''} | Points: ${profile.loyalty?.current_points || 0}`;
-                document.getElementById('usage-badge').innerHTML = `<i class="fas fa-chart-line"></i> Active Plan · ${profile.loyalty?.current_points || 0} pts`;
-                return true;
-            } catch(e) { console.error(e); return false; }
-        }
-
-        // ==================== LEADS MANAGEMENT ====================
-        async function loadLeads() {
-            const loading = document.getElementById('leads-loading');
-            const tableDiv = document.querySelector('#tab-leads .overflow-x-auto');
-            loading.classList.remove('hidden'); tableDiv.classList.add('hidden');
-            try {
-                let url = `/leads?limit=${limit}&offset=${leadsPage * limit}`;
-                const status = document.getElementById('lead-status-filter').value;
-                const source = document.getElementById('lead-source-filter').value;
-                if (status) url += `&status=${status}`;
-                if (source) url += `&source=${encodeURIComponent(source)}`;
-                const res = await apiCall(url);
-                leadsCache = res.leads;
-                const tbody = document.getElementById('leads-table-body');
-                tbody.innerHTML = '';
-                for (let l of leadsCache) {
-                    const row = tbody.insertRow();
-                    row.insertCell(0).innerHTML = `<div class="font-medium">${escapeHtml(l.name)}</div>`;
-                    row.insertCell(1).innerHTML = l.email || '-';
-                    row.insertCell(2).innerHTML = l.source || '-';
-                    row.insertCell(3).innerHTML = `<span class="px-2 py-1 rounded-full text-xs ${l.status==='converted'?'bg-green-100 text-green-800':l.status==='warm'?'bg-yellow-100':'bg-gray-200'}">${l.status}</span>`;
-                    row.insertCell(4).innerHTML = l.deal_value ? `₦${l.deal_value.toLocaleString()}` : '-';
-                    row.insertCell(5).innerHTML = l.ad_spend ? `₦${l.ad_spend.toLocaleString()}` : '-';
-                    row.insertCell(6).innerHTML = `<button class="text-blue-600 mr-2 edit-lead" data-id="${l.id}"><i class="fas fa-edit"></i></button><button class="text-red-600 delete-lead-btn" data-id="${l.id}"><i class="fas fa-trash"></i></button>`;
-                }
-                document.getElementById('page-info').innerText = `Page ${leadsPage+1}`;
-                document.getElementById('prev-page').disabled = leadsPage === 0;
-                attachLeadActions();
-            } catch(e) { showToast(e.message, 'error'); } finally { loading.classList.add('hidden'); tableDiv.classList.remove('hidden'); }
-        }
-
-        function attachLeadActions() {
-            document.querySelectorAll('.edit-lead').forEach(btn => btn.onclick = () => editLeadById(btn.dataset.id));
-            document.querySelectorAll('.delete-lead-btn').forEach(btn => btn.onclick = () => { pendingDeleteId = btn.dataset.id; document.getElementById('delete-modal').classList.remove('hidden'); });
-        }
-        function editLeadById(id) { const lead = leadsCache.find(l => l.id == id); if (lead) openLeadModal(lead); else showToast('Lead not found','error'); }
-        async function saveLead() {
-            const id = document.getElementById('lead-id').value;
-            const data = { name: document.getElementById('lead-name').value, email: document.getElementById('lead-email').value || null, phone: document.getElementById('lead-phone').value || null, source: document.getElementById('lead-source').value || null, status: document.getElementById('lead-status').value, deal_value: parseFloat(document.getElementById('lead-deal').value) || null, ad_spend: parseFloat(document.getElementById('lead-spend').value) || null, acquired_date: document.getElementById('lead-acquired').value || null, conversion_date: document.getElementById('lead-converted').value || null, notes: document.getElementById('lead-notes').value || null };
-            if (id) await apiCall(`/leads/${id}`, 'PATCH', data);
-            else await apiCall('/leads', 'POST', data);
-            document.getElementById('lead-modal').classList.add('hidden');
-            loadLeads();
-            showToast('Lead saved');
-            if (!document.getElementById('tab-metrics').classList.contains('hidden')) loadMetrics();
-        }
-        function openLeadModal(lead=null) {
-            const modal = document.getElementById('lead-modal');
-            document.getElementById('modal-title').innerText = lead ? 'Edit Lead' : 'Add Lead';
-            if (lead) {
-                document.getElementById('lead-id').value = lead.id;
-                document.getElementById('lead-name').value = lead.name;
-                document.getElementById('lead-email').value = lead.email || '';
-                document.getElementById('lead-phone').value = lead.phone || '';
-                document.getElementById('lead-source').value = lead.source || '';
-                document.getElementById('lead-status').value = lead.status;
-                document.getElementById('lead-deal').value = lead.deal_value || '';
-                document.getElementById('lead-spend').value = lead.ad_spend || '';
-                document.getElementById('lead-acquired').value = lead.acquired_date?.split('T')[0] || '';
-                document.getElementById('lead-converted').value = lead.conversion_date?.split('T')[0] || '';
-                document.getElementById('lead-notes').value = lead.notes || '';
-            } else document.getElementById('lead-form').reset();
-            modal.classList.remove('hidden');
-        }
-        async function deleteLead() { if (pendingDeleteId) { await apiCall(`/leads/${pendingDeleteId}`, 'DELETE'); loadLeads(); showToast('Lead deleted'); } closeDeleteModal(); }
-        function closeDeleteModal() { document.getElementById('delete-modal').classList.add('hidden'); pendingDeleteId = null; }
-
-        async function loadSourceFilter() {
-            try {
-                const leads = await apiCall('/leads?limit=1000');
-                const sources = [...new Set(leads.leads.map(l => l.source).filter(Boolean))];
-                const select = document.getElementById('lead-source-filter');
-                select.innerHTML = '<option value="">All sources</option>' + sources.map(s => `<option value="${s}">${s}</option>`).join('');
-            } catch(e) { console.warn(e); }
-        }
-
-        // ==================== METRICS ====================
-        async function loadMetrics() {
-            const loading = document.getElementById('metrics-loading');
-            const content = document.getElementById('metrics-content');
-            loading.classList.remove('hidden'); content.classList.add('hidden');
-            try {
-                const data = await apiCall('/leads/metrics');
-                const m = data.metrics;
-                document.getElementById('metric-total-leads').innerText = m.total_leads;
-                document.getElementById('metric-conversion-rate').innerText = `${m.conversion_rate}%`;
-                document.getElementById('metric-cac').innerText = `₦${m.actual_cac.toLocaleString()}`;
-                document.getElementById('metric-roi').innerText = `${m.roi}%`;
-                document.getElementById('metric-pipeline').innerText = `₦${m.pipeline_value.toLocaleString()}`;
-                document.getElementById('metric-dq').innerText = m.data_quality;
-                const topSources = data.top_sources || [];
-                document.getElementById('top-sources-list').innerHTML = topSources.map(s => `<div class="flex justify-between border-b py-1"><span>${s.source}</span><span>${s.converted}/${s.total} (${s.conv_rate}%)</span></div>`).join('');
-            } catch(e) { showToast(e.message, 'error'); } finally { loading.classList.add('hidden'); content.classList.remove('hidden'); }
-        }
-
-        // ==================== CAC TARGET ====================
-        async function runCac() {
-            const targetCac = parseFloat(document.getElementById('target-cac').value);
-            if (!targetCac) return showToast('Enter target CAC', 'error');
-            try {
-                const res = await apiCall('/leads/cac-target', 'POST', { target_cac: targetCac, target_revenue: parseFloat(document.getElementById('target-rev').value) || null, available_budget: parseFloat(document.getElementById('target-budget').value) || null });
-                const resultDiv = document.getElementById('cac-result');
-                resultDiv.classList.remove('hidden');
-                resultDiv.innerHTML = formatCacResult(res.analysis, res.advisory);
-            } catch(e) { showToast(e.message, 'error'); }
-        }
-        function formatCacResult(analysis, advisory) {
-            let html = `<div class="space-y-3"><div class="bg-white p-3 rounded shadow"><strong>📊 Current CAC:</strong> ₦${analysis.current_cac?.toLocaleString()} &nbsp;| <strong>Target:</strong> ₦${analysis.target_cac?.toLocaleString()}</div>`;
-            if (analysis.budget_scenario) html += `<div class="bg-blue-50 p-3 rounded"><strong>💰 Budget scenario:</strong><br/>Leads to acquire: ${analysis.budget_scenario.leads_to_acquire}<br/>Expected revenue: ₦${analysis.budget_scenario.expected_revenue?.toLocaleString()}</div>`;
-            if (analysis.revenue_scenario) html += `<div class="bg-green-50 p-3 rounded"><strong>🎯 Revenue scenario:</strong><br/>Conversions needed: ${analysis.revenue_scenario.conversions_needed}<br/>Leads needed: ${analysis.revenue_scenario.leads_needed}</div>`;
-            html += `<div class="bg-gray-100 p-3 rounded">${advisory}</div></div>`;
-            return html;
-        }
-
-        // ==================== FORECAST ====================
-        async function runForecast() {
-            const months = parseInt(document.getElementById('forecast-months').value);
-            const growth = parseFloat(document.getElementById('forecast-growth').value) || null;
-            const addSpend = parseFloat(document.getElementById('forecast-add-spend').value) || null;
-            const loadingDiv = document.getElementById('forecast-loading');
-            const chartCanvas = document.getElementById('forecastChart');
-            const tableDiv = document.getElementById('forecast-table');
-            loadingDiv.classList.remove('hidden'); chartCanvas.classList.add('hidden'); tableDiv.innerHTML = '';
-            try {
-                const res = await apiCall('/analytics/forecast', 'POST', { months, target_growth_rate: growth, additional_ad_spend: addSpend });
-                const labels = res.forecast.map(f => `M${f.month}`);
-                const revenues = res.forecast.map(f => f.revenue);
-                if (forecastChart) forecastChart.destroy();
-                const ctx = chartCanvas.getContext('2d');
-                forecastChart = new Chart(ctx, { type: 'line', data: { labels, datasets: [{ label: 'Monthly Revenue (₦)', data: revenues, borderColor: '#f97316', fill: false }] } });
-                let html = '<table class="min-w-full text-sm"><thead><tr><th>Month</th><th>Leads</th><th>Conversions</th><th>Revenue</th><th>Cumulative</th></tr></thead><tbody>';
-                res.forecast.forEach(f => { html += `<tr><td>${f.month}</td><td>${f.leads_generated}</td><td>${f.conversions}</td><td>₦${f.revenue.toFixed(0)}</td><td>₦${f.cumulative_revenue.toFixed(0)}</td></tr>`; });
-                html += '</tbody></table>';
-                tableDiv.innerHTML = html;
-                chartCanvas.classList.remove('hidden');
-            } catch(e) { showToast(`Forecast failed: ${e.message}`, 'error'); } finally { loadingDiv.classList.add('hidden'); }
-        }
-
-        // ==================== STRATEGY CHAT (FULL INTEGRATION) ====================
-        function appendChatMessage(role, content, pillarInfo = null) {
-            if (!content) content = "(empty response)";
-            const messagesDiv = document.getElementById('chat-messages');
-            const div = document.createElement('div');
-            div.className = `p-3 rounded-lg mb-2 ${role === 'user' ? 'bg-blue-100 text-right ml-8' : 'bg-gray-100 mr-8'}`;
-            let html = `<div class="flex justify-between items-center"><strong class="text-sm">${role === 'user' ? 'You' : '🧠 Kevs Strategy AI'}</strong>`;
-            if (pillarInfo && pillarInfo.pillar_name && role === 'assistant') html += `<span class="text-xs text-gray-400">Lens: ${pillarInfo.pillar_name}</span>`;
-            html += `</div><div class="text-sm mt-1">${escapeHtml(content).replace(/\n/g, '<br/>')}</div>`;
-            div.innerHTML = html;
-            messagesDiv.appendChild(div);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        }
-
-        async function loadChatHistory() {
-            try {
-                const hist = await apiCall('/intelligence/history?limit=30');
-                const container = document.getElementById('chat-messages');
-                container.innerHTML = '';
-                chatHistory = [];
-                const messages = hist.history || [];
-                for (let i = messages.length-1; i >=0; i--) {
-                    const item = messages[i];
-                    if (item.query) {
-                        appendChatMessage('user', item.query);
-                        chatHistory.push({ role: 'user', content: item.query });
-                    }
-                    if (item.response) {
-                        const pillarInfo = item.pillar ? { pillar: item.pillar, pillar_name: pillarNames[item.pillar] } : null;
-                        appendChatMessage('assistant', item.response, pillarInfo);
-                        chatHistory.push({ role: 'assistant', content: item.response, pillar: item.pillar });
-                    }
-                }
-                if (chatHistory.length === 0) {
-                    const welcome = "Hello! I'm your strategic BI advisor. Ask me about lead conversion optimization, CAC reduction, market trends, or growth strategies. You can also select a specific strategic lens above.";
-                    appendChatMessage('assistant', welcome);
-                    chatHistory.push({ role: 'assistant', content: welcome });
-                }
-                document.getElementById('chat-usage-stats').innerHTML = `<i class="fas fa-history"></i> ${chatHistory.length/2} exchanges loaded`;
-            } catch(e) {
-                console.warn("Chat history load:", e);
-                appendChatMessage('assistant', "Welcome to Strategy Chat! Ask me anything about your leads, revenue, or market positioning.");
-            }
-        }
-
-        async function sendChatMessage() {
-            const input = document.getElementById('chat-input');
-            const msg = input.value.trim();
-            if (!msg) return;
-            appendChatMessage('user', msg);
-            input.value = '';
-            const sendBtn = document.getElementById('send-chat');
-            sendBtn.disabled = true;
-            try {
-                const mode = document.getElementById('chat-mode').value;
-                const forcePillar = document.getElementById('force-pillar').value ? parseInt(document.getElementById('force-pillar').value) : null;
-                const payload = {
-                    message: msg,
-                    history: chatHistory.slice(-12).map(h => ({ role: h.role, content: h.content })),
-                    report_mode: mode,
-                    force_pillar: forcePillar
-                };
-                const res = await apiCall('/intelligence/chat', 'POST', payload);
-                const pillarMeta = res.meta?.pillar ? { pillar: res.meta.pillar, pillar_name: pillarNames[res.meta.pillar] } : null;
-                appendChatMessage('assistant', res.response, pillarMeta);
-                chatHistory.push({ role: 'user', content: msg });
-                chatHistory.push({ role: 'assistant', content: res.response, pillar: res.meta?.pillar });
-                if (res.usage) {
-                    document.getElementById('chat-usage-stats').innerHTML = `<i class="fas fa-chart-simple"></i> Used: ${res.usage.requests_used || '?'} / ${res.usage.limit || 'unlimited'}`;
-                }
-            } catch(e) {
-                showToast(`AI error: ${e.message}`, 'error');
-                appendChatMessage('assistant', "Sorry, I encountered an issue. Please try again later.");
-            } finally {
-                sendBtn.disabled = false;
-            }
-        }
-
-        function clearChat() {
-            document.getElementById('chat-messages').innerHTML = '';
-            chatHistory = [];
-            appendChatMessage('assistant', "Conversation cleared. How can I help with your business strategy today?");
-            document.getElementById('chat-usage-stats').innerHTML = "Ready";
-        }
-
-        // ==================== TAB SWITCHING ====================
-        function switchTab(tabId) {
-            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
-            document.getElementById(`tab-${tabId}`).classList.remove('hidden');
-            document.querySelectorAll('.tab-btn').forEach(btn => { btn.classList.remove('bg-orange-50', 'text-orange-700'); btn.classList.add('text-gray-600'); });
-            const activeBtn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
-            if (activeBtn) activeBtn.classList.add('bg-orange-50', 'text-orange-700');
-            if (tabId === 'leads') loadLeads();
-            if (tabId === 'metrics') loadMetrics();
-            if (tabId === 'chat' && document.getElementById('chat-messages').children.length === 0) loadChatHistory();
-        }
-
-        // ==================== EVENT LISTENERS ====================
-        document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
-        document.getElementById('add-lead-btn')?.addEventListener('click', () => openLeadModal(null));
-        document.getElementById('refresh-metrics')?.addEventListener('click', loadMetrics);
-        document.getElementById('run-cac')?.addEventListener('click', runCac);
-        document.getElementById('run-forecast')?.addEventListener('click', runForecast);
-        document.getElementById('send-chat')?.addEventListener('click', sendChatMessage);
-        document.getElementById('chat-input')?.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendChatMessage(); });
-        document.getElementById('clear-chat')?.addEventListener('click', clearChat);
-        document.getElementById('confirm-delete')?.addEventListener('click', deleteLead);
-        document.getElementById('cancel-delete')?.addEventListener('click', closeDeleteModal);
-        document.getElementById('prev-page')?.addEventListener('click', () => { if (leadsPage > 0) { leadsPage--; loadLeads(); } });
-        document.getElementById('next-page')?.addEventListener('click', () => { leadsPage++; loadLeads(); });
-        document.getElementById('lead-status-filter')?.addEventListener('change', () => { leadsPage = 0; loadLeads(); });
-        document.getElementById('lead-source-filter')?.addEventListener('change', () => { leadsPage = 0; loadLeads(); });
-        document.getElementById('close-modal')?.addEventListener('click', () => document.getElementById('lead-modal').classList.add('hidden'));
-        document.getElementById('lead-form')?.addEventListener('submit', (e) => { e.preventDefault(); saveLead(); });
-        document.getElementById('logout-btn')?.addEventListener('click', () => { localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token'); window.location.href = '/kdsiginin'; });
-        document.getElementById('csv-upload')?.addEventListener('change', async (e) => {
-            if (!e.target.files[0]) return;
-            const formData = new FormData(); formData.append('file', e.target.files[0]);
-            const accessToken = localStorage.getItem('access_token');
-            const res = await fetch(`${BACKEND_URL}/leads/upload`, { method: 'POST', headers: { 'Authorization': `Bearer ${accessToken}` }, body: formData });
-            if (res.ok) { showToast('CSV uploaded'); loadLeads(); } else showToast('Upload failed', 'error');
+        const res = await fetch(`${BACKEND_URL}${endpoint}`, {
+            method,
+            headers,
+            body: body ? JSON.stringify(body) : undefined
         });
 
-        // Load user info badge
-        async function loadUserInfo() {
-            try {
-                const me = await apiCall('/auth/me');
-                const context = await apiCall(`/support/customer-context?target_user_id=${me.user_id}`);
-                const name = context.profile?.first_name || 'User';
-                document.getElementById('user-badge').innerHTML = `<i class="fas fa-user-circle"></i> ${name}`;
-            } catch(e) {}
+        if (res.status === 401) {
+            const refreshToken = localStorage.getItem('refresh_token');
+            if (refreshToken && retry) {
+                try {
+                    const refreshRes = await fetch(`${BACKEND_URL}/auth/refresh`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ refresh_token: refreshToken })
+                    });
+                    if (refreshRes.ok) {
+                        const { access_token, refresh_token } = await refreshRes.json();
+                        localStorage.setItem('access_token', access_token);
+                        localStorage.setItem('refresh_token', refresh_token);
+                        return apiCall(endpoint, method, body, false);
+                    }
+                } catch (e) {}
+            }
+            forceLogout();
+            throw new Error('Session expired');
         }
-        
-        // Bootstrap
-        (async () => {
-            try {
-                await loadOrgContext();
-                await loadLeads();
-                await loadMetrics();
-                await loadSourceFilter();
-                await loadUserInfo();
-                switchTab('leads');
-            } catch(e) { console.error(e); showToast("Failed to initialise dashboard", "error"); }
-        })();
-    </script>
+
+        if (!res.ok) {
+            const err = await res.json().catch(()=>({detail:'API error'}));
+            throw new Error(err.detail || 'API error');
+        }
+        return res.json();
+    }
+
+    function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, function(m) { if (m === '&') return '&amp;'; if (m === '<') return '&lt;'; if (m === '>') return '&gt;'; return m; }); }
+
+    // ==================== ORGANISATION CONTEXT ====================
+    async function loadOrgContext() {
+        try {
+            const me = await apiCall('/auth/me');
+            const profile = await apiCall(`/support/customer-context?target_user_id=${me.user_id}`);
+            document.getElementById('org-name').innerHTML = profile.profile?.first_name ? `${profile.profile.first_name}'s Marketing Strategy Dashboard` : 'Kevs Digital BI';
+            document.getElementById('org-meta').innerHTML = `${profile.profile?.email || ''} | Points: ${profile.loyalty?.current_points || 0}`;
+            document.getElementById('usage-badge').innerHTML = `<i class="fas fa-chart-line"></i> Active Plan · ${profile.loyalty?.current_points || 0} pts`;
+            return true;
+        } catch(e) { console.error(e); return false; }
+    }
+
+    // ==================== LEADS MANAGEMENT ====================
+    async function loadLeads() {
+        const loading = document.getElementById('leads-loading');
+        const tableDiv = document.querySelector('#tab-leads .overflow-x-auto');
+        loading.classList.remove('hidden'); tableDiv.classList.add('hidden');
+        try {
+            let url = `/leads?limit=${limit}&offset=${leadsPage * limit}`;
+            const status = document.getElementById('lead-status-filter').value;
+            const source = document.getElementById('lead-source-filter').value;
+            if (status) url += `&status=${status}`;
+            if (source) url += `&source=${encodeURIComponent(source)}`;
+            const res = await apiCall(url);
+            leadsCache = res.leads;
+            const tbody = document.getElementById('leads-table-body');
+            tbody.innerHTML = '';
+            for (let l of leadsCache) {
+                const row = tbody.insertRow();
+                row.insertCell(0).innerHTML = `<div class="font-medium">${escapeHtml(l.name)}</div>`;
+                row.insertCell(1).innerHTML = l.email || '-';
+                row.insertCell(2).innerHTML = l.source || '-';
+                row.insertCell(3).innerHTML = `<span class="px-2 py-1 rounded-full text-xs ${l.status==='converted'?'bg-green-100 text-green-800':l.status==='warm'?'bg-yellow-100':'bg-gray-200'}">${l.status}</span>`;
+                row.insertCell(4).innerHTML = l.deal_value ? `₦${l.deal_value.toLocaleString()}` : '-';
+                row.insertCell(5).innerHTML = l.ad_spend ? `₦${l.ad_spend.toLocaleString()}` : '-';
+                row.insertCell(6).innerHTML = `<button class="text-blue-600 mr-2 edit-lead" data-id="${l.id}"><i class="fas fa-edit"></i></button><button class="text-red-600 delete-lead-btn" data-id="${l.id}"><i class="fas fa-trash"></i></button>`;
+            }
+            document.getElementById('page-info').innerText = `Page ${leadsPage+1}`;
+            document.getElementById('prev-page').disabled = leadsPage === 0;
+            attachLeadActions();
+        } catch(e) { showToast(e.message, 'error'); } finally { loading.classList.add('hidden'); tableDiv.classList.remove('hidden'); }
+    }
+
+    function attachLeadActions() {
+        document.querySelectorAll('.edit-lead').forEach(btn => btn.onclick = () => editLeadById(btn.dataset.id));
+        document.querySelectorAll('.delete-lead-btn').forEach(btn => btn.onclick = () => { pendingDeleteId = btn.dataset.id; document.getElementById('delete-modal').classList.remove('hidden'); });
+    }
+    function editLeadById(id) { const lead = leadsCache.find(l => l.id == id); if (lead) openLeadModal(lead); else showToast('Lead not found','error'); }
+    async function saveLead() {
+        const id = document.getElementById('lead-id').value;
+        const data = { name: document.getElementById('lead-name').value, email: document.getElementById('lead-email').value || null, phone: document.getElementById('lead-phone').value || null, source: document.getElementById('lead-source').value || null, status: document.getElementById('lead-status').value, deal_value: parseFloat(document.getElementById('lead-deal').value) || null, ad_spend: parseFloat(document.getElementById('lead-spend').value) || null, acquired_date: document.getElementById('lead-acquired').value || null, conversion_date: document.getElementById('lead-converted').value || null, notes: document.getElementById('lead-notes').value || null };
+        if (id) await apiCall(`/leads/${id}`, 'PATCH', data);
+        else await apiCall('/leads', 'POST', data);
+        document.getElementById('lead-modal').classList.add('hidden');
+        loadLeads();
+        showToast('Lead saved');
+        if (!document.getElementById('tab-metrics').classList.contains('hidden')) loadMetrics();
+    }
+    function openLeadModal(lead=null) {
+        const modal = document.getElementById('lead-modal');
+        document.getElementById('modal-title').innerText = lead ? 'Edit Lead' : 'Add Lead';
+        if (lead) {
+            document.getElementById('lead-id').value = lead.id;
+            document.getElementById('lead-name').value = lead.name;
+            document.getElementById('lead-email').value = lead.email || '';
+            document.getElementById('lead-phone').value = lead.phone || '';
+            document.getElementById('lead-source').value = lead.source || '';
+            document.getElementById('lead-status').value = lead.status;
+            document.getElementById('lead-deal').value = lead.deal_value || '';
+            document.getElementById('lead-spend').value = lead.ad_spend || '';
+            document.getElementById('lead-acquired').value = lead.acquired_date?.split('T')[0] || '';
+            document.getElementById('lead-converted').value = lead.conversion_date?.split('T')[0] || '';
+            document.getElementById('lead-notes').value = lead.notes || '';
+        } else document.getElementById('lead-form').reset();
+        modal.classList.remove('hidden');
+    }
+    async function deleteLead() { if (pendingDeleteId) { await apiCall(`/leads/${pendingDeleteId}`, 'DELETE'); loadLeads(); showToast('Lead deleted'); } closeDeleteModal(); }
+    function closeDeleteModal() { document.getElementById('delete-modal').classList.add('hidden'); pendingDeleteId = null; }
+
+    async function loadSourceFilter() {
+        try {
+            const leads = await apiCall('/leads?limit=1000');
+            const sources = [...new Set(leads.leads.map(l => l.source).filter(Boolean))];
+            const select = document.getElementById('lead-source-filter');
+            select.innerHTML = '<option value="">All sources</option>' + sources.map(s => `<option value="${s}">${s}</option>`).join('');
+        } catch(e) { console.warn(e); }
+    }
+
+    // ==================== METRICS ====================
+    async function loadMetrics() {
+        const loading = document.getElementById('metrics-loading');
+        const content = document.getElementById('metrics-content');
+        loading.classList.remove('hidden'); content.classList.add('hidden');
+        try {
+            const data = await apiCall('/leads/metrics');
+            const m = data.metrics;
+            document.getElementById('metric-total-leads').innerText = m.total_leads;
+            document.getElementById('metric-conversion-rate').innerText = `${m.conversion_rate}%`;
+            document.getElementById('metric-cac').innerText = `₦${m.actual_cac.toLocaleString()}`;
+            document.getElementById('metric-roi').innerText = `${m.roi}%`;
+            document.getElementById('metric-pipeline').innerText = `₦${m.pipeline_value.toLocaleString()}`;
+            document.getElementById('metric-dq').innerText = m.data_quality;
+            const topSources = data.top_sources || [];
+            document.getElementById('top-sources-list').innerHTML = topSources.map(s => `<div class="flex justify-between border-b py-1"><span>${s.source}</span><span>${s.converted}/${s.total} (${s.conv_rate}%)</span></div>`).join('');
+        } catch(e) { showToast(e.message, 'error'); } finally { loading.classList.add('hidden'); content.classList.remove('hidden'); }
+    }
+
+    // ==================== CAC TARGET ====================
+    async function runCac() {
+        const targetCac = parseFloat(document.getElementById('target-cac').value);
+        if (!targetCac) return showToast('Enter target CAC', 'error');
+        try {
+            const res = await apiCall('/leads/cac-target', 'POST', { target_cac: targetCac, target_revenue: parseFloat(document.getElementById('target-rev').value) || null, available_budget: parseFloat(document.getElementById('target-budget').value) || null });
+            const resultDiv = document.getElementById('cac-result');
+            resultDiv.classList.remove('hidden');
+            resultDiv.innerHTML = formatCacResult(res.analysis, res.advisory);
+        } catch(e) { showToast(e.message, 'error'); }
+    }
+    function formatCacResult(analysis, advisory) {
+        let html = `<div class="space-y-3"><div class="bg-white p-3 rounded shadow"><strong>📊 Current CAC:</strong> ₦${analysis.current_cac?.toLocaleString()} &nbsp;| <strong>Target:</strong> ₦${analysis.target_cac?.toLocaleString()}</div>`;
+        if (analysis.budget_scenario) html += `<div class="bg-blue-50 p-3 rounded"><strong>💰 Budget scenario:</strong><br/>Leads to acquire: ${analysis.budget_scenario.leads_to_acquire}<br/>Expected revenue: ₦${analysis.budget_scenario.expected_revenue?.toLocaleString()}</div>`;
+        if (analysis.revenue_scenario) html += `<div class="bg-green-50 p-3 rounded"><strong>🎯 Revenue scenario:</strong><br/>Conversions needed: ${analysis.revenue_scenario.conversions_needed}<br/>Leads needed: ${analysis.revenue_scenario.leads_needed}</div>`;
+        html += `<div class="bg-gray-100 p-3 rounded">${advisory}</div></div>`;
+        return html;
+    }
+
+    // ==================== FORECAST ====================
+    async function runForecast() {
+        const months = parseInt(document.getElementById('forecast-months').value);
+        const growth = parseFloat(document.getElementById('forecast-growth').value) || null;
+        const addSpend = parseFloat(document.getElementById('forecast-add-spend').value) || null;
+        const loadingDiv = document.getElementById('forecast-loading');
+        const chartCanvas = document.getElementById('forecastChart');
+        const tableDiv = document.getElementById('forecast-table');
+        loadingDiv.classList.remove('hidden'); chartCanvas.classList.add('hidden'); tableDiv.innerHTML = '';
+        try {
+            const res = await apiCall('/analytics/forecast', 'POST', { months, target_growth_rate: growth, additional_ad_spend: addSpend });
+            const labels = res.forecast.map(f => `M${f.month}`);
+            const revenues = res.forecast.map(f => f.revenue);
+            if (forecastChart) forecastChart.destroy();
+            const ctx = chartCanvas.getContext('2d');
+            forecastChart = new Chart(ctx, { type: 'line', data: { labels, datasets: [{ label: 'Monthly Revenue (₦)', data: revenues, borderColor: '#f97316', fill: false }] } });
+            let html = '<table class="min-w-full text-sm"><thead><tr><th>Month</th><th>Leads</th><th>Conversions</th><th>Revenue</th><th>Cumulative</th></tr></thead><tbody>';
+            res.forecast.forEach(f => { html += `<tr><td>${f.month}</td><td>${f.leads_generated}</td><td>${f.conversions}</td><td>₦${f.revenue.toFixed(0)}</td><td>₦${f.cumulative_revenue.toFixed(0)}</td></tr>`; });
+            html += '</tbody></table>';
+            tableDiv.innerHTML = html;
+            chartCanvas.classList.remove('hidden');
+        } catch(e) { showToast(`Forecast failed: ${e.message}`, 'error'); } finally { loadingDiv.classList.add('hidden'); }
+    }
+
+    // ==================== STRATEGY CHAT ====================
+    function appendChatMessage(role, content, pillarInfo = null) {
+        if (!content) content = "(empty response)";
+        const messagesDiv = document.getElementById('chat-messages');
+        const div = document.createElement('div');
+        div.className = `p-3 rounded-lg mb-2 ${role === 'user' ? 'bg-blue-100 text-right ml-8' : 'bg-gray-100 mr-8'}`;
+        let html = `<div class="flex justify-between items-center"><strong class="text-sm">${role === 'user' ? 'You' : '🧠 Kevs Strategy AI'}</strong>`;
+        if (pillarInfo && pillarInfo.pillar_name && role === 'assistant') html += `<span class="text-xs text-gray-400">Lens: ${pillarInfo.pillar_name}</span>`;
+        html += `</div><div class="text-sm mt-1">${escapeHtml(content).replace(/\n/g, '<br/>')}</div>`;
+        div.innerHTML = html;
+        messagesDiv.appendChild(div);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    async function loadChatHistory() {
+        try {
+            const hist = await apiCall('/intelligence/history?limit=30');
+            const container = document.getElementById('chat-messages');
+            container.innerHTML = '';
+            chatHistory = [];
+            const messages = hist.history || [];
+            for (let i = messages.length-1; i >=0; i--) {
+                const item = messages[i];
+                if (item.query) {
+                    appendChatMessage('user', item.query);
+                    chatHistory.push({ role: 'user', content: item.query });
+                }
+                if (item.response) {
+                    const pillarInfo = item.pillar ? { pillar: item.pillar, pillar_name: pillarNames[item.pillar] } : null;
+                    appendChatMessage('assistant', item.response, pillarInfo);
+                    chatHistory.push({ role: 'assistant', content: item.response, pillar: item.pillar });
+                }
+            }
+            if (chatHistory.length === 0) {
+                const welcome = "Hello! I'm your strategic BI advisor. Ask me about lead conversion optimization, CAC reduction, market trends, or growth strategies. You can also select a specific strategic lens above.";
+                appendChatMessage('assistant', welcome);
+                chatHistory.push({ role: 'assistant', content: welcome });
+            }
+            document.getElementById('chat-usage-stats').innerHTML = `<i class="fas fa-history"></i> ${chatHistory.length/2} exchanges loaded`;
+        } catch(e) {
+            console.warn("Chat history load:", e);
+            appendChatMessage('assistant', "Welcome to Strategy Chat! Ask me anything about your leads, revenue, or market positioning.");
+        }
+    }
+
+    async function sendChatMessage() {
+        const input = document.getElementById('chat-input');
+        const msg = input.value.trim();
+        if (!msg) return;
+        appendChatMessage('user', msg);
+        input.value = '';
+        const sendBtn = document.getElementById('send-chat');
+        sendBtn.disabled = true;
+        try {
+            const mode = document.getElementById('chat-mode').value;
+            const forcePillar = document.getElementById('force-pillar').value ? parseInt(document.getElementById('force-pillar').value) : null;
+            const payload = {
+                message: msg,
+                history: chatHistory.slice(-12).map(h => ({ role: h.role, content: h.content })),
+                report_mode: mode,
+                force_pillar: forcePillar
+            };
+            const res = await apiCall('/intelligence/chat', 'POST', payload);
+            const pillarMeta = res.meta?.pillar ? { pillar: res.meta.pillar, pillar_name: pillarNames[res.meta.pillar] } : null;
+            appendChatMessage('assistant', res.response, pillarMeta);
+            chatHistory.push({ role: 'user', content: msg });
+            chatHistory.push({ role: 'assistant', content: res.response, pillar: res.meta?.pillar });
+            if (res.usage) {
+                document.getElementById('chat-usage-stats').innerHTML = `<i class="fas fa-chart-simple"></i> Used: ${res.usage.requests_used || '?'} / ${res.usage.limit || 'unlimited'}`;
+            }
+        } catch(e) {
+            showToast(`AI error: ${e.message}`, 'error');
+            appendChatMessage('assistant', "Sorry, I encountered an issue. Please try again later.");
+        } finally {
+            sendBtn.disabled = false;
+        }
+    }
+
+    function clearChat() {
+        document.getElementById('chat-messages').innerHTML = '';
+        chatHistory = [];
+        appendChatMessage('assistant', "Conversation cleared. How can I help with your business strategy today?");
+        document.getElementById('chat-usage-stats').innerHTML = "Ready";
+    }
+
+    // ==================== TAB SWITCHING ====================
+    function switchTab(tabId) {
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+        document.getElementById(`tab-${tabId}`).classList.remove('hidden');
+        document.querySelectorAll('.tab-btn').forEach(btn => { btn.classList.remove('bg-orange-50', 'text-orange-700'); btn.classList.add('text-gray-600'); });
+        const activeBtn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+        if (activeBtn) activeBtn.classList.add('bg-orange-50', 'text-orange-700');
+        if (tabId === 'leads') loadLeads();
+        if (tabId === 'metrics') loadMetrics();
+        if (tabId === 'chat' && document.getElementById('chat-messages').children.length === 0) loadChatHistory();
+    }
+
+    // ==================== EVENT LISTENERS ====================
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+    document.getElementById('add-lead-btn')?.addEventListener('click', () => openLeadModal(null));
+    document.getElementById('refresh-metrics')?.addEventListener('click', loadMetrics);
+    document.getElementById('run-cac')?.addEventListener('click', runCac);
+    document.getElementById('run-forecast')?.addEventListener('click', runForecast);
+    document.getElementById('send-chat')?.addEventListener('click', sendChatMessage);
+    document.getElementById('chat-input')?.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendChatMessage(); });
+    document.getElementById('clear-chat')?.addEventListener('click', clearChat);
+    document.getElementById('confirm-delete')?.addEventListener('click', deleteLead);
+    document.getElementById('cancel-delete')?.addEventListener('click', closeDeleteModal);
+    document.getElementById('prev-page')?.addEventListener('click', () => { if (leadsPage > 0) { leadsPage--; loadLeads(); } });
+    document.getElementById('next-page')?.addEventListener('click', () => { leadsPage++; loadLeads(); });
+    document.getElementById('lead-status-filter')?.addEventListener('change', () => { leadsPage = 0; loadLeads(); });
+    document.getElementById('lead-source-filter')?.addEventListener('change', () => { leadsPage = 0; loadLeads(); });
+    document.getElementById('close-modal')?.addEventListener('click', () => document.getElementById('lead-modal').classList.add('hidden'));
+    document.getElementById('lead-form')?.addEventListener('submit', (e) => { e.preventDefault(); saveLead(); });
+    document.getElementById('csv-upload')?.addEventListener('change', async (e) => {
+        if (!e.target.files[0]) return;
+        const formData = new FormData(); formData.append('file', e.target.files[0]);
+        const accessToken = localStorage.getItem('access_token');
+        const res = await fetch(`${BACKEND_URL}/leads/upload`, { method: 'POST', headers: { 'Authorization': `Bearer ${accessToken}` }, body: formData });
+        if (res.ok) { showToast('CSV uploaded'); loadLeads(); } else showToast('Upload failed', 'error');
+    });
+
+    // Bootstrap (no extra user badge load needed because navbar handles it)
+    (async () => {
+        try {
+            await loadOrgContext();
+            await loadLeads();
+            await loadMetrics();
+            await loadSourceFilter();
+            switchTab('leads');
+        } catch(e) { console.error(e); showToast("Failed to initialise dashboard", "error"); }
+    })();
+</script>
 </body>
 </html>

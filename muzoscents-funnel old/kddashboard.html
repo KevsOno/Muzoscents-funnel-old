@@ -9,12 +9,134 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
 <body class="bg-gray-100 p-4">
+
+<!-- ========== GLOBAL NAVIGATION (Kevs bOS) ========== -->
+<div id="kevs-nav-container"></div>
+<script>
+(function() {
+    const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
+    const LOGIN_URL = '/kdsiginin';
+    const navItems = [
+        { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy' },
+        { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & online payments' },
+        { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', title: 'Order shipping, tracking & dispatch' },
+        { path: '/kdsupport',     name: 'Support',   icon: 'fa-headset', title: 'Ticket management & customer context' },
+        { path: '/kddashboard',   name: 'Exec',      icon: 'fa-chart-simple', title: 'Executive revenue & profit overview' }
+    ];
+    const adminItem = { path: '/kdadmin', name: 'Admin', icon: 'fa-shield-alt', title: 'Inventory & bulk product management (admin only)' };
+
+    function getUserRole() {
+        try {
+            const role = localStorage.getItem('user_role');
+            return role === 'admin' ? 'admin' : null;
+        } catch(e) { return null; }
+    }
+
+    function buildNavbar() {
+        const currentPath = window.location.pathname;
+        const isAdmin = getUserRole() === 'admin';
+        let linksHtml = '';
+        navItems.forEach(item => {
+            const isActive = currentPath === item.path;
+            const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
+            linksHtml += `
+                <a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}" title="${item.title}">
+                    <i class="fa-solid ${item.icon} w-4"></i> ${item.name}
+                </a>
+            `;
+        });
+        if (isAdmin) {
+            const isActive = currentPath === adminItem.path;
+            const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
+            linksHtml += `
+                <a href="${adminItem.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}" title="${adminItem.title}">
+                    <i class="fa-solid ${adminItem.icon} w-4"></i> ${adminItem.name}
+                </a>
+            `;
+        }
+        let userName = 'User';
+        try {
+            const profileStr = localStorage.getItem('user_profile_display');
+            if (profileStr) userName = profileStr;
+        } catch(e) {}
+        return `
+            <div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40">
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div class="flex flex-wrap items-center justify-between py-3 gap-3">
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i>
+                            <span class="text-xl font-bold tracking-tight">${APP_NAME}</span>
+                            <span class="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span>
+                        </div>
+                        <div class="hidden md:flex items-center gap-1 flex-wrap">
+                            ${linksHtml}
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full hidden sm:inline-block">
+                                <i class="fa-regular fa-user mr-1"></i> <span id="nav-user-name">${escapeHtml(userName)}</span>
+                            </span>
+                            <button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition flex items-center gap-1">
+                                <i class="fa-solid fa-sign-out-alt"></i> <span class="hidden sm:inline">Logout</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="md:hidden flex overflow-x-auto pb-2 gap-1 snap-x">
+                        ${linksHtml}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
+    async function globalLogout() {
+        const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
+        const token = localStorage.getItem('access_token');
+        if (token) {
+            try {
+                await fetch(`${BACKEND}/auth/logout`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } });
+            } catch(e) {}
+        }
+        localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user_role'); localStorage.removeItem('user_profile_display');
+        window.location.href = LOGIN_URL;
+    }
+    async function updateUserDisplay() {
+        const token = localStorage.getItem('access_token');
+        if (!token) return;
+        try {
+            const res = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/me', { headers: { 'Authorization': `Bearer ${token}` } });
+            if (res.ok) {
+                const me = await res.json();
+                const contextRes = await fetch(`https://kevsono-kevs-digital-bos.hf.space/support/customer-context?target_user_id=${me.user_id}`, { headers: { 'Authorization': `Bearer ${token}` } });
+                if (contextRes.ok) {
+                    const context = await contextRes.json();
+                    const name = context.profile?.first_name || 'Executive';
+                    localStorage.setItem('user_profile_display', name);
+                    const nameSpan = document.getElementById('nav-user-name');
+                    if (nameSpan) nameSpan.innerText = name;
+                }
+            }
+        } catch(e) {}
+    }
+    function initNavigation() {
+        const container = document.getElementById('kevs-nav-container');
+        if (container) {
+            container.innerHTML = buildNavbar();
+            const logoutBtn = document.getElementById('global-logout-btn');
+            if (logoutBtn) logoutBtn.addEventListener('click', globalLogout);
+            updateUserDisplay();
+        }
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initNavigation);
+    else initNavigation();
+})();
+</script>
+<!-- ========== END GLOBAL NAVIGATION ========== -->
+
 <div class="max-w-7xl mx-auto">
     <div class="flex justify-between items-center mb-6">
         <h1 class="text-2xl font-bold">📊 Executive Dashboard</h1>
         <div class="flex gap-2">
-            <span id="user-badge" class="bg-white px-3 py-1 rounded shadow text-sm"></span>
-            <button id="logout-btn" class="bg-red-500 text-white px-3 py-1 rounded text-sm">Logout</button>
             <a href="/kdconc" class="bg-blue-500 text-white px-3 py-1 rounded text-sm">Shop</a>
             <a href="/kdadmin" class="bg-green-500 text-white px-3 py-1 rounded text-sm">Admin</a>
         </div>
@@ -55,7 +177,6 @@
     let token = localStorage.getItem('access_token');
     let revenueChart, profitChart;
 
-    // ---------- Helper: apiCall with token refresh ----------
     async function apiCall(endpoint, options = {}, retry = true) {
         const headers = {
             'Content-Type': 'application/json',
@@ -69,7 +190,6 @@
         });
 
         if (response.status === 401 && retry) {
-            // Try to refresh token
             const refreshed = await refreshToken();
             if (refreshed) {
                 return apiCall(endpoint, options, false);
@@ -106,18 +226,6 @@
         return false;
     }
 
-    async function loadUserInfo() {
-        try {
-            const me = await apiCall('/auth/me');
-            const context = await apiCall(`/support/customer-context?target_user_id=${me.user_id}`);
-            const name = context.profile?.first_name || 'Executive';
-            document.getElementById('user-badge').innerText = name;
-        } catch(e) {
-            document.getElementById('user-badge').innerText = 'Executive';
-        }
-    }
-
-    // Set default dates to last 30 days
     const today = new Date();
     const defaultEnd = today.toISOString().slice(0,10);
     const defaultStart = new Date(today.setDate(today.getDate()-30)).toISOString().slice(0,10);
@@ -130,13 +238,11 @@
         if (!start || !end) return;
 
         try {
-            // 1. KPI summary
             const summary = await apiCall(`/sales/summary?start_date=${start}&end_date=${end}`);
             document.getElementById('kpi-revenue').innerHTML = `₦${summary.total_revenue.toLocaleString()}`;
             document.getElementById('kpi-cogs').innerHTML = `₦${summary.total_cogs.toLocaleString()}`;
             document.getElementById('kpi-profit').innerHTML = `₦${summary.total_profit.toLocaleString()}`;
 
-            // 2. Inventory value (sum of price_naira * current_qty)
             const inventory = await apiCall('/inventory');
             let inventoryValue = 0;
             for (let item of inventory) {
@@ -144,7 +250,6 @@
             }
             document.getElementById('kpi-inventory-value').innerHTML = `₦${inventoryValue.toLocaleString()}`;
 
-            // 3. Revenue trend
             const trend = await apiCall(`/sales/trend?days=30`);
             const labels = trend.map(t => t.date);
             const revenues = trend.map(t => t.revenue);
@@ -159,12 +264,10 @@
                 data: { labels, datasets: [{ label: 'Daily Profit (est.)', data: revenues.map(r => r * 0.25), borderColor: '#10b981', fill: false }] }
             });
 
-            // 4. Product breakdown (needs the new endpoint)
             const productStats = await apiCall(`/sales/product-stats?start_date=${start}&end_date=${end}`);
             const cogsByProduct = productStats.cogs_by_product || {};
             const qtyByProduct = productStats.qty_by_product || {};
 
-            // Expenditure table
             let expendHtml = '<table class="min-w-full"><thead><tr><th>Product</th><th>Total COGS (₦)</th></tr></thead><tbody>';
             for (let [prod, cogs] of Object.entries(cogsByProduct)) {
                 expendHtml += `<tr><td class="p-2">${escapeHtml(prod)}</td><td>₦${cogs.toLocaleString()}</td></tr>`;
@@ -172,7 +275,6 @@
             expendHtml += '</tbody></table>';
             document.getElementById('expenditure-table').innerHTML = expendHtml || '<p>No sales in period.</p>';
 
-            // Top products by units
             const top = Object.entries(qtyByProduct).sort((a,b) => b[1]-a[1]).slice(0,10);
             let topHtml = '<table class="min-w-full"><thead><tr><th>Product</th><th>Units Sold</th></tr></thead><tbody>';
             for (let [prod, qty] of top) {
@@ -192,14 +294,12 @@
     }
 
     document.getElementById('update-dates').onclick = () => loadDashboard();
-    document.getElementById('logout-btn').onclick = () => { localStorage.clear(); window.location.href = '/kdsiginin'; };
 
     (async () => {
         if (!token) {
             window.location.href = '/kdsiginin';
             return;
         }
-        await loadUserInfo();
         await loadDashboard();
     })();
 </script>

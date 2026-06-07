@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Kevs POS Pro | Multi-Tab · SKU Search · Online Payments</title>
+    <title>Kevs POS Pro | Multi‑Tab · SKU Search · Online Payments</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
@@ -45,19 +45,140 @@
     </style>
 </head>
 <body class="bg-gray-100 p-4 font-sans">
+
+<!-- ========== GLOBAL NAVIGATION (Kevs bOS) ========== -->
+<div id="kevs-nav-container"></div>
+<script>
+(function() {
+    const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
+    const LOGIN_URL = '/kdsiginin';
+    const navItems = [
+        { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy' },
+        { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & online payments' },
+        { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', title: 'Order shipping, tracking & dispatch' },
+        { path: '/kdsupport',     name: 'Support',   icon: 'fa-headset', title: 'Ticket management & customer context' },
+        { path: '/kddashboard',   name: 'Exec',      icon: 'fa-chart-simple', title: 'Executive revenue & profit overview' }
+    ];
+    const adminItem = { path: '/kdadmin', name: 'Admin', icon: 'fa-shield-alt', title: 'Inventory & bulk product management (admin only)' };
+
+    function getUserRole() {
+        try {
+            const role = localStorage.getItem('user_role');
+            return role === 'admin' ? 'admin' : null;
+        } catch(e) { return null; }
+    }
+
+    function buildNavbar() {
+        const currentPath = window.location.pathname;
+        const isAdmin = getUserRole() === 'admin';
+        let linksHtml = '';
+        navItems.forEach(item => {
+            const isActive = currentPath === item.path;
+            const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
+            linksHtml += `
+                <a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}" title="${item.title}">
+                    <i class="fa-solid ${item.icon} w-4"></i> ${item.name}
+                </a>
+            `;
+        });
+        if (isAdmin) {
+            const isActive = currentPath === adminItem.path;
+            const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
+            linksHtml += `
+                <a href="${adminItem.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}" title="${adminItem.title}">
+                    <i class="fa-solid ${adminItem.icon} w-4"></i> ${adminItem.name}
+                </a>
+            `;
+        }
+        let userName = 'User';
+        try {
+            const profileStr = localStorage.getItem('user_profile_display');
+            if (profileStr) userName = profileStr;
+        } catch(e) {}
+        return `
+            <div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40">
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div class="flex flex-wrap items-center justify-between py-3 gap-3">
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i>
+                            <span class="text-xl font-bold tracking-tight">${APP_NAME}</span>
+                            <span class="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span>
+                        </div>
+                        <div class="hidden md:flex items-center gap-1 flex-wrap">
+                            ${linksHtml}
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full hidden sm:inline-block">
+                                <i class="fa-regular fa-user mr-1"></i> <span id="nav-user-name">${escapeHtml(userName)}</span>
+                            </span>
+                            <button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition flex items-center gap-1">
+                                <i class="fa-solid fa-sign-out-alt"></i> <span class="hidden sm:inline">Logout</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="md:hidden flex overflow-x-auto pb-2 gap-1 snap-x">
+                        ${linksHtml}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
+    async function globalLogout() {
+        const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
+        const token = localStorage.getItem('access_token');
+        if (token) {
+            try {
+                await fetch(`${BACKEND}/auth/logout`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } });
+            } catch(e) {}
+        }
+        localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user_role'); localStorage.removeItem('user_profile_display');
+        window.location.href = LOGIN_URL;
+    }
+    async function updateUserDisplay() {
+        const token = localStorage.getItem('access_token');
+        if (!token) return;
+        try {
+            const res = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/me', { headers: { 'Authorization': `Bearer ${token}` } });
+            if (res.ok) {
+                const me = await res.json();
+                const contextRes = await fetch(`https://kevsono-kevs-digital-bos.hf.space/support/customer-context?target_user_id=${me.user_id}`, { headers: { 'Authorization': `Bearer ${token}` } });
+                if (contextRes.ok) {
+                    const context = await contextRes.json();
+                    const name = context.profile?.first_name || 'Agent';
+                    localStorage.setItem('user_profile_display', name);
+                    const nameSpan = document.getElementById('nav-user-name');
+                    if (nameSpan) nameSpan.innerText = name;
+                }
+            }
+        } catch(e) {}
+    }
+    function initNavigation() {
+        const container = document.getElementById('kevs-nav-container');
+        if (container) {
+            container.innerHTML = buildNavbar();
+            const logoutBtn = document.getElementById('global-logout-btn');
+            if (logoutBtn) logoutBtn.addEventListener('click', globalLogout);
+            updateUserDisplay();
+        }
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initNavigation);
+    else initNavigation();
+})();
+</script>
+<!-- ========== END GLOBAL NAVIGATION ========== -->
+
 <div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
 
 <div class="max-w-7xl mx-auto">
-    <!-- Header -->
+    <!-- POS Header (no user badge, just title) -->
     <div class="bg-white rounded-xl shadow-md p-4 mb-4 flex flex-wrap justify-between items-center gap-3">
         <div>
             <h1 class="text-2xl font-bold">💳 Kevs POS Terminal</h1>
             <p class="text-xs text-gray-500">Multi‑Tab | SKU Search | Card/Transfer Payments</p>
         </div>
-        <div class="flex items-center gap-3">
-            <span id="user-badge" class="text-sm bg-gray-200 px-3 py-1 rounded-full">Loading...</span>
-            <button id="logout-btn" class="text-red-500 text-sm hover:underline">Logout</button>
-        </div>
+        <!-- Removed user badge and logout – now in global nav -->
     </div>
 
     <!-- TABS for two customers -->
@@ -119,7 +240,7 @@
     </div>
 </div>
 
-<!-- Login Modal -->
+<!-- Login Modal (for initial session) -->
 <div id="auth-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
     <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm">
         <div class="flex justify-between items-center mb-4">
@@ -141,11 +262,9 @@
     // ------------------- CONFIGURATION -------------------
     const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
     let token = localStorage.getItem('access_token');
-    let products = [];            // full product list
-    let searchTerm = '';          // current filter
-
-    // MULTI-TAB STATE: two independent customers (added email)
-    let activeTab = 1;   // 1 or 2
+    let products = [];
+    let searchTerm = '';
+    let activeTab = 1;
     const tabState = {
         1: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' },
         2: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' }
@@ -167,7 +286,6 @@
     const checkoutBtn = document.getElementById('checkout-btn');
     const searchInput = document.getElementById('product-search');
 
-    // Helper: Toast notifications
     function showToast(msg, type = 'success') {
         const container = document.getElementById('toast-container');
         const toast = document.createElement('div');
@@ -177,7 +295,6 @@
         setTimeout(() => toast.remove(), 3800);
     }
 
-    // ---------- API & AUTH ----------
     async function refreshToken() {
         const refresh = localStorage.getItem('refresh_token');
         if (!refresh) return false;
@@ -222,35 +339,6 @@
     function showLoginModal() { document.getElementById('auth-modal').classList.remove('hidden'); }
     function hideLoginModal() { document.getElementById('auth-modal').classList.add('hidden'); }
 
-    async function logout() {
-        try { await call('/auth/logout', 'POST'); } catch (e) { }
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        token = null;
-        showLoginModal();
-        document.getElementById('user-badge').innerText = '';
-        showToast('Logged out', 'success');
-        products = [];
-        renderProductGrid();
-    }
-
-    async function loadUserInfo() {
-        try {
-            const me = await call('/auth/me');
-            const context = await call(`/support/customer-context?target_user_id=${me.user_id}`);
-            const name = context.profile?.first_name || 'Cashier';
-            let orgName = '';
-            try {
-                const orgData = await call('/auth/org');
-                orgName = orgData.org_name;
-            } catch (e) { orgName = 'Workspace'; }
-            document.getElementById('user-badge').innerHTML = `<i class="fa-regular fa-user mr-1"></i> ${name} | ${orgName}`;
-        } catch (e) {
-            document.getElementById('user-badge').innerHTML = 'Cashier';
-        }
-    }
-
-    // ---------- PRODUCTS LOAD & SEARCH ----------
     async function loadProducts() {
         try {
             const data = await call('/inventory');
@@ -308,7 +396,6 @@
 
     function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, function(m) { if (m === '&') return '&amp;'; if (m === '<') return '&lt;'; if (m === '>') return '&gt;'; return m; }); }
 
-    // ---------- CART & TAB MANAGEMENT ----------
     function syncUIWithActiveTab() {
         const state = tabState[activeTab];
         renderActiveCart();
@@ -395,13 +482,11 @@
         customerEmailInput.oninput = () => { tabState[activeTab].customerEmail = customerEmailInput.value; };
     }
 
-    // ----- NEW: clear cart for a specific tab (preserves other fields) -----
     function clearCartForTab(tabId) {
         tabState[tabId].cart = [];
         if (activeTab === tabId) renderActiveCart();
     }
 
-    // ----- MODIFIED CHECKOUT with callback_url & payment redirect -----
     async function processCheckout() {
         const state = tabState[activeTab];
         const cart = state.cart;
@@ -414,7 +499,6 @@
         const customerPhone = state.customerPhone.trim() || null;
         let customerEmail = state.customerEmail.trim() || null;
 
-        // For non-cash payments we strongly suggest email
         if (paymentMethod !== 'cash' && !customerEmail) {
             showToast('📧 Email is required for card/transfer payments', 'error');
             return;
@@ -428,7 +512,6 @@
         checkoutBtn.innerText = 'Processing...';
 
         try {
-            // CASH flow -> direct terminal checkout
             if (paymentMethod === 'cash') {
                 const result = await call('/pos/terminal/checkout', 'POST', {
                     items: itemsPayload,
@@ -438,13 +521,10 @@
                     customer_email: customerEmail
                 });
                 showToast(`✅ Sale complete! Receipt: ${result.receipt_number || 'OK'}`, 'success');
-                // Reset current tab cart & keep fields but clear cart
                 tabState[activeTab].cart = [];
-                // Optionally reset name/phone/email? We'll keep customer details for convenience but clear cart only.
                 syncUIWithActiveTab();
-                await loadProducts(); // refresh stock
+                await loadProducts();
             } 
-            // NON-CASH (card/transfer) -> payment gateway with callback_url
             else {
                 const payload = {
                     items: itemsPayload,
@@ -456,11 +536,9 @@
                 };
                 const result = await call('/pos/checkout', 'POST', payload);
                 if (result.payment_url) {
-                    // Store metadata to handle return & which tab initiated payment
                     localStorage.setItem('pending_payment', 'true');
                     localStorage.setItem('pending_payment_tab', activeTab.toString());
-                    localStorage.setItem('pending_tab_cart_snapshot', JSON.stringify(cart)); // optional backup
-                    // Redirect to payment gateway
+                    localStorage.setItem('pending_tab_cart_snapshot', JSON.stringify(cart));
                     window.location.href = result.payment_url;
                 } else {
                     throw new Error('Payment initiation failed: no payment URL');
@@ -472,14 +550,12 @@
             checkoutBtn.innerText = '✅ Complete Sale';
         }
         
-        // If cash, re-enable button after reset (already done). For redirect we never reach here.
         if (paymentMethod === 'cash') {
             checkoutBtn.disabled = false;
             checkoutBtn.innerText = '✅ Complete Sale';
         }
     }
 
-    // ----- PAYMENT RETURN HANDLER (on page load) -----
     async function checkPaymentReturn() {
         const urlParams = new URLSearchParams(window.location.search);
         const paymentSuccess = urlParams.get('payment') === 'success';
@@ -488,35 +564,27 @@
         if (paymentSuccess && wasPending) {
             const pendingTabRaw = localStorage.getItem('pending_payment_tab');
             const pendingTab = pendingTabRaw ? parseInt(pendingTabRaw, 10) : null;
-            // Clear cart for the tab that made the payment
             if (pendingTab === 1 || pendingTab === 2) {
                 clearCartForTab(pendingTab);
-                // If we are currently viewing a different tab, still clear that tab's cart silently
                 if (activeTab !== pendingTab) {
-                    // just update state without UI flicker, but ensure sync later
                     tabState[pendingTab].cart = [];
                 } else {
                     renderActiveCart();
                 }
                 showToast(`🎉 Payment successful! Order confirmed for ${pendingTab === 1 ? 'Customer A' : 'Customer B'}.`, 'success');
-                // Refresh stock levels after successful payment
                 await loadProducts();
             } else {
-                // fallback: clear active tab cart
                 clearCartForTab(activeTab);
                 renderActiveCart();
                 showToast(`🎉 Payment successful! Cart cleared.`, 'success');
                 await loadProducts();
             }
-            // Clean local storage flags
             localStorage.removeItem('pending_payment');
             localStorage.removeItem('pending_payment_tab');
             localStorage.removeItem('pending_tab_cart_snapshot');
-            // Remove query param from URL without reloading page
             const cleanUrl = window.location.href.split('?')[0];
             window.history.replaceState({}, document.title, cleanUrl);
         } else if (!paymentSuccess && wasPending) {
-            // Payment might have been cancelled or failed, clear pending flag anyway
             localStorage.removeItem('pending_payment');
             localStorage.removeItem('pending_payment_tab');
             localStorage.removeItem('pending_tab_cart_snapshot');
@@ -524,17 +592,15 @@
         }
     }
 
-    // switch tab with saving fields
     function setActiveTab(tabId) {
         if (tabId === activeTab) return;
-        // save current UI fields into current tab state before switching
         tabState[activeTab].paymentMethod = paymentMethodSelect.value;
         tabState[activeTab].customerName = customerNameInput.value;
         tabState[activeTab].customerPhone = customerPhoneInput.value;
         tabState[activeTab].customerEmail = customerEmailInput.value;
         activeTab = tabId;
         syncUIWithActiveTab();
-        renderProductGrid(); // keep product grid as is
+        renderProductGrid();
     }
 
     function initTabs() {
@@ -549,7 +615,6 @@
         });
     }
 
-    // ---------- DEMO & LOGIN HANDLERS ----------
     async function demoLogin() {
         const btn = document.getElementById('demo-login-btn');
         btn.disabled = true;
@@ -564,15 +629,21 @@
             token = data.access_token;
             localStorage.setItem('access_token', token);
             localStorage.setItem('refresh_token', data.refresh_token);
-            await loadUserInfo();
+            // Store role for navigation
+            try {
+                const me = await call('/auth/me');
+                const role = me.role || 'customer';
+                localStorage.setItem('user_role', role);
+            } catch(e) {}
             await loadProducts();
             hideLoginModal();
-            // reset both tabs
             tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' };
             tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' };
             activeTab = 1;
             syncUIWithActiveTab();
             showToast('Demo login successful — Multi‑Tab & Online Payments ready', 'success');
+            // Force reload of navigation to show role-based links
+            location.reload();
         } catch (err) {
             showToast(err.message, 'error');
         } finally {
@@ -595,7 +666,9 @@
             token = data.access_token;
             localStorage.setItem('access_token', token);
             localStorage.setItem('refresh_token', data.refresh_token);
-            await loadUserInfo();
+            const me = await call('/auth/me');
+            const role = me.role || 'customer';
+            localStorage.setItem('user_role', role);
             await loadProducts();
             hideLoginModal();
             tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' };
@@ -603,31 +676,26 @@
             activeTab = 1;
             syncUIWithActiveTab();
             showToast('Login successful', 'success');
+            location.reload();
         } catch (err) {
             showToast(err.message, 'error');
         }
     }
 
-    // attach global listeners
     checkoutBtn.addEventListener('click', processCheckout);
-    document.getElementById('logout-btn')?.addEventListener('click', logout);
     document.getElementById('modal-login-btn')?.addEventListener('click', handleLogin);
     document.getElementById('demo-login-btn')?.addEventListener('click', demoLogin);
     document.getElementById('close-modal-btn')?.addEventListener('click', hideLoginModal);
     
-    // ---------- INITIALISE APP ----------
     (async () => {
         initTabs();
         initSearch();
         bindFieldEvents();
-        // Check for payment return before login checks (so query param handled early)
         await checkPaymentReturn();
         
         if (token) {
             try {
-                await loadUserInfo();
                 await loadProducts();
-                // reset tab states after login but preserve any existing data if needed
                 if (!tabState[1].cart.length && !tabState[2].cart.length) {
                     tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' };
                     tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' };
