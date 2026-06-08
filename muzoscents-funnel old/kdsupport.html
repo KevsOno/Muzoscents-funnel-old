@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kevs BI – Support Desk</title>
+    <title>Kevs BI – Support & Loyalty</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.js"></script>
     <style>
         body { background-color: #F1F5F9; font-family: system-ui, sans-serif; }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
@@ -13,6 +15,8 @@
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 10px; }
         .ticket-active { background-color: #F1F5F9; border-left: 4px solid #3b82f6; }
         .debug-panel { background: #1e1e2f; color: #0fc; font-family: monospace; font-size: 10px; max-height: 120px; overflow-y: auto; padding: 6px; }
+        .tab-active { background-color: #3b82f6; color: white; border-bottom: 2px solid #3b82f6; }
+        .tab-inactive { background-color: #e2e8f0; color: #1f2937; }
     </style>
 </head>
 <body class="h-screen flex flex-col overflow-hidden">
@@ -23,30 +27,18 @@
 (function() {
     const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
     const LOGIN_URL = '/kdsiginin';
-
     const navItems = [
-        { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy', roles: ['owner','admin','sales_rep','finance'] },
-        { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & online payments', roles: ['owner','admin','sales_rep'] },
-        { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', title: 'Order shipping, tracking & dispatch', roles: ['owner','admin','logistics'] },
-        { path: '/kdsupport',     name: 'Support',   icon: 'fa-headset', title: 'Ticket management & customer context', roles: ['owner','admin','support'] },
-        { path: '/kddashboard',   name: 'Exec',      icon: 'fa-chart-simple', title: 'Executive revenue & profit overview', roles: ['owner','admin','finance'] },
-        { path: '/kdadmin',       name: 'Inventory', icon: 'fa-boxes', title: 'Manage products, stock, bulk CSV upload', roles: ['owner','admin','inventory_manager'] },
-        { path: '/kdteam',        name: 'Team',      icon: 'fa-users', title: 'Invite & manage team members', roles: ['owner','admin'] },
-        { path: '/kdknowledge',   name: 'Knowledge', icon: 'fa-database', title: 'Manage AI knowledge base documents', roles: ['owner','admin'] }
+        { path: '/kdbi', name: 'Dashboard', icon: 'fa-chart-line', roles: ['owner','admin','sales_rep','finance'] },
+        { path: '/kdpos', name: 'POS', icon: 'fa-cash-register', roles: ['owner','admin','sales_rep'] },
+        { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', roles: ['owner','admin','logistics'] },
+        { path: '/kdsupport', name: 'Support', icon: 'fa-headset', roles: ['owner','admin','support','loyalty_manager'] },
+        { path: '/kddashboard', name: 'Exec', icon: 'fa-chart-simple', roles: ['owner','admin','finance'] },
+        { path: '/kdadmin', name: 'Inventory', icon: 'fa-boxes', roles: ['owner','admin','inventory_manager'] },
+        { path: '/kdteam', name: 'Team', icon: 'fa-users', roles: ['owner','admin'] },
+        { path: '/kdknowledge', name: 'Knowledge', icon: 'fa-database', roles: ['owner','admin'] }
     ];
-
-    function getUserRole() {
-        try {
-            const role = localStorage.getItem('user_role');
-            return role || 'customer';
-        } catch(e) { return 'customer'; }
-    }
-
-    function canAccess(requiredRoles) {
-        const userRole = getUserRole();
-        return requiredRoles.includes(userRole);
-    }
-
+    function getUserRole() { try { return localStorage.getItem('user_role') || 'customer'; } catch(e) { return 'customer'; } }
+    function canAccess(roles) { return roles.includes(getUserRole()); }
     function buildNavbar() {
         const currentPath = window.location.pathname;
         let linksHtml = '';
@@ -54,81 +46,27 @@
             if (!canAccess(item.roles)) return;
             const isActive = currentPath === item.path;
             const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
-            linksHtml += `
-                <a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}" title="${item.title}">
-                    <i class="fa-solid ${item.icon} w-4"></i> ${item.name}
-                </a>
-            `;
+            linksHtml += `<a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeClass}" title="${item.title}"><i class="fa-solid ${item.icon} w-4"></i> ${item.name}</a>`;
         });
-        let userName = 'User';
-        try {
-            const profileStr = localStorage.getItem('user_profile_display');
-            if (profileStr) userName = profileStr;
-        } catch(e) {}
-        return `
-            <div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40">
-                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div class="flex flex-wrap items-center justify-between py-3 gap-3">
-                        <div class="flex items-center gap-2">
-                            <i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i>
-                            <span class="text-xl font-bold tracking-tight">${APP_NAME}</span>
-                            <span class="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span>
-                        </div>
-                        <div class="hidden md:flex items-center gap-1 flex-wrap">
-                            ${linksHtml}
-                        </div>
-                        <div class="flex items-center gap-3">
-                            <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full hidden sm:inline-block">
-                                <i class="fa-regular fa-user mr-1"></i> <span id="nav-user-name">${escapeHtml(userName)}</span>
-                            </span>
-                            <button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition flex items-center gap-1">
-                                <i class="fa-solid fa-sign-out-alt"></i> <span class="hidden sm:inline">Logout</span>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="md:hidden flex overflow-x-auto pb-2 gap-1 snap-x">
-                        ${linksHtml}
-                    </div>
-                </div>
-            </div>
-        `;
+        let userName = localStorage.getItem('user_profile_display') || 'User';
+        return `<div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40"><div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-3"><div class="flex items-center gap-2"><i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i><span class="text-xl font-bold">${APP_NAME}</span><span class="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span></div><div class="hidden md:flex gap-2">${linksHtml}</div><div class="flex items-center gap-3"><span class="text-xs bg-white/10 px-3 py-1.5 rounded-full"><i class="fa-regular fa-user mr-1"></i> ${escapeHtml(userName)}</span><button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 px-3 py-1.5 rounded-lg text-sm"><i class="fa-solid fa-sign-out-alt"></i> Logout</button></div></div><div class="md:hidden flex overflow-x-auto pb-2 gap-1">${linksHtml}</div></div>`;
     }
-
-    function escapeHtml(str) {
-        if (!str) return '';
-        return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
-    }
-
+    function escapeHtml(str) { return String(str).replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
     async function globalLogout() {
         const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
         const token = localStorage.getItem('access_token');
-        if (token) {
-            try {
-                await fetch(`${BACKEND}/auth/logout`, {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-                });
-            } catch(e) {}
-        }
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('user_role');
-        localStorage.removeItem('user_profile_display');
+        if (token) await fetch(`${BACKEND}/auth/logout`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }).catch(()=>{});
+        localStorage.clear();
         window.location.href = LOGIN_URL;
     }
-
     async function updateUserDisplay() {
         const token = localStorage.getItem('access_token');
         if (!token) return;
         try {
-            const res = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/me', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const res = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/me', { headers: { 'Authorization': `Bearer ${token}` } });
             if (res.ok) {
                 const me = await res.json();
-                const contextRes = await fetch(`https://kevsono-kevs-digital-bos.hf.space/support/customer-context?target_user_id=${me.user_id}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
+                const contextRes = await fetch(`https://kevsono-kevs-digital-bos.hf.space/support/customer-context?target_user_id=${me.user_id}`, { headers: { 'Authorization': `Bearer ${token}` } });
                 if (contextRes.ok) {
                     const context = await contextRes.json();
                     const name = context.profile?.first_name || 'User';
@@ -139,71 +77,231 @@
             }
         } catch(e) {}
     }
-
     function initNavigation() {
         const container = document.getElementById('kevs-nav-container');
         if (container) {
             container.innerHTML = buildNavbar();
-            const logoutBtn = document.getElementById('global-logout-btn');
-            if (logoutBtn) logoutBtn.addEventListener('click', globalLogout);
+            document.getElementById('global-logout-btn')?.addEventListener('click', globalLogout);
             updateUserDisplay();
         }
     }
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initNavigation);
-    } else {
-        initNavigation();
-    }
+    document.addEventListener('DOMContentLoaded', initNavigation);
 })();
 </script>
 <!-- ========== END GLOBAL NAVIGATION ========== -->
 
 <div id="toast-container" class="fixed top-6 right-4 z-50 space-y-2 w-80"></div>
 
-<main class="flex-1 flex overflow-hidden pt-2">
+<!-- Tab Bar -->
+<div class="bg-white border-b px-6 pt-2 flex gap-4">
+    <button id="support-tab-btn" class="tab-active px-4 py-2 font-semibold rounded-t-lg transition">🎫 Support Tickets</button>
+    <button id="loyalty-tab-btn" class="tab-inactive px-4 py-2 font-semibold rounded-t-lg transition">⭐ Loyalty & CRM</button>
+</div>
+
+<!-- ================= SUPPORT TAB ================= -->
+<div id="support-tab" class="flex-1 flex overflow-hidden pt-2">
+    <!-- Left column: ticket list + create button -->
     <section class="w-80 bg-white border-r border-slate-200 flex flex-col shrink-0 overflow-hidden">
-        <div class="p-4 border-b bg-slate-50"><select id="queue-status-filter" class="w-full border rounded-lg p-1.5 text-xs"><option value="open">🟢 Open Tickets</option><option value="pending">🟡 Escalated</option><option value="resolved">⚫ Resolved</option></select></div>
+        <div class="p-4 border-b bg-slate-50">
+            <div class="flex gap-2 mb-2">
+                <select id="queue-status-filter" class="flex-1 border rounded-lg p-1.5 text-xs">
+                    <option value="open">🟢 Open Tickets</option>
+                    <option value="pending">🟡 Escalated</option>
+                    <option value="resolved">⚫ Resolved</option>
+                </select>
+                <button id="new-ticket-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-lg text-xs flex items-center gap-1">
+                    <i class="fas fa-plus"></i> New
+                </button>
+            </div>
+        </div>
         <div id="ticket-feed" class="flex-1 overflow-y-auto divide-y divide-slate-100"><div class="p-8 text-center text-xs">Loading tickets...</div></div>
     </section>
 
+    <!-- Middle: conversation area -->
     <section class="flex-1 bg-slate-50 flex flex-col overflow-hidden relative">
         <div id="no-ticket-selected" class="absolute inset-0 bg-slate-50 z-10 flex items-center justify-center p-6 text-center"><div><i class="fa-solid fa-inbox text-3xl text-slate-300 mb-2"></i><p class="text-sm">Select a ticket</p></div></div>
         <div class="bg-white border-b px-6 py-3 shrink-0"><h2 id="active-ticket-subject" class="font-semibold">-</h2><p id="active-ticket-meta" class="text-xs text-slate-400">-</p></div>
         <div id="message-flow-area" class="flex-1 p-6 overflow-y-auto space-y-4"></div>
-        <div class="bg-white border-t p-4 shrink-0"><form id="agent-reply-form" class="flex gap-2"><input id="agent-response-input" placeholder="Type reply..." class="flex-1 border rounded-xl px-4 py-2 text-sm" required><button type="submit" class="bg-[#1E3A5F] text-white px-4 py-2 rounded-xl">Send</button></form></div>
-    </section>
-
-    <section class="w-80 bg-white border-l border-slate-200 flex flex-col shrink-0 overflow-y-auto p-5 space-y-6">
-        <div><h3 class="text-xs font-bold uppercase">Customer Profile</h3><div id="profile-display" class="text-xs mt-2">-</div></div>
-        <div><h3 class="text-xs font-bold uppercase">Loyalty</h3><div id="loyalty-display" class="text-xs mt-2">-</div></div>
-        <textarea id="ticket-resolution-notes" rows="3" placeholder="Resolution notes" class="border rounded-lg p-2 text-xs"></textarea>
-        <button id="resolve-ticket-btn" class="bg-emerald-600 text-white py-2 rounded-lg text-xs">Resolve Ticket</button>
-    </section>
-</main>
-<div class="debug-panel shrink-0"><div class="text-white text-xs mb-1">🔍 DEBUG</div><div id="debug"></div></div>
-
-<div id="auth-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-    <div class="bg-slate-800 border border-slate-700 p-6 rounded-2xl shadow-xl w-full max-w-sm text-slate-200">
-        <div class="flex justify-between items-center mb-4">
-            <h3 class="text-lg font-bold text-white">Sign In</h3>
-            <button id="close-modal-btn" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+        <div class="bg-white border-t p-4 shrink-0">
+            <form id="agent-reply-form" class="flex gap-2">
+                <input id="agent-response-input" placeholder="Type reply..." class="flex-1 border rounded-xl px-4 py-2 text-sm" required>
+                <button type="submit" class="bg-[#1E3A5F] text-white px-4 py-2 rounded-xl">Send</button>
+            </form>
         </div>
-        <div class="space-y-3">
-            <input id="login-email" type="email" placeholder="Email" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
-            <input id="login-password" type="password" placeholder="Password" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
-            <button id="modal-login-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white p-2.5 rounded-lg text-sm">Sign In</button>
-            <button id="demo-login-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white p-2.5 rounded-lg text-sm">
-                <i class="fa-solid fa-bolt mr-1"></i> Demo Login
-            </button>
+    </section>
+
+    <!-- Right column: customer info & actions -->
+    <section class="w-80 bg-white border-l border-slate-200 flex flex-col shrink-0 overflow-y-auto p-5 space-y-6">
+        <div>
+            <h3 class="text-xs font-bold uppercase text-slate-500">Customer Information</h3>
+            <div id="customer-info-card" class="mt-2 text-xs bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
+                <div><i class="fa-regular fa-user mr-1"></i> <strong>Name:</strong> <span id="cust-name">-</span></div>
+                <div><i class="fa-regular fa-envelope mr-1"></i> <strong>Email:</strong> <span id="cust-email">-</span></div>
+                <div><i class="fa-regular fa-phone mr-1"></i> <strong>Phone:</strong> <span id="cust-phone">-</span></div>
+                <div><i class="fa-regular fa-address-card mr-1"></i> <strong>Address:</strong> <span id="cust-address">-</span></div>
+                <div class="border-t pt-2 mt-1">
+                    <div><i class="fa-solid fa-coins mr-1"></i> <strong>Loyalty Points:</strong> <span id="cust-points">0</span></div>
+                    <div><i class="fa-solid fa-medal mr-1"></i> <strong>Tier:</strong> <span id="cust-tier">-</span></div>
+                </div>
+                <div class="border-t pt-2 mt-1">
+                    <div><strong>📦 Total Orders:</strong> <span id="cust-total-orders">-</span></div>
+                    <div><strong>💰 Total Spent:</strong> <span id="cust-total-spent">₦0</span></div>
+                    <div><strong>🕒 Last Order:</strong> <span id="cust-last-order">-</span></div>
+                </div>
+                <div class="pt-2">
+                    <a id="cust-orders-link" href="#" target="_blank" class="text-blue-600 text-xs underline">🔍 View all customer orders</a>
+                </div>
+            </div>
+        </div>
+        <div>
+            <h3 class="text-xs font-bold uppercase text-slate-500">Loyalty History</h3>
+            <div id="loyalty-display" class="text-xs mt-2 bg-slate-50 p-3 rounded-lg border border-slate-200">-</div>
+        </div>
+        <textarea id="ticket-resolution-notes" rows="3" placeholder="Resolution notes" class="border rounded-lg p-2 text-xs"></textarea>
+        <button id="resolve-ticket-btn" class="bg-emerald-600 text-white py-2 rounded-lg text-xs">✅ Resolve Ticket</button>
+        <button id="escalate-ticket-btn" class="bg-amber-600 hover:bg-amber-700 text-white py-2 rounded-lg text-xs mt-2">⚠️ Escalate Ticket</button>
+    </section>
+</div>
+
+<!-- ================= LOYALTY & CRM TAB ================= -->
+<div id="loyalty-tab" class="hidden flex-1 overflow-auto p-6">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="bg-white rounded-xl shadow p-5">
+            <h2 class="text-xl font-bold mb-4"><i class="fas fa-user-plus text-green-600 mr-2"></i>Register Customer</h2>
+            <form id="register-customer-form" class="space-y-3">
+                <div class="grid grid-cols-2 gap-2">
+                    <input type="text" id="cust-firstname" placeholder="First name *" class="border rounded p-2" required>
+                    <input type="text" id="cust-lastname" placeholder="Last name *" class="border rounded p-2" required>
+                </div>
+                <input type="email" id="cust-email" placeholder="Email *" class="w-full border rounded p-2" required>
+                <input type="tel" id="cust-phone" placeholder="Phone *" class="w-full border rounded p-2" required>
+                <input type="date" id="cust-dob" placeholder="Date of Birth" class="w-full border rounded p-2">
+                <input type="text" id="cust-address" placeholder="Address" class="w-full border rounded p-2">
+                <select id="cust-tier" class="w-full border rounded p-2">
+                    <option value="bronze">Bronze</option>
+                    <option value="silver">Silver</option>
+                    <option value="gold">Gold</option>
+                    <option value="platinum">Platinum</option>
+                </select>
+                <input type="number" id="cust-points" placeholder="Initial points" value="0" class="w-full border rounded p-2">
+                <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg">Register Customer</button>
+            </form>
+        </div>
+        <div class="bg-white rounded-xl shadow p-5 col-span-2">
+            <div class="flex justify-between items-center mb-3">
+                <h2 class="text-xl font-bold"><i class="fas fa-users mr-2"></i>Customer Directory</h2>
+                <div class="flex gap-2">
+                    <input type="text" id="customer-search" placeholder="Search..." class="border rounded p-1 text-sm">
+                    <button id="export-csv-btn" class="bg-emerald-600 text-white px-3 py-1 rounded text-sm"><i class="fas fa-file-csv"></i> Export</button>
+                </div>
+            </div>
+            <div class="overflow-x-auto max-h-96">
+                <table class="min-w-full text-sm">
+                    <thead class="bg-gray-100">
+                        <tr><th class="p-2 text-left">Name</th><th class="p-2 text-left">Email</th><th class="p-2 text-left">Phone</th><th class="p-2 text-left">Points</th><th class="p-2 text-left">Tier</th><th class="p-2 text-left">Birthday</th><th class="p-2 text-center">Action</th></tr>
+                    </thead>
+                    <tbody id="customer-table-body"><tr><td colspan="7" class="text-center p-4">Loading...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+        <div class="bg-white rounded-xl shadow p-5">
+            <h2 class="text-xl font-bold mb-3"><i class="fas fa-birthday-cake text-pink-500 mr-2"></i>Birthday Calendar</h2>
+            <div id="birthday-calendar"></div>
+        </div>
+        <div class="bg-white rounded-xl shadow p-5">
+            <h2 class="text-xl font-bold mb-3"><i class="fas fa-gift mr-2"></i>Adjust Points</h2>
+            <form id="points-adjust-form">
+                <input type="hidden" id="adjust-user-id">
+                <div class="mb-2"><label class="block text-sm">Customer</label><input type="text" id="adjust-customer-name" readonly class="w-full bg-gray-100 border rounded p-2"></div>
+                <div class="mb-2"><label class="block text-sm">Current Points</label><input type="number" id="adjust-current-points" readonly class="w-full bg-gray-100 border rounded p-2"></div>
+                <div class="mb-2"><label class="block text-sm">Add / Deduct Points</label><input type="number" id="adjust-points-delta" placeholder="e.g., +50 or -20" class="w-full border rounded p-2"></div>
+                <div class="mb-2"><label class="block text-sm">Reason</label><input type="text" id="adjust-reason" placeholder="Birthday reward, purchase..." class="w-full border rounded p-2"></div>
+                <button type="submit" class="w-full bg-purple-600 text-white py-2 rounded-lg">Update Points</button>
+            </form>
         </div>
     </div>
 </div>
+
+<!-- New Ticket Modal -->
+<div id="new-ticket-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-bold text-gray-800">➕ Create New Ticket</h3>
+            <button id="close-new-ticket-modal" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+        </div>
+        <form id="new-ticket-form" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium">Customer (email or name)</label>
+                <input type="text" id="new-ticket-customer" placeholder="Search by email or name..." class="w-full border rounded-lg p-2" autocomplete="off">
+                <input type="hidden" id="new-ticket-customer-id">
+                <div id="customer-search-results" class="hidden absolute z-50 bg-white border rounded-lg mt-1 max-h-40 overflow-y-auto w-full"></div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium">Subject *</label>
+                <input type="text" id="new-ticket-subject" required class="w-full border rounded-lg p-2">
+            </div>
+            <div>
+                <label class="block text-sm font-medium">Description / Initial Message *</label>
+                <textarea id="new-ticket-description" rows="3" required class="w-full border rounded-lg p-2"></textarea>
+            </div>
+            <div>
+                <label class="block text-sm font-medium">Priority (optional)</label>
+                <select id="new-ticket-priority" class="w-full border rounded-lg p-2">
+                    <option value="low">Low</option>
+                    <option value="medium" selected>Medium</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                </select>
+            </div>
+            <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg">Create Ticket</button>
+        </form>
+    </div>
+</div>
+
+<!-- Escalate Modal -->
+<div id="escalate-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-bold text-gray-800">🚨 Escalate Ticket</h3>
+            <button id="close-escalate-modal" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+        </div>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium">Department</label>
+                <select id="escalate-dept" class="w-full border rounded-lg p-2 mt-1">
+                    <option value="Technical Support">🛠️ Technical Support</option>
+                    <option value="Billing">💰 Billing & Payments</option>
+                    <option value="Logistics">📦 Logistics</option>
+                    <option value="Sales">📈 Sales</option>
+                    <option value="Management">🏢 Management</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium">Method</label>
+                <select id="escalate-method" class="w-full border rounded-lg p-2 mt-1">
+                    <option value="email">✉️ Email</option>
+                    <option value="whatsapp">📱 WhatsApp</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium">Note (optional)</label>
+                <textarea id="escalate-note" rows="3" class="w-full border rounded-lg p-2"></textarea>
+            </div>
+            <button id="confirm-escalate-btn" class="w-full bg-amber-600 text-white py-2 rounded-lg font-semibold">Send Escalation</button>
+        </div>
+    </div>
+</div>
+
+<div class="debug-panel shrink-0"><div class="text-white text-xs mb-1">🔍 DEBUG</div><div id="debug"></div></div>
 
 <script>
     const BACKEND_URL = 'https://kevsono-kevs-digital-bos.hf.space';
     let token = localStorage.getItem('access_token');
     let activeTicketId = null;
+    let calendar = null;
+    let customers = [];
 
     function showToast(msg, type='success') {
         const container = document.getElementById('toast-container');
@@ -261,50 +359,9 @@
         } catch (err) { addDebugLog(endpoint, method, res?.status || null, null, err.message); throw err; }
     }
 
-    function showLoginModal() { document.getElementById('auth-modal').classList.remove('hidden'); }
-    function hideLoginModal() { document.getElementById('auth-modal').classList.add('hidden'); }
+    function showLoginModal() {}
 
-    async function logout() {
-        try { await req('/auth/logout', 'POST'); } catch(e) {}
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        token = null;
-        showLoginModal();
-        showToast('Logged out');
-    }
-
-    async function demoLogin() {
-        const btn = document.getElementById('demo-login-btn');
-        btn.disabled = true;
-        try {
-            const res = await fetch(`${BACKEND_URL}/auth/login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' })
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.detail);
-            token = data.access_token;
-            localStorage.setItem('access_token', token);
-            localStorage.setItem('refresh_token', data.refresh_token);
-            const me = await req('/auth/me');
-            const role = me.role || 'customer';
-            localStorage.setItem('user_role', role);
-            hideLoginModal();
-            loadTickets();
-            showToast('Demo login successful');
-            location.reload();
-        } catch (err) { showToast(err.message, 'error'); }
-        finally { btn.disabled = false; }
-    }
-
-    async function loadUserInfo() {
-        try {
-            const me = await req('/auth/me');
-            const context = await req(`/support/customer-context?target_user_id=${me.user_id}`);
-        } catch (e) {}
-    }
-
+    // ---------- SUPPORT TICKETS ----------
     async function loadTickets() {
         const status = document.getElementById('queue-status-filter').value;
         try {
@@ -337,28 +394,121 @@
                 msgDiv.innerText = `${m.sender_type}: ${m.message}`;
                 container.appendChild(msgDiv);
             });
-            await loadCustomerContext(data.ticket.user_id);
+            await loadCustomerFullContext(data.ticket.user_id);
             loadTickets();
         } catch(err) { showToast('Failed to load ticket', 'error'); }
     }
 
-    async function loadCustomerContext(userId) {
+    async function loadCustomerFullContext(userId) {
         try {
-            const data = await req(`/support/customer-context?target_user_id=${userId}`);
-            document.getElementById('profile-display').innerHTML = data.profile ? `${data.profile.first_name} ${data.profile.last_name}<br>${data.profile.phone||'-'}` : 'No profile';
-            document.getElementById('loyalty-display').innerHTML = data.loyalty ? `Points: ${data.loyalty.current_points}<br>Tier: ${data.loyalty.tier}` : 'No loyalty';
-        } catch(err) { document.getElementById('profile-display').innerHTML = `Error: ${err.message}`; }
+            const context = await req(`/support/customer-context?target_user_id=${userId}`);
+            const profile = context.profile || {};
+            const loyalty = context.loyalty || { current_points: 0, tier: 'bronze' };
+            let orderSummary = { total_orders: 0, total_spent: 0, last_order_date: null };
+            try {
+                const summary = await req(`/sales/customer-summary?user_id=${userId}`);
+                orderSummary = summary;
+            } catch(e) { console.warn('Order summary not available', e); }
+
+            document.getElementById('cust-name').innerText = `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'Guest';
+            document.getElementById('cust-email').innerText = profile.email || '-';
+            document.getElementById('cust-phone').innerText = profile.phone || '-';
+            document.getElementById('cust-address').innerText = profile.address || '-';
+            document.getElementById('cust-points').innerText = loyalty.current_points;
+            document.getElementById('cust-tier').innerText = loyalty.tier || 'bronze';
+            document.getElementById('cust-total-orders').innerText = orderSummary.total_orders ?? '-';
+            document.getElementById('cust-total-spent').innerHTML = `₦${(orderSummary.total_spent || 0).toLocaleString()}`;
+            document.getElementById('cust-last-order').innerText = orderSummary.last_order_date ? new Date(orderSummary.last_order_date).toLocaleDateString() : '-';
+            const ordersLink = document.getElementById('cust-orders-link');
+            if (ordersLink) ordersLink.href = `/kdfulfillment?customer_id=${userId}`;
+            document.getElementById('loyalty-display').innerHTML = `<div><strong>Points:</strong> ${loyalty.current_points}</div><div><strong>Tier:</strong> ${loyalty.tier}</div><div><strong>Member since:</strong> ${profile.created_at ? new Date(profile.created_at).toLocaleDateString() : '-'}</div>`;
+        } catch(err) { console.error(err); document.getElementById('cust-name').innerText = 'Error loading'; }
     }
 
-    function escapeHtml(str) {
-        if (!str) return '';
-        return str.replace(/[&<>]/g, function(m) {
-            if (m === '&') return '&amp;';
-            if (m === '<') return '&lt;';
-            if (m === '>') return '&gt;';
-            return m;
-        });
+    // Create new ticket
+    async function createTicket(customerId, subject, description, priority) {
+        const payload = {
+            user_id: customerId || null,
+            subject: subject,
+            description: description,
+            priority: priority || 'medium'
+        };
+        return await req('/support/tickets', 'POST', payload);
     }
+
+    // Customer search for new ticket modal
+    async function searchCustomers(query) {
+        if (query.length < 2) return [];
+        try {
+            const users = await req('/organisations/me/users');
+            return (users.users || []).filter(u => 
+                u.email.toLowerCase().includes(query.toLowerCase()) || 
+                `${u.first_name} ${u.last_name}`.toLowerCase().includes(query.toLowerCase())
+            );
+        } catch(e) { return []; }
+    }
+
+    // New ticket modal logic
+    const newTicketModal = document.getElementById('new-ticket-modal');
+    const newTicketBtn = document.getElementById('new-ticket-btn');
+    const closeNewTicketModal = document.getElementById('close-new-ticket-modal');
+    const newTicketForm = document.getElementById('new-ticket-form');
+    const customerSearchInput = document.getElementById('new-ticket-customer');
+    const customerSearchResults = document.getElementById('customer-search-results');
+    let selectedCustomerId = null;
+
+    newTicketBtn?.addEventListener('click', () => {
+        newTicketModal.classList.remove('hidden');
+        customerSearchInput.value = '';
+        selectedCustomerId = null;
+        document.getElementById('new-ticket-subject').value = '';
+        document.getElementById('new-ticket-description').value = '';
+        document.getElementById('new-ticket-priority').value = 'medium';
+    });
+    closeNewTicketModal?.addEventListener('click', () => newTicketModal.classList.add('hidden'));
+    window.addEventListener('click', (e) => { if (e.target === newTicketModal) newTicketModal.classList.add('hidden'); });
+
+    customerSearchInput?.addEventListener('input', async (e) => {
+        const query = e.target.value.trim();
+        if (query.length < 2) { customerSearchResults.classList.add('hidden'); return; }
+        const results = await searchCustomers(query);
+        if (results.length === 0) {
+            customerSearchResults.innerHTML = '<div class="p-2 text-gray-500">No customers found</div>';
+        } else {
+            customerSearchResults.innerHTML = results.map(c => `
+                <div class="p-2 hover:bg-gray-100 cursor-pointer" data-id="${c.id}" data-name="${c.first_name} ${c.last_name} (${c.email})">
+                    ${escapeHtml(c.first_name)} ${escapeHtml(c.last_name)} - ${escapeHtml(c.email)}
+                </div>
+            `).join('');
+            customerSearchResults.querySelectorAll('div[data-id]').forEach(div => {
+                div.addEventListener('click', () => {
+                    customerSearchInput.value = div.getAttribute('data-name');
+                    selectedCustomerId = div.getAttribute('data-id');
+                    customerSearchResults.classList.add('hidden');
+                });
+            });
+        }
+        customerSearchResults.classList.remove('hidden');
+    });
+    document.addEventListener('click', (e) => {
+        if (!customerSearchInput?.contains(e.target) && !customerSearchResults?.contains(e.target)) {
+            customerSearchResults?.classList.add('hidden');
+        }
+    });
+
+    newTicketForm?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const subject = document.getElementById('new-ticket-subject').value.trim();
+        const description = document.getElementById('new-ticket-description').value.trim();
+        const priority = document.getElementById('new-ticket-priority').value;
+        if (!subject || !description) { showToast('Subject and description are required', 'error'); return; }
+        try {
+            await createTicket(selectedCustomerId, subject, description, priority);
+            showToast('Ticket created successfully', 'success');
+            newTicketModal.classList.add('hidden');
+            loadTickets();
+        } catch(err) { showToast('Failed to create ticket: ' + err.message, 'error'); }
+    });
 
     document.getElementById('agent-reply-form')?.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -385,44 +535,241 @@
     });
 
     document.getElementById('queue-status-filter')?.addEventListener('change', loadTickets);
-    document.getElementById('modal-login-btn')?.addEventListener('click', async () => {
-        const email = document.getElementById('login-email').value.trim();
-        const pwd = document.getElementById('login-password').value.trim();
-        if (!email || !pwd) { showToast('Enter email and password', 'error'); return; }
+
+    // ---------- ESCALATION ----------
+    const escalateBtn = document.getElementById('escalate-ticket-btn');
+    const escalateModal = document.getElementById('escalate-modal');
+    const closeEscalateModal = document.getElementById('close-escalate-modal');
+    const confirmEscalateBtn = document.getElementById('confirm-escalate-btn');
+
+    function openEscalateModal() {
+        if (!activeTicketId) { showToast('No ticket selected', 'error'); return; }
+        escalateModal.classList.remove('hidden');
+    }
+    function closeEscalateModalFn() { escalateModal.classList.add('hidden'); }
+    async function confirmEscalation() {
+        const department = document.getElementById('escalate-dept').value;
+        const method = document.getElementById('escalate-method').value;
+        const note = document.getElementById('escalate-note').value.trim();
+
+        let ticketSubject = '';
+        let ticketMessages = '';
         try {
-            const res = await fetch(`${BACKEND_URL}/auth/login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password: pwd })
+            const ticketData = await req(`/support/tickets/${activeTicketId}`);
+            ticketSubject = ticketData.ticket.subject;
+            const lastMsgs = (ticketData.messages || []).slice(-3).map(m => `${m.sender_type}: ${m.message}`).join('\n');
+            ticketMessages = lastMsgs;
+        } catch(e) { console.warn(e); }
+
+        const agentName = localStorage.getItem('user_profile_display') || 'Support Agent';
+        const baseMessage = `🚨 ESCALATION REQUEST\n\nTicket ID: ${activeTicketId}\nSubject: ${ticketSubject}\nAgent: ${agentName}\nDepartment: ${department}\n\nCustomer conversation:\n${ticketMessages}\n\nAgent note: ${note || '(no additional note)'}\n\nPlease handle this escalation.`;
+
+        try {
+            await req(`/support/tickets/${activeTicketId}/message`, 'POST', {
+                message: `[ESCALATED] This ticket was escalated to ${department} via ${method}. Note: ${note || 'None'}`
             });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.detail);
-            token = data.access_token;
-            localStorage.setItem('access_token', token);
-            localStorage.setItem('refresh_token', data.refresh_token);
-            const me = await req('/auth/me');
-            const role = me.role || 'customer';
-            localStorage.setItem('user_role', role);
-            hideLoginModal();
-            loadTickets();
-            location.reload();
+            showToast('Escalation recorded in ticket', 'success');
+        } catch(err) { console.error('Failed to add escalation message:', err); }
+
+        if (method === 'email') {
+            let emailAddress = 'escalations@yourcompany.com';
+            if (department === 'Technical Support') emailAddress = 'tech@yourcompany.com';
+            if (department === 'Billing') emailAddress = 'billing@yourcompany.com';
+            if (department === 'Logistics') emailAddress = 'logistics@yourcompany.com';
+            if (department === 'Sales') emailAddress = 'sales@yourcompany.com';
+            if (department === 'Management') emailAddress = 'management@yourcompany.com';
+            const subject = encodeURIComponent(`Escalated Ticket #${activeTicketId}: ${ticketSubject}`);
+            const body = encodeURIComponent(baseMessage);
+            window.open(`mailto:${emailAddress}?subject=${subject}&body=${body}`);
+            showToast('Email client opened – please send', 'success');
+        } else if (method === 'whatsapp') {
+            let phoneNumber = '1234567890';
+            if (department === 'Technical Support') phoneNumber = '2348012345678';
+            if (department === 'Billing') phoneNumber = '2348012345679';
+            if (department === 'Logistics') phoneNumber = '2348012345680';
+            if (department === 'Sales') phoneNumber = '2348012345681';
+            if (department === 'Management') phoneNumber = '2348012345682';
+            const whatsappMsg = encodeURIComponent(baseMessage + '\n\n(Please reply to this ticket in the support system.)');
+            window.open(`https://wa.me/${phoneNumber}?text=${whatsappMsg}`, '_blank');
+            showToast('WhatsApp opened – send message', 'success');
+        }
+
+        try {
+            await req(`/support/tickets/${activeTicketId}/status`, 'PATCH', { status: 'pending' });
+        } catch(err) { console.warn('Could not update ticket status', err); }
+
+        closeEscalateModalFn();
+        await loadTickets();
+        if (activeTicketId) await selectTicket(activeTicketId);
+    }
+
+    escalateBtn?.addEventListener('click', openEscalateModal);
+    closeEscalateModal?.addEventListener('click', closeEscalateModalFn);
+    confirmEscalateBtn?.addEventListener('click', confirmEscalation);
+    window.addEventListener('click', (e) => { if (e.target === escalateModal) closeEscalateModalFn(); });
+
+    // ---------- LOYALTY & CRM ----------
+    async function loadCustomers() {
+        try {
+            const data = await req('/organisations/me/users');
+            const users = data.users || [];
+            customers = users.map(u => ({
+                id: u.id,
+                first_name: u.first_name,
+                last_name: u.last_name,
+                email: u.email,
+                phone: u.phone || '',
+                current_points: u.loyalty_points || 0,
+                tier: u.loyalty_tier || 'bronze',
+                date_of_birth: u.date_of_birth || null,
+                address: u.address || ''
+            }));
+            renderCustomerTable();
+            renderBirthdayCalendar();
+        } catch(err) { console.error(err); }
+    }
+
+    function renderCustomerTable() {
+        const searchTerm = document.getElementById('customer-search')?.value.toLowerCase() || '';
+        const filtered = customers.filter(c => 
+            `${c.first_name} ${c.last_name}`.toLowerCase().includes(searchTerm) ||
+            c.email.toLowerCase().includes(searchTerm) ||
+            c.phone.includes(searchTerm)
+        );
+        const tbody = document.getElementById('customer-table-body');
+        if (filtered.length === 0) { tbody.innerHTML = '<tr><td colspan="7" class="text-center p-4">No customers</td></tr>'; return; }
+        tbody.innerHTML = filtered.map(c => `
+            <tr class="border-b hover:bg-gray-50">
+                <td class="p-2">${escapeHtml(c.first_name)} ${escapeHtml(c.last_name)}</td>
+                <td class="p-2">${escapeHtml(c.email)}</td>
+                <td class="p-2">${escapeHtml(c.phone)}</td>
+                <td class="p-2 font-bold">${c.current_points}</td>
+                <td class="p-2 capitalize">${c.tier}</td>
+                <td class="p-2">${c.date_of_birth ? new Date(c.date_of_birth).toLocaleDateString() : '-'}</td>
+                <td class="p-2 text-center">
+                    <button onclick="openPointsAdjust(${c.id}, '${escapeHtml(c.first_name)} ${escapeHtml(c.last_name)}', ${c.current_points})" class="bg-indigo-100 text-indigo-700 px-2 py-1 rounded text-xs">Adjust</button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    window.openPointsAdjust = function(userId, name, currentPoints) {
+        document.getElementById('adjust-user-id').value = userId;
+        document.getElementById('adjust-customer-name').value = name;
+        document.getElementById('adjust-current-points').value = currentPoints;
+        document.getElementById('adjust-points-delta').value = '';
+        document.getElementById('adjust-reason').value = '';
+        document.getElementById('points-adjust-form').scrollIntoView({ behavior: 'smooth' });
+    };
+
+    document.getElementById('points-adjust-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const userId = document.getElementById('adjust-user-id').value;
+        const delta = parseInt(document.getElementById('adjust-points-delta').value);
+        if (isNaN(delta)) { showToast('Enter a valid number', 'error'); return; }
+        const reason = document.getElementById('adjust-reason').value;
+        try {
+            await req('/loyalty/adjust-points', 'POST', { user_id: userId, points_delta: delta, reason });
+            showToast(`Points updated by ${delta}`, 'success');
+            loadCustomers();
         } catch(err) { showToast(err.message, 'error'); }
     });
-    document.getElementById('demo-login-btn')?.addEventListener('click', demoLogin);
-    document.getElementById('close-modal-btn')?.addEventListener('click', hideLoginModal);
+
+    function renderBirthdayCalendar() {
+        const birthdayEvents = customers.filter(c => c.date_of_birth).map(c => {
+            const dob = new Date(c.date_of_birth);
+            const now = new Date();
+            const nextBirthday = new Date(now.getFullYear(), dob.getMonth(), dob.getDate());
+            if (nextBirthday < now) nextBirthday.setFullYear(now.getFullYear() + 1);
+            return { title: `${c.first_name} ${c.last_name}`, start: nextBirthday, allDay: true, color: '#ec489a' };
+        });
+        const calendarEl = document.getElementById('birthday-calendar');
+        if (calendar) calendar.destroy();
+        if (calendarEl) {
+            calendar = new FullCalendar.Calendar(calendarEl, {
+                initialView: 'dayGridMonth',
+                events: birthdayEvents,
+                height: 400,
+                headerToolbar: { left: 'prev,next', center: 'title', right: 'dayGridMonth' }
+            });
+            calendar.render();
+        }
+    }
+
+    document.getElementById('customer-search')?.addEventListener('input', () => renderCustomerTable());
+    document.getElementById('export-csv-btn')?.addEventListener('click', () => {
+        let csv = "Name,Email,Phone,Points,Tier,Birthday,Address\n";
+        customers.forEach(c => {
+            csv += `"${c.first_name} ${c.last_name}","${c.email}","${c.phone}",${c.current_points},"${c.tier}","${c.date_of_birth || ''}","${c.address || ''}"\n`;
+        });
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'customers.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('register-customer-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const payload = {
+            first_name: document.getElementById('cust-firstname').value,
+            last_name: document.getElementById('cust-lastname').value,
+            email: document.getElementById('cust-email').value,
+            phone: document.getElementById('cust-phone').value,
+            date_of_birth: document.getElementById('cust-dob').value || null,
+            address: document.getElementById('cust-address').value || null,
+            tier: document.getElementById('cust-tier').value,
+            loyalty_points: parseInt(document.getElementById('cust-points').value) || 0
+        };
+        try {
+            await req('/admin/customers', 'POST', payload);
+            showToast('Customer registered', 'success');
+            loadCustomers();
+            document.getElementById('register-customer-form').reset();
+        } catch(err) { showToast(err.message, 'error'); }
+    });
+
+    // ---------- TAB SWITCHING ----------
+    const userRole = localStorage.getItem('user_role') || 'customer';
+    const canAccessSupport = ['owner','admin','support'].includes(userRole);
+    const canAccessLoyalty = ['owner','admin','loyalty_manager'].includes(userRole);
+    const supportTab = document.getElementById('support-tab');
+    const loyaltyTab = document.getElementById('loyalty-tab');
+    const supportBtn = document.getElementById('support-tab-btn');
+    const loyaltyBtn = document.getElementById('loyalty-tab-btn');
+
+    if (!canAccessSupport) supportBtn.style.display = 'none';
+    if (!canAccessLoyalty) loyaltyBtn.style.display = 'none';
+
+    function showSupportTab() {
+        supportTab.classList.remove('hidden');
+        loyaltyTab.classList.add('hidden');
+        supportBtn.classList.add('tab-active'); supportBtn.classList.remove('tab-inactive');
+        loyaltyBtn.classList.add('tab-inactive'); loyaltyBtn.classList.remove('tab-active');
+        loadTickets();
+    }
+    function showLoyaltyTab() {
+        supportTab.classList.add('hidden');
+        loyaltyTab.classList.remove('hidden');
+        loyaltyBtn.classList.add('tab-active'); loyaltyBtn.classList.remove('tab-inactive');
+        supportBtn.classList.add('tab-inactive'); supportBtn.classList.remove('tab-active');
+        loadCustomers();
+    }
+    supportBtn.addEventListener('click', showSupportTab);
+    loyaltyBtn.addEventListener('click', showLoyaltyTab);
+    if (canAccessSupport) showSupportTab();
+    else if (canAccessLoyalty) showLoyaltyTab();
+
+    function escapeHtml(str) { return String(str).replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
 
     (async () => {
-        if (token) {
-            try {
-                await loadUserInfo();
-                await loadTickets();
-            } catch (e) {
-                token = null;
-                showLoginModal();
-            }
-        } else {
-            showLoginModal();
-        }
+        if (!token) return;
+        try {
+            if (canAccessSupport) await loadTickets();
+            if (canAccessLoyalty) await loadCustomers();
+        } catch(e) { console.error(e); }
     })();
 </script>
 </body>
