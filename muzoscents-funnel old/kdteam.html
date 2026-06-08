@@ -270,7 +270,6 @@
     async function checkAccess() {
         const role = localStorage.getItem('user_role');
         if (!role) {
-            // try to fetch /auth/me
             try {
                 const me = await apiFetch('/auth/me');
                 localStorage.setItem('user_role', me.role);
@@ -308,7 +307,7 @@
                     <td class="px-6 py-3"><span class="px-2 py-1 text-xs rounded-full ${user.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}">${user.status || 'active'}</span></td>
                     <td class="px-6 py-3 text-right">
                         <button class="reset-pwd-btn text-blue-600 hover:text-blue-800 mr-2" data-email="${user.email}" title="Reset password"><i class="fas fa-key"></i></button>
-                        <button class="remove-user-btn text-red-600 hover:text-red-800" data-user-id="${user.id}" title="Remove user"><i class="fas fa-trash-alt"></i></button>
+                        <button class="remove-user-btn text-red-600 hover:text-red-800" data-user-id="${user.id}" data-role="${user.role}" title="Remove user"><i class="fas fa-trash-alt"></i></button>
                     </td>
                 </tr>
             `).join('');
@@ -318,19 +317,11 @@
                 btn.addEventListener('click', () => resetUserPassword(btn.getAttribute('data-email')));
             });
             document.querySelectorAll('.remove-user-btn').forEach(btn => {
-                btn.addEventListener('click', () => removeUser(btn.getAttribute('data-user-id')));
+                btn.addEventListener('click', () => removeUser(btn.getAttribute('data-user-id'), btn.getAttribute('data-role')));
             });
         } catch (err) {
-            tbody.innerHTML = `<td><td colspan="5" class="text-center py-6 text-red-500">Error: ${err.message}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-red-500">Error: ${err.message}</td></tr>`;
         }
-    }
-
-    // Create new staff member
-    async function createStaff(payload) {
-        return await apiFetch('/organisations/me/users', {
-            method: 'POST',
-            body: JSON.stringify(payload)
-        });
     }
 
     // Reset password (admin)
@@ -344,11 +335,20 @@
         }
     }
 
-    // Remove user from organisation
-    async function removeUser(userId) {
-        if (!confirm('Remove this user from the organisation? They will lose access.')) return;
+    // Remove user from organisation – with admin key prompt for owners
+    async function removeUser(userId, role) {
+        let headers = {};
+        if (role === 'owner') {
+            const adminKey = prompt("⚠️ You are about to remove an OWNER. This action is irreversible.\nPlease enter the Admin Secret Key to proceed:");
+            if (!adminKey) {
+                showToast("Owner removal cancelled (no key provided).", "error");
+                return;
+            }
+            headers['X-Admin-Key'] = adminKey;
+        }
+        if (!confirm(`Remove this user from the organisation? They will lose access.`)) return;
         try {
-            await apiFetch(`/organisations/me/users/${userId}`, { method: 'DELETE' });
+            await apiFetch(`/organisations/me/users/${userId}`, { method: 'DELETE', headers });
             showToast('User removed', 'success');
             loadTeam();
         } catch (err) {
@@ -389,13 +389,16 @@
         btn.disabled = true;
 
         try {
-            await createStaff({
-                first_name: firstName,
-                last_name: lastName,
-                email: email,
-                role: role,
-                phone: phone || null,
-                send_invite_email: true
+            await apiFetch('/organisations/me/users', {
+                method: 'POST',
+                body: JSON.stringify({
+                    first_name: firstName,
+                    last_name: lastName,
+                    email: email,
+                    role: role,
+                    phone: phone || null,
+                    send_invite_email: true
+                })
             });
             msgDiv.className = 'mt-3 text-sm text-green-600';
             msgDiv.innerText = `Invitation sent to ${email}. They will receive an email with a temporary password.`;
