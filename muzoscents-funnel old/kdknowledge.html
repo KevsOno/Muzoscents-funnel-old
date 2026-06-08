@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Knowledge Base Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body class="bg-gray-50">
+
+<!-- Global navigation (same as other pages) -->
+<div id="kevs-nav-container"></div>
+<script>
+(function() {
+    const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
+    const LOGIN_URL = '/kdsiginin';
+    const navItems = [
+        { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', roles: ['owner','admin','sales_rep','finance','customer','support','logistics'] },
+        { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', roles: ['owner','admin','sales_rep'] },
+        { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', roles: ['owner','admin','logistics'] },
+        { path: '/kdsupport',     name: 'Support',   icon: 'fa-headset', roles: ['owner','admin','support','customer'] },
+        { path: '/kddashboard',   name: 'Exec',      icon: 'fa-chart-simple', roles: ['owner','admin','finance'] },
+        { path: '/kdadmin',       name: 'Inventory', icon: 'fa-boxes', roles: ['owner','admin','inventory_manager'] },
+        { path: '/kdteam',        name: 'Team',      icon: 'fa-users', roles: ['owner','admin'] },
+        { path: '/kdknowledge',   name: 'Knowledge', icon: 'fa-database', roles: ['owner','admin'] }
+    ];
+    function getUserRole() { try { return localStorage.getItem('user_role') || 'customer'; } catch(e) { return 'customer'; } }
+    function canAccess(requiredRoles) { return requiredRoles.includes(getUserRole()); }
+    function buildNavbar() {
+        const currentPath = window.location.pathname;
+        let linksHtml = '';
+        navItems.forEach(item => {
+            if (!canAccess(item.roles)) return;
+            const isActive = currentPath === item.path;
+            const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
+            linksHtml += `<a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeClass}"><i class="fa-solid ${item.icon} w-4"></i> ${item.name}</a>`;
+        });
+        let userName = 'User';
+        try { userName = localStorage.getItem('user_profile_display') || 'User'; } catch(e) {}
+        return `<div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40"><div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center"><div class="flex items-center gap-2"><i class="fa-solid fa-database text-orange-400 text-xl"></i><span class="text-xl font-bold">${APP_NAME}</span></div><div class="hidden md:flex gap-2">${linksHtml}</div><div><span class="text-sm bg-white/10 px-3 py-1 rounded-full">${userName}</span><button id="global-logout-btn" class="ml-3 bg-red-500/80 hover:bg-red-600 px-3 py-1 rounded-lg text-sm">Logout</button></div></div></div>`;
+    }
+    async function globalLogout() {
+        const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
+        const token = localStorage.getItem('access_token');
+        if (token) await fetch(`${BACKEND}/auth/logout`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }).catch(()=>{});
+        localStorage.clear();
+        window.location.href = LOGIN_URL;
+    }
+    function initNavigation() {
+        const container = document.getElementById('kevs-nav-container');
+        if (container) {
+            container.innerHTML = buildNavbar();
+            document.getElementById('global-logout-btn')?.addEventListener('click', globalLogout);
+        }
+    }
+    document.addEventListener('DOMContentLoaded', initNavigation);
+})();
+</script>
+
+<div class="max-w-5xl mx-auto p-6">
+    <h1 class="text-2xl font-bold mb-6">📚 Chatbot Knowledge Base</h1>
+    <p class="text-gray-600 mb-4">Manage documents that the AI assistant uses to answer customer questions (keyword search).</p>
+
+    <!-- Add/Edit Form -->
+    <div class="bg-white rounded-xl shadow p-6 mb-8">
+        <h2 class="text-xl font-semibold mb-4" id="form-title">Add new knowledge</h2>
+        <form id="knowledge-form">
+            <input type="hidden" id="doc-id">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div><label class="block text-sm font-medium">Title *</label><input type="text" id="title" required class="w-full border rounded-lg p-2"></div>
+                <div><label class="block text-sm font-medium">Category *</label><input type="text" id="category" required class="w-full border rounded-lg p-2"></div>
+                <div class="md:col-span-2"><label class="block text-sm font-medium">Content *</label><textarea id="content" rows="5" required class="w-full border rounded-lg p-2"></textarea></div>
+                <div class="md:col-span-2"><label class="block text-sm font-medium">Keywords (comma separated)</label><input type="text" id="keywords" placeholder="e.g., refund, shipping, warranty" class="w-full border rounded-lg p-2"></div>
+            </div>
+            <div class="flex gap-3 mt-4">
+                <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg">Save</button>
+                <button type="button" id="cancel-edit" class="bg-gray-300 px-4 py-2 rounded-lg hidden">Cancel</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- List of existing entries -->
+    <div class="bg-white rounded-xl shadow overflow-hidden">
+        <div class="px-6 py-4 border-b bg-gray-50 flex justify-between items-center">
+            <h2 class="font-semibold">Existing Documents</h2>
+            <button id="refresh-list" class="text-sm text-blue-600"><i class="fas fa-sync-alt"></i> Refresh</button>
+        </div>
+        <div id="knowledge-list" class="divide-y">
+            <div class="p-6 text-center text-gray-400">Loading...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
+    let token = localStorage.getItem('access_token');
+    if (!token) window.location.href = '/kdsiginin';
+
+    async function apiCall(endpoint, method='GET', body=null) {
+        const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+        const res = await fetch(`${BACKEND}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+        if (res.status === 401) { localStorage.clear(); window.location.href = '/kdsiginin'; throw new Error('Unauthorized'); }
+        if (!res.ok) { const err = await res.json().catch(()=>({})); throw new Error(err.detail || 'Request failed'); }
+        return res.json();
+    }
+
+    async function loadKnowledge() {
+        const container = document.getElementById('knowledge-list');
+        container.innerHTML = '<div class="p-6 text-center text-gray-400">Loading...</div>';
+        try {
+            const data = await apiCall('/admin/knowledge');
+            const items = data.items || [];
+            if (items.length === 0) {
+                container.innerHTML = '<div class="p-6 text-center text-gray-400">No documents yet. Add one above.</div>';
+                return;
+            }
+            container.innerHTML = items.map(doc => `
+                <div class="p-4 hover:bg-gray-50">
+                    <div class="flex justify-between items-start">
+                        <div class="flex-1">
+                            <h3 class="font-semibold">${escapeHtml(doc.title)}</h3>
+                            <p class="text-sm text-gray-500">Category: ${escapeHtml(doc.category)} | Keywords: ${doc.keywords?.join(', ') || '-'}</p>
+                            <p class="text-xs text-gray-400 mt-1">${new Date(doc.created_at).toLocaleString()}</p>
+                            <p class="text-sm mt-2 line-clamp-2">${escapeHtml(doc.content.substring(0, 150))}${doc.content.length>150?'…':''}</p>
+                        </div>
+                        <div class="flex gap-2 ml-4">
+                            <button onclick="editDocument(${doc.id})" class="text-blue-600 hover:text-blue-800"><i class="fas fa-edit"></i></button>
+                            <button onclick="deleteDocument(${doc.id})" class="text-red-600 hover:text-red-800"><i class="fas fa-trash"></i></button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        } catch (err) {
+            container.innerHTML = `<div class="p-6 text-red-500">Error: ${err.message}</div>`;
+        }
+    }
+
+    window.editDocument = async function(id) {
+        try {
+            const data = await apiCall('/admin/knowledge');
+            const doc = data.items.find(d => d.id == id);
+            if (!doc) throw new Error('Not found');
+            document.getElementById('doc-id').value = doc.id;
+            document.getElementById('title').value = doc.title;
+            document.getElementById('category').value = doc.category;
+            document.getElementById('content').value = doc.content;
+            document.getElementById('keywords').value = (doc.keywords || []).join(', ');
+            document.getElementById('form-title').innerText = 'Edit knowledge';
+            document.getElementById('cancel-edit').classList.remove('hidden');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        } catch(err) { alert(err.message); }
+    };
+
+    window.deleteDocument = async function(id) {
+        if (!confirm('Permanently delete this document? It will no longer be available for AI context.')) return;
+        try {
+            await apiCall(`/admin/knowledge/${id}`, 'DELETE');
+            await loadKnowledge();
+            alert('Deleted');
+        } catch(err) { alert(err.message); }
+    };
+
+    document.getElementById('knowledge-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('doc-id').value;
+        const payload = {
+            title: document.getElementById('title').value.trim(),
+            category: document.getElementById('category').value.trim(),
+            content: document.getElementById('content').value.trim(),
+            keywords: document.getElementById('keywords').value.split(',').map(k => k.trim()).filter(k => k)
+        };
+        if (!payload.title || !payload.category || !payload.content) {
+            alert('Title, category and content are required');
+            return;
+        }
+        try {
+            if (id) {
+                await apiCall(`/admin/knowledge/${id}`, 'PUT', payload);
+                alert('Document updated');
+            } else {
+                await apiCall('/admin/knowledge', 'POST', payload);
+                alert('Document added');
+            }
+            document.getElementById('knowledge-form').reset();
+            document.getElementById('doc-id').value = '';
+            document.getElementById('form-title').innerText = 'Add new knowledge';
+            document.getElementById('cancel-edit').classList.add('hidden');
+            await loadKnowledge();
+        } catch(err) { alert(`Error: ${err.message}`); }
+    });
+
+    document.getElementById('cancel-edit').addEventListener('click', () => {
+        document.getElementById('knowledge-form').reset();
+        document.getElementById('doc-id').value = '';
+        document.getElementById('form-title').innerText = 'Add new knowledge';
+        document.getElementById('cancel-edit').classList.add('hidden');
+    });
+
+    document.getElementById('refresh-list').addEventListener('click', loadKnowledge);
+    loadKnowledge();
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
+    }
+</script>
+</body>
+</html>
