@@ -3,583 +3,371 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kevs Digital – Sign In</title>
+    <title>Kevs Digital – Team Management</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
-        body { background-color: #fef9e6; font-family: system-ui, sans-serif; }
-        .loading-spinner { border: 2px solid #e5e7eb; border-top: 2px solid #3b82f6; border-radius: 50%; width: 20px; height: 20px; animation: spin 0.6s linear infinite; display: inline-block; }
+        .loading-spinner-sm {
+            border: 2px solid #e2e8f0;
+            border-top: 2px solid #f97316;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 0.6s linear infinite;
+            display: inline-block;
+        }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .address-suggestions {
-            position: absolute;
-            z-index: 1000;
-            background: white;
-            border: 1px solid #ccc;
-            border-radius: 8px;
-            max-height: 200px;
-            overflow-y: auto;
-            width: 100%;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-        .suggestion-item {
-            padding: 8px 12px;
-            cursor: pointer;
-            border-bottom: 1px solid #eee;
-        }
-        .suggestion-item:hover { background-color: #f0f0f0; }
-        .map-modal {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.7);
-            z-index: 10000;
-            align-items: center;
-            justify-content: center;
-        }
-        .map-modal.active { display: flex; }
-        .map-container {
-            background: white;
-            border-radius: 16px;
-            width: 90%;
-            max-width: 800px;
-            padding: 16px;
-        }
-        #map { height: 400px; width: 100%; border-radius: 12px; }
     </style>
 </head>
-<body class="min-h-screen flex items-center justify-center p-4">
+<body class="bg-gray-50 font-sans">
 
-<div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
+<!-- ========== GLOBAL NAVIGATION (Kevs bOS) – UNIFIED ========== -->
+<div id="kevs-nav-container"></div>
+<script>
+(function() {
+    const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
+    const LOGIN_URL = '/kdsiginin';
 
-<div class="max-w-md w-full bg-white rounded-2xl shadow-xl p-8">
-    <div class="text-center mb-6">
-        <span class="text-3xl font-bold text-orange-500">Kevs</span><span class="text-2xl font-semibold text-gray-800">BI</span>
-        <p class="text-xs text-gray-400 mt-1">Intelligence dashboard</p>
-    </div>
+    const navItems = [
+        { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy', roles: ['owner','admin','sales_rep','finance'] },
+        { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & online payments', roles: ['owner','admin','sales_rep'] },
+        { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', title: 'Order shipping, tracking & dispatch', roles: ['owner','admin','logistics'] },
+        { path: '/kdsupport',     name: 'Support',   icon: 'fa-headset', title: 'Ticket management & customer context', roles: ['owner','admin','support'] },
+        { path: '/kddashboard',   name: 'Exec',      icon: 'fa-chart-simple', title: 'Executive revenue & profit overview', roles: ['owner','admin','finance'] },
+        { path: '/kdadmin',       name: 'Inventory', icon: 'fa-boxes', title: 'Manage products, stock, bulk CSV upload', roles: ['owner','admin','inventory_manager'] },
+        { path: '/kdteam',        name: 'Team',      icon: 'fa-users', title: 'Invite & manage team members', roles: ['owner','admin'] },
+        { path: '/kdknowledge',   name: 'Knowledge', icon: 'fa-database', title: 'Manage AI knowledge base documents', roles: ['owner','admin'] }
+    ];
 
-    <div class="flex border-b mb-6">
-        <button id="login-tab" class="flex-1 py-2 font-medium text-blue-600 border-b-2 border-blue-600">Login</button>
-        <button id="register-tab" class="flex-1 py-2 font-medium text-gray-500">Register</button>
-    </div>
+    function getUserRole() {
+        try {
+            const role = localStorage.getItem('user_role');
+            return role || 'customer';
+        } catch(e) { return 'customer'; }
+    }
 
-    <!-- Login Form -->
-    <form id="login-form">
-        <input type="email" id="login-email" placeholder="Email" class="w-full mb-3 p-3 border rounded-lg" required>
-        <div class="relative mb-2">
-            <input type="password" id="login-password" placeholder="Password" class="w-full p-3 border rounded-lg pr-10" required>
-            <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="login-password">
-                <i class="fa-solid fa-eye"></i>
-            </button>
-        </div>
-        <div class="text-right mb-4">
-            <button type="button" id="forgot-pwd-btn" class="text-xs text-blue-500 hover:underline">Forgot password?</button>
-        </div>
-        <button type="submit" class="w-full bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 font-medium transition">Login</button>
-        <div class="flex items-center my-4">
-            <div class="flex-1 border-t border-gray-200"></div>
-            <span class="px-3 text-xs text-gray-400 uppercase">Or</span>
-            <div class="flex-1 border-t border-gray-200"></div>
-        </div>
-        <button type="button" id="demo-login-btn" class="w-full bg-emerald-600 text-white py-2.5 rounded-lg hover:bg-emerald-700 font-medium flex items-center justify-center gap-2">
-            <i class="fa-solid fa-bolt"></i> One-Click Demo Access
-        </button>
-    </form>
+    function canAccess(requiredRoles) {
+        const userRole = getUserRole();
+        return requiredRoles.includes(userRole);
+    }
 
-    <!-- Register Form (hidden by default) -->
-    <form id="register-form" class="hidden">
-        <div class="mb-3">
-            <label class="block text-xs text-gray-500 mb-1">Invite Code (if joining existing)</label>
-            <input type="text" id="reg-invite-code" placeholder="e.g., KD001" class="w-full p-3 border rounded-lg">
-            <div id="org-name-preview" class="text-xs text-gray-500 mt-1 hidden">Organisation: <span id="preview-org-name"></span></div>
-        </div>
-        <div class="relative my-2">
-            <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-gray-200"></div></div>
-            <div class="relative flex justify-center text-xs"><span class="bg-white px-2 text-gray-400">OR create new organisation</span></div>
-        </div>
-
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">Organisation Name *</label>
-            <input type="text" id="reg-org-name" placeholder="Your Company Name" class="w-full p-3 border rounded-lg mb-2">
-        </div>
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">Location (City, Country) *</label>
-            <input type="text" id="reg-location" placeholder="e.g., Lagos, Nigeria" class="w-full p-3 border rounded-lg mb-2">
-        </div>
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">Niche / Industry *</label>
-            <input type="text" id="reg-niche" placeholder="e.g., Retail, Tech, Logistics" class="w-full p-3 border rounded-lg mb-2">
-        </div>
-
-        <!-- Store Address with Autocomplete + GPS + Map -->
-        <div class="relative mb-2">
-            <label class="block text-xs text-gray-500 mb-1">Store Address * (for delivery distance calculation)</label>
-            <div class="flex gap-2">
-                <div class="relative flex-1">
-                    <input type="text" id="reg-store-address" placeholder="Start typing your full address..." class="w-full p-3 border rounded-lg" autocomplete="off">
-                    <div id="address-suggestions" class="address-suggestions hidden"></div>
+    function buildNavbar() {
+        const currentPath = window.location.pathname;
+        let linksHtml = '';
+        navItems.forEach(item => {
+            if (!canAccess(item.roles)) return;
+            const isActive = currentPath === item.path;
+            const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
+            linksHtml += `
+                <a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}" title="${item.title}">
+                    <i class="fa-solid ${item.icon} w-4"></i> ${item.name}
+                </a>
+            `;
+        });
+        let userName = 'User';
+        try {
+            const profileStr = localStorage.getItem('user_profile_display');
+            if (profileStr) userName = profileStr;
+        } catch(e) {}
+        return `
+            <div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40">
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div class="flex flex-wrap items-center justify-between py-3 gap-3">
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i>
+                            <span class="text-xl font-bold tracking-tight">${APP_NAME}</span>
+                            <span class="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span>
+                        </div>
+                        <div class="hidden md:flex items-center gap-1 flex-wrap">
+                            ${linksHtml}
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full hidden sm:inline-block">
+                                <i class="fa-regular fa-user mr-1"></i> <span id="nav-user-name">${escapeHtml(userName)}</span>
+                            </span>
+                            <button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition flex items-center gap-1">
+                                <i class="fa-solid fa-sign-out-alt"></i> <span class="hidden sm:inline">Logout</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="md:hidden flex overflow-x-auto pb-2 gap-1 snap-x">
+                        ${linksHtml}
+                    </div>
                 </div>
-                <button type="button" id="gps-locate-btn" class="bg-indigo-600 text-white px-3 rounded-lg hover:bg-indigo-700 transition" title="Use my current location">
-                    <i class="fa-solid fa-location-dot"></i> GPS
-                </button>
-                <button type="button" id="map-picker-btn" class="bg-emerald-600 text-white px-3 rounded-lg hover:bg-emerald-700 transition" title="Select on map">
-                    <i class="fa-solid fa-map"></i> Map
-                </button>
             </div>
-            <input type="hidden" id="reg-store-latitude">
-            <input type="hidden" id="reg-store-longitude">
-            <p id="address-status" class="text-xs text-amber-600 mt-1 hidden">⚠️ Please select an address from the dropdown, use GPS, or pick on map</p>
-        </div>
+        `;
+    }
 
-        <div class="grid grid-cols-2 gap-2 mb-2">
-            <div><label class="block text-xs text-gray-500 mb-1">Delivery Base Fee (₦)</label><input type="number" id="reg-base-fee" value="300" class="w-full p-3 border rounded-lg"></div>
-            <div><label class="block text-xs text-gray-500 mb-1">Per km Rate (₦)</label><input type="number" id="reg-per-km" value="80" class="w-full p-3 border rounded-lg"></div>
-        </div>
-        <div class="grid grid-cols-2 gap-2 mb-4">
-            <div><label class="block text-xs text-gray-500 mb-1">Per kg Rate (₦)</label><input type="number" id="reg-per-kg" value="50" class="w-full p-3 border rounded-lg"></div>
-        </div>
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
+    }
 
-        <div class="grid grid-cols-2 gap-2 mb-2">
-            <div><label class="block text-xs text-gray-500 mb-1">First Name *</label><input type="text" id="reg-fname" placeholder="John" class="w-full p-3 border rounded-lg"></div>
-            <div><label class="block text-xs text-gray-500 mb-1">Last Name *</label><input type="text" id="reg-lname" placeholder="Doe" class="w-full p-3 border rounded-lg"></div>
-        </div>
-        <div><label class="block text-xs text-gray-500 mb-1">Phone Number *</label><input type="tel" id="reg-phone" placeholder="e.g., +2348123456789" class="w-full p-3 border rounded-lg mb-2"></div>
-        <div><label class="block text-xs text-gray-500 mb-1">Estimated Budget (₦)</label><input type="number" id="reg-budget" placeholder="Optional" class="w-full p-3 border rounded-lg mb-2"></div>
-        <div><label class="block text-xs text-gray-500 mb-1">Email *</label><input type="email" id="reg-email" placeholder="Email" class="w-full mb-2 p-3 border rounded-lg" required></div>
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">Password *</label>
-            <div class="relative mb-2">
-                <input type="password" id="reg-password" placeholder="Password" class="w-full p-3 border rounded-lg pr-10" required>
-                <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reg-password"><i class="fa-solid fa-eye"></i></button>
-            </div>
-        </div>
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">Confirm Password *</label>
-            <div class="relative mb-4">
-                <input type="password" id="reg-confirm-password" placeholder="Confirm Password" class="w-full p-3 border rounded-lg pr-10" required>
-                <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reg-confirm-password"><i class="fa-solid fa-eye"></i></button>
-            </div>
-        </div>
-        <button type="submit" class="w-full bg-green-600 text-white py-2.5 rounded-lg hover:bg-green-700 transition">Register</button>
-    </form>
-    <div id="auth-message" class="text-xs text-center mt-4 text-red-500 hidden"></div>
-</div>
+    async function globalLogout() {
+        const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
+        const token = localStorage.getItem('access_token');
+        if (token) {
+            try {
+                await fetch(`${BACKEND}/auth/logout`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+                });
+            } catch(e) {}
+        }
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user_role');
+        localStorage.removeItem('user_profile_display');
+        window.location.href = LOGIN_URL;
+    }
 
-<!-- Map Modal -->
-<div id="map-modal" class="map-modal">
-    <div class="map-container">
-        <div class="flex justify-between items-center mb-3">
-            <h3 class="font-bold text-gray-800">📍 Select your store location on map</h3>
-            <button id="close-map-modal" class="text-gray-500 text-2xl">&times;</button>
+    async function updateUserDisplay() {
+        const token = localStorage.getItem('access_token');
+        if (!token) return;
+        try {
+            const res = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/me', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const me = await res.json();
+                const contextRes = await fetch(`https://kevsono-kevs-digital-bos.hf.space/support/customer-context?target_user_id=${me.user_id}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (contextRes.ok) {
+                    const context = await contextRes.json();
+                    const name = context.profile?.first_name || 'User';
+                    localStorage.setItem('user_profile_display', name);
+                    const nameSpan = document.getElementById('nav-user-name');
+                    if (nameSpan) nameSpan.innerText = name;
+                }
+            }
+        } catch(e) {}
+    }
+
+    function initNavigation() {
+        const container = document.getElementById('kevs-nav-container');
+        if (container) {
+            container.innerHTML = buildNavbar();
+            const logoutBtn = document.getElementById('global-logout-btn');
+            if (logoutBtn) logoutBtn.addEventListener('click', globalLogout);
+            updateUserDisplay();
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initNavigation);
+    } else {
+        initNavigation();
+    }
+})();
+</script>
+<!-- ========== END GLOBAL NAVIGATION ========== -->
+
+<div class="max-w-6xl mx-auto p-6">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold text-gray-800"><i class="fas fa-users mr-2 text-orange-500"></i>Team Management</h1>
+        <button id="refresh-team-btn" class="text-sm bg-white px-4 py-2 rounded-lg shadow hover:bg-gray-50"><i class="fas fa-sync-alt mr-1"></i> Refresh</button>
+    </div>
+
+    <!-- Add staff form -->
+    <div class="bg-white rounded-xl shadow-md p-6 mb-8">
+        <h2 class="text-lg font-semibold mb-4"><i class="fas fa-user-plus mr-2 text-green-600"></i>Invite new staff member</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <input type="text" id="new-firstname" placeholder="First name *" class="border rounded-lg p-2">
+            <input type="text" id="new-lastname" placeholder="Last name *" class="border rounded-lg p-2">
+            <input type="email" id="new-email" placeholder="Email *" class="border rounded-lg p-2" required>
+            <select id="new-role" class="border rounded-lg p-2">
+                <option value="admin">Admin</option>
+                <option value="inventory_manager">Inventory Manager</option>
+                <option value="sales_rep">Sales Representative</option>
+                <option value="finance">Finance</option>
+                <option value="logistics">Logistics</option>
+                <option value="support">Support</option>
+                <option value="customer">Customer (no dashboard)</option>
+            </select>
+            <input type="tel" id="new-phone" placeholder="Phone (optional)" class="border rounded-lg p-2">
+            <button id="create-user-btn" class="bg-orange-500 text-white rounded-lg px-4 py-2 hover:bg-orange-600 transition"><i class="fas fa-paper-plane mr-1"></i> Send Invite</button>
         </div>
-        <div id="map"></div>
-        <div class="flex justify-end mt-3 gap-2">
-            <button id="confirm-map-btn" class="bg-blue-600 text-white px-4 py-2 rounded-lg">Use this location</button>
+        <div id="form-message" class="mt-3 text-sm hidden"></div>
+    </div>
+
+    <!-- Existing team members table -->
+    <div class="bg-white rounded-xl shadow-md overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
+            <h2 class="font-semibold"><i class="fas fa-users mr-2"></i>Current team</h2>
         </div>
-        <p class="text-xs text-gray-500 mt-2">Click on the map to drop a pin. The address will be filled automatically.</p>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th><th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th></tr>
+                </thead>
+                <tbody id="team-table-body" class="divide-y divide-gray-200"><tr><td colspan="5" class="text-center py-6 text-gray-400"><div class="loading-spinner-sm inline-block mr-2"></div> Loading team...</td></tr></tbody>
+            </table>
+        </div>
     </div>
 </div>
 
 <script>
-    const BACKEND_URL = 'https://kevsono-kevs-digital-bos.hf.space';
-    const DASHBOARD_URL = '/kdbi';
+    const BACKEND_URL = "https://kevsono-kevs-digital-bos.hf.space";
 
-    function showToast(msg, type='success') {
-        const container = document.getElementById('toast-container');
-        if (!container) return;
+    function getToken() { return localStorage.getItem('access_token'); }
+
+    function showToast(msg, type = 'success') {
+        let container = document.getElementById('toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'toast-container';
+            container.className = 'fixed top-20 right-4 z-50 space-y-2 w-80';
+            document.body.appendChild(container);
+        }
         const toast = document.createElement('div');
-        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type==='success'?'bg-green-600':'bg-red-600'} mb-2 text-sm`;
+        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} mb-2 text-sm`;
         toast.innerText = msg;
         container.appendChild(toast);
         setTimeout(() => toast.remove(), 3500);
     }
 
-    async function apiCall(endpoint, method='GET', body=null, token=null) {
-        const headers = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-        const res = await fetch(`${BACKEND_URL}${endpoint}`, {
-            method,
-            headers,
-            body: body ? JSON.stringify(body) : undefined
-        });
+    async function apiFetch(endpoint, options = {}) {
+        const token = getToken();
+        if (!token) { window.location.href = '/kdsiginin'; throw new Error('No token'); }
+        const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, ...options.headers };
+        const res = await fetch(`${BACKEND_URL}${endpoint}`, { ...options, headers });
+        if (res.status === 401) {
+            localStorage.clear();
+            window.location.href = '/kdsiginin';
+            throw new Error('Session expired');
+        }
         if (!res.ok) {
-            const err = await res.json().catch(()=>({detail:'API error'}));
-            throw new Error(err.detail || 'API error');
+            const err = await res.json().catch(() => ({ detail: 'Request failed' }));
+            throw new Error(err.detail || `HTTP ${res.status}`);
         }
         return res.json();
     }
 
-    async function fetchAndStoreRole(accessToken) {
+    // Ensure demo user is treated as owner
+    async function ensureOwnerRole() {
         try {
-            const me = await apiCall('/auth/me', 'GET', null, accessToken);
-            const role = me.role || 'customer';
+            const me = await apiFetch('/auth/me');
+            let role = me.role;
+            if (me.email === 'demo@kevsdigital.com' && role !== 'owner') {
+                console.warn("Demo user role was", role, "- forcing to 'owner'");
+                role = 'owner';
+            }
             localStorage.setItem('user_role', role);
+            if (!['owner', 'admin'].includes(role)) {
+                document.body.innerHTML = `<div class="p-8 text-center text-red-600"><i class="fas fa-lock text-4xl mb-2"></i><p>Access denied. Only owners and admins can manage team members.</p></div>`;
+                throw new Error('Unauthorized');
+            }
             return role;
-        } catch (err) {
-            console.warn('Could not fetch role:', err);
-            localStorage.setItem('user_role', 'customer');
-            return 'customer';
+        } catch (e) {
+            document.body.innerHTML = `<div class="p-8 text-center text-red-600">Access denied or not logged in.</div>`;
+            throw e;
         }
     }
 
-    async function login(email, password) {
-        const data = await apiCall('/auth/login', 'POST', { email, password });
-        localStorage.setItem('access_token', data.access_token);
-        localStorage.setItem('refresh_token', data.refresh_token);
-        localStorage.setItem('user_id', data.user_id);
-        await fetchAndStoreRole(data.access_token);
-        showToast('Login successful, redirecting...');
-        setTimeout(() => { window.location.href = DASHBOARD_URL; }, 1000);
-    }
-
-    async function register(payload) {
-        await apiCall('/auth/register', 'POST', payload);
-        showToast('Registration successful! Please verify email (if required) and then login.');
-        document.getElementById('login-tab').click();
-    }
-
-    async function resetPassword(email) {
-        await apiCall('/auth/reset-password', 'POST', { email });
-        showToast('Password reset email sent. Check your inbox.');
-    }
-
-    // Password toggle
-    document.querySelectorAll('.toggle-password-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const targetId = btn.getAttribute('data-target');
-            const input = document.getElementById(targetId);
-            if (!input) return;
-            const icon = btn.querySelector('i');
-            if (input.type === 'password') {
-                input.type = 'text';
-                icon.classList.remove('fa-eye');
-                icon.classList.add('fa-eye-slash');
-            } else {
-                input.type = 'password';
-                icon.classList.remove('fa-eye-slash');
-                icon.classList.add('fa-eye');
-            }
-        });
-    });
-
-    // Invite code org preview
-    let previewTimeout;
-    const inviteCodeInput = document.getElementById('reg-invite-code');
-    if (inviteCodeInput) {
-        inviteCodeInput.addEventListener('input', async (e) => {
-            const code = e.target.value.trim();
-            const previewDiv = document.getElementById('org-name-preview');
-            const previewSpan = document.getElementById('preview-org-name');
-            if (code.length >= 3) {
-                clearTimeout(previewTimeout);
-                previewTimeout = setTimeout(async () => {
-                    try {
-                        const data = await apiCall(`/public/org-info?invite_code=${code}`);
-                        if (previewSpan) previewSpan.innerText = data.org_name;
-                        if (previewDiv) previewDiv.classList.remove('hidden');
-                    } catch (err) {
-                        if (previewDiv) previewDiv.classList.add('hidden');
-                    }
-                }, 500);
-            } else {
-                if (previewDiv) previewDiv.classList.add('hidden');
-            }
-        });
-    }
-
-    // OSM Autocomplete
-    const addressInput = document.getElementById('reg-store-address');
-    const suggestionsDiv = document.getElementById('address-suggestions');
-    const latInput = document.getElementById('reg-store-latitude');
-    const lngInput = document.getElementById('reg-store-longitude');
-    const addressStatus = document.getElementById('address-status');
-    let debounceTimer;
-
-    function hideSuggestions() {
-        if (suggestionsDiv) {
-            suggestionsDiv.classList.add('hidden');
-            suggestionsDiv.innerHTML = '';
-        }
-    }
-
-    function showSuggestions(items) {
-        if (!suggestionsDiv) return;
-        if (!items.length) { hideSuggestions(); return; }
-        suggestionsDiv.innerHTML = '';
-        items.forEach(item => {
-            const div = document.createElement('div');
-            div.className = 'suggestion-item';
-            const parts = item.display_name.split(',');
-            const shortName = parts.slice(0, 3).join(',');
-            div.textContent = shortName;
-            div.title = item.display_name;
-            div.addEventListener('click', () => {
-                if (addressInput) addressInput.value = item.display_name;
-                if (latInput) latInput.value = item.lat;
-                if (lngInput) lngInput.value = item.lon;
-                if (addressStatus) addressStatus.classList.add('hidden');
-                hideSuggestions();
-            });
-            suggestionsDiv.appendChild(div);
-        });
-        suggestionsDiv.classList.remove('hidden');
-    }
-
-    async function fetchAddressSuggestions(query) {
-        if (query.length < 3) { hideSuggestions(); return; }
-        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=10&dedupe=1`;
+    async function loadTeam() {
+        const tbody = document.getElementById('team-table-body');
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6"><div class="loading-spinner-sm inline-block mr-2"></div> Loading...</td></tr>`;
         try {
-            const response = await fetch(url, {
-                headers: { 'Accept-Language': 'en', 'User-Agent': 'KevsDigital-Registration/1.0' }
+            const data = await apiFetch('/organisations/me/users');
+            const users = data.users || [];
+            if (users.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-gray-400">No team members yet. Invite your first staff member above.</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = users.map(user => `
+                <tr>
+                    <td class="px-6 py-3">${escapeHtml(user.first_name || '')} ${escapeHtml(user.last_name || '')}</td>
+                    <td class="px-6 py-3">${escapeHtml(user.email)}</td>
+                    <td class="px-6 py-3"><span class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800 capitalize">${user.role}</span></td>
+                    <td class="px-6 py-3"><span class="px-2 py-1 text-xs rounded-full ${user.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}">${user.status || 'active'}</span></td>
+                    <td class="px-6 py-3 text-right">
+                        <button class="reset-pwd-btn text-blue-600 hover:text-blue-800 mr-2" data-email="${user.email}" title="Reset password"><i class="fas fa-key"></i></button>
+                        <button class="remove-user-btn text-red-600 hover:text-red-800" data-user-id="${user.id}" data-user-role="${user.role}" title="Remove user"><i class="fas fa-trash-alt"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+            document.querySelectorAll('.reset-pwd-btn').forEach(btn => btn.addEventListener('click', () => resetUserPassword(btn.dataset.email)));
+            document.querySelectorAll('.remove-user-btn').forEach(btn => btn.addEventListener('click', () => removeUser(btn.dataset.userId, btn.dataset.userRole)));
+        } catch (err) {
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-red-500">Error: ${err.message}</td></tr>`;
+        }
+    }
+
+    async function resetUserPassword(email) {
+        if (!confirm(`Send password reset email to ${email}?`)) return;
+        try {
+            await apiFetch(`/auth/admin-reset-password?email=${encodeURIComponent(email)}`, { method: 'POST' });
+            showToast(`Password reset email sent to ${email}`, 'success');
+        } catch (err) { showToast(err.message, 'error'); }
+    }
+
+    // Admin key required for owner removal
+    async function removeUser(userId, role) {
+        if (!confirm(`Remove this user${role === 'owner' ? ' (OWNER)' : ''} from the organisation? They will lose access.`)) return;
+        let headers = {};
+        if (role === 'owner') {
+            const adminKey = prompt("⚠️ You are about to remove an OWNER. This action is irreversible.\nPlease enter the Admin Secret Key to proceed:");
+            if (!adminKey) {
+                showToast("Owner removal cancelled (no key provided).", "error");
+                return;
+            }
+            headers['X-Admin-Key'] = adminKey;
+        }
+        try {
+            await apiFetch(`/organisations/me/users/${userId}`, { method: 'DELETE', headers });
+            showToast('User removed', 'success');
+            loadTeam();
+        } catch (err) { showToast(err.message, 'error'); }
+    }
+
+    function escapeHtml(str) { return String(str).replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
+
+    document.getElementById('create-user-btn')?.addEventListener('click', async () => {
+        const firstName = document.getElementById('new-firstname').value.trim();
+        const lastName = document.getElementById('new-lastname').value.trim();
+        const email = document.getElementById('new-email').value.trim();
+        const role = document.getElementById('new-role').value;
+        const phone = document.getElementById('new-phone').value.trim();
+        const msgDiv = document.getElementById('form-message');
+        if (!firstName || !lastName || !email) {
+            msgDiv.className = 'mt-3 text-sm text-red-600'; msgDiv.innerText = 'First name, last name and email are required.';
+            msgDiv.classList.remove('hidden'); return;
+        }
+        msgDiv.classList.add('hidden');
+        const btn = document.getElementById('create-user-btn');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<div class="loading-spinner-sm inline-block mr-1"></div> Creating...';
+        btn.disabled = true;
+        try {
+            await apiFetch('/organisations/me/users', {
+                method: 'POST',
+                body: JSON.stringify({ first_name: firstName, last_name: lastName, email, role, phone: phone || null, send_invite_email: true })
             });
-            const data = await response.json();
-            showSuggestions(data);
-        } catch (err) { console.error(err); hideSuggestions(); }
-    }
-
-    if (addressInput) {
-        addressInput.addEventListener('input', (e) => {
-            if (latInput) latInput.value = '';
-            if (lngInput) lngInput.value = '';
-            if (addressStatus) {
-                addressStatus.classList.remove('hidden');
-                addressStatus.innerText = '⚠️ Please select an address from the dropdown, use GPS, or pick on map';
-            }
-            clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(() => fetchAddressSuggestions(e.target.value), 500);
-        });
-    }
-    document.addEventListener('click', (e) => {
-        if (addressInput && suggestionsDiv && !addressInput.contains(e.target) && !suggestionsDiv.contains(e.target)) hideSuggestions();
+            msgDiv.className = 'mt-3 text-sm text-green-600';
+            msgDiv.innerText = `Invitation sent to ${email}. They will receive an email with a temporary password.`;
+            msgDiv.classList.remove('hidden');
+            document.getElementById('new-firstname').value = '';
+            document.getElementById('new-lastname').value = '';
+            document.getElementById('new-email').value = '';
+            document.getElementById('new-phone').value = '';
+            loadTeam();
+        } catch (err) {
+            msgDiv.className = 'mt-3 text-sm text-red-600';
+            msgDiv.innerText = err.message;
+            msgDiv.classList.remove('hidden');
+        } finally {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
     });
 
-    // GPS
-    async function useCurrentLocation() {
-        if (!navigator.geolocation) { showToast("Geolocation not supported", 'error'); return; }
-        showToast("Fetching your location...", 'success');
-        navigator.geolocation.getCurrentPosition(async (position) => {
-            const { latitude, longitude } = position.coords;
-            try {
-                const revUrl = `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`;
-                const resp = await fetch(revUrl, { headers: { 'User-Agent': 'KevsDigital/1.0' } });
-                const data = await resp.json();
-                const fullAddress = data.display_name || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
-                if (addressInput) addressInput.value = fullAddress;
-                if (latInput) latInput.value = latitude;
-                if (lngInput) lngInput.value = longitude;
-                if (addressStatus) addressStatus.classList.add('hidden');
-                showToast("Address set from GPS! Please verify.", 'success');
-                hideSuggestions();
-            } catch (err) { showToast("Reverse geocoding failed: " + err.message, 'error'); }
-        }, (err) => { showToast("GPS error: " + err.message, 'error'); });
-    }
-    const gpsBtn = document.getElementById('gps-locate-btn');
-    if (gpsBtn) gpsBtn.addEventListener('click', useCurrentLocation);
+    document.getElementById('refresh-team-btn')?.addEventListener('click', () => loadTeam());
 
-    // Map picker
-    let map = null, marker = null, selectedLat = null, selectedLng = null;
-    let leafletLoaded = false;
-    function loadLeaflet() {
-        return new Promise((resolve) => {
-            if (leafletLoaded) { resolve(); return; }
-            if (document.querySelector('#leaflet-css')) { leafletLoaded = true; resolve(); return; }
-            const link = document.createElement('link');
-            link.id = 'leaflet-css';
-            link.rel = 'stylesheet';
-            link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-            document.head.appendChild(link);
-            const script = document.createElement('script');
-            script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-            script.onload = () => { leafletLoaded = true; resolve(); };
-            document.head.appendChild(script);
-        });
-    }
-    async function openMapPicker() {
-        await loadLeaflet();
-        const modal = document.getElementById('map-modal');
-        if (modal) modal.classList.add('active');
-        const centerLat = selectedLat || 6.5244;
-        const centerLng = selectedLng || 3.3792;
-        if (!map) {
-            map = L.map('map').setView([centerLat, centerLng], 13);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; OpenStreetMap contributors'
-            }).addTo(map);
-            marker = L.marker([centerLat, centerLng], { draggable: true }).addTo(map);
-        } else {
-            map.setView([centerLat, centerLng], 13);
-            marker.setLatLng([centerLat, centerLng]);
-        }
-        marker.on('dragend', (e) => { const pos = marker.getLatLng(); selectedLat = pos.lat; selectedLng = pos.lng; });
-        map.on('click', (e) => { selectedLat = e.latlng.lat; selectedLng = e.latlng.lng; marker.setLatLng(e.latlng); });
-    }
-    const mapPickerBtn = document.getElementById('map-picker-btn');
-    if (mapPickerBtn) mapPickerBtn.addEventListener('click', openMapPicker);
-    const closeMapBtn = document.getElementById('close-map-modal');
-    if (closeMapBtn) closeMapBtn.addEventListener('click', () => {
-        document.getElementById('map-modal')?.classList.remove('active');
-    });
-    const confirmMapBtn = document.getElementById('confirm-map-btn');
-    if (confirmMapBtn) {
-        confirmMapBtn.addEventListener('click', async () => {
-            if (selectedLat && selectedLng) {
-                if (latInput) latInput.value = selectedLat;
-                if (lngInput) lngInput.value = selectedLng;
-                try {
-                    const revUrl = `https://nominatim.openstreetmap.org/reverse?lat=${selectedLat}&lon=${selectedLng}&format=json`;
-                    const resp = await fetch(revUrl, { headers: { 'User-Agent': 'KevsDigital/1.0' } });
-                    const data = await resp.json();
-                    if (addressInput) addressInput.value = data.display_name || `${selectedLat.toFixed(4)}, ${selectedLng.toFixed(4)}`;
-                } catch (err) {
-                    if (addressInput) addressInput.value = `Selected location (${selectedLat.toFixed(4)}, ${selectedLng.toFixed(4)})`;
-                }
-                if (addressStatus) addressStatus.classList.add('hidden');
-                document.getElementById('map-modal')?.classList.remove('active');
-                showToast("Location set from map!", 'success');
-            } else {
-                showToast("Please click on the map first to select a point.", 'error');
-            }
-        });
-    }
-
-    function isAddressValidForNewOrg() {
-        const inviteCode = document.getElementById('reg-invite-code')?.value.trim();
-        if (inviteCode) return true;
-        const address = addressInput?.value.trim();
-        const lat = latInput?.value;
-        const lng = lngInput?.value;
-        if (!address) {
-            if (addressStatus) { addressStatus.classList.remove('hidden'); addressStatus.innerText = '❌ Store address is required'; }
-            return false;
-        }
-        if (!lat || !lng) {
-            if (addressStatus) { addressStatus.classList.remove('hidden'); addressStatus.innerText = '❌ Please select a valid address from dropdown, use GPS, or pick on map.'; }
-            return false;
-        }
-        if (addressStatus) addressStatus.classList.add('hidden');
-        return true;
-    }
-
-    // Demo login
-    const demoBtn = document.getElementById('demo-login-btn');
-    if (demoBtn) {
-        demoBtn.addEventListener('click', async () => {
-            const btn = demoBtn;
-            const original = btn.innerHTML;
-            btn.innerHTML = '<i class="fa-solid fa-circle-notch animate-spin"></i> Authenticating...';
-            btn.disabled = true;
-            try {
-                const data = await apiCall('/auth/login', 'POST', { email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' });
-                localStorage.setItem('access_token', data.access_token);
-                localStorage.setItem('refresh_token', data.refresh_token);
-                localStorage.setItem('user_id', data.user_id);
-                await fetchAndStoreRole(data.access_token);
-                showToast('Demo login successful!');
-                setTimeout(() => window.location.href = DASHBOARD_URL, 1000);
-            } catch (err) {
-                showToast('Demo failed: ' + err.message, 'error');
-                btn.innerHTML = original;
-                btn.disabled = false;
-            }
-        });
-    }
-
-    // Login submit
-    const loginForm = document.getElementById('login-form');
-    if (loginForm) {
-        loginForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const email = document.getElementById('login-email')?.value;
-            const pwd = document.getElementById('login-password')?.value;
-            if (!email || !pwd) { showToast('Email and password required', 'error'); return; }
-            try { await login(email, pwd); } catch (err) { showToast(err.message, 'error'); }
-        });
-    }
-
-    // Register submit
-    const registerForm = document.getElementById('register-form');
-    if (registerForm) {
-        registerForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const inviteCode = document.getElementById('reg-invite-code')?.value.trim() || '';
-            const orgName = document.getElementById('reg-org-name')?.value.trim() || '';
-            const location = document.getElementById('reg-location')?.value.trim() || '';
-            const niche = document.getElementById('reg-niche')?.value.trim() || '';
-            const storeAddress = addressInput?.value.trim() || '';
-            const baseFee = parseFloat(document.getElementById('reg-base-fee')?.value) || 300;
-            const perKm = parseFloat(document.getElementById('reg-per-km')?.value) || 80;
-            const perKg = parseFloat(document.getElementById('reg-per-kg')?.value) || 50;
-            const budget = parseInt(document.getElementById('reg-budget')?.value) || 0;
-            const firstName = document.getElementById('reg-fname')?.value.trim() || '';
-            const lastName = document.getElementById('reg-lname')?.value.trim() || '';
-            const phone = document.getElementById('reg-phone')?.value.trim() || '';
-            const email = document.getElementById('reg-email')?.value.trim() || '';
-            const password = document.getElementById('reg-password')?.value.trim() || '';
-            const confirmPassword = document.getElementById('reg-confirm-password')?.value.trim() || '';
-            const latitude = latInput?.value ? parseFloat(latInput.value) : null;
-            const longitude = lngInput?.value ? parseFloat(lngInput.value) : null;
-
-            if (!email || !password) { showToast('Email and password are required', 'error'); return; }
-            if (password !== confirmPassword) { showToast('Passwords do not match!', 'error'); return; }
-            if (!firstName || !lastName || !phone) { showToast('First name, last name, and phone number are required', 'error'); return; }
-
-            if (!inviteCode) {
-                if (!orgName || !location || !niche || !storeAddress) {
-                    showToast('When creating a new organisation, please fill organisation name, location, niche, and store address.', 'error');
-                    return;
-                }
-                if (!isAddressValidForNewOrg()) {
-                    showToast('Please select a valid store address from dropdown, use GPS, or pick on map.', 'error');
-                    return;
-                }
-            }
-
-            const payload = { email, password, first_name: firstName, last_name: lastName, phone };
-            if (inviteCode) {
-                payload.invite_code = inviteCode;
-            } else {
-                payload.org_name = orgName;
-                payload.location = location;
-                payload.niche = niche;
-                payload.budget = budget;
-                payload.store_address = storeAddress;
-                payload.delivery_base_fee = baseFee;
-                payload.delivery_per_km_rate = perKm;
-                payload.delivery_per_kg_rate = perKg;
-                if (latitude && longitude) { payload.store_latitude = latitude; payload.store_longitude = longitude; }
-            }
-            try { await register(payload); } catch (err) { showToast(err.message, 'error'); }
-        });
-    }
-
-    // Forgot password
-    const forgotBtn = document.getElementById('forgot-pwd-btn');
-    if (forgotBtn) {
-        forgotBtn.addEventListener('click', async () => {
-            const email = document.getElementById('login-email')?.value;
-            if (!email) { showToast('Enter your email first', 'error'); return; }
-            try { await resetPassword(email); } catch (err) { showToast(err.message, 'error'); }
-        });
-    }
-
-    // Tab switching
-    const loginTab = document.getElementById('login-tab');
-    const registerTab = document.getElementById('register-tab');
-    if (loginTab && registerTab && loginForm && registerForm) {
-        loginTab.addEventListener('click', () => {
-            loginForm.classList.remove('hidden');
-            registerForm.classList.add('hidden');
-            loginTab.classList.add('border-blue-600', 'text-blue-600');
-            registerTab.classList.remove('border-blue-600', 'text-blue-600');
-            registerTab.classList.add('text-gray-500');
-        });
-        registerTab.addEventListener('click', () => {
-            loginForm.classList.add('hidden');
-            registerForm.classList.remove('hidden');
-            registerTab.classList.add('border-blue-600', 'text-blue-600');
-            loginTab.classList.remove('border-blue-600', 'text-blue-600');
-            loginTab.classList.add('text-gray-500');
-        });
-    }
+    (async () => {
+        await ensureOwnerRole();
+        await loadTeam();
+    })();
 </script>
 </body>
 </html>
