@@ -184,8 +184,9 @@
                     <option value="platinum">Platinum</option>
                 </select>
                 <input type="number" id="cust-points" placeholder="Initial points" value="0" class="w-full border rounded p-2">
-                <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg">Register Customer</button>
+                <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg">Register & Send Welcome Email</button>
             </form>
+            <p class="text-xs text-gray-500 mt-3">A temporary password will be emailed to the customer. They can log in and view their loyalty points.</p>
         </div>
         <div class="bg-white rounded-xl shadow p-5 col-span-2">
             <div class="flex justify-between items-center mb-3">
@@ -608,7 +609,7 @@
     confirmEscalateBtn?.addEventListener('click', confirmEscalation);
     window.addEventListener('click', (e) => { if (e.target === escalateModal) closeEscalateModalFn(); });
 
-    // ---------- LOYALTY & CRM ----------
+    // ---------- LOYALTY & CRM (with welcome email & auto-org assignment) ----------
     async function loadCustomers() {
         try {
             const data = await req('/organisations/me/users');
@@ -649,7 +650,7 @@
                 <td class="p-2 text-center">
                     <button onclick="openPointsAdjust(${c.id}, '${escapeHtml(c.first_name)} ${escapeHtml(c.last_name)}', ${c.current_points})" class="bg-indigo-100 text-indigo-700 px-2 py-1 rounded text-xs">Adjust</button>
                 </td>
-            </tr>
+            </td>
         `).join('');
     }
 
@@ -711,6 +712,7 @@
         URL.revokeObjectURL(url);
     });
 
+    // Updated registration: sends welcome email with temp password, auto-assigns to current org
     document.getElementById('register-customer-form')?.addEventListener('submit', async (e) => {
         e.preventDefault();
         const payload = {
@@ -723,12 +725,15 @@
             tier: document.getElementById('cust-tier').value,
             loyalty_points: parseInt(document.getElementById('cust-points').value) || 0
         };
+        // Optionally, we could also send an invite_code if needed, but backend can use org from token.
         try {
-            await req('/admin/customers', 'POST', payload);
-            showToast('Customer registered', 'success');
+            const response = await req('/admin/register-customer', 'POST', payload);
+            showToast(response.message || 'Customer registered successfully! Welcome email sent.', 'success');
             loadCustomers();
             document.getElementById('register-customer-form').reset();
-        } catch(err) { showToast(err.message, 'error'); }
+        } catch(err) {
+            showToast('Registration failed: ' + err.message, 'error');
+        }
     });
 
     // ---------- TAB SWITCHING ----------
