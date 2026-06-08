@@ -19,8 +19,6 @@
         .chat-modal { display: none; position: fixed; bottom: 90px; right: 20px; width: 350px; max-width: calc(100vw - 40px); background: white; border-radius: 24px; box-shadow: 0 20px 35px -10px rgba(0,0,0,0.3); z-index: 1000; flex-direction: column; border: 1px solid #f97316; }
         .chat-modal.active { display: flex; }
         .chat-messages { height: 350px; overflow-y: auto; background: #fef9f0; }
-        .typing-indicator span { width: 6px; height: 6px; background: #f97316; border-radius: 50%; display: inline-block; animation: typing 1.4s infinite ease-in-out; }
-        @keyframes typing { 0%,60%,100% { transform: translateY(0); opacity: 0.5; } 30% { transform: translateY(-6px); opacity: 1; } }
         .hero-slider { position: relative; overflow: hidden; width: 100%; }
         .slider-container { display: flex; width: 100%; transition: transform 0.5s ease-in-out; will-change: transform; }
         .hero-slide { flex: 0 0 100%; min-height: 500px; position: relative; width: 100%; }
@@ -237,38 +235,29 @@
         window.removeCartItem = (idx) => { cart.splice(idx,1); saveCart(); renderProducts(); updateCartUI(); };
         function addToCart(product) { let existing = cart.find(i => i.id === product.id); if(existing) existing.quantity++; else cart.push({ id: product.id, name: product.name, price: product.price, quantity: 1 }); saveCart(); showToast(`${product.name} added to cart!`, 'success'); updateCartUI(); }
 
-        // Load categories from backend (or derive)
+        // Load categories from backend or derive from products
         async function loadCategories() {
             try {
-                // Attempt to fetch from dedicated endpoint
+                // Try dedicated endpoint
                 const data = await apiCall('/inventory/categories');
                 categories = data.categories || [];
             } catch(e) {
-                console.warn("No /inventory/categories endpoint, deriving from products");
-                // Fallback: derive from products after load
+                console.warn("No /inventory/categories endpoint, will derive from products");
             }
-            // Populate dropdown
+            // Populate dropdown (will be updated later when products load if needed)
             const select = document.getElementById('category-select');
             if (!select) return;
-            select.innerHTML = '<option value="">All Categories</option>';
             if (categories.length) {
-                categories.forEach(cat => {
-                    select.innerHTML += `<option value="${escapeHtml(cat)}">${escapeHtml(cat)}</option>`;
-                });
-            } else {
-                // Will be filled after products load
+                select.innerHTML = '<option value="">All Categories</option>' + categories.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
             }
         }
         function populateCategoriesFromProducts() {
             const unique = [...new Set(allProducts.map(p => p.product_group).filter(g => g && g.trim() !== ''))];
-            if (unique.length && categories.length === 0) {
-                categories = unique;
+            if (unique.length && (categories.length === 0 || JSON.stringify(unique.sort()) !== JSON.stringify(categories.sort()))) {
+                categories = unique.sort(); // sort alphabetically
                 const select = document.getElementById('category-select');
                 if (select) {
-                    select.innerHTML = '<option value="">All Categories</option>';
-                    categories.forEach(cat => {
-                        select.innerHTML += `<option value="${escapeHtml(cat)}">${escapeHtml(cat)}</option>`;
-                    });
+                    select.innerHTML = '<option value="">All Categories</option>' + categories.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
                 }
             }
         }
@@ -277,8 +266,7 @@
         async function loadProducts() {
             try {
                 allProducts = await apiCall('/inventory/public-list');
-                // If categories not yet set, derive from products
-                if (!categories.length) populateCategoriesFromProducts();
+                populateCategoriesFromProducts();
                 renderProducts();
             } catch(e) { document.getElementById('products-grid').innerHTML = `<div class="col-span-full text-red-500">⚠️ ${e.message}</div>`; }
         }
@@ -459,18 +447,15 @@
         async function loadUserLoyalty() {
             if (!token) return;
             try {
-                // Try to get loyalty from customer-context endpoint
                 const me = await apiCall('/auth/me');
                 const context = await apiCall(`/support/customer-context?target_user_id=${me.user_id}`);
                 if (context.loyalty) {
                     userLoyalty.points = context.loyalty.current_points || 0;
                     userLoyalty.tier = context.loyalty.tier || 'bronze';
                 } else {
-                    // fallback: maybe me contains loyalty_points
                     userLoyalty.points = me.loyalty_points || 0;
                     userLoyalty.tier = me.loyalty_tier || 'bronze';
                 }
-                // Update UI
                 const pointsSpan = document.getElementById('user-points');
                 const tierSpan = document.getElementById('user-tier');
                 const loyaltyDiv = document.getElementById('loyalty-info-dropdown');
