@@ -9,24 +9,36 @@
 </head>
 <body class="bg-gray-50">
 
-<!-- Global navigation (same as other pages) -->
+<!-- ========== GLOBAL NAVIGATION (Kevs bOS) ========== -->
 <div id="kevs-nav-container"></div>
 <script>
 (function() {
     const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
     const LOGIN_URL = '/kdsiginin';
+
     const navItems = [
-        { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', roles: ['owner','admin','sales_rep','finance','customer','support','logistics'] },
-        { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', roles: ['owner','admin','sales_rep'] },
-        { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', roles: ['owner','admin','logistics'] },
-        { path: '/kdsupport',     name: 'Support',   icon: 'fa-headset', roles: ['owner','admin','support','customer'] },
-        { path: '/kddashboard',   name: 'Exec',      icon: 'fa-chart-simple', roles: ['owner','admin','finance'] },
-        { path: '/kdadmin',       name: 'Inventory', icon: 'fa-boxes', roles: ['owner','admin','inventory_manager'] },
-        { path: '/kdteam',        name: 'Team',      icon: 'fa-users', roles: ['owner','admin'] },
-        { path: '/kdknowledge',   name: 'Knowledge', icon: 'fa-database', roles: ['owner','admin'] }
+        { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy', roles: ['owner','admin','sales_rep','finance'] },
+        { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & online payments', roles: ['owner','admin','sales_rep'] },
+        { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', title: 'Order shipping, tracking & dispatch', roles: ['owner','admin','logistics'] },
+        { path: '/kdsupport',     name: 'Support',   icon: 'fa-headset', title: 'Ticket management & customer context', roles: ['owner','admin','support'] },
+        { path: '/kddashboard',   name: 'Exec',      icon: 'fa-chart-simple', title: 'Executive revenue & profit overview', roles: ['owner','admin','finance'] },
+        { path: '/kdadmin',       name: 'Inventory', icon: 'fa-boxes', title: 'Manage products, stock, bulk CSV upload', roles: ['owner','admin','inventory_manager'] },
+        { path: '/kdteam',        name: 'Team',      icon: 'fa-users', title: 'Invite & manage team members', roles: ['owner','admin'] },
+        { path: '/kdknowledge',   name: 'Knowledge', icon: 'fa-database', title: 'Manage AI knowledge base documents', roles: ['owner','admin'] }
     ];
-    function getUserRole() { try { return localStorage.getItem('user_role') || 'customer'; } catch(e) { return 'customer'; } }
-    function canAccess(requiredRoles) { return requiredRoles.includes(getUserRole()); }
+
+    function getUserRole() {
+        try {
+            const role = localStorage.getItem('user_role');
+            return role || 'customer';
+        } catch(e) { return 'customer'; }
+    }
+
+    function canAccess(requiredRoles) {
+        const userRole = getUserRole();
+        return requiredRoles.includes(userRole);
+    }
+
     function buildNavbar() {
         const currentPath = window.location.pathname;
         let linksHtml = '';
@@ -34,29 +46,110 @@
             if (!canAccess(item.roles)) return;
             const isActive = currentPath === item.path;
             const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
-            linksHtml += `<a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeClass}"><i class="fa-solid ${item.icon} w-4"></i> ${item.name}</a>`;
+            linksHtml += `
+                <a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}" title="${item.title}">
+                    <i class="fa-solid ${item.icon} w-4"></i> ${item.name}
+                </a>
+            `;
         });
         let userName = 'User';
-        try { userName = localStorage.getItem('user_profile_display') || 'User'; } catch(e) {}
-        return `<div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40"><div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center"><div class="flex items-center gap-2"><i class="fa-solid fa-database text-orange-400 text-xl"></i><span class="text-xl font-bold">${APP_NAME}</span></div><div class="hidden md:flex gap-2">${linksHtml}</div><div><span class="text-sm bg-white/10 px-3 py-1 rounded-full">${userName}</span><button id="global-logout-btn" class="ml-3 bg-red-500/80 hover:bg-red-600 px-3 py-1 rounded-lg text-sm">Logout</button></div></div></div>`;
+        try {
+            const profileStr = localStorage.getItem('user_profile_display');
+            if (profileStr) userName = profileStr;
+        } catch(e) {}
+        return `
+            <div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40">
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div class="flex flex-wrap items-center justify-between py-3 gap-3">
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i>
+                            <span class="text-xl font-bold tracking-tight">${APP_NAME}</span>
+                            <span class="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span>
+                        </div>
+                        <div class="hidden md:flex items-center gap-1 flex-wrap">
+                            ${linksHtml}
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full hidden sm:inline-block">
+                                <i class="fa-regular fa-user mr-1"></i> <span id="nav-user-name">${escapeHtml(userName)}</span>
+                            </span>
+                            <button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition flex items-center gap-1">
+                                <i class="fa-solid fa-sign-out-alt"></i> <span class="hidden sm:inline">Logout</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="md:hidden flex overflow-x-auto pb-2 gap-1 snap-x">
+                        ${linksHtml}
+                    </div>
+                </div>
+            </div>
+        `;
     }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
+    }
+
     async function globalLogout() {
         const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
         const token = localStorage.getItem('access_token');
-        if (token) await fetch(`${BACKEND}/auth/logout`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }).catch(()=>{});
-        localStorage.clear();
+        if (token) {
+            try {
+                await fetch(`${BACKEND}/auth/logout`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+                });
+            } catch(e) {}
+        }
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user_role');
+        localStorage.removeItem('user_profile_display');
         window.location.href = LOGIN_URL;
     }
+
+    async function updateUserDisplay() {
+        const token = localStorage.getItem('access_token');
+        if (!token) return;
+        try {
+            const res = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/me', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const me = await res.json();
+                const contextRes = await fetch(`https://kevsono-kevs-digital-bos.hf.space/support/customer-context?target_user_id=${me.user_id}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (contextRes.ok) {
+                    const context = await contextRes.json();
+                    const name = context.profile?.first_name || 'User';
+                    localStorage.setItem('user_profile_display', name);
+                    const nameSpan = document.getElementById('nav-user-name');
+                    if (nameSpan) nameSpan.innerText = name;
+                }
+            }
+        } catch(e) {}
+    }
+
     function initNavigation() {
         const container = document.getElementById('kevs-nav-container');
         if (container) {
             container.innerHTML = buildNavbar();
-            document.getElementById('global-logout-btn')?.addEventListener('click', globalLogout);
+            const logoutBtn = document.getElementById('global-logout-btn');
+            if (logoutBtn) logoutBtn.addEventListener('click', globalLogout);
+            updateUserDisplay();
         }
     }
-    document.addEventListener('DOMContentLoaded', initNavigation);
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initNavigation);
+    } else {
+        initNavigation();
+    }
 })();
 </script>
+<!-- ========== END GLOBAL NAVIGATION ========== -->
 
 <div class="max-w-5xl mx-auto p-6">
     <h1 class="text-2xl font-bold mb-6">📚 Chatbot Knowledge Base</h1>
