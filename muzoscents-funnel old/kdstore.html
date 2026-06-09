@@ -224,15 +224,15 @@
             return res.json();
         }
 
-        // --- CORE FIX: recalc delivery fee (waits for API) ---
-        async function recalcDeliveryFee(silent = true) {
+        // --- Delivery recalc (explicit, no silent conflict) ---
+        async function recalcDeliveryFee(showFeedback = true) {
             if (deliveryOption !== 'delivery' || !deliveryAddress || cart.length === 0) {
                 if (cart.length === 0) { deliveryFee = 0; handlingFee = 0; updateCartUI(); }
                 return;
             }
             if (isRecalcInProgress) return;
             isRecalcInProgress = true;
-            if (!silent) setCartTotalLoading(true);
+            if (showFeedback) setCartTotalLoading(true);
             try {
                 const items = cart.map(i => ({ inventory_id: i.id, quantity: i.quantity }));
                 const res = await apiCall('/delivery/estimate', {
@@ -242,27 +242,24 @@
                 deliveryFee = res.delivery_fee_naira || 0;
                 handlingFee = res.handling_fee_naira || 0;
                 const feeDiv = document.getElementById('delivery-fee-estimate');
-                if (feeDiv && !silent) feeDiv.innerHTML = `🚚 Delivery fee: ₦${deliveryFee.toLocaleString()} | Handling: ₦${handlingFee.toLocaleString()}`;
+                if (feeDiv && showFeedback) feeDiv.innerHTML = `🚚 Delivery fee: ₦${deliveryFee.toLocaleString()} | Handling: ₦${handlingFee.toLocaleString()}`;
                 updateCartUI();
+                if (showFeedback) showToast("Delivery fee updated", 'success');
             } catch (e) {
-                if (!silent) showToast(e.message, 'error');
-                else console.warn("Auto delivery recalc failed:", e);
+                if (showFeedback) showToast(e.message, 'error');
+                else console.warn("Delivery recalc failed:", e);
             } finally {
                 isRecalcInProgress = false;
-                if (!silent) setCartTotalLoading(false);
+                if (showFeedback) setCartTotalLoading(false);
             }
         }
 
-        // Cart functions with auto-recalc integration
+        // Cart functions – NO automatic recalc inside saveCart
         function saveCart() {
             localStorage.setItem('kevs_cart', JSON.stringify(cart));
             updateCartUI();
-            // Trigger background recalc only if delivery mode and address exist
-            if (deliveryOption === 'delivery' && deliveryAddress) {
-                recalcDeliveryFee(true); // non-blocking background update
-            }
         }
-        function loadCart() { const saved = localStorage.getItem('kevs_cart'); cart = saved ? JSON.parse(saved) : []; updateCartUI(); if(deliveryOption === 'delivery' && deliveryAddress) recalcDeliveryFee(true); }
+        function loadCart() { const saved = localStorage.getItem('kevs_cart'); cart = saved ? JSON.parse(saved) : []; updateCartUI(); }
         
         function updateCartUI() {
             const subtotal = cart.reduce((s,i) => s + i.price * i.quantity, 0);
@@ -280,28 +277,31 @@
             if (cart.length === 0) { container.innerHTML = '<div class="text-center text-gray-400 py-8"><i class="fa-regular fa-basket-shopping text-4xl mb-2"></i><p>Cart is empty</p></div>'; return; }
             container.innerHTML = cart.map((item, idx) => `<div class="flex justify-between items-center bg-gray-50 p-3 rounded-xl"><div><span class="font-medium">${escapeHtml(item.name)}</span> <span class="text-xs text-gray-500">x${item.quantity}</span></div><div class="font-mono text-orange-600">₦${(item.price * item.quantity).toLocaleString()}</div><button onclick="removeCartItem(${idx})" class="text-red-500"><i class="fa-regular fa-trash-can"></i></button></div>`).join('');
         }
+        
         window.removeCartItem = async (idx) => { 
             cart.splice(idx,1); 
-            // After removal, if delivery mode and address exists, recalc immediately
             saveCart();
+            // After removal, recalc delivery if in delivery mode with address
             if (deliveryOption === 'delivery' && deliveryAddress) {
-                await recalcDeliveryFee(false);
+                await recalcDeliveryFee(true);
             }
             renderProducts(); 
         };
         
-        // FIXED: addToCart now awaits delivery recalc if address is set
+        // FIXED: addToCart now explicitly recalculates after saving
         async function addToCart(product) { 
             let existing = cart.find(i => i.id === product.id); 
             if(existing) existing.quantity++; 
             else cart.push({ id: product.id, name: product.name, price: product.price, quantity: 1 }); 
             saveCart(); 
-            // ** CRITICAL: If delivery mode and address already set, force immediate recalculation **
+            // If delivery is active and address is set, recalc delivery fee immediately
             if (deliveryOption === 'delivery' && deliveryAddress) {
-                await recalcDeliveryFee(false);  // Wait for new fee to be fetched
+                await recalcDeliveryFee(true);
+            } else {
+                // Still update UI for subtotal
+                updateCartUI();
             }
             showToast(`${product.name} added to cart!`, 'success'); 
-            updateCartUI(); 
         }
 
         // Load categories and products
@@ -450,9 +450,29 @@
         async function fetchAddr(q) { if(q.length<3) return hideAddrSugg(); const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5`,{headers:{'User-Agent':'KevsStore'}}); const data=await resp.json(); showAddrSugg(data); }
         addrInput?.addEventListener('input',(e)=>{clearTimeout(addrDeb); addrDeb=setTimeout(()=>fetchAddr(e.target.value),400);});
         document.getElementById('gps-locate-cart')?.addEventListener('click',()=>{if(navigator.geolocation)navigator.geolocation.getCurrentPosition(async pos=>{const rev=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json`,{headers:{'User-Agent':'KevsStore'}});const data=await rev.json();addrInput.value=data.display_name;deliveryAddress=data.display_name;hideAddrSugg();showToast("GPS address loaded! Click Save.",'success');},()=>showToast("GPS failed",'error'));});
-        async function estimateDelivery() { if(!deliveryAddress) return showToast("Enter address",'error'); try{ await recalcDeliveryFee(false); } catch(e){ showToast(e.message,'error'); } }
+        async function estimateDelivery() { if(!deliveryAddress) return showToast("Enter address",'error'); try{ await recalcDeliveryFee(true); } catch(e){ showToast(e.message,'error'); } }
         document.getElementById('save-address-btn')?.addEventListener('click', estimateDelivery);
-        function setDeliveryOpt(opt) { deliveryOption=opt; const pickup=document.getElementById('pickup-option'), deliv=document.getElementById('delivery-option'); if(opt==='pickup'){ pickup.classList.add('bg-orange-500','text-white'); deliv.classList.remove('bg-orange-500','text-white'); deliv.classList.add('bg-gray-200'); document.getElementById('delivery-address-section').classList.add('hidden'); deliveryFee=0; deliveryAddress=''; updateCartUI(); } else { deliv.classList.add('bg-orange-500','text-white'); pickup.classList.remove('bg-orange-500','text-white'); pickup.classList.add('bg-gray-200'); document.getElementById('delivery-address-section').classList.remove('hidden'); if(deliveryAddress) recalcDeliveryFee(true); } updateCartUI(); }
+        function setDeliveryOpt(opt) { 
+            deliveryOption=opt; 
+            const pickup=document.getElementById('pickup-option'), deliv=document.getElementById('delivery-option'); 
+            if(opt==='pickup'){ 
+                pickup.classList.add('bg-orange-500','text-white'); 
+                deliv.classList.remove('bg-orange-500','text-white'); 
+                deliv.classList.add('bg-gray-200'); 
+                document.getElementById('delivery-address-section').classList.add('hidden'); 
+                deliveryFee=0; 
+                deliveryAddress=''; 
+                updateCartUI(); 
+            } else { 
+                deliv.classList.add('bg-orange-500','text-white'); 
+                pickup.classList.remove('bg-orange-500','text-white'); 
+                pickup.classList.add('bg-gray-200'); 
+                document.getElementById('delivery-address-section').classList.remove('hidden'); 
+                // If an address is already set, recalc delivery immediately
+                if(deliveryAddress) recalcDeliveryFee(true); 
+                updateCartUI();
+            } 
+        }
         document.getElementById('pickup-option')?.addEventListener('click',()=>setDeliveryOpt('pickup'));
         document.getElementById('delivery-option')?.addEventListener('click',()=>setDeliveryOpt('delivery'));
 
