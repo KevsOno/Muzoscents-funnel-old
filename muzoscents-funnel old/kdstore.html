@@ -80,7 +80,7 @@
         </div>
     </header>
 
-    <!-- Hero Slider (5 slides) - same as before -->
+    <!-- Hero Slider (5 slides) -->
     <section class="hero-slider relative">
         <div class="slider-container" id="heroSlider">
             <div class="hero-slide gradient-slide">
@@ -144,7 +144,7 @@
 
     <footer class="bg-gray-800 text-white mt-16 py-8"><div class="container mx-auto px-4 text-center text-sm"><p>© 2026 Kevs Digital bOS – AI‑powered marketplace</p><p class="text-gray-400 mt-2"><i class="fa-regular fa-clock"></i> 24/7 AI Concierge | Fast Delivery</p></div></footer>
 
-    <!-- Cart Drawer (same as before) -->
+    <!-- Cart Drawer -->
     <div id="cart-drawer" class="cart-sidebar fixed top-0 right-0 w-full sm:w-96 h-full bg-white shadow-2xl z-50 transform translate-x-full transition-transform duration-300 flex flex-col">
         <div class="p-4 border-b border-orange-100 flex justify-between items-center bg-orange-50"><h3 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-basket-shopping text-orange-500"></i> Your Cart</h3><button id="close-drawer" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button></div>
         <div id="cart-items-list" class="flex-1 overflow-y-auto p-4 space-y-3 bg-white"></div>
@@ -188,6 +188,7 @@
         localStorage.setItem('pf_session', sessionId);
         let currentView = 'shop';
         let currentProductForModal = null;
+        let isRecalcInProgress = false;
 
         // ---------- Helper API ----------
         async function apiCall(endpoint, options = {}, retry = true) {
@@ -208,9 +209,44 @@
             return res.json();
         }
 
-        // Cart functions (unchanged)
-        function saveCart() { localStorage.setItem('kevs_cart', JSON.stringify(cart)); updateCartUI(); }
-        function loadCart() { const saved = localStorage.getItem('kevs_cart'); cart = saved ? JSON.parse(saved) : []; updateCartUI(); }
+        // --- CORE FIX: auto-recalculate delivery fee when cart changes ---
+        async function recalcDeliveryFee(silent = true) {
+            if (deliveryOption !== 'delivery' || !deliveryAddress || cart.length === 0) {
+                if (cart.length === 0) { deliveryFee = 0; handlingFee = 0; updateCartUI(); }
+                return;
+            }
+            if (isRecalcInProgress) return;
+            isRecalcInProgress = true;
+            try {
+                const items = cart.map(i => ({ inventory_id: i.id, quantity: i.quantity }));
+                const res = await apiCall('/delivery/estimate', {
+                    method: 'POST',
+                    body: JSON.stringify({ address: deliveryAddress, items })
+                });
+                deliveryFee = res.delivery_fee_naira || 0;
+                handlingFee = res.handling_fee_naira || 0;
+                const feeDiv = document.getElementById('delivery-fee-estimate');
+                if (feeDiv && !silent) feeDiv.innerHTML = `🚚 Delivery fee: ₦${deliveryFee.toLocaleString()} | Handling: ₦${handlingFee.toLocaleString()}`;
+                updateCartUI();
+            } catch (e) {
+                if (!silent) showToast(e.message, 'error');
+                else console.warn("Auto delivery recalc failed:", e);
+            } finally {
+                isRecalcInProgress = false;
+            }
+        }
+
+        // Cart functions with auto-recalc integration
+        function saveCart() {
+            localStorage.setItem('kevs_cart', JSON.stringify(cart));
+            updateCartUI();
+            // Automatically refresh delivery fee if delivery mode and address exists
+            if (deliveryOption === 'delivery' && deliveryAddress) {
+                recalcDeliveryFee(true);
+            }
+        }
+        function loadCart() { const saved = localStorage.getItem('kevs_cart'); cart = saved ? JSON.parse(saved) : []; updateCartUI(); if(deliveryOption === 'delivery' && deliveryAddress) recalcDeliveryFee(true); }
+        
         function updateCartUI() {
             const subtotal = cart.reduce((s,i) => s + i.price * i.quantity, 0);
             let total = subtotal;
@@ -274,7 +310,7 @@
             });
         }
 
-        // Search & Category filter (unchanged)
+        // Search & Category filter
         let searchDebounce;
         const searchInput = document.getElementById('product-search'), searchClear = document.getElementById('search-clear');
         function handleSearch() { clearTimeout(searchDebounce); searchDebounce = setTimeout(() => { searchQuery = searchInput.value; renderProducts(); if(searchClear) searchClear.style.display = searchQuery ? 'block' : 'none'; }, 300); }
@@ -285,7 +321,6 @@
         const catSelect = document.getElementById('category-select');
         if(catSelect) catSelect.addEventListener('change', handleCategoryChange);
 
-        // Product detail modal (unchanged)
         function showProductDetail(p) {
             currentProductForModal = p;
             const modal = document.getElementById('product-detail-modal'), content = document.getElementById('product-detail-content');
@@ -298,7 +333,7 @@
         document.getElementById('modal-close-btn')?.addEventListener('click', closeProductModal);
         document.getElementById('modal-add-to-cart')?.addEventListener('click', () => { if(currentProductForModal) addToCart({ id: currentProductForModal.id, name: currentProductForModal.description, price: currentProductForModal.price_naira }); closeProductModal(); });
 
-        // Track Order Modal (unchanged)
+        // Track Order Modal
         const trackModal = document.getElementById('track-modal');
         function openTrackModal() { trackModal.classList.add('active'); }
         function closeTrackModal() { trackModal.classList.remove('active'); document.getElementById('track-result').classList.add('hidden'); }
@@ -316,7 +351,7 @@
             } catch(e) { resultDiv.innerHTML = `<div class="text-red-500">${e.message}</div>`; }
         });
 
-        // Tickets View (unchanged)
+        // Tickets View
         async function loadTickets() {
             if (!token) { showAuthModal(); showToast("Please login", 'error'); return; }
             const container = document.getElementById('tickets-list');
@@ -338,7 +373,7 @@
         document.getElementById('refresh-tickets')?.addEventListener('click', loadTickets);
         document.getElementById('complaints-dropdown')?.addEventListener('click', () => showView('tickets'));
 
-        // Hero Slider (unchanged)
+        // Hero Slider
         function initHeroSlider() {
             const slider = document.getElementById('heroSlider'), slides = document.querySelectorAll('.hero-slide');
             const prev = document.getElementById('sliderPrev'), next = document.getElementById('sliderNext'), dots = document.getElementById('sliderDots');
@@ -360,13 +395,12 @@
         if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initHeroSlider);
         else initHeroSlider();
 
-        // Hero buttons
         document.querySelectorAll('.hero-shop-btn').forEach(btn => btn.addEventListener('click', () => showView('shop')));
         document.querySelectorAll('.hero-track-btn').forEach(btn => btn.addEventListener('click', openTrackModal));
         document.querySelectorAll('.hero-tickets-btn').forEach(btn => btn.addEventListener('click', () => showView('tickets')));
         document.querySelectorAll('.hero-chat-btn').forEach(btn => btn.addEventListener('click', () => { document.getElementById('chat-modal').classList.add('active'); initChat(); }));
 
-        // Delivery & GPS (unchanged)
+        // Delivery & GPS
         const addrInput = document.getElementById('delivery-address'), addrSugg = document.getElementById('cart-address-suggestions');
         let addrDeb;
         function hideAddrSugg() { addrSugg.classList.add('hidden'); addrSugg.innerHTML = ''; }
@@ -374,161 +408,45 @@
         async function fetchAddr(q) { if(q.length<3) return hideAddrSugg(); const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5`,{headers:{'User-Agent':'KevsStore'}}); const data=await resp.json(); showAddrSugg(data); }
         addrInput?.addEventListener('input',(e)=>{clearTimeout(addrDeb); addrDeb=setTimeout(()=>fetchAddr(e.target.value),400);});
         document.getElementById('gps-locate-cart')?.addEventListener('click',()=>{if(navigator.geolocation)navigator.geolocation.getCurrentPosition(async pos=>{const rev=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json`,{headers:{'User-Agent':'KevsStore'}});const data=await rev.json();addrInput.value=data.display_name;deliveryAddress=data.display_name;hideAddrSugg();showToast("GPS address loaded! Click Save.",'success');},()=>showToast("GPS failed",'error'));});
-        async function estimateDelivery() { if(!deliveryAddress) return showToast("Enter address",'error'); try{ const items=cart.map(i=>({inventory_id:i.id,quantity:i.quantity})); const res=await apiCall('/delivery/estimate',{method:'POST',body:JSON.stringify({address:deliveryAddress,items})}); deliveryFee=res.delivery_fee_naira; handlingFee=res.handling_fee_naira||0; document.getElementById('delivery-fee-estimate').innerHTML=`🚚 Delivery fee: ₦${deliveryFee.toLocaleString()} | Handling: ₦${handlingFee.toLocaleString()}`; updateCartUI(); } catch(e){ showToast(e.message,'error'); } }
+        async function estimateDelivery() { if(!deliveryAddress) return showToast("Enter address",'error'); try{ await recalcDeliveryFee(false); } catch(e){ showToast(e.message,'error'); } }
         document.getElementById('save-address-btn')?.addEventListener('click', estimateDelivery);
-        function setDeliveryOpt(opt) { deliveryOption=opt; const pickup=document.getElementById('pickup-option'), deliv=document.getElementById('delivery-option'); if(opt==='pickup'){ pickup.classList.add('bg-orange-500','text-white'); deliv.classList.remove('bg-orange-500','text-white'); deliv.classList.add('bg-gray-200'); document.getElementById('delivery-address-section').classList.add('hidden'); deliveryFee=0; deliveryAddress=''; } else { deliv.classList.add('bg-orange-500','text-white'); pickup.classList.remove('bg-orange-500','text-white'); pickup.classList.add('bg-gray-200'); document.getElementById('delivery-address-section').classList.remove('hidden'); } updateCartUI(); }
+        function setDeliveryOpt(opt) { deliveryOption=opt; const pickup=document.getElementById('pickup-option'), deliv=document.getElementById('delivery-option'); if(opt==='pickup'){ pickup.classList.add('bg-orange-500','text-white'); deliv.classList.remove('bg-orange-500','text-white'); deliv.classList.add('bg-gray-200'); document.getElementById('delivery-address-section').classList.add('hidden'); deliveryFee=0; deliveryAddress=''; updateCartUI(); } else { deliv.classList.add('bg-orange-500','text-white'); pickup.classList.remove('bg-orange-500','text-white'); pickup.classList.add('bg-gray-200'); document.getElementById('delivery-address-section').classList.remove('hidden'); if(deliveryAddress) recalcDeliveryFee(true); } updateCartUI(); }
         document.getElementById('pickup-option')?.addEventListener('click',()=>setDeliveryOpt('pickup'));
         document.getElementById('delivery-option')?.addEventListener('click',()=>setDeliveryOpt('delivery'));
 
-        // Checkout (unchanged)
         async function checkout() {
             if (!cart.length) return showToast("Cart empty", 'error');
             if (!token) return showAuthModal();
             if (deliveryOption === 'delivery' && (!deliveryAddress || deliveryFee === 0)) return showToast("Save delivery address first", 'error');
             const payMethod = document.getElementById('payment-method').value;
             const items = cart.map(i => ({ inventory_id: i.id, quantity: i.quantity }));
-            const payload = {
-                items,
-                customer_name: userProfile?.first_name || null,
-                customer_email: userProfile?.email || null,
-                customer_phone: userProfile?.phone || null,
-                payment_method: payMethod,
-                callback_url: window.location.href.split('?')[0]
-            };
-            if (deliveryOption === 'delivery') {
-                payload.shipping_address = deliveryAddress;
-                payload.delivery_fee = deliveryFee;
-                payload.handling_fee = handlingFee;
-            }
+            const payload = { items, customer_name: userProfile?.first_name || null, customer_email: userProfile?.email || null, customer_phone: userProfile?.phone || null, payment_method: payMethod, callback_url: window.location.href.split('?')[0] };
+            if (deliveryOption === 'delivery') { payload.shipping_address = deliveryAddress; payload.delivery_fee = deliveryFee; payload.handling_fee = handlingFee; }
             try {
                 if (payMethod === 'cash') {
                     const result = await apiCall('/pos/terminal/checkout', { method: 'POST', body: JSON.stringify(payload) });
                     showToast(`✅ Checkout success! Receipt: ${result.receipt_number}`, 'success');
-                    cart = [];
-                    saveCart();
-                    setDeliveryOpt('pickup');
-                    renderProducts();
-                    document.getElementById('cart-drawer').classList.add('translate-x-full');
+                    cart = []; saveCart(); setDeliveryOpt('pickup'); renderProducts(); document.getElementById('cart-drawer').classList.add('translate-x-full');
                 } else {
                     const result = await apiCall('/pos/checkout', { method: 'POST', body: JSON.stringify(payload) });
-                    if (result.payment_url) {
-                        localStorage.setItem('pending_payment', 'true');
-                        window.location.href = result.payment_url;
-                    } else {
-                        showToast("Payment initiation failed", 'error');
-                    }
+                    if (result.payment_url) { localStorage.setItem('pending_payment', 'true'); window.location.href = result.payment_url; } else { showToast("Payment initiation failed", 'error'); }
                 }
-            } catch (e) {
-                showToast(e.message, 'error');
-            }
+            } catch (e) { showToast(e.message, 'error'); }
         }
 
-        // ========== FIXED: User & Loyalty Loading ==========
-        async function loadUserLoyalty() {
-            if (!token) return;
-            try {
-                const me = await apiCall('/auth/me');
-                // Try to get loyalty from customer-context
-                let points = 0, tier = 'bronze';
-                try {
-                    const context = await apiCall(`/support/customer-context?target_user_id=${me.user_id}`);
-                    if (context.loyalty) {
-                        points = context.loyalty.current_points || 0;
-                        tier = context.loyalty.tier || 'bronze';
-                    }
-                } catch(e) {
-                    console.warn("No loyalty data from customer-context, falling back to user object");
-                    points = me.loyalty_points || 0;
-                    tier = me.loyalty_tier || 'bronze';
-                }
-                userLoyalty = { points, tier };
-                // Update UI
-                const pointsSpan = document.getElementById('user-points');
-                const tierSpan = document.getElementById('user-tier');
-                const loyaltyDiv = document.getElementById('loyalty-info-dropdown');
-                if (pointsSpan) pointsSpan.innerText = userLoyalty.points;
-                if (tierSpan) tierSpan.innerText = userLoyalty.tier;
-                if (loyaltyDiv) loyaltyDiv.classList.remove('hidden');
-            } catch(e) {
-                console.warn("Could not load loyalty:", e);
-            }
-        }
-
-        async function loadUser() {
-            if (!token) return;
-            try {
-                const me = await apiCall('/auth/me');
-                userProfile = me;
-                // Display name: prefer first_name, fallback to email or "User"
-                const displayName = me.first_name || me.email || 'User';
-                document.getElementById('user-info-dropdown').innerHTML = `<i class="fa-regular fa-user"></i> ${escapeHtml(displayName)}`;
-                document.getElementById('logout-dropdown').classList.remove('hidden');
-                await loadUserLoyalty();
-            } catch(e) {
-                console.error("Failed to load user profile:", e);
-                userProfile = null;
-                document.getElementById('user-info-dropdown').innerHTML = 'Guest';
-                document.getElementById('logout-dropdown').classList.add('hidden');
-            }
-        }
-
+        async function loadUserLoyalty() { if (!token) return; try { const me = await apiCall('/auth/me'); let points = 0, tier = 'bronze'; try { const context = await apiCall(`/support/customer-context?target_user_id=${me.user_id}`); if (context.loyalty) { points = context.loyalty.current_points || 0; tier = context.loyalty.tier || 'bronze'; } } catch(e) { points = me.loyalty_points || 0; tier = me.loyalty_tier || 'bronze'; } userLoyalty = { points, tier }; const pointsSpan = document.getElementById('user-points'); const tierSpan = document.getElementById('user-tier'); const loyaltyDiv = document.getElementById('loyalty-info-dropdown'); if (pointsSpan) pointsSpan.innerText = userLoyalty.points; if (tierSpan) tierSpan.innerText = userLoyalty.tier; if (loyaltyDiv) loyaltyDiv.classList.remove('hidden'); } catch(e) { console.warn(e); } }
+        async function loadUser() { if (!token) return; try { const me = await apiCall('/auth/me'); userProfile = me; const displayName = me.first_name || me.email || 'User'; document.getElementById('user-info-dropdown').innerHTML = `<i class="fa-regular fa-user"></i> ${escapeHtml(displayName)}`; document.getElementById('logout-dropdown').classList.remove('hidden'); await loadUserLoyalty(); } catch(e) { userProfile = null; document.getElementById('user-info-dropdown').innerHTML = 'Guest'; document.getElementById('logout-dropdown').classList.add('hidden'); } }
         function showAuthModal(){ document.getElementById('auth-modal').classList.remove('hidden'); }
         function hideAuthModal(){ document.getElementById('auth-modal').classList.add('hidden'); }
-        async function demoLogin(){ 
-            try{ 
-                const res=await fetch(`${API_BASE}/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'demo@kevsdigital.com',password:'KevsDemo2026!'})}); 
-                const data=await res.json(); 
-                if(!res.ok) throw new Error(data.detail); 
-                token=data.access_token; 
-                localStorage.setItem('access_token',token); 
-                localStorage.setItem('refresh_token',data.refresh_token); 
-                await loadUser(); 
-                hideAuthModal(); 
-                showToast("Demo login success",'success'); 
-                showView('shop'); 
-            } catch(e){ alert(e.message); } 
-        }
-        async function logout(){ 
-            try{ await apiCall('/auth/logout',{method:'POST'}); } catch(e){} 
-            localStorage.clear(); token=null; userProfile=null; cart=[]; saveCart(); location.reload(); 
-        }
+        async function demoLogin(){ try{ const res=await fetch(`${API_BASE}/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'demo@kevsdigital.com',password:'KevsDemo2026!'})}); const data=await res.json(); if(!res.ok) throw new Error(data.detail); token=data.access_token; localStorage.setItem('access_token',token); localStorage.setItem('refresh_token',data.refresh_token); await loadUser(); hideAuthModal(); showToast("Demo login success",'success'); showView('shop'); } catch(e){ alert(e.message); } }
+        async function logout(){ try{ await apiCall('/auth/logout',{method:'POST'}); } catch(e){} localStorage.clear(); token=null; userProfile=null; cart=[]; saveCart(); location.reload(); }
         document.getElementById('login-dropdown-btn')?.addEventListener('click',showAuthModal);
         document.getElementById('logout-dropdown')?.addEventListener('click',logout);
         document.getElementById('demo-access')?.addEventListener('click',demoLogin);
         document.getElementById('close-auth-modal')?.addEventListener('click',hideAuthModal);
         document.getElementById('toggle-auth-mode')?.addEventListener('click',()=>{ const reg=document.getElementById('reg-extra'); const isReg=reg.classList.contains('hidden'); reg.classList.toggle('hidden'); document.getElementById('auth-submit').innerText=isReg?"Create Profile":"Sign In"; document.getElementById('modal-title').innerText=isReg?"Register Organization":"Sign In"; });
-        document.getElementById('auth-submit')?.addEventListener('click',async()=>{ 
-            const email=document.getElementById('auth-email').value, pwd=document.getElementById('auth-password').value; 
-            if(!email||!pwd) return alert("Email & password required"); 
-            const isReg=!document.getElementById('reg-extra').classList.contains('hidden'); 
-            if(isReg){ 
-                const fname=document.getElementById('first-name').value, lname=document.getElementById('last-name').value, phone=document.getElementById('phone-number').value; 
-                if(!fname||!lname||!phone) return alert("First name, last name, phone required"); 
-                const invite=document.getElementById('invite-code').value.trim(); 
-                const orgName=document.getElementById('org-name').value.trim(); 
-                const loc=document.getElementById('org-location').value.trim(), niche=document.getElementById('org-niche').value.trim(); 
-                if(!invite&&(!orgName||!loc||!niche)) return alert("Invite code or org details required"); 
-                const payload={email,password:pwd,first_name:fname,last_name:lname,phone}; 
-                if(invite) payload.invite_code=invite; 
-                else{ payload.org_name=orgName; payload.location=loc; payload.niche=niche; payload.budget=parseInt(document.getElementById('budget').value)||0; } 
-                await apiCall('/auth/register',{method:'POST',body:JSON.stringify(payload)}); 
-                alert("Registration success! Please sign in."); 
-                document.getElementById('reg-extra').classList.add('hidden'); 
-                return; 
-            } 
-            const loginRes=await fetch(`${API_BASE}/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pwd})}); 
-            const data=await loginRes.json(); 
-            if(!loginRes.ok) throw new Error(data.detail); 
-            token=data.access_token; 
-            localStorage.setItem('access_token',token); 
-            localStorage.setItem('refresh_token',data.refresh_token); 
-            await loadUser(); 
-            hideAuthModal(); 
-            showToast("Logged in",'success'); 
-            showView('shop'); 
-        });
+        document.getElementById('auth-submit')?.addEventListener('click',async()=>{ const email=document.getElementById('auth-email').value, pwd=document.getElementById('auth-password').value; if(!email||!pwd) return alert("Email & password required"); const isReg=!document.getElementById('reg-extra').classList.contains('hidden'); if(isReg){ const fname=document.getElementById('first-name').value, lname=document.getElementById('last-name').value, phone=document.getElementById('phone-number').value; if(!fname||!lname||!phone) return alert("First name, last name, phone required"); const invite=document.getElementById('invite-code').value.trim(); const orgName=document.getElementById('org-name').value.trim(); const loc=document.getElementById('org-location').value.trim(), niche=document.getElementById('org-niche').value.trim(); if(!invite&&(!orgName||!loc||!niche)) return alert("Invite code or org details required"); const payload={email,password:pwd,first_name:fname,last_name:lname,phone}; if(invite) payload.invite_code=invite; else{ payload.org_name=orgName; payload.location=loc; payload.niche=niche; payload.budget=parseInt(document.getElementById('budget').value)||0; } await apiCall('/auth/register',{method:'POST',body:JSON.stringify(payload)}); alert("Registration success! Please sign in."); document.getElementById('reg-extra').classList.add('hidden'); return; } const loginRes=await fetch(`${API_BASE}/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pwd})}); const data=await loginRes.json(); if(!loginRes.ok) throw new Error(data.detail); token=data.access_token; localStorage.setItem('access_token',token); localStorage.setItem('refresh_token',data.refresh_token); await loadUser(); hideAuthModal(); showToast("Logged in",'success'); showView('shop'); });
 
-        // Chat (unchanged)
         let chatMessagesDiv=null, chatSessionId=sessionId;
         function addChatMsg(sender,text){ if(!chatMessagesDiv) return; const div=document.createElement('div'); div.className=`p-2 rounded-xl max-w-[85%] text-sm mb-1 ${sender==='user'?'bg-orange-500 text-white ml-auto rounded-br-none':'bg-gray-100 text-gray-800 mr-auto rounded-bl-none'}`; div.innerText=text; chatMessagesDiv.appendChild(div); chatMessagesDiv.scrollTop=chatMessagesDiv.scrollHeight; }
         async function sendChatMessage(){ const input=document.getElementById('chat-input'); const msg=input.value.trim(); if(!msg) return; addChatMsg('user',msg); input.value=''; addChatMsg('assistant','🤖 Thinking...'); try{ const data=await apiCall('/support/chat-stream',{method:'POST',body:JSON.stringify({session_id:chatSessionId,message:msg})}); chatMessagesDiv.lastChild?.remove(); addChatMsg('assistant',data.response||"Got it!"); } catch(e){ chatMessagesDiv.lastChild?.remove(); addChatMsg('assistant',"Sorry, AI is busy."); } }
@@ -537,7 +455,6 @@
         document.getElementById('close-chat-modal')?.addEventListener('click',()=>document.getElementById('chat-modal').classList.remove('active'));
         document.getElementById('chat-send')?.addEventListener('click',sendChatMessage);
         document.getElementById('chat-input')?.addEventListener('keypress',(e)=>{if(e.key==='Enter') sendChatMessage();});
-
         document.getElementById('cart-icon-btn')?.addEventListener('click',()=>document.getElementById('cart-drawer').classList.remove('translate-x-full'));
         document.getElementById('close-drawer')?.addEventListener('click',()=>document.getElementById('cart-drawer').classList.add('translate-x-full'));
         document.getElementById('checkout-btn')?.addEventListener('click',checkout);
@@ -547,24 +464,16 @@
         function showToast(msg,type){ const t=document.createElement('div'); t.className=`fixed bottom-20 left-4 right-4 md:left-auto md:right-6 z-50 bg-${type==='success'?'green-600':'red-600'} text-white px-4 py-2 rounded-xl shadow-lg text-sm`; t.innerText=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),3000); }
         function escapeHtml(str){ if(!str) return ''; return str.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
 
-        // Initialization
         (async() => {
             loadCart();
             setDeliveryOpt('pickup');
             if (token) { try { await loadUser(); } catch(e) { token = null; } }
             await loadCategories();
             await loadProducts();
-
             const urlParams = new URLSearchParams(window.location.search);
             const paymentSuccess = urlParams.get('payment') === 'success';
             const pendingFlag = localStorage.getItem('pending_payment') === 'true';
-            if (paymentSuccess || pendingFlag) {
-                cart = [];
-                saveCart();
-                showToast("Payment successful! Your cart has been cleared.", 'success');
-                localStorage.removeItem('pending_payment');
-                if (paymentSuccess) window.history.replaceState({}, '', window.location.pathname);
-            }
+            if (paymentSuccess || pendingFlag) { cart = []; saveCart(); showToast("Payment successful! Your cart has been cleared.", 'success'); localStorage.removeItem('pending_payment'); if (paymentSuccess) window.history.replaceState({}, '', window.location.pathname); }
             showView('shop');
         })();
     </script>
