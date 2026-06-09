@@ -281,58 +281,83 @@
         window.removeCartItem = async (idx) => { 
             cart.splice(idx,1); 
             saveCart();
-            // After removal, recalc delivery if in delivery mode with address
             if (deliveryOption === 'delivery' && deliveryAddress) {
                 await recalcDeliveryFee(true);
             }
             renderProducts(); 
         };
         
-        // FIXED: addToCart now explicitly recalculates after saving
         async function addToCart(product) { 
             let existing = cart.find(i => i.id === product.id); 
             if(existing) existing.quantity++; 
             else cart.push({ id: product.id, name: product.name, price: product.price, quantity: 1 }); 
             saveCart(); 
-            // If delivery is active and address is set, recalc delivery fee immediately
             if (deliveryOption === 'delivery' && deliveryAddress) {
                 await recalcDeliveryFee(true);
             } else {
-                // Still update UI for subtotal
                 updateCartUI();
             }
             showToast(`${product.name} added to cart!`, 'success'); 
         }
 
-        // Load categories and products
+        // ---------- FIXED CATEGORY LOADING ----------
         async function loadCategories() {
             try {
                 const data = await apiCall('/inventory/categories');
                 categories = data.categories || [];
-            } catch(e) { console.warn("No /inventory/categories endpoint, will derive from products"); }
+                console.log("Categories from API:", categories);
+            } catch(e) {
+                console.warn("No /inventory/categories endpoint, will derive from products:", e);
+                categories = [];
+            }
+            // Always update dropdown, even if empty (will be populated from products later)
+            updateCategoryDropdown();
+        }
+        
+        function updateCategoryDropdown() {
             const select = document.getElementById('category-select');
             if (!select) return;
-            if (categories.length) {
-                select.innerHTML = '<option value="">All Categories</option>' + categories.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+            let options = '<option value="">All Categories</option>';
+            if (categories && categories.length) {
+                options += categories.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
             }
+            select.innerHTML = options;
         }
-        function populateCategoriesFromProducts() {
-            const unique = [...new Set(allProducts.map(p => p.product_group).filter(g => g && g.trim() !== ''))];
-            if (unique.length && (categories.length === 0 || JSON.stringify(unique.sort()) !== JSON.stringify(categories.sort()))) {
-                categories = unique.sort();
-                const select = document.getElementById('category-select');
-                if (select) {
-                    select.innerHTML = '<option value="">All Categories</option>' + categories.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+        
+        // Extract unique product_group from products and update categories
+        function extractCategoriesFromProducts() {
+            if (!allProducts.length) return;
+            const uniqueGroups = [...new Set(allProducts.map(p => p.product_group).filter(g => g && typeof g === 'string' && g.trim() !== ''))];
+            console.log("Extracted product_group values:", uniqueGroups);
+            if (uniqueGroups.length) {
+                categories = uniqueGroups.sort();
+                updateCategoryDropdown();
+            } else {
+                console.warn("No product_group found in any product. Check your inventory data structure.");
+                // Optionally, you can try alternative field names like 'category' or 'group'
+                const altGroups = [...new Set(allProducts.map(p => p.category || p.group).filter(g => g && g.trim()))];
+                if (altGroups.length) {
+                    console.log("Using alternative field 'category' or 'group':", altGroups);
+                    categories = altGroups.sort();
+                    updateCategoryDropdown();
                 }
             }
         }
+        
+        // Load products and then extract categories
         async function loadProducts() {
             try {
                 allProducts = await apiCall('/inventory/public-list');
-                populateCategoriesFromProducts();
+                console.log("Loaded products:", allProducts.length);
+                // Extract categories from products (regardless of API)
+                extractCategoriesFromProducts();
                 renderProducts();
-            } catch(e) { document.getElementById('products-grid').innerHTML = `<div class="col-span-full text-red-500">⚠️ ${e.message}</div>`; }
+            } catch(e) { 
+                console.error("Failed to load products:", e);
+                document.getElementById('products-grid').innerHTML = `<div class="col-span-full text-red-500">⚠️ ${e.message}</div>`; 
+            }
         }
+        
         function renderProducts() {
             let filtered = allProducts;
             if (searchQuery.trim()) filtered = filtered.filter(p => p.description.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -468,7 +493,6 @@
                 pickup.classList.remove('bg-orange-500','text-white'); 
                 pickup.classList.add('bg-gray-200'); 
                 document.getElementById('delivery-address-section').classList.remove('hidden'); 
-                // If an address is already set, recalc delivery immediately
                 if(deliveryAddress) recalcDeliveryFee(true); 
                 updateCartUI();
             } 
@@ -530,8 +554,8 @@
             loadCart();
             setDeliveryOpt('pickup');
             if (token) { try { await loadUser(); } catch(e) { token = null; } }
-            await loadCategories();
-            await loadProducts();
+            await loadCategories();   // Try API first, fallback later
+            await loadProducts();      // This will also extract categories from products
             const urlParams = new URLSearchParams(window.location.search);
             const paymentSuccess = urlParams.get('payment') === 'success';
             const pendingFlag = localStorage.getItem('pending_payment') === 'true';
