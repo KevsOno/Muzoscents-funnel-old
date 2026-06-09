@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kevs BI – Support & Loyalty</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Kevs BI – Support & Loyalty (Mobile Optimized)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css" rel="stylesheet">
@@ -17,6 +17,15 @@
         .debug-panel { background: #1e1e2f; color: #0fc; font-family: monospace; font-size: 10px; max-height: 120px; overflow-y: auto; padding: 6px; }
         .tab-active { background-color: #3b82f6; color: white; border-bottom: 2px solid #3b82f6; }
         .tab-inactive { background-color: #e2e8f0; color: #1f2937; }
+        /* Additional mobile optimizations */
+        @media (max-width: 768px) {
+            .ticket-sidebar, .customer-sidebar { width: 100% !important; border-right: none !important; border-left: none !important; }
+            .conversation-area { width: 100% !important; }
+            .mobile-stack { flex-direction: column !important; }
+            .mobile-order-1 { order: 1; }
+            .mobile-order-2 { order: 2; }
+            .mobile-order-3 { order: 3; }
+        }
     </style>
 </head>
 <body class="h-screen flex flex-col overflow-hidden">
@@ -49,7 +58,7 @@
             linksHtml += `<a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeClass}" title="${item.title}"><i class="fa-solid ${item.icon} w-4"></i> ${item.name}</a>`;
         });
         let userName = localStorage.getItem('user_profile_display') || 'User';
-        return `<div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40"><div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-3"><div class="flex items-center gap-2"><i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i><span class="text-xl font-bold">${APP_NAME}</span><span class="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span></div><div class="hidden md:flex gap-2">${linksHtml}</div><div class="flex items-center gap-3"><span class="text-xs bg-white/10 px-3 py-1.5 rounded-full"><i class="fa-regular fa-user mr-1"></i> ${escapeHtml(userName)}</span><button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 px-3 py-1.5 rounded-lg text-sm"><i class="fa-solid fa-sign-out-alt"></i> Logout</button></div></div><div class="md:hidden flex overflow-x-auto pb-2 gap-1">${linksHtml}</div></div>`;
+        return `<div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40"><div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-3"><div class="flex items-center gap-2"><i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i><span class="text-xl font-bold">${APP_NAME}</span><span class="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span></div><div class="hidden md:flex gap-2">${linksHtml}</div><div class="flex items-center gap-3"><span class="text-xs bg-white/10 px-3 py-1.5 rounded-full"><i class="fa-regular fa-user mr-1"></i> ${escapeHtml(userName)}</span><button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 px-3 py-1.5 rounded-lg text-sm"><i class="fa-solid fa-sign-out-alt"></i> Logout</button></div></div><div class="md:hidden flex overflow-x-auto pb-2 gap-1 px-2">${linksHtml}</div></div>`;
     }
     function escapeHtml(str) { return String(str).replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
     async function globalLogout() {
@@ -93,15 +102,15 @@
 <div id="toast-container" class="fixed top-6 right-4 z-50 space-y-2 w-80"></div>
 
 <!-- Tab Bar -->
-<div class="bg-white border-b px-6 pt-2 flex gap-4">
-    <button id="support-tab-btn" class="tab-active px-4 py-2 font-semibold rounded-t-lg transition">🎫 Support Tickets</button>
-    <button id="loyalty-tab-btn" class="tab-inactive px-4 py-2 font-semibold rounded-t-lg transition">⭐ Loyalty & CRM</button>
+<div class="bg-white border-b px-4 md:px-6 pt-2 flex gap-2 md:gap-4 overflow-x-auto">
+    <button id="support-tab-btn" class="tab-active px-3 md:px-4 py-2 font-semibold rounded-t-lg transition whitespace-nowrap">🎫 Support Tickets</button>
+    <button id="loyalty-tab-btn" class="tab-inactive px-3 md:px-4 py-2 font-semibold rounded-t-lg transition whitespace-nowrap">⭐ Loyalty & CRM</button>
 </div>
 
-<!-- ================= SUPPORT TAB ================= -->
-<div id="support-tab" class="flex-1 flex overflow-hidden pt-2">
-    <!-- Left column: ticket list + create button -->
-    <section class="w-80 bg-white border-r border-slate-200 flex flex-col shrink-0 overflow-hidden">
+<!-- ================= SUPPORT TAB - MOBILE STACKED ================= -->
+<div id="support-tab" class="flex-1 flex flex-col md:flex-row overflow-hidden pt-2">
+    <!-- Left column: ticket list (full width on mobile) -->
+    <section class="ticket-sidebar w-full md:w-80 bg-white border-r border-slate-200 flex flex-col shrink-0 overflow-hidden md:overflow-y-auto">
         <div class="p-4 border-b bg-slate-50">
             <div class="flex gap-2 mb-2">
                 <select id="queue-status-filter" class="flex-1 border rounded-lg p-1.5 text-xs">
@@ -117,21 +126,21 @@
         <div id="ticket-feed" class="flex-1 overflow-y-auto divide-y divide-slate-100"><div class="p-8 text-center text-xs">Loading tickets...</div></div>
     </section>
 
-    <!-- Middle: conversation area -->
-    <section class="flex-1 bg-slate-50 flex flex-col overflow-hidden relative">
+    <!-- Middle: conversation area (full width on mobile) -->
+    <section class="conversation-area flex-1 bg-slate-50 flex flex-col overflow-hidden relative">
         <div id="no-ticket-selected" class="absolute inset-0 bg-slate-50 z-10 flex items-center justify-center p-6 text-center"><div><i class="fa-solid fa-inbox text-3xl text-slate-300 mb-2"></i><p class="text-sm">Select a ticket</p></div></div>
-        <div class="bg-white border-b px-6 py-3 shrink-0"><h2 id="active-ticket-subject" class="font-semibold">-</h2><p id="active-ticket-meta" class="text-xs text-slate-400">-</p></div>
-        <div id="message-flow-area" class="flex-1 p-6 overflow-y-auto space-y-4"></div>
-        <div class="bg-white border-t p-4 shrink-0">
+        <div class="bg-white border-b px-4 md:px-6 py-3 shrink-0"><h2 id="active-ticket-subject" class="font-semibold text-sm md:text-base">-</h2><p id="active-ticket-meta" class="text-xs text-slate-400">-</p></div>
+        <div id="message-flow-area" class="flex-1 p-4 md:p-6 overflow-y-auto space-y-4"></div>
+        <div class="bg-white border-t p-3 md:p-4 shrink-0">
             <form id="agent-reply-form" class="flex gap-2">
                 <input id="agent-response-input" placeholder="Type reply..." class="flex-1 border rounded-xl px-4 py-2 text-sm" required>
-                <button type="submit" class="bg-[#1E3A5F] text-white px-4 py-2 rounded-xl">Send</button>
+                <button type="submit" class="bg-[#1E3A5F] text-white px-4 py-2 rounded-xl text-sm">Send</button>
             </form>
         </div>
     </section>
 
-    <!-- Right column: customer info & actions -->
-    <section class="w-80 bg-white border-l border-slate-200 flex flex-col shrink-0 overflow-y-auto p-5 space-y-6">
+    <!-- Right column: customer info & actions (moves below on mobile) -->
+    <section class="customer-sidebar w-full md:w-80 bg-white border-l border-slate-200 flex flex-col shrink-0 overflow-y-auto p-5 space-y-6">
         <div>
             <h3 class="text-xs font-bold uppercase text-slate-500">Customer Information</h3>
             <div id="customer-info-card" class="mt-2 text-xs bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
@@ -163,8 +172,8 @@
     </section>
 </div>
 
-<!-- ================= LOYALTY & CRM TAB ================= -->
-<div id="loyalty-tab" class="hidden flex-1 overflow-auto p-6">
+<!-- ================= LOYALTY & CRM TAB (already responsive) ================= -->
+<div id="loyalty-tab" class="hidden flex-1 overflow-auto p-4 md:p-6">
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div class="bg-white rounded-xl shadow p-5">
             <h2 class="text-xl font-bold mb-4"><i class="fas fa-user-plus text-green-600 mr-2"></i>Register Customer</h2>
@@ -189,7 +198,7 @@
             <p class="text-xs text-gray-500 mt-3">A temporary password will be emailed to the customer. They can log in and view their loyalty points.</p>
         </div>
         <div class="bg-white rounded-xl shadow p-5 col-span-2">
-            <div class="flex justify-between items-center mb-3">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-3">
                 <h2 class="text-xl font-bold"><i class="fas fa-users mr-2"></i>Customer Directory</h2>
                 <div class="flex gap-2">
                     <input type="text" id="customer-search" placeholder="Search..." class="border rounded p-1 text-sm">
@@ -201,8 +210,9 @@
                     <thead class="bg-gray-100">
                         <tr><th class="p-2 text-left">Name</th><th class="p-2 text-left">Email</th><th class="p-2 text-left">Phone</th><th class="p-2 text-left">Points</th><th class="p-2 text-left">Tier</th><th class="p-2 text-left">Birthday</th><th class="p-2 text-center">Action</th></tr>
                     </thead>
-                    <tbody id="customer-table-body"><tr><td colspan="7" class="text-center p-4">Loading...</td></tr></tbody>
-                </table>
+                    <tbody id="customer-table-body"><tr><td colspan="7" class="text-center p-4">Loading...</td></tr>
+                </tbody>
+            合适的
             </div>
         </div>
     </div>
@@ -225,7 +235,7 @@
     </div>
 </div>
 
-<!-- New Ticket Modal -->
+<!-- New Ticket Modal (mobile friendly) -->
 <div id="new-ticket-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
     <div class="bg-white rounded-2xl max-w-md w-full p-6">
         <div class="flex justify-between items-center mb-4">
@@ -261,7 +271,7 @@
     </div>
 </div>
 
-<!-- Escalate Modal -->
+<!-- Escalate Modal (mobile friendly) -->
 <div id="escalate-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
     <div class="bg-white rounded-2xl max-w-md w-full p-6">
         <div class="flex justify-between items-center mb-4">
@@ -426,7 +436,6 @@
         } catch(err) { console.error(err); document.getElementById('cust-name').innerText = 'Error loading'; }
     }
 
-    // Create new ticket
     async function createTicket(customerId, subject, description, priority) {
         const payload = {
             user_id: customerId || null,
@@ -437,7 +446,6 @@
         return await req('/support/tickets', 'POST', payload);
     }
 
-    // Customer search for new ticket modal
     async function searchCustomers(query) {
         if (query.length < 2) return [];
         try {
@@ -609,7 +617,7 @@
     confirmEscalateBtn?.addEventListener('click', confirmEscalation);
     window.addEventListener('click', (e) => { if (e.target === escalateModal) closeEscalateModalFn(); });
 
-    // ---------- LOYALTY & CRM (with welcome email & auto-org assignment) ----------
+    // ---------- LOYALTY & CRM ----------
     async function loadCustomers() {
         try {
             const data = await req('/organisations/me/users');
@@ -650,7 +658,7 @@
                 <td class="p-2 text-center">
                     <button onclick="openPointsAdjust(${c.id}, '${escapeHtml(c.first_name)} ${escapeHtml(c.last_name)}', ${c.current_points})" class="bg-indigo-100 text-indigo-700 px-2 py-1 rounded text-xs">Adjust</button>
                 </td>
-            </td>
+            </tr>
         `).join('');
     }
 
@@ -712,20 +720,24 @@
         URL.revokeObjectURL(url);
     });
 
-    // Updated registration: sends welcome email with temp password, auto-assigns to current org
+    // Registration with phone validation
     document.getElementById('register-customer-form')?.addEventListener('submit', async (e) => {
         e.preventDefault();
+        const phone = document.getElementById('cust-phone').value.trim();
+        if (!phone) {
+            showToast('Phone number is required', 'error');
+            return;
+        }
         const payload = {
             first_name: document.getElementById('cust-firstname').value,
             last_name: document.getElementById('cust-lastname').value,
             email: document.getElementById('cust-email').value,
-            phone: document.getElementById('cust-phone').value,
+            phone: phone,
             date_of_birth: document.getElementById('cust-dob').value || null,
             address: document.getElementById('cust-address').value || null,
             tier: document.getElementById('cust-tier').value,
             loyalty_points: parseInt(document.getElementById('cust-points').value) || 0
         };
-        // Optionally, we could also send an invite_code if needed, but backend can use org from token.
         try {
             const response = await req('/admin/register-customer', 'POST', payload);
             showToast(response.message || 'Customer registered successfully! Welcome email sent.', 'success');
