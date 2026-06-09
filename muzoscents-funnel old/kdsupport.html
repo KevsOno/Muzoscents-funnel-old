@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Kevs BI – Support & Loyalty</title>
+    <title>Kevs BI – Support & Loyalty (Mobile Optimized)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css" rel="stylesheet">
@@ -26,6 +26,9 @@
             .mobile-order-2 { order: 2; }
             .mobile-order-3 { order: 3; }
         }
+        /* Touch feedback for buttons */
+        button:active { transform: scale(0.97); transition: transform 0.05s ease; }
+        .btn-loading { opacity: 0.7; cursor: not-allowed; transform: none !important; }
     </style>
 </head>
 <body class="h-screen flex flex-col overflow-hidden">
@@ -193,7 +196,9 @@
                     <option value="platinum">Platinum</option>
                 </select>
                 <input type="number" id="cust-points" placeholder="Initial points" value="0" class="w-full border rounded p-2">
-                <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg">Register & Send Welcome Email</button>
+                <button type="submit" id="register-submit-btn" class="w-full bg-blue-600 text-white py-2 rounded-lg transition active:scale-95 flex items-center justify-center gap-2">
+                    <span>Register & Send Welcome Email</span>
+                </button>
             </form>
             <p class="text-xs text-gray-500 mt-3">A temporary password will be emailed to the customer. They can log in and view their loyalty points.</p>
         </div>
@@ -364,7 +369,7 @@
                 showLoginModal();
                 throw new Error('Session expired');
             }
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`);
             return data;
         } catch (err) { addDebugLog(endpoint, method, res?.status || null, null, err.message); throw err; }
     }
@@ -719,33 +724,68 @@
         URL.revokeObjectURL(url);
     });
 
-    // Registration with phone validation
-    document.getElementById('register-customer-form')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const phone = document.getElementById('cust-phone').value.trim();
-        if (!phone) {
-            showToast('Phone number is required', 'error');
-            return;
-        }
-        const payload = {
-            first_name: document.getElementById('cust-firstname').value,
-            last_name: document.getElementById('cust-lastname').value,
-            email: document.getElementById('cust-email').value,
-            phone: phone,
-            date_of_birth: document.getElementById('cust-dob').value || null,
-            address: document.getElementById('cust-address').value || null,
-            tier: document.getElementById('cust-tier').value,
-            loyalty_points: parseInt(document.getElementById('cust-points').value) || 0
-        };
-        try {
-            const response = await req('/admin/register-customer', 'POST', payload);
-            showToast(response.message || 'Customer registered successfully! Welcome email sent.', 'success');
-            loadCustomers();
-            document.getElementById('register-customer-form').reset();
-        } catch(err) {
-            showToast('Registration failed: ' + err.message, 'error');
-        }
-    });
+    // Registration with phone validation, loading state, and better error handling
+    const registerForm = document.getElementById('register-customer-form');
+    const registerBtn = document.getElementById('register-submit-btn');
+    
+    if (registerForm) {
+        registerForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            // Basic validation
+            const firstName = document.getElementById('cust-firstname').value.trim();
+            const lastName = document.getElementById('cust-lastname').value.trim();
+            const email = document.getElementById('cust-email').value.trim();
+            const phone = document.getElementById('cust-phone').value.trim();
+            
+            if (!firstName || !lastName) {
+                showToast('First name and last name are required', 'error');
+                return;
+            }
+            if (!email) {
+                showToast('Email is required', 'error');
+                return;
+            }
+            if (!phone) {
+                showToast('Phone number is required', 'error');
+                return;
+            }
+            
+            // Disable button and show loading state
+            const originalContent = registerBtn.innerHTML;
+            registerBtn.disabled = true;
+            registerBtn.classList.add('btn-loading');
+            registerBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Registering...';
+            
+            const payload = {
+                first_name: firstName,
+                last_name: lastName,
+                email: email,
+                phone: phone,
+                date_of_birth: document.getElementById('cust-dob').value || null,
+                address: document.getElementById('cust-address').value.trim() || null,
+                tier: document.getElementById('cust-tier').value,
+                loyalty_points: parseInt(document.getElementById('cust-points').value) || 0
+            };
+            
+            try {
+                const response = await req('/admin/register-customer', 'POST', payload);
+                showToast(response.message || 'Customer registered successfully! Welcome email sent.', 'success');
+                // Reset form
+                registerForm.reset();
+                // Reload customer table
+                await loadCustomers();
+            } catch(err) {
+                console.error('Registration error:', err);
+                showToast('Registration failed: ' + (err.message || 'Unknown error'), 'error');
+            } finally {
+                // Restore button state
+                registerBtn.disabled = false;
+                registerBtn.classList.remove('btn-loading');
+                registerBtn.innerHTML = originalContent;
+            }
+        });
+    }
 
     // ---------- TAB SWITCHING ----------
     const userRole = localStorage.getItem('user_role') || 'customer';
