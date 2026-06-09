@@ -46,6 +46,8 @@
         .category-select { background-color: white; border-radius: 9999px; padding: 0.5rem 2rem 0.5rem 1rem; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23f97316'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.75rem center; background-size: 1rem; }
         .loader-small { display: inline-block; width: 16px; height: 16px; border: 2px solid #f3f3f3; border-top: 2px solid #f97316; border-radius: 50%; animation: spin 0.6s linear infinite; margin-left: 6px; vertical-align: middle; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .category-refresh-btn { background: #f59e0b20; border: 1px solid #f59e0b; border-radius: 9999px; padding: 0.25rem 0.75rem; font-size: 0.75rem; color: #f59e0b; cursor: pointer; transition: all 0.2s; }
+        .category-refresh-btn:hover { background: #f59e0b; color: white; }
     </style>
 </head>
 <body class="text-gray-800">
@@ -120,7 +122,7 @@
         <div id="shop-view">
             <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
                 <h2 class="text-2xl md:text-3xl font-bold text-gray-800">🔥 Featured Products</h2>
-                <div class="flex flex-wrap gap-3 w-full md:w-auto">
+                <div class="flex flex-wrap gap-3 w-full md:w-auto items-center">
                     <select id="category-select" class="category-select border border-orange-200 text-sm focus:ring-orange-400">
                         <option value="">All Categories</option>
                     </select>
@@ -129,6 +131,7 @@
                         <input type="text" id="product-search" placeholder="Search products..." class="w-full pl-10 pr-8 py-2 border border-gray-300 rounded-full focus:ring-2 focus:ring-orange-400 outline-none">
                         <span id="search-clear" class="search-clear"><i class="fa-solid fa-times-circle"></i></span>
                     </div>
+                    <button id="refresh-categories-btn" class="category-refresh-btn" title="Refresh categories from products"><i class="fa-solid fa-rotate-right"></i> Categories</button>
                 </div>
             </div>
             <div id="products-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
@@ -192,7 +195,6 @@
         let currentProductForModal = null;
         let isRecalcInProgress = false;
 
-        // Helper: show loading on total
         function setCartTotalLoading(loading) {
             const totalSpan = document.getElementById('cart-total');
             if (loading) {
@@ -205,7 +207,6 @@
             }
         }
 
-        // ---------- Helper API ----------
         async function apiCall(endpoint, options = {}, retry = true) {
             if (!options.headers) options.headers = {};
             options.headers['Content-Type'] = 'application/json';
@@ -224,7 +225,6 @@
             return res.json();
         }
 
-        // --- Delivery recalc (explicit, no silent conflict) ---
         async function recalcDeliveryFee(showFeedback = true) {
             if (deliveryOption !== 'delivery' || !deliveryAddress || cart.length === 0) {
                 if (cart.length === 0) { deliveryFee = 0; handlingFee = 0; updateCartUI(); }
@@ -254,7 +254,6 @@
             }
         }
 
-        // Cart functions – NO automatic recalc inside saveCart
         function saveCart() {
             localStorage.setItem('kevs_cart', JSON.stringify(cart));
             updateCartUI();
@@ -300,56 +299,75 @@
             showToast(`${product.name} added to cart!`, 'success'); 
         }
 
-        // ---------- FIXED CATEGORY LOADING ----------
-        async function loadCategories() {
-            try {
-                const data = await apiCall('/inventory/categories');
-                categories = data.categories || [];
-                console.log("Categories from API:", categories);
-            } catch(e) {
-                console.warn("No /inventory/categories endpoint, will derive from products:", e);
-                categories = [];
-            }
-            // Always update dropdown, even if empty (will be populated from products later)
-            updateCategoryDropdown();
-        }
-        
+        // ---------- CATEGORY EXTRACTION (FIXED) ----------
         function updateCategoryDropdown() {
             const select = document.getElementById('category-select');
             if (!select) return;
             let options = '<option value="">All Categories</option>';
             if (categories && categories.length) {
                 options += categories.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+                console.log("✅ Category dropdown updated with", categories.length, "categories");
+            } else {
+                console.warn("⚠️ No categories to display");
+                options += '<option disabled>— No categories found —</option>';
             }
             select.innerHTML = options;
         }
         
-        // Extract unique product_group from products and update categories
+        // Force extract categories from the loaded products
         function extractCategoriesFromProducts() {
-            if (!allProducts.length) return;
-            const uniqueGroups = [...new Set(allProducts.map(p => p.product_group).filter(g => g && typeof g === 'string' && g.trim() !== ''))];
-            console.log("Extracted product_group values:", uniqueGroups);
-            if (uniqueGroups.length) {
-                categories = uniqueGroups.sort();
+            if (!allProducts.length) {
+                console.warn("No products loaded yet");
+                return false;
+            }
+            // Log first product to see available fields
+            console.log("🔍 Sample product:", allProducts[0]);
+            // Extract unique product_group (case-sensitive, trim)
+            const groups = allProducts.map(p => p.product_group).filter(g => g && typeof g === 'string' && g.trim() !== '');
+            const unique = [...new Set(groups)];
+            console.log(`📦 Extracted ${unique.length} unique product_group values:`, unique);
+            if (unique.length) {
+                categories = unique.sort();
                 updateCategoryDropdown();
+                return true;
             } else {
-                console.warn("No product_group found in any product. Check your inventory data structure.");
-                // Optionally, you can try alternative field names like 'category' or 'group'
-                const altGroups = [...new Set(allProducts.map(p => p.category || p.group).filter(g => g && g.trim()))];
-                if (altGroups.length) {
-                    console.log("Using alternative field 'category' or 'group':", altGroups);
-                    categories = altGroups.sort();
+                // Fallback: try other possible fields (just in case)
+                const altGroups = allProducts.map(p => p.category || p.group || p.type).filter(g => g && g.trim());
+                const altUnique = [...new Set(altGroups)];
+                if (altUnique.length) {
+                    console.log("🔄 Using fallback fields (category/group/type):", altUnique);
+                    categories = altUnique.sort();
                     updateCategoryDropdown();
+                    return true;
                 }
+                console.error("❌ No product_group values found in any product. Check your API response.");
+                categories = [];
+                updateCategoryDropdown();
+                return false;
             }
         }
         
-        // Load products and then extract categories
+        async function loadCategories() {
+            // Try to fetch from dedicated endpoint (may not exist)
+            try {
+                const data = await apiCall('/inventory/categories');
+                if (data.categories && data.categories.length) {
+                    categories = data.categories;
+                    console.log("✅ Categories loaded from API:", categories);
+                    updateCategoryDropdown();
+                    return;
+                }
+            } catch(e) {
+                console.log("No /inventory/categories endpoint, will use product data");
+            }
+            // If API fails or returns empty, we'll rely on extractCategoriesFromProducts
+        }
+        
         async function loadProducts() {
             try {
                 allProducts = await apiCall('/inventory/public-list');
-                console.log("Loaded products:", allProducts.length);
-                // Extract categories from products (regardless of API)
+                console.log(`📦 Loaded ${allProducts.length} products`);
+                // Extract categories after products load
                 extractCategoriesFromProducts();
                 renderProducts();
             } catch(e) { 
@@ -377,6 +395,17 @@
             });
         }
 
+        // Manual refresh of categories (useful for debugging)
+        function refreshCategories() {
+            if (allProducts.length) {
+                const success = extractCategoriesFromProducts();
+                if (success) showToast(`Loaded ${categories.length} categories`, 'success');
+                else showToast("No categories found in products", 'error');
+            } else {
+                showToast("Products not loaded yet", 'error');
+            }
+        }
+        
         // Search & Category filter
         let searchDebounce;
         const searchInput = document.getElementById('product-search'), searchClear = document.getElementById('search-clear');
@@ -387,6 +416,7 @@
         if(searchClear) searchClear.addEventListener('click', clearSearch);
         const catSelect = document.getElementById('category-select');
         if(catSelect) catSelect.addEventListener('change', handleCategoryChange);
+        document.getElementById('refresh-categories-btn')?.addEventListener('click', refreshCategories);
 
         function showProductDetail(p) {
             currentProductForModal = p;
@@ -554,8 +584,8 @@
             loadCart();
             setDeliveryOpt('pickup');
             if (token) { try { await loadUser(); } catch(e) { token = null; } }
-            await loadCategories();   // Try API first, fallback later
-            await loadProducts();      // This will also extract categories from products
+            await loadCategories();   // try API
+            await loadProducts();      // loads products & extracts categories
             const urlParams = new URLSearchParams(window.location.search);
             const paymentSuccess = urlParams.get('payment') === 'success';
             const pendingFlag = localStorage.getItem('pending_payment') === 'true';
