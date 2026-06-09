@@ -44,6 +44,8 @@
         .ticket-card { transition: all 0.2s; }
         .ticket-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
         .category-select { background-color: white; border-radius: 9999px; padding: 0.5rem 2rem 0.5rem 1rem; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23f97316'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.75rem center; background-size: 1rem; }
+        .loader-small { display: inline-block; width: 16px; height: 16px; border: 2px solid #f3f3f3; border-top: 2px solid #f97316; border-radius: 50%; animation: spin 0.6s linear infinite; margin-left: 6px; vertical-align: middle; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body class="text-gray-800">
@@ -190,6 +192,19 @@
         let currentProductForModal = null;
         let isRecalcInProgress = false;
 
+        // Helper: show loading on total
+        function setCartTotalLoading(loading) {
+            const totalSpan = document.getElementById('cart-total');
+            if (loading) {
+                totalSpan.innerHTML = '<span class="loader-small"></span>';
+            } else {
+                const subtotal = cart.reduce((s,i) => s + i.price * i.quantity, 0);
+                let total = subtotal;
+                if (deliveryOption === 'delivery' && deliveryAddress && deliveryFee) total += deliveryFee;
+                totalSpan.innerText = `₦${total.toLocaleString()}`;
+            }
+        }
+
         // ---------- Helper API ----------
         async function apiCall(endpoint, options = {}, retry = true) {
             if (!options.headers) options.headers = {};
@@ -209,7 +224,7 @@
             return res.json();
         }
 
-        // --- CORE FIX: auto-recalculate delivery fee when cart changes ---
+        // --- CORE FIX: recalc delivery fee (waits for API) ---
         async function recalcDeliveryFee(silent = true) {
             if (deliveryOption !== 'delivery' || !deliveryAddress || cart.length === 0) {
                 if (cart.length === 0) { deliveryFee = 0; handlingFee = 0; updateCartUI(); }
@@ -217,6 +232,7 @@
             }
             if (isRecalcInProgress) return;
             isRecalcInProgress = true;
+            if (!silent) setCartTotalLoading(true);
             try {
                 const items = cart.map(i => ({ inventory_id: i.id, quantity: i.quantity }));
                 const res = await apiCall('/delivery/estimate', {
@@ -233,6 +249,7 @@
                 else console.warn("Auto delivery recalc failed:", e);
             } finally {
                 isRecalcInProgress = false;
+                if (!silent) setCartTotalLoading(false);
             }
         }
 
@@ -240,9 +257,9 @@
         function saveCart() {
             localStorage.setItem('kevs_cart', JSON.stringify(cart));
             updateCartUI();
-            // Automatically refresh delivery fee if delivery mode and address exists
+            // Trigger background recalc only if delivery mode and address exist
             if (deliveryOption === 'delivery' && deliveryAddress) {
-                recalcDeliveryFee(true);
+                recalcDeliveryFee(true); // non-blocking background update
             }
         }
         function loadCart() { const saved = localStorage.getItem('kevs_cart'); cart = saved ? JSON.parse(saved) : []; updateCartUI(); if(deliveryOption === 'delivery' && deliveryAddress) recalcDeliveryFee(true); }
@@ -252,7 +269,8 @@
             let total = subtotal;
             if (deliveryOption === 'delivery' && deliveryAddress && deliveryFee) total += deliveryFee;
             document.getElementById('cart-subtotal').innerText = `₦${subtotal.toLocaleString()}`;
-            document.getElementById('cart-total').innerText = `₦${total.toLocaleString()}`;
+            const totalSpan = document.getElementById('cart-total');
+            if (!totalSpan.innerHTML.includes('loader')) totalSpan.innerText = `₦${total.toLocaleString()}`;
             const feeRow = document.getElementById('delivery-fee-row');
             if (deliveryOption === 'delivery' && deliveryAddress && deliveryFee) { feeRow.classList.remove('hidden'); document.getElementById('cart-delivery-fee').innerText = `₦${deliveryFee.toLocaleString()}`; } else feeRow.classList.add('hidden');
             const count = cart.reduce((s,i) => s + i.quantity, 0);
@@ -262,10 +280,31 @@
             if (cart.length === 0) { container.innerHTML = '<div class="text-center text-gray-400 py-8"><i class="fa-regular fa-basket-shopping text-4xl mb-2"></i><p>Cart is empty</p></div>'; return; }
             container.innerHTML = cart.map((item, idx) => `<div class="flex justify-between items-center bg-gray-50 p-3 rounded-xl"><div><span class="font-medium">${escapeHtml(item.name)}</span> <span class="text-xs text-gray-500">x${item.quantity}</span></div><div class="font-mono text-orange-600">₦${(item.price * item.quantity).toLocaleString()}</div><button onclick="removeCartItem(${idx})" class="text-red-500"><i class="fa-regular fa-trash-can"></i></button></div>`).join('');
         }
-        window.removeCartItem = (idx) => { cart.splice(idx,1); saveCart(); renderProducts(); updateCartUI(); };
-        function addToCart(product) { let existing = cart.find(i => i.id === product.id); if(existing) existing.quantity++; else cart.push({ id: product.id, name: product.name, price: product.price, quantity: 1 }); saveCart(); showToast(`${product.name} added to cart!`, 'success'); updateCartUI(); }
+        window.removeCartItem = async (idx) => { 
+            cart.splice(idx,1); 
+            // After removal, if delivery mode and address exists, recalc immediately
+            saveCart();
+            if (deliveryOption === 'delivery' && deliveryAddress) {
+                await recalcDeliveryFee(false);
+            }
+            renderProducts(); 
+        };
+        
+        // FIXED: addToCart now awaits delivery recalc if address is set
+        async function addToCart(product) { 
+            let existing = cart.find(i => i.id === product.id); 
+            if(existing) existing.quantity++; 
+            else cart.push({ id: product.id, name: product.name, price: product.price, quantity: 1 }); 
+            saveCart(); 
+            // ** CRITICAL: If delivery mode and address already set, force immediate recalculation **
+            if (deliveryOption === 'delivery' && deliveryAddress) {
+                await recalcDeliveryFee(false);  // Wait for new fee to be fetched
+            }
+            showToast(`${product.name} added to cart!`, 'success'); 
+            updateCartUI(); 
+        }
 
-        // Load categories and products (unchanged)
+        // Load categories and products
         async function loadCategories() {
             try {
                 const data = await apiCall('/inventory/categories');
@@ -305,7 +344,10 @@
             document.querySelectorAll('.product-card').forEach(card => {
                 const productData = JSON.parse(card.getAttribute('data-product'));
                 card.querySelector('.view-details-btn').onclick = (e) => { e.stopPropagation(); showProductDetail(productData); };
-                card.querySelector('.add-to-cart-btn').onclick = (e) => { e.stopPropagation(); addToCart({ id: productData.id, name: productData.description, price: productData.price_naira }); };
+                card.querySelector('.add-to-cart-btn').onclick = async (e) => { 
+                    e.stopPropagation(); 
+                    await addToCart({ id: productData.id, name: productData.description, price: productData.price_naira }); 
+                };
                 card.onclick = (e) => { if (e.target.tagName !== 'BUTTON' && !e.target.closest('button')) showProductDetail(productData); };
             });
         }
@@ -331,7 +373,7 @@
         function closeProductModal() { document.getElementById('product-detail-modal').classList.remove('active'); currentProductForModal = null; }
         document.getElementById('close-product-modal')?.addEventListener('click', closeProductModal);
         document.getElementById('modal-close-btn')?.addEventListener('click', closeProductModal);
-        document.getElementById('modal-add-to-cart')?.addEventListener('click', () => { if(currentProductForModal) addToCart({ id: currentProductForModal.id, name: currentProductForModal.description, price: currentProductForModal.price_naira }); closeProductModal(); });
+        document.getElementById('modal-add-to-cart')?.addEventListener('click', async () => { if(currentProductForModal) { await addToCart({ id: currentProductForModal.id, name: currentProductForModal.description, price: currentProductForModal.price_naira }); } closeProductModal(); });
 
         // Track Order Modal
         const trackModal = document.getElementById('track-modal');
