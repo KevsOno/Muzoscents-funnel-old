@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kevs bOS – Admin Inventory Manager (Advanced CSV Validation)</title>
+    <title>Kevs bOS – Admin Inventory Manager (Multi‑Location)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
@@ -16,7 +16,7 @@
 </head>
 <body class="text-slate-200 p-4 md:p-6">
 
-<!-- ========== GLOBAL NAVIGATION (Kevs bOS) ========== -->
+<!-- Global Navigation -->
 <div id="kevs-nav-container"></div>
 <script>
 (function() {
@@ -99,11 +99,10 @@
     }
 
     async function globalLogout() {
-        const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
         const token = localStorage.getItem('access_token');
         if (token) {
             try {
-                await fetch(`${BACKEND}/auth/logout`, {
+                await fetch(`/auth/logout`, {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
                 });
@@ -120,12 +119,12 @@
         const token = localStorage.getItem('access_token');
         if (!token) return;
         try {
-            const res = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/me', {
+            const res = await fetch('/auth/me', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
                 const me = await res.json();
-                const contextRes = await fetch(`https://kevsono-kevs-digital-bos.hf.space/support/customer-context?target_user_id=${me.user_id}`, {
+                const contextRes = await fetch(`/support/customer-context?target_user_id=${me.user_id}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 if (contextRes.ok) {
@@ -156,13 +155,13 @@
     }
 })();
 </script>
-<!-- ========== END GLOBAL NAVIGATION ========== -->
+<!-- End Global Navigation -->
 
 <div class="max-w-7xl mx-auto">
     <div class="flex justify-between items-center mb-6 pb-4 border-b border-slate-700">
         <div>
-            <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">📦 Inventory Manager</h1>
-            <p class="text-sm text-slate-400">Advanced inventory: handling, cost, weight & size factor</p>
+            <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">📦 Inventory Manager (Multi‑Location)</h1>
+            <p class="text-sm text-slate-400">Manage stock across warehouse, online, and store locations</p>
         </div>
     </div>
 
@@ -172,6 +171,21 @@
     </div>
 
     <div id="admin-panel" class="hidden">
+        <!-- Location filter and transfer section -->
+        <div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-slate-700 shadow-xl">
+            <div class="flex flex-wrap gap-4 items-end justify-between">
+                <div class="flex-1">
+                    <label class="block text-xs text-slate-400 mb-1">Filter Inventory by Location</label>
+                    <select id="location-filter" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm w-full md:w-64">
+                        <option value="">All Locations (aggregated)</option>
+                    </select>
+                </div>
+                <button id="refresh-list" class="bg-slate-700 hover:bg-slate-600 text-sm px-3 py-2 rounded-lg"><i class="fa-solid fa-rotate-right mr-1"></i> Refresh</button>
+                <button id="show-transfer-modal" class="bg-indigo-600 hover:bg-indigo-700 text-sm px-3 py-2 rounded-lg"><i class="fa-solid fa-arrow-right-arrow-left"></i> Transfer Stock</button>
+            </div>
+        </div>
+
+        <!-- Product Form -->
         <div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-slate-700 shadow-xl">
             <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fa-solid fa-plus-circle text-blue-400"></i> <span id="form-title">Add New Product</span></h2>
             <form id="product-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -197,7 +211,7 @@
                     <input id="cost_price_naira" type="number" step="1" value="0" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
                 </div>
                 <div>
-                    <label class="block text-xs text-slate-400 mb-1">Current Stock Quantity * ≥0</label>
+                    <label class="block text-xs text-slate-400 mb-1">Initial Stock Quantity * ≥0</label>
                     <input id="current_qty" type="number" step="1" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
                 </div>
                 <div>
@@ -221,6 +235,13 @@
                     <label class="block text-xs text-slate-400 mb-1">Image URL (optional)</label>
                     <input id="image_url" type="url" placeholder="https://..." class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
                 </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Assign to Location (optional)</label>
+                    <select id="location-assign" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                        <option value="">Default Warehouse (auto-assign)</option>
+                    </select>
+                    <p class="text-xs text-slate-400 mt-1">If empty, product will go to Main Warehouse.</p>
+                </div>
                 <div class="md:col-span-2 flex gap-3">
                     <button type="submit" class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded-lg font-medium transition">💾 Save Product</button>
                     <button type="button" id="cancel-edit" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm transition hidden">Cancel Edit</button>
@@ -228,6 +249,7 @@
             </form>
         </div>
         
+        <!-- Bulk Upload -->
         <div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-slate-700 shadow-xl">
             <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fa-solid fa-upload text-green-400"></i> Bulk Upload Products (CSV)</h2>
             <div class="bg-slate-900/60 rounded-lg p-3 mb-4 text-sm border-l-4 border-amber-500">
@@ -237,7 +259,7 @@
                     <li><span class="text-red-300">⚠️ Rules:</span> handling_category ∈ {standard, fragile, bulky, hazardous}</li>
                     <li>size_factor ≥ 1.0 &nbsp;|&nbsp; weight_kg ≥ 0 &nbsp;|&nbsp; price_naira > 0 &nbsp;|&nbsp; cost_price_naira ≥ 0 &nbsp;|&nbsp; current_qty ≥ 0</li>
                     <li>image_url can be empty but column must exist. All fields mandatory.</li>
-                    <li>For existing item_code, quantity will be <strong>added</strong> to current stock (merge logic).</li>
+                    <li>For existing item_code, quantity will be <strong>added</strong> to current stock in the default warehouse.</li>
                 </ul>
             </div>
             <div class="flex flex-col sm:flex-row gap-4 items-end">
@@ -250,10 +272,10 @@
             <div id="bulk-upload-status" class="mt-3 text-sm"></div>
         </div>
         
+        <!-- Product List -->
         <div>
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-boxes text-blue-400"></i> All Inventory Items</h2>
-                <button id="refresh-list" class="bg-slate-700 hover:bg-slate-600 text-sm px-3 py-1.5 rounded-lg"><i class="fa-solid fa-rotate-right mr-1"></i> Refresh</button>
             </div>
             <div id="products-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div class="col-span-full text-center py-8 text-slate-400"><i class="fa-solid fa-spinner fa-pulse mr-2"></i> Loading...</div>
@@ -262,10 +284,47 @@
     </div>
 </div>
 
+<!-- Stock Transfer Modal -->
+<div id="transfer-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+    <div class="bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-slate-600">
+        <h3 class="text-xl font-bold mb-4">Transfer Stock</h3>
+        <div class="space-y-3">
+            <div>
+                <label class="block text-sm">Product</label>
+                <select id="transfer-product" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select>
+            </div>
+            <div>
+                <label class="block text-sm">From Location</label>
+                <select id="transfer-from" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select>
+            </div>
+            <div>
+                <label class="block text-sm">To Location</label>
+                <select id="transfer-to" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select>
+            </div>
+            <div>
+                <label class="block text-sm">Quantity</label>
+                <input id="transfer-qty" type="number" min="1" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
+            </div>
+            <div>
+                <label class="block text-sm">Reason (optional)</label>
+                <input id="transfer-reason" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
+            </div>
+            <div class="flex gap-3 mt-4">
+                <button id="transfer-submit" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg">Transfer</button>
+                <button id="transfer-cancel" class="bg-slate-600 hover:bg-slate-500 px-4 py-2 rounded-lg">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
-    const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
+    // Use relative URLs for API calls
+    const API_BASE = "";
     let token = localStorage.getItem('access_token');
     let currentUser = null;
+    let allLocations = [];
+    let currentLocationFilter = '';
+    let products = [];
 
     async function refreshToken() {
         const refresh = localStorage.getItem('refresh_token');
@@ -289,7 +348,9 @@
 
     async function apiCall(endpoint, options = {}, retry = true) {
         if (!options.headers) options.headers = {};
-        options.headers['Content-Type'] = 'application/json';
+        if (!(options.body instanceof FormData)) {
+            options.headers['Content-Type'] = 'application/json';
+        }
         if (token) options.headers['Authorization'] = `Bearer ${token}`;
         let res = await fetch(`${API_BASE}${endpoint}`, options);
         if (res.status === 401 && retry) {
@@ -304,11 +365,53 @@
         return res.json();
     }
 
+    async function loadLocations() {
+        try {
+            // Use v2 endpoint for multi-location
+            const locs = await apiCall('/v2/inventory/locations');
+            allLocations = locs;
+            const filterSelect = document.getElementById('location-filter');
+            const assignSelect = document.getElementById('location-assign');
+            const transferFrom = document.getElementById('transfer-from');
+            const transferTo = document.getElementById('transfer-to');
+            
+            if (!locs || locs.length === 0) {
+                // No locations found - show message
+                filterSelect.innerHTML = '<option value="">No locations available</option>';
+                assignSelect.innerHTML = '<option value="">Default Warehouse</option>';
+                transferFrom.innerHTML = '<option value="">No locations</option>';
+                transferTo.innerHTML = '<option value="">No locations</option>';
+                return;
+            }
+            
+            const optionsHtml = locs.map(l => `<option value="${l.id}">${escapeHtml(l.name)} (${l.type})</option>`).join('');
+            filterSelect.innerHTML = '<option value="">All Locations (aggregated)</option>' + optionsHtml;
+            assignSelect.innerHTML = '<option value="">Default Warehouse (auto-assign)</option>' + optionsHtml;
+            transferFrom.innerHTML = optionsHtml;
+            transferTo.innerHTML = optionsHtml;
+            
+            filterSelect.onchange = () => {
+                currentLocationFilter = filterSelect.value;
+                loadInventory();
+            };
+        } catch (err) {
+            console.error('Error loading locations:', err);
+            showToast('Failed to load locations. Make sure ENABLE_MULTI_LOCATION=true', 'error');
+        }
+    }
+
     async function loadInventory() {
         try {
-            const items = await apiCall('/inventory');
+            let url = '/inventory';
+            // Use v2 endpoint if filtering by location
+            if (currentLocationFilter) {
+                url = `/v2/inventory?location_id=${currentLocationFilter}`;
+            }
+            const items = await apiCall(url);
+            products = items;
             renderProducts(items);
         } catch (err) {
+            console.error('Error loading inventory:', err);
             document.getElementById('products-grid').innerHTML = `<div class="col-span-full text-center py-8 text-red-400">❌ Failed to load inventory: ${err.message}</div>`;
         }
     }
@@ -319,6 +422,7 @@
             container.innerHTML = '<div class="col-span-full text-center py-8 text-slate-400">📭 No products found. Add your first product above.</div>';
             return;
         }
+        
         container.innerHTML = items.map(p => {
             const handlingClass = {
                 standard: 'bg-slate-600/30 text-slate-300',
@@ -326,17 +430,38 @@
                 bulky: 'bg-orange-600/30 text-orange-300',
                 hazardous: 'bg-red-600/30 text-red-300'
             }[p.handling_category] || 'bg-slate-600/30';
+            
+            // Handle stock display based on whether we're in filtered view or aggregated view
+            let stockHtml = '';
+            if (currentLocationFilter) {
+                // Filtered view: backend returns current_qty as the quantity at that location
+                stockHtml = `<div class="mt-1"><span class="text-xs bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full">Stock at this location: ${p.current_qty || 0}</span></div>`;
+            } else if (p.location_stocks && Array.isArray(p.location_stocks) && p.location_stocks.length > 0) {
+                // Aggregated view with location breakdown
+                const locationNames = {};
+                allLocations.forEach(loc => { locationNames[loc.id] = loc.name; });
+                stockHtml = `<div class="text-xs text-slate-400 mt-1 space-y-1">
+                    ${p.location_stocks.map(s => `
+                        <div class="flex justify-between">
+                            <span>${escapeHtml(locationNames[s.location_id] || s.location_id.slice(0,8))}:</span>
+                            <span class="font-mono">${s.quantity} units</span>
+                        </div>
+                    `).join('')}
+                </div>`;
+            } else {
+                // Simple view: just show total stock
+                stockHtml = `<div class="mt-1"><span class="text-xs text-slate-400">Total stock: ${p.current_qty || 0}</span></div>`;
+            }
+            
             return `
             <div class="product-card bg-slate-800/60 border border-slate-700 rounded-xl p-4 shadow-sm">
                 <div class="flex justify-between items-start">
                     <div class="flex-1">
-                        <h3 class="font-bold text-white text-base truncate">${escapeHtml(p.description)}</h3>
+                        <h3 class="font-bold text-white text-base truncate" title="${escapeHtml(p.description)}">${escapeHtml(p.description)}</h3>
                         <p class="text-xs text-slate-400 font-mono">SKU: ${escapeHtml(p.item_code || p.id)}</p>
                         <div class="mt-2 flex flex-wrap gap-2 items-center">
-                            <span class="text-blue-400 font-bold text-lg">₦${p.price_naira.toLocaleString()}</span>
-                            <span class="text-xs px-2 py-0.5 rounded-full ${p.current_qty > 5 ? 'bg-emerald-500/20 text-emerald-300' : p.current_qty > 0 ? 'bg-amber-500/20 text-amber-300' : 'bg-red-500/20 text-red-300'}">
-                                Stock: ${p.current_qty}
-                            </span>
+                            <span class="text-blue-400 font-bold text-lg">₦${(p.price_naira || 0).toLocaleString()}</span>
+                            ${stockHtml}
                         </div>
                         <div class="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[11px]">
                             <span class="inline-flex items-center gap-1"><i class="fa-solid fa-weight-hanging"></i> ${p.weight_kg || 0} kg</span>
@@ -368,38 +493,55 @@
         const handling_category = document.getElementById('handling_category').value;
         const product_group = document.getElementById('product_group').value.trim() || null;
         const image_url = document.getElementById('image_url').value.trim() || null;
+        // Note: location_id is NOT sent to the standard /inventory endpoint
+        // The backend auto-assigns to default warehouse
 
         if (!item_code || !description || isNaN(price_naira) || price_naira <= 0) {
-            alert('Item Code, Description and Price (>0) are required.');
+            showToast('Item Code, Description and Price (>0) are required.', 'error');
             return;
         }
-        if (isNaN(current_qty) || current_qty < 0) { alert('Current quantity must be ≥ 0'); return; }
-        if (isNaN(weight_kg) || weight_kg < 0) { alert('Weight must be ≥ 0'); return; }
-        if (isNaN(size_factor) || size_factor < 1.0) { alert('Size factor must be ≥ 1.0'); return; }
-        if (cost_price_naira < 0) { alert('Cost price must be ≥ 0'); return; }
-        if (!['standard','fragile','bulky','hazardous'].includes(handling_category)) { alert('Handling category invalid'); return; }
+        if (isNaN(current_qty) || current_qty < 0) { showToast('Current quantity must be ≥ 0', 'error'); return; }
+        if (isNaN(weight_kg) || weight_kg < 0) { showToast('Weight must be ≥ 0', 'error'); return; }
+        if (isNaN(size_factor) || size_factor < 1.0) { showToast('Size factor must be ≥ 1.0', 'error'); return; }
+        if (cost_price_naira < 0) { showToast('Cost price must be ≥ 0', 'error'); return; }
+        if (!['standard','fragile','bulky','hazardous'].includes(handling_category)) { 
+            showToast('Handling category invalid', 'error'); 
+            return; 
+        }
 
-        const payload = { item_code, description, product_group, price_naira, current_qty, image_url, weight_kg, size_factor, handling_category, cost_price_naira };
+        const payload = { 
+            item_code, 
+            description, 
+            product_group, 
+            price_naira, 
+            current_qty, 
+            image_url, 
+            weight_kg, 
+            size_factor, 
+            handling_category, 
+            cost_price_naira 
+        };
 
         try {
             if (id) {
                 await apiCall(`/inventory/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
-                alert('Product updated successfully.');
+                showToast('Product updated successfully.', 'success');
                 resetForm();
             } else {
                 await apiCall('/inventory', { method: 'POST', body: JSON.stringify(payload) });
-                alert('Product added successfully.');
+                showToast('Product added successfully.', 'success');
                 resetForm();
             }
             loadInventory();
+            // Reload locations in case a new default warehouse was created
+            loadLocations();
         } catch (err) {
-            alert(`Error: ${err.message}`);
+            showToast(`Error: ${err.message}`, 'error');
         }
     }
 
     window.editProduct = async function(id) {
         try {
-            const products = await apiCall('/inventory');
             const product = products.find(p => p.id == id);
             if (!product) throw new Error('Product not found');
             document.getElementById('edit-id').value = product.id;
@@ -417,7 +559,7 @@
             document.getElementById('cancel-edit').classList.remove('hidden');
             document.querySelector('#product-form').scrollIntoView({ behavior: 'smooth' });
         } catch (err) {
-            alert(`Failed to load product details: ${err.message}`);
+            showToast(`Failed to load product details: ${err.message}`, 'error');
         }
     };
 
@@ -425,11 +567,11 @@
         if (!confirm('Are you sure you want to delete this product? This action cannot be undone.')) return;
         try {
             await apiCall(`/inventory/${id}`, { method: 'DELETE' });
-            alert('Product deleted.');
+            showToast('Product deleted.', 'success');
             loadInventory();
             resetForm();
         } catch (err) {
-            alert(`Delete failed: ${err.message}`);
+            showToast(`Delete failed: ${err.message}`, 'error');
         }
     };
 
@@ -444,6 +586,7 @@
         document.getElementById('cost_price_naira').value = '0';
     }
 
+    // Bulk upload functions
     function parseCSV(text) {
         const rows = [];
         const lines = text.split(/\r?\n/);
@@ -553,7 +696,7 @@
             const headers = parsedRows[0].map(h => h.trim().toLowerCase());
             const validation = validateCSVData(parsedRows, headers);
             if (!validation.valid) {
-                statusDiv.innerHTML = `<span class="text-red-400"><i class="fa-solid fa-triangle-exclamation mr-1"></i> CSV validation failed:<br><pre class="text-xs bg-slate-950 p-2 mt-1 rounded">${escapeHtml(validation.error)}</pre></span>`;
+                statusDiv.innerHTML = `<span class="text-red-400"><i class="fa-solid fa-triangle-exclamation mr-1"></i> CSV validation failed:<br><pre class="text-xs bg-slate-950 p-2 mt-1 rounded overflow-auto max-h-64">${escapeHtml(validation.error)}</pre></span>`;
                 return;
             }
             statusDiv.innerHTML = '<span class="text-blue-400"><i class="fa-solid fa-cloud-upload-alt"></i> Valid CSV! Uploading to server...</span>';
@@ -572,7 +715,7 @@
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.detail || 'Upload failed');
-            statusDiv.innerHTML = `<span class="text-green-400"><i class="fa-solid fa-check-circle mr-1"></i> ${data.message} (${data.count} products processed)</span>`;
+            statusDiv.innerHTML = `<span class="text-green-400"><i class="fa-solid fa-check-circle mr-1"></i> ${data.message} (${(data.inserted || 0) + (data.updated || 0)} products processed)</span>`;
             fileInput.value = '';
             loadInventory();
             uploadBtn.disabled = false;
@@ -585,6 +728,59 @@
         }
     }
 
+    // Stock Transfer - using v2 endpoint
+    async function showTransferModal() {
+        if (!allLocations || allLocations.length === 0) {
+            showToast('No locations available for transfer', 'error');
+            return;
+        }
+        // Populate product dropdown
+        const productSelect = document.getElementById('transfer-product');
+        if (!products || products.length === 0) {
+            showToast('No products available for transfer', 'error');
+            return;
+        }
+        productSelect.innerHTML = products.map(p => `<option value="${p.id}">${escapeHtml(p.description)} (${p.item_code || p.id})</option>`).join('');
+        document.getElementById('transfer-qty').value = '';
+        document.getElementById('transfer-reason').value = '';
+        document.getElementById('transfer-modal').classList.remove('hidden');
+    }
+
+    async function submitTransfer() {
+        const productId = document.getElementById('transfer-product').value;
+        const fromLoc = document.getElementById('transfer-from').value;
+        const toLoc = document.getElementById('transfer-to').value;
+        const qty = parseInt(document.getElementById('transfer-qty').value);
+        const reason = document.getElementById('transfer-reason').value;
+        
+        if (!productId || !fromLoc || !toLoc || !qty || qty <= 0) {
+            showToast('Please fill all fields', 'error');
+            return;
+        }
+        if (fromLoc === toLoc) {
+            showToast('Source and destination cannot be the same', 'error');
+            return;
+        }
+        try {
+            // Use v2 endpoint for transfer
+            await apiCall('/v2/inventory/transfer', {
+                method: 'POST',
+                body: JSON.stringify({
+                    from_location_id: fromLoc,
+                    to_location_id: toLoc,
+                    inventory_id: parseInt(productId),
+                    quantity: qty,
+                    reason: reason || null
+                })
+            });
+            showToast('Stock transferred successfully', 'success');
+            document.getElementById('transfer-modal').classList.add('hidden');
+            loadInventory();
+        } catch (err) {
+            showToast(`Transfer failed: ${err.message}`, 'error');
+        }
+    }
+
     async function checkAdminAccess() {
         try {
             const me = await apiCall('/auth/me');
@@ -593,28 +789,43 @@
             localStorage.setItem('user_role', role);
             document.getElementById('auth-check-placeholder').classList.add('hidden');
             document.getElementById('admin-panel').classList.remove('hidden');
-            loadInventory();
+            await loadLocations();
+            await loadInventory();
         } catch (err) {
             document.getElementById('auth-check-placeholder').innerHTML = `
-                <div class="text-red-400"><i class="fa-solid fa-circle-exclamation text-2xl mb-2"></i><br>${err.message}</div>
+                <div class="text-red-400"><i class="fa-solid fa-circle-exclamation text-2xl mb-2"></i><br>${escapeHtml(err.message)}</div>
                 <button id="retry-login" class="mt-4 bg-blue-600 px-4 py-2 rounded-lg">Go to Main App</button>
             `;
             document.getElementById('retry-login')?.addEventListener('click', () => { window.location.href = '/'; });
         }
     }
 
-    document.getElementById('product-form').addEventListener('submit', saveProduct);
-    document.getElementById('cancel-edit').addEventListener('click', resetForm);
-    document.getElementById('refresh-list').addEventListener('click', loadInventory);
-    document.getElementById('bulk-upload-btn').addEventListener('click', bulkUploadWithValidation);
+    // Event listeners
+    document.getElementById('product-form')?.addEventListener('submit', saveProduct);
+    document.getElementById('cancel-edit')?.addEventListener('click', resetForm);
+    document.getElementById('refresh-list')?.addEventListener('click', loadInventory);
+    document.getElementById('bulk-upload-btn')?.addEventListener('click', bulkUploadWithValidation);
+    document.getElementById('show-transfer-modal')?.addEventListener('click', showTransferModal);
+    document.getElementById('transfer-submit')?.addEventListener('click', submitTransfer);
+    document.getElementById('transfer-cancel')?.addEventListener('click', () => document.getElementById('transfer-modal')?.classList.add('hidden'));
 
     function escapeHtml(str) {
         if (!str) return '';
         return String(str).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
     }
+    
+    function showToast(msg, type) {
+        const toastDiv = document.createElement('div');
+        toastDiv.className = `fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} z-50 text-sm shadow-lg`;
+        toastDiv.innerText = msg;
+        document.body.appendChild(toastDiv);
+        setTimeout(() => toastDiv.remove(), 3000);
+    }
 
+    // Initialize
     if (token) {
-        checkAdminAccess().catch(() => {
+        checkAdminAccess().catch(err => {
+            console.error('Auth check failed:', err);
             document.getElementById('auth-check-placeholder').innerHTML = '<div class="text-red-400">Session invalid. Please log in again.</div><button id="relog" class="mt-3 bg-blue-600 px-4 py-2 rounded">Login</button>';
             document.getElementById('relog')?.addEventListener('click', () => window.location.href = '/');
         });
