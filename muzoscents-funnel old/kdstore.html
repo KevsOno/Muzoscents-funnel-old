@@ -50,6 +50,7 @@
         .category-refresh-btn:hover { background: #f59e0b; color: white; }
         .checkout-btn-disabled { opacity: 0.5; cursor: not-allowed; }
         .login-prompt-badge { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 9999px; padding: 0.25rem 0.75rem; font-size: 0.7rem; color: #d97706; display: inline-flex; align-items: center; gap: 0.25rem; }
+        .demo-badge { background: linear-gradient(135deg, #10b981, #059669); }
     </style>
 </head>
 <body class="text-gray-800">
@@ -183,7 +184,9 @@
     <div id="chat-modal" class="chat-modal"><div class="flex justify-between items-center p-3 border-b border-orange-200 bg-orange-50 rounded-t-2xl"><span class="font-bold"><i class="fa-regular fa-comment-dots text-orange-500"></i> Kevs AI Concierge</span><button id="close-chat-modal" class="text-gray-500">&times;</button></div><div id="chat-messages" class="chat-messages p-3 space-y-2"></div><div class="p-3 border-t border-gray-200 bg-white rounded-b-2xl"><div class="flex gap-2"><input id="chat-input" type="text" placeholder="Ask about products, orders..." class="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm"><button id="chat-send" class="bg-orange-500 text-white px-4 rounded-full"><i class="fa-regular fa-paper-plane"></i></button></div></div></div>
 
     <!-- Login/Register Modal -->
-    <div id="auth-modal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[100]"><div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl"><div class="flex justify-between items-center mb-4"><h3 id="modal-title" class="text-xl font-bold">Sign In</h3><button id="close-auth-modal" class="text-2xl">&times;</button></div><div class="space-y-3"><input id="auth-email" type="email" placeholder="Email address" class="w-full border border-gray-300 rounded-lg p-2.5"><input id="auth-password" type="password" placeholder="Password" class="w-full border border-gray-300 rounded-lg p-2.5"><div id="reg-extra" class="hidden space-y-3 border-t pt-3"><input id="invite-code" placeholder="Invite code (optional)" class="w-full border border-gray-300 rounded-lg p-2"><div class="text-xs text-center">— OR create new org —</div><input id="org-name" placeholder="Organization name *" class="w-full border border-gray-300 rounded-lg p-2"><div class="grid grid-cols-2 gap-2"><input id="org-location" placeholder="City, Country *" class="border rounded p-2"><input id="org-niche" placeholder="Industry *" class="border rounded p-2"></div><input id="budget" type="number" placeholder="Budget (₦)" class="border p-2 rounded"><div class="grid grid-cols-2 gap-2"><input id="first-name" placeholder="First name *" class="border p-2 rounded"><input id="last-name" placeholder="Last name *" class="border p-2 rounded"></div><input id="phone-number" placeholder="Phone number *" class="border p-2 rounded"></div><button id="auth-submit" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2.5 rounded-lg">Sign In</button><div class="text-center"><button id="toggle-auth-mode" class="text-sm text-orange-500 hover:underline">Don't have an account? Register</button></div></div></div></div>
+    <div id="auth-modal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[100]"><div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl"><div class="flex justify-between items-center mb-4"><h3 id="modal-title" class="text-xl font-bold">Sign In</h3><button id="close-auth-modal" class="text-2xl">&times;</button></div><div class="space-y-3"><input id="auth-email" type="email" placeholder="Email address" class="w-full border border-gray-300 rounded-lg p-2.5"><input id="auth-password" type="password" placeholder="Password" class="w-full border border-gray-300 rounded-lg p-2.5"><div id="reg-extra" class="hidden space-y-3 border-t pt-3"><input id="invite-code" placeholder="Invite code (optional)" class="w-full border border-gray-300 rounded-lg p-2"><div class="text-xs text-center">— OR create new org —</div><input id="org-name" placeholder="Organization name *" class="w-full border border-gray-300 rounded-lg p-2"><div class="grid grid-cols-2 gap-2"><input id="org-location" placeholder="City, Country *" class="border rounded p-2"><input id="org-niche" placeholder="Industry *" class="border rounded p-2"></div><input id="budget" type="number" placeholder="Budget (₦)" class="border p-2 rounded"><div class="grid grid-cols-2 gap-2"><input id="first-name" placeholder="First name *" class="border p-2 rounded"><input id="last-name" placeholder="Last name *" class="border p-2 rounded"></div><input id="phone-number" placeholder="Phone number *" class="border p-2 rounded"></div><button id="auth-submit" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2.5 rounded-lg">Sign In</button>
+            <button id="demo-access" class="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-2.5 rounded-lg flex items-center justify-center gap-2 transition"><i class="fa-solid fa-flask"></i> Demo Access</button>
+            <div class="text-center"><button id="toggle-auth-mode" class="text-sm text-orange-500 hover:underline">Don't have an account? Register</button></div></div></div></div>
 
     <script>
         // ========== GLOBALS ==========
@@ -658,6 +661,28 @@
         function showAuthModal(){ document.getElementById('auth-modal').classList.remove('hidden'); }
         function hideAuthModal(){ document.getElementById('auth-modal').classList.add('hidden'); }
         
+        async function demoLogin() {
+            try {
+                const res = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Demo login failed');
+                token = data.access_token;
+                localStorage.setItem('access_token', token);
+                localStorage.setItem('refresh_token', data.refresh_token);
+                await loadUser();
+                hideAuthModal();
+                showToast("Demo login successful! You can now checkout.", 'success');
+                showView('shop');
+                updateCheckoutButton();
+            } catch(e) {
+                alert("Demo login failed: " + e.message + "\n\nPlease register for a new account.");
+            }
+        }
+        
         async function logout(){ 
             try{ await apiCall('/auth/logout',{method:'POST'}); } catch(e){} 
             localStorage.clear(); 
@@ -671,6 +696,7 @@
         document.getElementById('login-dropdown-btn')?.addEventListener('click',showAuthModal);
         document.getElementById('login-from-cart')?.addEventListener('click',showAuthModal);
         document.getElementById('logout-dropdown')?.addEventListener('click',logout);
+        document.getElementById('demo-access')?.addEventListener('click', demoLogin);
         document.getElementById('close-auth-modal')?.addEventListener('click',hideAuthModal);
         document.getElementById('toggle-auth-mode')?.addEventListener('click',()=>{ 
             const reg=document.getElementById('reg-extra'); 
