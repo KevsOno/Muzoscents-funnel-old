@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Kevs POS Pro | Multi‑Tab · SKU Search · Online Payments</title>
+    <title>Kevs POS Pro | Multi‑Tab · SKU Search · Loyalty Points</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
@@ -31,7 +31,7 @@
 
     const navItems = [
         { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy', roles: ['owner','admin','sales_rep','finance'] },
-        { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & online payments', roles: ['owner','admin','sales_rep'] },
+        { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & loyalty', roles: ['owner','admin','sales_rep'] },
         { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', title: 'Order shipping, tracking & dispatch', roles: ['owner','admin','logistics'] },
         { path: '/kdsupport',     name: 'Support',   icon: 'fa-headset', title: 'Ticket management & customer context', roles: ['owner','admin','support'] },
         { path: '/kddashboard',   name: 'Exec',      icon: 'fa-chart-simple', title: 'Executive revenue & profit overview', roles: ['owner','admin','finance'] },
@@ -170,7 +170,7 @@
     <div class="bg-white rounded-xl shadow-md p-4 mb-4 flex flex-wrap justify-between items-center gap-3">
         <div>
             <h1 class="text-2xl font-bold">💳 Kevs POS Terminal</h1>
-            <p class="text-xs text-gray-500">Multi‑Tab | SKU Search | Card/Transfer Payments</p>
+            <p class="text-xs text-gray-500">Multi‑Tab | SKU Search | Loyalty Points & Discount</p>
         </div>
     </div>
 
@@ -202,6 +202,28 @@
                 <h2 class="text-xl font-semibold"><i class="fa-solid fa-cart-shopping"></i> <span id="active-customer-label">Customer A</span> Sale</h2>
                 <span class="text-xs bg-gray-100 px-2 py-1 rounded-full" id="tab-badge">Tab 1 active</span>
             </div>
+
+            <!-- Customer Lookup & Loyalty -->
+            <div class="bg-blue-50 p-3 rounded-lg mb-3 space-y-2">
+                <div class="flex gap-2">
+                    <input type="tel" id="customer-phone" placeholder="Customer Phone (lookup)" class="flex-1 border rounded-lg p-2 text-sm">
+                    <button id="lookup-customer-btn" class="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-700 transition">
+                        <i class="fa-solid fa-magnifying-glass"></i> Lookup
+                    </button>
+                </div>
+                <div id="customer-info" class="text-xs text-gray-700 hidden">
+                    <span id="customer-name-display"></span> · 
+                    <strong>Points: <span id="customer-points">0</span></strong>
+                </div>
+                <div id="points-redeem-section" class="hidden border-t border-blue-200 pt-2 mt-1">
+                    <label class="text-xs font-medium">Redeem points (1 pt = ₦1)</label>
+                    <div class="flex gap-2 mt-1">
+                        <input type="number" id="redeem-points-input" min="1" class="w-full border rounded-lg p-1 text-sm" placeholder="Points to use">
+                        <button id="apply-points-btn" class="bg-emerald-600 text-white px-3 py-1 rounded-lg text-sm hover:bg-emerald-700">Apply</button>
+                    </div>
+                </div>
+            </div>
+
             <div id="cart-items" class="space-y-2 max-h-80 overflow-y-auto flex-1 min-h-[180px]"></div>
             <div class="border-t pt-3 mt-2">
                 <div class="flex justify-between text-lg font-bold"><span>Total:</span><span id="cart-total">₦0</span></div>
@@ -214,9 +236,6 @@
                 </div>
                 <div class="mt-3"><label class="block text-sm font-medium">Customer Name</label>
                     <input id="customer-name" class="w-full border rounded-lg p-2" placeholder="Walk-in Customer" autocomplete="off">
-                </div>
-                <div class="mt-2"><label class="block text-sm font-medium">Phone Number</label>
-                    <input id="customer-phone" class="w-full border rounded-lg p-2" placeholder="Optional" autocomplete="off">
                 </div>
                 <div class="mt-2"><label class="block text-sm font-medium">Email (for receipt/payment)</label>
                     <input id="customer-email" type="email" class="w-full border rounded-lg p-2" placeholder="customer@example.com" autocomplete="off">
@@ -253,9 +272,10 @@
     let products = [];
     let searchTerm = '';
     let activeTab = 1;
+    // Each tab stores cart, payment method, customer details, and loyalty info
     const tabState = {
-        1: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' },
-        2: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' }
+        1: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 },
+        2: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 }
     };
 
     const productContainer = document.getElementById('product-list');
@@ -272,6 +292,13 @@
     const tab2Btn = document.getElementById('tab2-btn');
     const checkoutBtn = document.getElementById('checkout-btn');
     const searchInput = document.getElementById('product-search');
+    const lookupBtn = document.getElementById('lookup-customer-btn');
+    const customerInfoDiv = document.getElementById('customer-info');
+    const customerNameDisplay = document.getElementById('customer-name-display');
+    const customerPointsSpan = document.getElementById('customer-points');
+    const pointsRedeemSection = document.getElementById('points-redeem-section');
+    const redeemPointsInput = document.getElementById('redeem-points-input');
+    const applyPointsBtn = document.getElementById('apply-points-btn');
 
     function showToast(msg, type = 'success') {
         const container = document.getElementById('toast-container');
@@ -403,32 +430,64 @@
             tab1Btn.classList.add('tab-inactive');
             tab1Btn.classList.remove('tab-active');
         }
+        // Update loyalty UI
+        if (state.loyaltyUserId && state.pointsBalance > 0) {
+            customerInfoDiv.classList.remove('hidden');
+            customerNameDisplay.innerText = state.customerName || 'Customer';
+            customerPointsSpan.innerText = state.pointsBalance;
+            pointsRedeemSection.classList.remove('hidden');
+            redeemPointsInput.max = state.pointsBalance;
+        } else {
+            customerInfoDiv.classList.add('hidden');
+            pointsRedeemSection.classList.add('hidden');
+        }
+        // Clear points redeemed display (recalc will happen when cart changes)
     }
 
     function renderActiveCart() {
-        const cart = tabState[activeTab].cart;
+        const state = tabState[activeTab];
+        const cart = state.cart;
+        const pointsRedeemed = state.pointsRedeemed || 0;
         if (!cartContainer) return;
-        if (cart.length === 0) {
-            cartContainer.innerHTML = `<div class="text-center text-gray-400 py-6"><i class="fa-regular fa-receipt text-2xl"></i><p class="text-sm mt-1">Cart is empty</p></div>`;
-            cartTotalSpan.innerText = `₦0`;
-            return;
-        }
-        let total = 0;
-        cartContainer.innerHTML = cart.map((item, idx) => {
-            const subtotal = item.price * item.qty;
-            total += subtotal;
-            return `
+        let subtotal = 0;
+        let cartHtml = '';
+        cart.forEach((item, idx) => {
+            const itemTotal = item.price * item.qty;
+            subtotal += itemTotal;
+            cartHtml += `
                 <div class="flex justify-between items-center border-b pb-2 hover:bg-gray-50 px-1 rounded">
                     <div class="flex-1">
                         <div class="font-medium text-sm">${escapeHtml(item.name)}</div>
                         <div class="text-xs text-gray-500">₦${item.price.toLocaleString()} x ${item.qty}</div>
                     </div>
-                    <div class="font-semibold text-sm">₦${subtotal.toLocaleString()}</div>
+                    <div class="font-semibold text-sm">₦${itemTotal.toLocaleString()}</div>
                     <button onclick="removeCartItem(${idx})" class="ml-3 text-red-500 hover:text-red-700 text-sm w-7 h-7 rounded-full hover:bg-red-50"><i class="fa-regular fa-trash-can"></i></button>
                 </div>
             `;
-        }).join('');
-        cartTotalSpan.innerText = `₦${total.toLocaleString()}`;
+        });
+        let finalTotal = subtotal;
+        if (pointsRedeemed > 0) {
+            const discount = pointsRedeemed; // 1 pt = ₦1
+            if (discount > finalTotal) {
+                // cannot discount more than total
+                state.pointsRedeemed = Math.min(finalTotal, pointsRedeemed);
+                finalTotal = 0;
+            } else {
+                finalTotal = subtotal - discount;
+            }
+            cartHtml += `
+                <div class="flex justify-between items-center text-green-700 border-t pt-2 mt-1">
+                    <div class="text-sm font-medium">🎁 Points Discount (${state.pointsRedeemed} pts)</div>
+                    <div class="font-semibold">-₦${discount.toLocaleString()}</div>
+                </div>
+            `;
+        }
+        if (cart.length === 0) {
+            cartContainer.innerHTML = `<div class="text-center text-gray-400 py-6"><i class="fa-regular fa-receipt text-2xl"></i><p class="text-sm mt-1">Cart is empty</p></div>`;
+        } else {
+            cartContainer.innerHTML = cartHtml;
+        }
+        cartTotalSpan.innerText = `₦${finalTotal.toLocaleString()}`;
     }
 
     window.removeCartItem = function(index) {
@@ -440,7 +499,8 @@
     };
 
     window.addToCart = function(productId, productName, price, stock, skuLabel) {
-        const activeCart = tabState[activeTab].cart;
+        const activeState = tabState[activeTab];
+        const activeCart = activeState.cart;
         const existing = activeCart.find(i => i.id === productId);
         const productRef = products.find(p => p.id === productId);
         const availableStock = productRef ? (productRef.current_qty ?? 0) : stock;
@@ -469,9 +529,69 @@
         customerEmailInput.oninput = () => { tabState[activeTab].customerEmail = customerEmailInput.value; };
     }
 
-    function clearCartForTab(tabId) {
-        tabState[tabId].cart = [];
-        if (activeTab === tabId) renderActiveCart();
+    async function lookupCustomer() {
+        const phone = customerPhoneInput.value.trim();
+        if (!phone) {
+            showToast('Enter a phone number to lookup', 'error');
+            return;
+        }
+        // Try to find customer by phone using the backend endpoint /customer/by-phone (if available)
+        // Alternatively use a known endpoint: /support/customer-context requires user_id. We'll use a dedicated endpoint.
+        // Since the backend might not have it, we implement a fallback: call /profiles?phone=... but RLS may block.
+        // For now we assume the backend provides GET /api/customer/lookup?phone=XXX returning { user_id, first_name, last_name, current_points }.
+        try {
+            const result = await call(`/api/customer/lookup?phone=${encodeURIComponent(phone)}`, 'GET');
+            if (result && result.user_id) {
+                tabState[activeTab].loyaltyUserId = result.user_id;
+                tabState[activeTab].pointsBalance = result.current_points || 0;
+                tabState[activeTab].customerName = `${result.first_name || ''} ${result.last_name || ''}`.trim() || 'Customer';
+                // Update UI fields
+                customerNameInput.value = tabState[activeTab].customerName;
+                tabState[activeTab].customerName = customerNameInput.value;
+                syncUIWithActiveTab();
+                showToast(`Welcome ${tabState[activeTab].customerName}! Points: ${tabState[activeTab].pointsBalance}`, 'success');
+            } else {
+                throw new Error('Customer not found');
+            }
+        } catch (err) {
+            showToast(`Customer not found: ${err.message}`, 'error');
+            // Reset loyalty info
+            tabState[activeTab].loyaltyUserId = null;
+            tabState[activeTab].pointsBalance = 0;
+            tabState[activeTab].pointsRedeemed = 0;
+            syncUIWithActiveTab();
+        }
+    }
+
+    async function applyPoints() {
+        const state = tabState[activeTab];
+        if (!state.loyaltyUserId) {
+            showToast('Please lookup a customer first', 'error');
+            return;
+        }
+        let pointsToRedeem = parseInt(redeemPointsInput.value, 10);
+        if (isNaN(pointsToRedeem) || pointsToRedeem <= 0) {
+            showToast('Enter a valid number of points', 'error');
+            return;
+        }
+        if (pointsToRedeem > state.pointsBalance) {
+            showToast(`You only have ${state.pointsBalance} points`, 'error');
+            return;
+        }
+        // Call redeem endpoint to convert points to credit (backup) and also apply discount client-side
+        try {
+            // First, actually redeem points via backend (adds credit to user's account)
+            await call('/loyalty/redeem', 'POST', { points: pointsToRedeem });
+            // Now apply discount to current cart (client-side)
+            state.pointsRedeemed = (state.pointsRedeemed || 0) + pointsToRedeem;
+            state.pointsBalance -= pointsToRedeem;
+            redeemPointsInput.value = '';
+            renderActiveCart();
+            showToast(`✅ ${pointsToRedeem} points redeemed – ₦${pointsToRedeem} off this order!`, 'success');
+            syncUIWithActiveTab(); // refresh points display
+        } catch (err) {
+            showToast(`Redemption failed: ${err.message}`, 'error');
+        }
     }
 
     async function processCheckout() {
@@ -485,6 +605,7 @@
         const customerName = state.customerName.trim() || null;
         const customerPhone = state.customerPhone.trim() || null;
         let customerEmail = state.customerEmail.trim() || null;
+        const pointsRedeemed = state.pointsRedeemed || 0;
 
         if (paymentMethod !== 'cash' && !customerEmail) {
             showToast('📧 Email is required for card/transfer payments', 'error');
@@ -505,10 +626,18 @@
                     payment_method: 'cash',
                     customer_name: customerName,
                     customer_phone: customerPhone,
-                    customer_email: customerEmail
+                    customer_email: customerEmail,
+                    points_redeemed: pointsRedeemed   // new field (backend must handle)
                 });
                 showToast(`✅ Sale complete! Receipt: ${result.receipt_number || 'OK'}`, 'success');
-                tabState[activeTab].cart = [];
+                // Reset cart and loyalty for this tab
+                state.cart = [];
+                state.pointsRedeemed = 0;
+                if (state.loyaltyUserId) {
+                    // Refresh points balance after purchase (points awarded automatically by backend)
+                    const updated = await call(`/api/customer/lookup?phone=${encodeURIComponent(state.customerPhone)}`, 'GET');
+                    if (updated && updated.current_points !== undefined) state.pointsBalance = updated.current_points;
+                }
                 syncUIWithActiveTab();
                 await loadProducts();
             } 
@@ -519,13 +648,15 @@
                     customer_email: customerEmail,
                     customer_phone: customerPhone,
                     payment_method: paymentMethod,
-                    callback_url: callback_url
+                    callback_url: callback_url,
+                    points_redeemed: pointsRedeemed
                 };
                 const result = await call('/pos/checkout', 'POST', payload);
                 if (result.payment_url) {
                     localStorage.setItem('pending_payment', 'true');
                     localStorage.setItem('pending_payment_tab', activeTab.toString());
                     localStorage.setItem('pending_tab_cart_snapshot', JSON.stringify(cart));
+                    localStorage.setItem('pending_points_redeemed', pointsRedeemed.toString());
                     window.location.href = result.payment_url;
                 } else {
                     throw new Error('Payment initiation failed: no payment URL');
@@ -533,13 +664,17 @@
             }
         } catch (err) {
             showToast(`❌ Checkout failed: ${err.message}`, 'error');
-            checkoutBtn.disabled = false;
-            checkoutBtn.innerText = '✅ Complete Sale';
-        }
-        
-        if (paymentMethod === 'cash') {
-            checkoutBtn.disabled = false;
-            checkoutBtn.innerText = '✅ Complete Sale';
+        } finally {
+            if (paymentMethod === 'cash') {
+                checkoutBtn.disabled = false;
+                checkoutBtn.innerText = '✅ Complete Sale';
+            } else {
+                // For online payments, page will redirect; re-enable only if error
+                if (err) {
+                    checkoutBtn.disabled = false;
+                    checkoutBtn.innerText = '✅ Complete Sale';
+                }
+            }
         }
     }
 
@@ -551,17 +686,28 @@
         if (paymentSuccess && wasPending) {
             const pendingTabRaw = localStorage.getItem('pending_payment_tab');
             const pendingTab = pendingTabRaw ? parseInt(pendingTabRaw, 10) : null;
+            const pointsRedeemed = parseInt(localStorage.getItem('pending_points_redeemed') || '0', 10);
             if (pendingTab === 1 || pendingTab === 2) {
-                clearCartForTab(pendingTab);
+                // Clear cart for that tab
+                tabState[pendingTab].cart = [];
+                tabState[pendingTab].pointsRedeemed = 0;
                 if (activeTab !== pendingTab) {
-                    tabState[pendingTab].cart = [];
+                    // if not active, still clear
                 } else {
                     renderActiveCart();
                 }
                 showToast(`🎉 Payment successful! Order confirmed for ${pendingTab === 1 ? 'Customer A' : 'Customer B'}.`, 'success');
                 await loadProducts();
+                // Refresh loyalty balance if needed
+                const state = tabState[pendingTab];
+                if (state.loyaltyUserId && state.customerPhone) {
+                    const updated = await call(`/api/customer/lookup?phone=${encodeURIComponent(state.customerPhone)}`, 'GET');
+                    if (updated && updated.current_points !== undefined) state.pointsBalance = updated.current_points;
+                    if (activeTab === pendingTab) syncUIWithActiveTab();
+                }
             } else {
-                clearCartForTab(activeTab);
+                tabState[activeTab].cart = [];
+                tabState[activeTab].pointsRedeemed = 0;
                 renderActiveCart();
                 showToast(`🎉 Payment successful! Cart cleared.`, 'success');
                 await loadProducts();
@@ -569,18 +715,21 @@
             localStorage.removeItem('pending_payment');
             localStorage.removeItem('pending_payment_tab');
             localStorage.removeItem('pending_tab_cart_snapshot');
+            localStorage.removeItem('pending_points_redeemed');
             const cleanUrl = window.location.href.split('?')[0];
             window.history.replaceState({}, document.title, cleanUrl);
         } else if (!paymentSuccess && wasPending) {
             localStorage.removeItem('pending_payment');
             localStorage.removeItem('pending_payment_tab');
             localStorage.removeItem('pending_tab_cart_snapshot');
+            localStorage.removeItem('pending_points_redeemed');
             showToast('⚠️ Payment was not completed. Your cart is unchanged.', 'error');
         }
     }
 
     function setActiveTab(tabId) {
         if (tabId === activeTab) return;
+        // Save current tab state
         tabState[activeTab].paymentMethod = paymentMethodSelect.value;
         tabState[activeTab].customerName = customerNameInput.value;
         tabState[activeTab].customerPhone = customerPhoneInput.value;
@@ -623,11 +772,11 @@
             } catch(e) {}
             await loadProducts();
             hideLoginModal();
-            tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' };
-            tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' };
+            tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
+            tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
             activeTab = 1;
             syncUIWithActiveTab();
-            showToast('Demo login successful — Multi‑Tab & Online Payments ready', 'success');
+            showToast('Demo login successful — Multi‑Tab & Loyalty ready', 'success');
             location.reload();
         } catch (err) {
             showToast(err.message, 'error');
@@ -656,8 +805,8 @@
             localStorage.setItem('user_role', role);
             await loadProducts();
             hideLoginModal();
-            tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' };
-            tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' };
+            tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
+            tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
             activeTab = 1;
             syncUIWithActiveTab();
             showToast('Login successful', 'success');
@@ -667,7 +816,10 @@
         }
     }
 
+    // Event listeners
     checkoutBtn.addEventListener('click', processCheckout);
+    lookupBtn.addEventListener('click', lookupCustomer);
+    applyPointsBtn.addEventListener('click', applyPoints);
     document.getElementById('modal-login-btn')?.addEventListener('click', handleLogin);
     document.getElementById('demo-login-btn')?.addEventListener('click', demoLogin);
     document.getElementById('close-modal-btn')?.addEventListener('click', hideLoginModal);
@@ -682,8 +834,8 @@
             try {
                 await loadProducts();
                 if (!tabState[1].cart.length && !tabState[2].cart.length) {
-                    tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' };
-                    tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' };
+                    tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
+                    tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
                 }
                 activeTab = 1;
                 syncUIWithActiveTab();
