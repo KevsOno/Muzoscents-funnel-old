@@ -19,13 +19,16 @@
         .chat-modal { display: none; position: fixed; bottom: 90px; right: 20px; width: 350px; max-width: calc(100vw - 40px); background: white; border-radius: 24px; box-shadow: 0 20px 35px -10px rgba(0,0,0,0.3); z-index: 1000; flex-direction: column; border: 1px solid #f97316; }
         .chat-modal.active { display: flex; }
         .chat-messages { height: 350px; overflow-y: auto; background: #fef9f0; }
-        .hero-slider { position: relative; overflow: hidden; width: 100%; }
-        .slider-container { display: flex; width: 100%; transition: transform 0.5s ease-in-out; will-change: transform; }
-        .hero-slide { flex: 0 0 100%; min-height: 500px; position: relative; width: 100%; }
-        .hero-slide.image-slide { background-size: cover; background-position: center; }
-        .hero-slide.image-slide::before { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.3) 100%); }
+        
+        /* FIXED SLIDER HEIGHT AND LAYOUT UTILITIES */
+        .hero-slider { position: relative; overflow: hidden; width: 100%; min-height: 500px; }
+        .slider-container { display: flex; width: 100%; transition: transform 0.5s ease-in-out; will-change: transform; height: 100%; }
+        .hero-slide { flex: 0 0 100%; width: 100%; min-height: 500px; position: relative; display: flex; align-items: center; }
+        .hero-slide.image-slide { background-size: cover; background-position: center; background-repeat: no-repeat; }
+        .hero-slide.image-slide::before { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.3) 100%); z-index: 1; }
         .hero-slide.gradient-slide { background: linear-gradient(90deg, #f97316 0%, #f59e0b 100%); }
         .slide-content { position: relative; z-index: 10; max-width: 600px; }
+        
         .slider-dots { position: absolute; bottom: 20px; left: 0; right: 0; display: flex; justify-content: center; gap: 12px; z-index: 20; }
         .slider-dot { width: 12px; height: 12px; background-color: rgba(255,255,255,0.5); border-radius: 50%; cursor: pointer; transition: all 0.2s; }
         .slider-dot.active { background-color: #f97316; width: 28px; border-radius: 20px; }
@@ -33,7 +36,8 @@
         .slider-arrow:hover { background: rgba(0,0,0,0.8); }
         .slider-arrow.left { left: 20px; }
         .slider-arrow.right { right: 20px; }
-        @media (max-width: 768px) { .hero-slide { min-height: 400px; } .slide-content h1 { font-size: 2rem; } .slider-arrow { width: 32px; height: 32px; } }
+        @media (max-width: 768px) { .hero-slider, .hero-slide { min-height: 400px; } .slide-content h1 { font-size: 2rem; } .slider-arrow { width: 32px; height: 32px; } }
+        
         .product-modal, .track-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); z-index: 2000; align-items: center; justify-content: center; padding: 1rem; }
         .product-modal.active, .track-modal.active { display: flex; }
         .product-modal-content, .track-modal-content { background: white; border-radius: 2rem; max-width: 600px; width: 100%; max-height: 90vh; overflow-y: auto; position: relative; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); }
@@ -51,69 +55,29 @@
         .logo-clickable { cursor: pointer; transition: opacity 0.2s; }
         .logo-clickable:hover { opacity: 0.8; }
         
-        /* Three-dot typing animation */
-        .typing-indicator {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            background: #e5e7eb;
-            padding: 8px 12px;
-            border-radius: 18px;
-            border-bottom-left-radius: 4px;
-        }
-        .typing-indicator span {
-            width: 8px;
-            height: 8px;
-            background-color: #9ca3af;
-            border-radius: 50%;
-            animation: typing 1.4s infinite ease-in-out;
-        }
+        /* Three-dot typing animation styling */
+        .typing-indicator { display: inline-flex; align-items: center; gap: 4px; background: #e5e7eb; padding: 8px 12px; border-radius: 18px; border-bottom-left-radius: 4px; }
+        .typing-indicator span { width: 8px; height: 8px; background-color: #9ca3af; border-radius: 50%; animation: typing 1.4s infinite ease-in-out; }
         .typing-indicator span:nth-child(1) { animation-delay: 0s; }
         .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
         .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
-        @keyframes typing {
-            0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-            30% { transform: translateY(-8px); opacity: 1; }
-        }
-        .chat-message {
-            display: flex;
-            margin-bottom: 12px;
-        }
-        .chat-message.user {
-            justify-content: flex-end;
-        }
-        .chat-message.assistant {
-            justify-content: flex-start;
-        }
-        .chat-bubble {
-            max-width: 85%;
-            padding: 10px 14px;
-            border-radius: 18px;
-            font-size: 0.875rem;
-            line-height: 1.4;
-        }
-        .chat-message.user .chat-bubble {
-            background: #f97316;
-            color: white;
-            border-bottom-right-radius: 4px;
-        }
-        .chat-message.assistant .chat-bubble {
-            background: #f3f4f6;
-            color: #1f2937;
-            border-bottom-left-radius: 4px;
-        }
+        @keyframes typing { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-8px); opacity: 1; } }
+        .chat-message { display: flex; margin-bottom: 12px; }
+        .chat-message.user { justify-content: flex-end; }
+        .chat-message.assistant { justify-content: flex-start; }
+        .chat-bubble { max-width: 85%; padding: 10px 14px; border-radius: 18px; font-size: 0.875rem; line-height: 1.4; }
+        .chat-message.user .chat-bubble { background: #f97316; color: white; border-bottom-right-radius: 4px; }
+        .chat-message.assistant .chat-bubble { background: #f3f4f6; color: #1f2937; border-bottom-left-radius: 4px; }
     </style>
 </head>
 <body class="text-gray-800">
 
-<!-- Embedded organisation data (injected by backend) -->
 <script>
     window.STORE_ORG_ID = "{{STORE_ORG_ID}}";
     window.API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
     let INVITE_CODE = localStorage.getItem('invite_code') || "{{INVITE_CODE}}" || "";
 </script>
 
-<!-- Header / Navigation -->
 <header class="sticky top-0 z-30 bg-white/90 backdrop-blur-md shadow-sm border-b border-orange-100">
     <div class="container mx-auto px-4 py-3 flex justify-between items-center">
         <div class="flex items-center gap-2 logo-clickable" id="marketplace-logo" role="button" aria-label="Go to marketplace">
@@ -148,12 +112,11 @@
     </div>
 </header>
 
-<!-- Hero Slider (5 slides) -->
-<section class="hero-slider relative">
+<section class="hero-slider relative bg-gray-900">
     <div class="slider-container" id="heroSlider">
         <div class="hero-slide gradient-slide">
-            <div class="container mx-auto px-4 h-full flex items-center">
-                <div class="slide-content text-white">
+            <div class="container mx-auto px-4 w-full flex items-center">
+                <div class="slide-content text-white py-12">
                     <h1 class="text-4xl md:text-6xl font-extrabold leading-tight">Shop Smarter <br>with AI Intelligence</h1>
                     <p class="text-lg md:text-xl mt-4 opacity-90">Discover thousands of products, instant delivery estimates, and a personal concierge.</p>
                     <div class="mt-8 flex gap-4">
@@ -164,16 +127,52 @@
             </div>
         </div>
         <div class="hero-slide image-slide" style="background-image: url('https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=1600&h=500&fit=crop');">
-            <div class="container mx-auto px-4 h-full flex items-center"><div class="slide-content text-white"><h1 class="text-4xl md:text-6xl font-extrabold">Marketplace</h1><p class="text-lg mt-4">Thousands of products at your fingertips.</p><div class="mt-8 flex gap-4"><button class="hero-shop-btn bg-white text-orange-600 font-semibold px-8 py-3 rounded-full shadow-lg">Explore</button><button class="hero-chat-btn border border-white px-8 py-3 rounded-full">💬 Ask Me</button></div></div></div>
+            <div class="container mx-auto px-4 w-full flex items-center">
+                <div class="slide-content text-white py-12">
+                    <h1 class="text-4xl md:text-6xl font-extrabold">Marketplace</h1>
+                    <p class="text-lg mt-4">Thousands of products at your fingertips.</p>
+                    <div class="mt-8 flex gap-4">
+                        <button class="hero-shop-btn bg-white text-orange-600 font-semibold px-8 py-3 rounded-full shadow-lg">Explore</button>
+                        <button class="hero-chat-btn border border-white px-8 py-3 rounded-full">💬 Ask Me</button>
+                    </div>
+                </div>
+            </div>
         </div>
         <div class="hero-slide image-slide" style="background-image: url('https://images.unsplash.com/photo-1566576912321-d58ddd7a6088?w=1600&h=500&fit=crop');">
-            <div class="container mx-auto px-4 h-full flex items-center"><div class="slide-content text-white"><h1 class="text-4xl md:text-6xl font-extrabold">Track Your Order</h1><p class="text-lg mt-4">Real‑time updates from dispatch to delivery.</p><div class="mt-8 flex gap-4"><button class="hero-track-btn bg-white text-orange-600 font-semibold px-8 py-3 rounded-full shadow-lg">Track Now</button><button class="hero-chat-btn border border-white px-8 py-3 rounded-full">💬 Ask Me</button></div></div></div>
+            <div class="container mx-auto px-4 w-full flex items-center">
+                <div class="slide-content text-white py-12">
+                    <h1 class="text-4xl md:text-6xl font-extrabold">Track Your Order</h1>
+                    <p class="text-lg mt-4">Real‑time updates from dispatch to delivery.</p>
+                    <div class="mt-8 flex gap-4">
+                        <button class="hero-track-btn bg-white text-orange-600 font-semibold px-8 py-3 rounded-full shadow-lg">Track Now</button>
+                        <button class="hero-chat-btn border border-white px-8 py-3 rounded-full">💬 Ask Me</button>
+                    </div>
+                </div>
+            </div>
         </div>
         <div class="hero-slide image-slide" style="background-image: url('https://images.unsplash.com/photo-1557804506-669a67965ba0?w=1600&h=500&fit=crop');">
-            <div class="container mx-auto px-4 h-full flex items-center"><div class="slide-content text-white"><h1 class="text-4xl md:text-6xl font-extrabold">Need Help?</h1><p class="text-lg mt-4">Questions, complaints, or returns? We're here for you.</p><div class="mt-8 flex gap-4"><button class="hero-tickets-btn bg-white text-orange-600 font-semibold px-8 py-3 rounded-full shadow-lg">Support Requests</button><button class="hero-chat-btn border border-white px-8 py-3 rounded-full">💬 Ask Me</button></div></div></div>
+            <div class="container mx-auto px-4 w-full flex items-center">
+                <div class="slide-content text-white py-12">
+                    <h1 class="text-4xl md:text-6xl font-extrabold">Need Help?</h1>
+                    <p class="text-lg mt-4">Questions, complaints, or returns? We're here for you.</p>
+                    <div class="mt-8 flex gap-4">
+                        <button class="hero-tickets-btn bg-white text-orange-600 font-semibold px-8 py-3 rounded-full shadow-lg">Support Requests</button>
+                        <button class="hero-chat-btn border border-white px-8 py-3 rounded-full">💬 Ask Me</button>
+                    </div>
+                </div>
+            </div>
         </div>
         <div class="hero-slide image-slide" style="background-image: url('https://images.unsplash.com/photo-1531746790731-6c087fecd65a?w=1600&h=500&fit=crop');">
-            <div class="container mx-auto px-4 h-full flex items-center"><div class="slide-content text-white"><h1 class="text-4xl md:text-6xl font-extrabold">AI Concierge 24/7</h1><p class="text-lg mt-4">Your personal shopping & support assistant.</p><div class="mt-8 flex gap-4"><button class="hero-chat-btn bg-white text-orange-600 font-semibold px-8 py-3 rounded-full shadow-lg">Ask Me</button><button class="hero-shop-btn border border-white px-8 py-3 rounded-full">Shop</button></div></div></div>
+            <div class="container mx-auto px-4 w-full flex items-center">
+                <div class="slide-content text-white py-12">
+                    <h1 class="text-4xl md:text-6xl font-extrabold">AI Concierge 24/7</h1>
+                    <p class="text-lg mt-4">Your personal shopping & support assistant.</p>
+                    <div class="mt-8 flex gap-4">
+                        <button class="hero-chat-btn bg-white text-orange-600 font-semibold px-8 py-3 rounded-full shadow-lg">Ask Me</button>
+                        <button class="hero-shop-btn border border-white px-8 py-3 rounded-full">Shop</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
     <div class="slider-arrow left" id="sliderPrev"><i class="fa-solid fa-chevron-left"></i></div>
@@ -181,7 +180,6 @@
     <div class="slider-dots" id="sliderDots"></div>
 </section>
 
-<!-- Main Dynamic Panel -->
 <main id="dynamic-main" class="container mx-auto px-4 py-12">
     <div id="shop-view">
         <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
@@ -217,7 +215,6 @@
 
 <footer class="bg-gray-800 text-white mt-16 py-8"><div class="container mx-auto px-4 text-center text-sm"><p>© 2026 Kevs Digital bOS – AI‑powered marketplace</p><p class="text-gray-400 mt-2"><i class="fa-regular fa-clock"></i> 24/7 AI Concierge | Fast Delivery</p></div></footer>
 
-<!-- Cart Drawer -->
 <div id="cart-drawer" class="cart-sidebar fixed top-0 right-0 w-full sm:w-96 h-full bg-white shadow-2xl z-50 transform translate-x-full transition-transform duration-300 flex flex-col">
     <div class="p-4 border-b border-orange-100 flex justify-between items-center bg-orange-50"><h3 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-basket-shopping text-orange-500"></i> Your Cart</h3><button id="close-drawer" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button></div>
     <div id="cart-items-list" class="flex-1 overflow-y-auto p-4 space-y-3 bg-white"></div>
@@ -230,13 +227,10 @@
     </div>
 </div>
 
-<!-- Product Detail Modal -->
 <div id="product-detail-modal" class="product-modal"><div class="product-modal-content"><div class="product-modal-close" id="close-product-modal"><i class="fa-solid fa-times"></i></div><div class="p-6"><div id="product-detail-content"></div><div class="mt-6 flex gap-3"><button id="modal-add-to-cart" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl font-semibold transition"><i class="fa-solid fa-cart-plus mr-2"></i> Add to Cart</button><button id="modal-close-btn" class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-3 rounded-xl font-semibold transition">Continue Shopping</button></div></div></div></div>
 
-<!-- Track Order Modal -->
 <div id="track-modal" class="track-modal"><div class="track-modal-content"><div class="track-modal-close" id="close-track-modal"><i class="fa-solid fa-times"></i></div><div class="p-6"><h3 class="text-xl font-bold mb-4"><i class="fa-solid fa-truck-fast text-orange-500"></i> Track Your Order</h3><div class="space-y-4"><div><label class="block text-sm font-medium text-gray-700">Receipt Number</label><input type="text" id="track-receipt" class="w-full border border-gray-300 rounded-lg p-2" placeholder="e.g., REC-12345"></div><div><label class="block text-sm font-medium text-gray-700">Email Address</label><input type="email" id="track-email" class="w-full border border-gray-300 rounded-lg p-2" placeholder="your@email.com"></div><button id="track-submit" class="w-full bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600">Track Order</button><div id="track-result" class="mt-4 text-sm hidden"></div></div></div></div></div>
 
-<!-- Floating AI Chat -->
 <button id="chat-bubble" class="floating-chat fixed bottom-6 right-6 bg-orange-500 text-white p-4 rounded-full shadow-xl z-40"><i class="fa-regular fa-message text-2xl"></i></button>
 <div id="chat-modal" class="chat-modal">
     <div class="flex justify-between items-center p-3 border-b border-orange-200 bg-orange-50 rounded-t-2xl">
@@ -252,7 +246,6 @@
     </div>
 </div>
 
-<!-- Login/Register Modal -->
 <div id="auth-modal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[100]"><div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl"><div class="flex justify-between items-center mb-4"><h3 id="modal-title" class="text-xl font-bold">Sign In</h3><button id="close-auth-modal" class="text-2xl">&times;</button></div><div class="space-y-3"><input id="auth-email" type="email" placeholder="Email address" class="w-full border border-gray-300 rounded-lg p-2.5"><input id="auth-password" type="password" placeholder="Password" class="w-full border border-gray-300 rounded-lg p-2.5"><div id="reg-extra" class="hidden space-y-3 border-t pt-3"><input id="invite-code" placeholder="Invite code (optional)" class="w-full border border-gray-300 rounded-lg p-2"><div class="text-xs text-center">— OR create new org —</div><input id="org-name" placeholder="Organization name *" class="w-full border border-gray-300 rounded-lg p-2"><div class="grid grid-cols-2 gap-2"><input id="org-location" placeholder="City, Country *" class="border rounded p-2"><input id="org-niche" placeholder="Industry *" class="border rounded p-2"></div><input id="budget" type="number" placeholder="Budget (₦)" class="border p-2 rounded"><div class="grid grid-cols-2 gap-2"><input id="first-name" placeholder="First name *" class="border p-2 rounded"><input id="last-name" placeholder="Last name *" class="border p-2 rounded"></div><input id="phone-number" placeholder="Phone number *" class="border p-2 rounded"></div><button id="auth-submit" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2.5 rounded-lg">Sign In</button><button id="demo-access" class="w-full bg-emerald-500 text-white py-2.5 rounded-lg flex items-center justify-center gap-2"><i class="fa-solid fa-flask"></i> Demo Access</button><div class="text-center"><button id="toggle-auth-mode" class="text-sm text-orange-500 hover:underline">Don't have an account? Register</button></div></div></div></div>
 
 <script>
@@ -515,7 +508,7 @@
         }
     }
     
-    // Search & Category filter
+    // Search & Category filter Setup
     let searchDebounce;
     const searchInput = document.getElementById('product-search'), searchClear = document.getElementById('search-clear');
     function handleSearch() { clearTimeout(searchDebounce); searchDebounce = setTimeout(() => { searchQuery = searchInput.value; renderProducts(); if(searchClear) searchClear.style.display = searchQuery ? 'block' : 'none'; }, 300); }
@@ -527,7 +520,7 @@
     if(catSelect) catSelect.addEventListener('change', handleCategoryChange);
     document.getElementById('refresh-categories-btn')?.addEventListener('click', refreshCategories);
 
-    // CLICKABLE MARKETPLACE LOGO
+    // Navbar Brand Logo Reset Trigger
     const marketplaceLogo = document.getElementById('marketplace-logo');
     if (marketplaceLogo) {
         marketplaceLogo.addEventListener('click', () => {
@@ -601,7 +594,7 @@
     document.getElementById('refresh-tickets')?.addEventListener('click', loadTickets);
     document.getElementById('complaints-dropdown')?.addEventListener('click', () => showView('tickets'));
 
-    // ========== HERO SLIDER - FIXED ==========
+    // ========== HERO SLIDER LOGIC INTERNALS ==========
     function initHeroSlider() {
         const slider = document.getElementById('heroSlider');
         const slides = document.querySelectorAll('.hero-slide');
@@ -636,7 +629,6 @@
             autoInterval = setInterval(nextSlide, 5000);
         }
         
-        // Create dots
         dots.innerHTML = '';
         for (let i = 0; i < total; i++) {
             const dot = document.createElement('div');
@@ -646,33 +638,29 @@
             dots.appendChild(dot);
         }
         
-        // Event listeners
         prev?.addEventListener('click', prevSlide);
         next?.addEventListener('click', nextSlide);
         
-        // Pause on hover
         const heroSection = document.querySelector('.hero-slider');
         heroSection?.addEventListener('mouseenter', () => clearInterval(autoInterval));
         heroSection?.addEventListener('mouseleave', resetAuto);
         
-        // Start auto-rotation
         resetAuto();
     }
     
-    // Initialize slider when DOM is ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initHeroSlider);
     } else {
         initHeroSlider();
     }
 
-    // Hero buttons
+    // Hero interaction mapping links
     document.querySelectorAll('.hero-shop-btn').forEach(btn => btn.addEventListener('click', () => showView('shop')));
     document.querySelectorAll('.hero-track-btn').forEach(btn => btn.addEventListener('click', openTrackModal));
     document.querySelectorAll('.hero-tickets-btn').forEach(btn => btn.addEventListener('click', () => showView('tickets')));
     document.querySelectorAll('.hero-chat-btn').forEach(btn => btn.addEventListener('click', () => { document.getElementById('chat-modal').classList.add('active'); initChat(); }));
 
-    // Delivery & GPS
+    // Delivery & GPS API Handling components
     const addrInput = document.getElementById('delivery-address'), addrSugg = document.getElementById('cart-address-suggestions');
     let addrDeb;
     function hideAddrSugg() { addrSugg.classList.add('hidden'); addrSugg.innerHTML = ''; }
@@ -802,7 +790,7 @@
         showView('shop'); 
     });
 
-    // CHAT FUNCTIONALITY with typing animation
+    // CHAT CONCIERGE CHANNELS (With interactive typing feedback)
     let chatMessagesDiv = null;
     let chatSessionId = sessionId;
     let currentTypingIndicator = null;
@@ -898,7 +886,7 @@
         return str.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m])); 
     }
 
-    // Initialize app
+    // App Initializer Lifecycle Loop
     (async() => {
         const savedInviteCode = localStorage.getItem('invite_code');
         if (savedInviteCode) INVITE_CODE = savedInviteCode;
