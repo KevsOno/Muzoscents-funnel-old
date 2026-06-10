@@ -15,9 +15,11 @@
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-        .loading-spinner { border: 2px solid #e5e7eb; border-top: 2px solid #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 0.8s linear infinite; display: inline-block; }
+        .loading-spinner { border: 2px solid #e5e7eb; border-top: 2px solid #3b82f6; border-radius: 50%; width: 20px; height: 20px; animation: spin 0.8s linear infinite; display: inline-block; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .transition-smooth { transition: all 0.2s ease; }
+        .search-dropdown { position: absolute; z-index: 20; background: white; border: 1px solid #ccc; border-radius: 8px; max-height: 200px; overflow-y: auto; width: calc(100% - 2px); left: 0; top: 100%; margin-top: 2px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .search-dropdown-item { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee; }
+        .search-dropdown-item:hover { background-color: #f0f9ff; }
     </style>
 </head>
 <body class="bg-gray-100 p-4 font-sans">
@@ -170,7 +172,7 @@
     <div class="bg-white rounded-xl shadow-md p-4 mb-4 flex flex-wrap justify-between items-center gap-3">
         <div>
             <h1 class="text-2xl font-bold">💳 Kevs POS Terminal</h1>
-            <p class="text-xs text-gray-500">Multi‑Tab | SKU Search | Loyalty Points & Discount</p>
+            <p class="text-xs text-gray-500">Multi‑Tab | SKU Search | Real‑time Customer Search | Points Redemption</p>
         </div>
     </div>
 
@@ -203,22 +205,21 @@
                 <span class="text-xs bg-gray-100 px-2 py-1 rounded-full" id="tab-badge">Tab 1 active</span>
             </div>
 
-            <!-- Customer Lookup & Loyalty -->
-            <div class="bg-blue-50 p-3 rounded-lg mb-3 space-y-2">
-                <div class="flex gap-2">
-                    <input type="tel" id="customer-phone" placeholder="Customer Phone (lookup)" class="flex-1 border rounded-lg p-2 text-sm">
-                    <button id="lookup-customer-btn" class="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-700 transition">
-                        <i class="fa-solid fa-magnifying-glass"></i> Lookup
-                    </button>
+            <!-- Customer Search (real-time, debounced) -->
+            <div class="bg-blue-50 p-3 rounded-lg mb-3 space-y-2 relative">
+                <div class="relative">
+                    <i class="fa-solid fa-user-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs"></i>
+                    <input type="text" id="customer-search" placeholder="Search by name, phone or email..." class="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none">
+                    <div id="search-results" class="hidden search-dropdown"></div>
                 </div>
                 <div id="customer-info" class="text-xs text-gray-700 hidden">
-                    <span id="customer-name-display"></span> · 
-                    <strong>Points: <span id="customer-points">0</span></strong>
+                    <i class="fa-regular fa-id-card"></i> <span id="customer-name-display"></span> · 
+                    <strong>📊 Points: <span id="customer-points">0</span></strong>
                 </div>
                 <div id="points-redeem-section" class="hidden border-t border-blue-200 pt-2 mt-1">
                     <label class="text-xs font-medium">Redeem points (1 pt = ₦1)</label>
                     <div class="flex gap-2 mt-1">
-                        <input type="number" id="redeem-points-input" min="1" class="w-full border rounded-lg p-1 text-sm" placeholder="Points to use">
+                        <input type="number" id="redeem-points-input" min="1" class="flex-1 border rounded-lg p-1 text-sm" placeholder="Points to use">
                         <button id="apply-points-btn" class="bg-emerald-600 text-white px-3 py-1 rounded-lg text-sm hover:bg-emerald-700">Apply</button>
                     </div>
                 </div>
@@ -236,6 +237,9 @@
                 </div>
                 <div class="mt-3"><label class="block text-sm font-medium">Customer Name</label>
                     <input id="customer-name" class="w-full border rounded-lg p-2" placeholder="Walk-in Customer" autocomplete="off">
+                </div>
+                <div class="mt-2"><label class="block text-sm font-medium">Phone</label>
+                    <input id="customer-phone" class="w-full border rounded-lg p-2" placeholder="Phone" autocomplete="off">
                 </div>
                 <div class="mt-2"><label class="block text-sm font-medium">Email (for receipt/payment)</label>
                     <input id="customer-email" type="email" class="w-full border rounded-lg p-2" placeholder="customer@example.com" autocomplete="off">
@@ -292,13 +296,17 @@
     const tab2Btn = document.getElementById('tab2-btn');
     const checkoutBtn = document.getElementById('checkout-btn');
     const searchInput = document.getElementById('product-search');
-    const lookupBtn = document.getElementById('lookup-customer-btn');
+    const customerSearch = document.getElementById('customer-search');
+    const searchResultsDiv = document.getElementById('search-results');
     const customerInfoDiv = document.getElementById('customer-info');
     const customerNameDisplay = document.getElementById('customer-name-display');
     const customerPointsSpan = document.getElementById('customer-points');
     const pointsRedeemSection = document.getElementById('points-redeem-section');
     const redeemPointsInput = document.getElementById('redeem-points-input');
     const applyPointsBtn = document.getElementById('apply-points-btn');
+
+    let searchDebounceTimer = null;
+    let currentSearchRequest = null;
 
     function showToast(msg, type = 'success') {
         const container = document.getElementById('toast-container');
@@ -441,7 +449,6 @@
             customerInfoDiv.classList.add('hidden');
             pointsRedeemSection.classList.add('hidden');
         }
-        // Clear points redeemed display (recalc will happen when cart changes)
     }
 
     function renderActiveCart() {
@@ -467,17 +474,11 @@
         });
         let finalTotal = subtotal;
         if (pointsRedeemed > 0) {
-            const discount = pointsRedeemed; // 1 pt = ₦1
-            if (discount > finalTotal) {
-                // cannot discount more than total
-                state.pointsRedeemed = Math.min(finalTotal, pointsRedeemed);
-                finalTotal = 0;
-            } else {
-                finalTotal = subtotal - discount;
-            }
+            const discount = Math.min(pointsRedeemed, finalTotal);
+            finalTotal = subtotal - discount;
             cartHtml += `
                 <div class="flex justify-between items-center text-green-700 border-t pt-2 mt-1">
-                    <div class="text-sm font-medium">🎁 Points Discount (${state.pointsRedeemed} pts)</div>
+                    <div class="text-sm font-medium">🎁 Points Discount (${pointsRedeemed} pts)</div>
                     <div class="font-semibold">-₦${discount.toLocaleString()}</div>
                 </div>
             `;
@@ -529,44 +530,92 @@
         customerEmailInput.oninput = () => { tabState[activeTab].customerEmail = customerEmailInput.value; };
     }
 
-    async function lookupCustomer() {
-        const phone = customerPhoneInput.value.trim();
-        if (!phone) {
-            showToast('Enter a phone number to lookup', 'error');
-            return;
+    // ----- Real‑time customer search (debounced, like kdsupport) -----
+    async function searchCustomers(query) {
+        if (!query || query.length < 2) {
+            searchResultsDiv.classList.add('hidden');
+            return [];
         }
-        // Try to find customer by phone using the backend endpoint /customer/by-phone (if available)
-        // Alternatively use a known endpoint: /support/customer-context requires user_id. We'll use a dedicated endpoint.
-        // Since the backend might not have it, we implement a fallback: call /profiles?phone=... but RLS may block.
-        // For now we assume the backend provides GET /api/customer/lookup?phone=XXX returning { user_id, first_name, last_name, current_points }.
         try {
-            const result = await call(`/api/customer/lookup?phone=${encodeURIComponent(phone)}`, 'GET');
-            if (result && result.user_id) {
-                tabState[activeTab].loyaltyUserId = result.user_id;
-                tabState[activeTab].pointsBalance = result.current_points || 0;
-                tabState[activeTab].customerName = `${result.first_name || ''} ${result.last_name || ''}`.trim() || 'Customer';
-                // Update UI fields
-                customerNameInput.value = tabState[activeTab].customerName;
-                tabState[activeTab].customerName = customerNameInput.value;
-                syncUIWithActiveTab();
-                showToast(`Welcome ${tabState[activeTab].customerName}! Points: ${tabState[activeTab].pointsBalance}`, 'success');
-            } else {
-                throw new Error('Customer not found');
-            }
+            // Endpoint must be implemented on backend: GET /api/customer/search?q=...
+            // Returns array of { id, first_name, last_name, phone, email, current_points }
+            const results = await call(`/api/customer/search?q=${encodeURIComponent(query)}`, 'GET');
+            return results;
         } catch (err) {
-            showToast(`Customer not found: ${err.message}`, 'error');
-            // Reset loyalty info
-            tabState[activeTab].loyaltyUserId = null;
-            tabState[activeTab].pointsBalance = 0;
-            tabState[activeTab].pointsRedeemed = 0;
-            syncUIWithActiveTab();
+            console.warn('Customer search error:', err);
+            return [];
         }
     }
 
+    function renderSearchDropdown(customers) {
+        if (!customers.length) {
+            searchResultsDiv.classList.add('hidden');
+            return;
+        }
+        const html = customers.map(c => `
+            <div class="search-dropdown-item" data-user-id="${c.id}" data-name="${escapeHtml(c.first_name || '')} ${escapeHtml(c.last_name || '')}" data-phone="${escapeHtml(c.phone || '')}" data-email="${escapeHtml(c.email || '')}" data-points="${c.current_points || 0}">
+                <div class="font-medium">${escapeHtml(c.first_name || '')} ${escapeHtml(c.last_name || '')}</div>
+                <div class="text-xs text-gray-500">${escapeHtml(c.phone || '')} · ${escapeHtml(c.email || '')} · ${c.current_points || 0} pts</div>
+            </div>
+        `).join('');
+        searchResultsDiv.innerHTML = html;
+        searchResultsDiv.classList.remove('hidden');
+        // attach click handlers
+        document.querySelectorAll('.search-dropdown-item').forEach(el => {
+            el.addEventListener('click', (e) => {
+                const userId = el.dataset.userId;
+                const name = el.dataset.name;
+                const phone = el.dataset.phone;
+                const email = el.dataset.email;
+                const points = parseInt(el.dataset.points, 10);
+                selectCustomer(userId, name, phone, email, points);
+            });
+        });
+    }
+
+    function selectCustomer(userId, fullName, phone, email, points) {
+        const state = tabState[activeTab];
+        state.loyaltyUserId = userId;
+        state.pointsBalance = points;
+        state.customerName = fullName;
+        state.customerPhone = phone;
+        state.customerEmail = email;
+        state.pointsRedeemed = 0; // reset any previous redemption
+        // Update UI fields
+        customerNameInput.value = fullName;
+        customerPhoneInput.value = phone;
+        customerEmailInput.value = email;
+        customerSearch.value = fullName;
+        searchResultsDiv.classList.add('hidden');
+        syncUIWithActiveTab();
+        showToast(`✅ Customer loaded: ${fullName} (${points} points)`, 'success');
+    }
+
+    function onCustomerSearchInput() {
+        const query = customerSearch.value.trim();
+        if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = setTimeout(async () => {
+            if (query.length >= 2) {
+                const results = await searchCustomers(query);
+                renderSearchDropdown(results);
+            } else {
+                searchResultsDiv.classList.add('hidden');
+            }
+        }, 300);
+    }
+
+    // Hide dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!customerSearch.contains(e.target) && !searchResultsDiv.contains(e.target)) {
+            searchResultsDiv.classList.add('hidden');
+        }
+    });
+
+    // ----- Points redemption -----
     async function applyPoints() {
         const state = tabState[activeTab];
         if (!state.loyaltyUserId) {
-            showToast('Please lookup a customer first', 'error');
+            showToast('Please select a customer first', 'error');
             return;
         }
         let pointsToRedeem = parseInt(redeemPointsInput.value, 10);
@@ -578,22 +627,21 @@
             showToast(`You only have ${state.pointsBalance} points`, 'error');
             return;
         }
-        // Call redeem endpoint to convert points to credit (backup) and also apply discount client-side
+        // Call loyalty redeem endpoint
         try {
-            // First, actually redeem points via backend (adds credit to user's account)
             await call('/loyalty/redeem', 'POST', { points: pointsToRedeem });
-            // Now apply discount to current cart (client-side)
             state.pointsRedeemed = (state.pointsRedeemed || 0) + pointsToRedeem;
             state.pointsBalance -= pointsToRedeem;
             redeemPointsInput.value = '';
             renderActiveCart();
-            showToast(`✅ ${pointsToRedeem} points redeemed – ₦${pointsToRedeem} off this order!`, 'success');
             syncUIWithActiveTab(); // refresh points display
+            showToast(`✅ ${pointsToRedeem} points redeemed – ₦${pointsToRedeem} off this order!`, 'success');
         } catch (err) {
             showToast(`Redemption failed: ${err.message}`, 'error');
         }
     }
 
+    // ----- Checkout -----
     async function processCheckout() {
         const state = tabState[activeTab];
         const cart = state.cart;
@@ -627,14 +675,14 @@
                     customer_name: customerName,
                     customer_phone: customerPhone,
                     customer_email: customerEmail,
-                    points_redeemed: pointsRedeemed   // new field (backend must handle)
+                    points_redeemed: pointsRedeemed
                 });
                 showToast(`✅ Sale complete! Receipt: ${result.receipt_number || 'OK'}`, 'success');
                 // Reset cart and loyalty for this tab
                 state.cart = [];
                 state.pointsRedeemed = 0;
-                if (state.loyaltyUserId) {
-                    // Refresh points balance after purchase (points awarded automatically by backend)
+                if (state.loyaltyUserId && state.customerPhone) {
+                    // Refresh points balance after purchase
                     const updated = await call(`/api/customer/lookup?phone=${encodeURIComponent(state.customerPhone)}`, 'GET');
                     if (updated && updated.current_points !== undefined) state.pointsBalance = updated.current_points;
                 }
@@ -669,7 +717,6 @@
                 checkoutBtn.disabled = false;
                 checkoutBtn.innerText = '✅ Complete Sale';
             } else {
-                // For online payments, page will redirect; re-enable only if error
                 if (err) {
                     checkoutBtn.disabled = false;
                     checkoutBtn.innerText = '✅ Complete Sale';
@@ -678,6 +725,7 @@
         }
     }
 
+    // ----- Payment return handling -----
     async function checkPaymentReturn() {
         const urlParams = new URLSearchParams(window.location.search);
         const paymentSuccess = urlParams.get('payment') === 'success';
@@ -688,17 +736,11 @@
             const pendingTab = pendingTabRaw ? parseInt(pendingTabRaw, 10) : null;
             const pointsRedeemed = parseInt(localStorage.getItem('pending_points_redeemed') || '0', 10);
             if (pendingTab === 1 || pendingTab === 2) {
-                // Clear cart for that tab
                 tabState[pendingTab].cart = [];
                 tabState[pendingTab].pointsRedeemed = 0;
-                if (activeTab !== pendingTab) {
-                    // if not active, still clear
-                } else {
-                    renderActiveCart();
-                }
+                if (activeTab === pendingTab) renderActiveCart();
                 showToast(`🎉 Payment successful! Order confirmed for ${pendingTab === 1 ? 'Customer A' : 'Customer B'}.`, 'success');
                 await loadProducts();
-                // Refresh loyalty balance if needed
                 const state = tabState[pendingTab];
                 if (state.loyaltyUserId && state.customerPhone) {
                     const updated = await call(`/api/customer/lookup?phone=${encodeURIComponent(state.customerPhone)}`, 'GET');
@@ -737,6 +779,9 @@
         activeTab = tabId;
         syncUIWithActiveTab();
         renderProductGrid();
+        // Clear search dropdown when switching tabs
+        searchResultsDiv.classList.add('hidden');
+        customerSearch.value = tabState[activeTab].customerName || '';
     }
 
     function initTabs() {
@@ -818,8 +863,8 @@
 
     // Event listeners
     checkoutBtn.addEventListener('click', processCheckout);
-    lookupBtn.addEventListener('click', lookupCustomer);
     applyPointsBtn.addEventListener('click', applyPoints);
+    customerSearch.addEventListener('input', onCustomerSearchInput);
     document.getElementById('modal-login-btn')?.addEventListener('click', handleLogin);
     document.getElementById('demo-login-btn')?.addEventListener('click', demoLogin);
     document.getElementById('close-modal-btn')?.addEventListener('click', hideLoginModal);
