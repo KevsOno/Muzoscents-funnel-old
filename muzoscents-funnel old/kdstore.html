@@ -157,14 +157,12 @@
         <div class="p-4 border-b border-orange-100 flex justify-between items-center bg-orange-50"><h3 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-basket-shopping text-orange-500"></i> Your Cart</h3><button id="close-drawer" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button></div>
         <div id="cart-items-list" class="flex-1 overflow-y-auto p-4 space-y-3 bg-white"></div>
         <div class="p-4 border-t border-orange-100 bg-gray-50">
-            <!-- Login Required Warning (shown for guests) -->
             <div id="login-warning" class="mb-3 hidden">
                 <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700 flex items-center gap-2">
                     <i class="fa-solid fa-lock"></i>
                     <span>Please <button id="login-from-cart" class="underline font-semibold">sign in</button> to checkout</span>
                 </div>
             </div>
-            
             <div class="mb-3"><label class="text-xs text-gray-600 block mb-1">Delivery Option</label><div class="flex gap-2 bg-gray-100 rounded-lg p-1"><button id="pickup-option" class="flex-1 py-1.5 text-sm rounded-md transition font-medium">📦 Pickup</button><button id="delivery-option" class="flex-1 py-1.5 text-sm rounded-md transition font-medium">🚚 Delivery</button></div></div>
             <div id="delivery-address-section" class="mb-3 hidden"><label class="text-xs text-gray-600 block mb-1">Delivery Address</label><div class="relative"><div class="flex gap-2"><input type="text" id="delivery-address" placeholder="Start typing address..." class="flex-1 bg-white border border-gray-300 rounded-lg p-2 text-sm" autocomplete="off"><button id="gps-locate-cart" class="bg-indigo-600 text-white px-3 rounded-lg text-sm whitespace-nowrap"><i class="fa-solid fa-location-dot"></i> GPS</button></div><div id="cart-address-suggestions" class="address-suggestions hidden"></div></div><button id="save-address-btn" class="mt-2 w-full bg-orange-500 hover:bg-orange-600 text-white py-1.5 rounded-lg text-sm transition">Save & Estimate Delivery</button><div id="delivery-fee-estimate" class="text-xs text-gray-500 mt-1"></div></div>
             <div class="mb-3"><label class="text-xs text-gray-600 block mb-1">Payment Method</label><select id="payment-method" class="w-full bg-white border border-gray-300 rounded-lg p-2 text-sm"><option value="paystack">Paystack (Card / Bank)</option><option value="cash">Cash (POS Terminal)</option></select></div>
@@ -189,8 +187,14 @@
             <div class="text-center"><button id="toggle-auth-mode" class="text-sm text-orange-500 hover:underline">Don't have an account? Register</button></div></div></div></div>
 
     <script>
-        // ========== GLOBALS ==========
-        const API_BASE = "";  // Relative URLs work with any domain
+        // ========== CONFIGURATION (Fixed API Base) ==========
+        // Backend base URL injected from parent template or environment
+        window.STORE_ORG_ID = "{{STORE_ORG_ID}}";
+        window.API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
+        
+        // Primary API_BASE for the script - uses the window variable with fallback
+        const API_BASE = window.API_BASE || "https://kevsono-kevs-digital-bos.hf.space";
+        
         let token = localStorage.getItem('access_token');
         let userProfile = null;
         let userLoyalty = { points: 0, tier: 'bronze' };
@@ -208,12 +212,10 @@
         let currentProductForModal = null;
         let isRecalcInProgress = false;
         
-        // Store context (injected from backend via template)
         let inviteCode = window.ORG_INFO?.invite_code || localStorage.getItem('invite_code');
         let orgId = window.ORG_INFO?.id || null;
         let orgName = window.ORG_INFO?.name || "MarketPlace";
         
-        // Update store name in header
         document.getElementById('store-name').innerText = orgName.split(' ')[0] || "Market";
         
         // ========== HELPER FUNCTIONS ==========
@@ -254,7 +256,6 @@
             options.headers['Content-Type'] = 'application/json';
             if (token) options.headers['Authorization'] = `Bearer ${token}`;
             
-            // Add invite_code to public endpoints automatically
             const isPublicEndpoint = !options.headers['Authorization'] && 
                 (endpoint.includes('/inventory/public') || endpoint === '/inventory/public-list' || endpoint === '/inventory/public-categories');
             if (isPublicEndpoint && inviteCode && !endpoint.includes('invite_code')) {
@@ -351,7 +352,6 @@
             showToast(`${product.name} added to cart!`, 'success'); 
         }
         
-        // ========== CATEGORY FUNCTIONS (FIXED) ==========
         function updateCategoryDropdown() {
             const select = document.getElementById('category-select');
             if (!select) return;
@@ -365,10 +365,7 @@
         }
         
         function extractCategoriesFromProducts() {
-            if (!allProducts.length) {
-                console.warn("No products loaded yet");
-                return false;
-            }
+            if (!allProducts.length) return false;
             const groups = allProducts.map(p => p.product_group).filter(g => g && typeof g === 'string' && g.trim() !== '');
             const unique = [...new Set(groups)];
             if (unique.length) {
@@ -383,10 +380,7 @@
         }
         
         async function loadCategories() {
-            if (!inviteCode) {
-                console.warn("No invite_code found, will extract from products");
-                return;
-            }
+            if (!inviteCode) return;
             try {
                 const data = await apiCall(`/inventory/public-categories`);
                 if (data.categories && data.categories.length) {
@@ -448,7 +442,6 @@
             }
         }
         
-        // Search & Category filter
         let searchDebounce;
         const searchInput = document.getElementById('product-search'), searchClear = document.getElementById('search-clear');
         function handleSearch() { clearTimeout(searchDebounce); searchDebounce = setTimeout(() => { searchQuery = searchInput.value; renderProducts(); if(searchClear) searchClear.style.display = searchQuery ? 'block' : 'none'; }, 300); }
@@ -471,7 +464,6 @@
         document.getElementById('modal-close-btn')?.addEventListener('click', closeProductModal);
         document.getElementById('modal-add-to-cart')?.addEventListener('click', async () => { if(currentProductForModal) { await addToCart({ id: currentProductForModal.id, name: currentProductForModal.description, price: currentProductForModal.price_naira }); } closeProductModal(); });
         
-        // Track Order Modal
         const trackModal = document.getElementById('track-modal');
         function openTrackModal() { trackModal.classList.add('active'); }
         function closeTrackModal() { trackModal.classList.remove('active'); document.getElementById('track-result').classList.add('hidden'); }
@@ -489,7 +481,6 @@
             } catch(e) { resultDiv.innerHTML = `<div class="text-red-500">${e.message}</div>`; }
         });
         
-        // Tickets View
         async function loadTickets() {
             if (!isLoggedIn()) { showToast("Please login to view tickets", 'error'); showAuthModal(); return; }
             const container = document.getElementById('tickets-list');
@@ -511,7 +502,6 @@
         document.getElementById('refresh-tickets')?.addEventListener('click', loadTickets);
         document.getElementById('complaints-dropdown')?.addEventListener('click', () => showView('tickets'));
         
-        // Hero Slider
         function initHeroSlider() {
             const slider = document.getElementById('heroSlider'), slides = document.querySelectorAll('.hero-slide');
             const prev = document.getElementById('sliderPrev'), next = document.getElementById('sliderNext'), dots = document.getElementById('sliderDots');
@@ -538,7 +528,6 @@
         document.querySelectorAll('.hero-tickets-btn').forEach(btn => btn.addEventListener('click', () => showView('tickets')));
         document.querySelectorAll('.hero-chat-btn').forEach(btn => btn.addEventListener('click', () => { document.getElementById('chat-modal').classList.add('active'); initChat(); }));
         
-        // Delivery & GPS
         const addrInput = document.getElementById('delivery-address'), addrSugg = document.getElementById('cart-address-suggestions');
         let addrDeb;
         function hideAddrSugg() { addrSugg.classList.add('hidden'); addrSugg.innerHTML = ''; }
@@ -571,7 +560,6 @@
         document.getElementById('pickup-option')?.addEventListener('click',()=>setDeliveryOpt('pickup'));
         document.getElementById('delivery-option')?.addEventListener('click',()=>setDeliveryOpt('delivery'));
         
-        // CHECKOUT - LOGIN REQUIRED (NO GUEST CHECKOUT)
         async function checkout() {
             if (!isLoggedIn()) {
                 showToast("Please login to checkout", 'error');
@@ -613,7 +601,6 @@
             } catch (e) { showToast(e.message, 'error'); }
         }
         
-        // ========== AUTH ==========
         async function loadUserLoyalty() { 
             if (!isLoggedIn()) return; 
             try { 
@@ -738,7 +725,6 @@
             updateCheckoutButton();
         });
         
-        // ========== CHAT ==========
         let chatMessagesDiv=null;
         function addChatMsg(sender,text){ if(!chatMessagesDiv) return; const div=document.createElement('div'); div.className=`p-2 rounded-xl max-w-[85%] text-sm mb-1 ${sender==='user'?'bg-orange-500 text-white ml-auto rounded-br-none':'bg-gray-100 text-gray-800 mr-auto rounded-bl-none'}`; div.innerText=text; chatMessagesDiv.appendChild(div); chatMessagesDiv.scrollTop=chatMessagesDiv.scrollHeight; }
         async function sendChatMessage(){ const input=document.getElementById('chat-input'); const msg=input.value.trim(); if(!msg) return; addChatMsg('user',msg); input.value=''; addChatMsg('assistant','🤖 Thinking...'); try{ const data=await apiCall('/support/chat-stream',{method:'POST',body:JSON.stringify({session_id:sessionId,message:msg})}); chatMessagesDiv.lastChild?.remove(); addChatMsg('assistant',data.response||"Got it!"); } catch(e){ chatMessagesDiv.lastChild?.remove(); addChatMsg('assistant',"Sorry, AI is busy."); } }
@@ -748,7 +734,6 @@
         document.getElementById('chat-send')?.addEventListener('click',sendChatMessage);
         document.getElementById('chat-input')?.addEventListener('keypress',(e)=>{if(e.key==='Enter') sendChatMessage();});
         
-        // ========== UI HELPERS ==========
         document.getElementById('cart-icon-btn')?.addEventListener('click',()=>document.getElementById('cart-drawer').classList.remove('translate-x-full'));
         document.getElementById('close-drawer')?.addEventListener('click',()=>document.getElementById('cart-drawer').classList.add('translate-x-full'));
         document.getElementById('checkout-btn')?.addEventListener('click',checkout);
@@ -759,19 +744,14 @@
         function showToast(msg,type){ const t=document.createElement('div'); t.className=`fixed bottom-20 left-4 right-4 md:left-auto md:right-6 z-50 bg-${type==='success'?'green-600':'red-600'} text-white px-4 py-2 rounded-xl shadow-lg text-sm`; t.innerText=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),3000); }
         function escapeHtml(str){ if(!str) return ''; return str.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
         
-        // ========== INIT ==========
         (async() => {
-            // Store invite code for future use
             if (inviteCode) localStorage.setItem('invite_code', inviteCode);
-            
             loadCart();
             setDeliveryOpt('pickup');
             if (token) { try { await loadUser(); } catch(e) { token = null; } }
             updateCheckoutButton();
-            
             await loadCategories();
             await loadProducts();
-            
             const urlParams = new URLSearchParams(window.location.search);
             const paymentSuccess = urlParams.get('payment') === 'success';
             const pendingFlag = localStorage.getItem('pending_payment') === 'true';
