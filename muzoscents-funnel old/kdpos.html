@@ -22,12 +22,13 @@
 </head>
 <body class="bg-gray-100 p-4 font-sans">
 
-<!-- Global Navigation (same as before) -->
+<!-- ========== GLOBAL NAVIGATION (Kevs bOS) ========== -->
 <div id="kevs-nav-container"></div>
 <script>
 (function() {
     const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
     const LOGIN_URL = '/kdsiginin';
+
     const navItems = [
         { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy', roles: ['owner','admin','sales_rep','finance'] },
         { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & online payments', roles: ['owner','admin','sales_rep'] },
@@ -41,12 +42,14 @@
 
     function getUserRole() {
         try {
-            return localStorage.getItem('user_role') || 'customer';
+            const role = localStorage.getItem('user_role');
+            return role || 'customer';
         } catch(e) { return 'customer'; }
     }
 
     function canAccess(requiredRoles) {
-        return requiredRoles.includes(getUserRole());
+        const userRole = getUserRole();
+        return requiredRoles.includes(userRole);
     }
 
     function buildNavbar() {
@@ -159,7 +162,7 @@
     }
 })();
 </script>
-<!-- End Global Navigation -->
+<!-- ========== END GLOBAL NAVIGATION ========== -->
 
 <div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
 
@@ -169,15 +172,6 @@
             <h1 class="text-2xl font-bold">💳 Kevs POS Terminal</h1>
             <p class="text-xs text-gray-500">Multi‑Tab | SKU Search | Card/Transfer Payments</p>
         </div>
-    </div>
-
-    <!-- Location selector (store) -->
-    <div class="bg-white rounded-xl shadow-md p-4 mb-4">
-        <label class="block text-sm font-medium text-gray-700 mb-1">Select Store Location</label>
-        <select id="store-location-select" class="border rounded-lg p-2 bg-white w-full md:w-64">
-            <option value="">Loading locations...</option>
-        </select>
-        <p class="text-xs text-gray-500 mt-1">Stock will be deducted from this physical store.</p>
     </div>
 
     <!-- TABS for two customers -->
@@ -255,8 +249,6 @@
 
 <script>
     const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
-    // Multi-location feature flag
-    const ENABLE_MULTI_LOCATION = true;
     let token = localStorage.getItem('access_token');
     let products = [];
     let searchTerm = '';
@@ -265,7 +257,6 @@
         1: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' },
         2: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' }
     };
-    let selectedLocationId = null; // store location UUID
 
     const productContainer = document.getElementById('product-list');
     const emptyMsgDiv = document.getElementById('product-list-empty');
@@ -335,51 +326,9 @@
     function showLoginModal() { document.getElementById('auth-modal').classList.remove('hidden'); }
     function hideLoginModal() { document.getElementById('auth-modal').classList.add('hidden'); }
 
-    // UPDATED: loadStoreLocations with v2 fallback
-    async function loadStoreLocations() {
-        try {
-            let locs;
-            try {
-                locs = await call('/v2/inventory/locations');
-            } catch (err) {
-                console.warn('v2 locations failed, trying alias', err);
-                locs = await call('/inventory/locations');
-            }
-            const storeSelect = document.getElementById('store-location-select');
-            const storeLocs = locs.filter(l => l.type === 'store');
-            if (storeLocs.length === 0) {
-                storeSelect.innerHTML = '<option value="">No store location found. Contact admin.</option>';
-                showToast('No store location configured. POS will not work.', 'error');
-                return;
-            }
-            storeSelect.innerHTML = storeLocs.map(l => `<option value="${l.id}">${escapeHtml(l.name)}</option>`).join('');
-            selectedLocationId = storeLocs[0].id;
-            storeSelect.value = selectedLocationId;
-            storeSelect.onchange = () => { 
-                selectedLocationId = storeSelect.value;
-                // Reload products when store changes to reflect accurate stock levels
-                if (token) loadProducts();
-            };
-        } catch (err) {
-            console.error(err);
-            showToast('Failed to load store locations', 'error');
-        }
-    }
-
-    // UPDATED: loadProducts with location-aware endpoint
     async function loadProducts() {
-        if (!selectedLocationId && ENABLE_MULTI_LOCATION) {
-            // Wait until location is loaded
-            return;
-        }
         try {
-            let data;
-            if (selectedLocationId && ENABLE_MULTI_LOCATION) {
-                // Use location-specific endpoint for accurate stock per store
-                data = await call(`/v2/inventory?location_id=${selectedLocationId}`);
-            } else {
-                data = await call('/inventory');
-            }
+            const data = await call('/inventory');
             products = data;
             renderProductGrid();
         } catch (err) {
@@ -393,22 +342,6 @@
         if (product.sku) return product.sku;
         if (product.sku_code) return product.sku_code;
         return `ID:${product.id}`;
-    }
-
-    // UPDATED: getStockAtStore with robust detection for both v2 and aggregated endpoints
-    function getStockAtStore(product) {
-        if (!selectedLocationId) return 0;
-        // If using v2 endpoint with location_id, stock is directly in current_qty and location_id matches
-        if (product.location_id === selectedLocationId) {
-            return product.current_qty || 0;
-        }
-        // If using aggregated endpoint with location_stocks array (fallback)
-        if (product.location_stocks && Array.isArray(product.location_stocks)) {
-            const locStock = product.location_stocks.find(s => s.location_id === selectedLocationId);
-            return locStock ? locStock.quantity : 0;
-        }
-        // Fallback for generic product without location data
-        return product.current_qty || 0;
     }
 
     function filterProducts() {
@@ -433,18 +366,16 @@
         emptyMsgDiv.classList.add('hidden');
         productContainer.innerHTML = filtered.map(p => {
             const skuDisplay = getDisplaySku(p);
-            const stockAtStore = getStockAtStore(p);
+            const stock = p.current_qty ?? 0;
             const price = p.price_naira ?? 0;
             const descSafe = escapeHtml(p.description || 'Unnamed product');
-            const outOfStockClass = stockAtStore <= 0 ? 'opacity-50 bg-gray-100' : '';
-            const disabledAttr = stockAtStore <= 0 ? 'disabled' : '';
             return `
-                <button ${disabledAttr} onclick="addToCart(${p.id}, '${descSafe}', ${price}, ${stockAtStore}, '${escapeHtml(skuDisplay)}')" 
-                        class="product-card ${outOfStockClass} bg-gray-50 p-3 rounded-xl text-left hover:bg-blue-50 border border-gray-200 transition shadow-sm">
+                <button onclick="addToCart(${p.id}, '${descSafe}', ${price}, ${stock}, '${escapeHtml(skuDisplay)}')" 
+                        class="product-card bg-gray-50 p-3 rounded-xl text-left hover:bg-blue-50 border border-gray-200 transition shadow-sm">
                     <div class="font-semibold text-gray-800">${descSafe}</div>
                     <div class="text-xs text-gray-500 font-mono mt-0.5">📟 ${escapeHtml(skuDisplay)}</div>
                     <div class="text-md font-bold text-blue-700 mt-1">₦${price.toLocaleString()}</div>
-                    <div class="text-xs text-gray-500 mt-1">📦 Stock: ${stockAtStore}</div>
+                    <div class="text-xs text-gray-500 mt-1">📦 Stock: ${stock}</div>
                 </button>
             `;
         }).join('');
@@ -508,20 +439,23 @@
         }
     };
 
-    window.addToCart = function(productId, productName, price, stockAtStore, skuLabel) {
-        if (stockAtStore <= 0) {
-            showToast(`❌ "${productName}" is out of stock at this store`, 'error');
-            return;
-        }
+    window.addToCart = function(productId, productName, price, stock, skuLabel) {
         const activeCart = tabState[activeTab].cart;
         const existing = activeCart.find(i => i.id === productId);
+        const productRef = products.find(p => p.id === productId);
+        const availableStock = productRef ? (productRef.current_qty ?? 0) : stock;
+        
         if (existing) {
-            if (existing.qty + 1 > stockAtStore) {
-                showToast(`⚠️ Only ${stockAtStore} left for "${productName}"`, 'error');
+            if (existing.qty + 1 > availableStock) {
+                showToast(`⚠️ Only ${availableStock} left for "${productName}"`, 'error');
                 return;
             }
             existing.qty++;
         } else {
+            if (1 > availableStock) {
+                showToast(`❌ "${productName}" out of stock`, 'error');
+                return;
+            }
             activeCart.push({ id: productId, name: productName, price: price, qty: 1, sku: skuLabel });
         }
         renderActiveCart();
@@ -540,12 +474,7 @@
         if (activeTab === tabId) renderActiveCart();
     }
 
-    // UPDATED: processCheckout ensures location_id is always sent for both cash and online payments
     async function processCheckout() {
-        if (!selectedLocationId) {
-            showToast('Please select a store location', 'error');
-            return;
-        }
         const state = tabState[activeTab];
         const cart = state.cart;
         if (cart.length === 0) {
@@ -576,13 +505,12 @@
                     payment_method: 'cash',
                     customer_name: customerName,
                     customer_phone: customerPhone,
-                    customer_email: customerEmail,
-                    location_id: selectedLocationId
+                    customer_email: customerEmail
                 });
                 showToast(`✅ Sale complete! Receipt: ${result.receipt_number || 'OK'}`, 'success');
                 tabState[activeTab].cart = [];
                 syncUIWithActiveTab();
-                await loadProducts(); // refresh stock display
+                await loadProducts();
             } 
             else {
                 const payload = {
@@ -591,8 +519,7 @@
                     customer_email: customerEmail,
                     customer_phone: customerPhone,
                     payment_method: paymentMethod,
-                    callback_url: callback_url,
-                    location_id: selectedLocationId
+                    callback_url: callback_url
                 };
                 const result = await call('/pos/checkout', 'POST', payload);
                 if (result.payment_url) {
@@ -694,7 +621,6 @@
                 const role = me.role || 'customer';
                 localStorage.setItem('user_role', role);
             } catch(e) {}
-            await loadStoreLocations();
             await loadProducts();
             hideLoginModal();
             tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' };
@@ -728,7 +654,6 @@
             const me = await call('/auth/me');
             const role = me.role || 'customer';
             localStorage.setItem('user_role', role);
-            await loadStoreLocations();
             await loadProducts();
             hideLoginModal();
             tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' };
@@ -755,7 +680,6 @@
         
         if (token) {
             try {
-                await loadStoreLocations();
                 await loadProducts();
                 if (!tabState[1].cart.length && !tabState[2].cart.length) {
                     tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '' };
