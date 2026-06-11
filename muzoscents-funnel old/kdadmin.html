@@ -41,6 +41,14 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        .search-highlight {
+            background-color: #fbbf24;
+            color: #1e293b;
+        }
+        .product-search-result:hover {
+            background: #334155;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body class="text-slate-200">
@@ -113,7 +121,19 @@
                 </div>
                 <button id="refresh-list" class="bg-slate-700 hover:bg-slate-600 text-sm px-3 py-2 rounded-lg"><i class="fa-solid fa-rotate-right mr-1"></i> Refresh</button>
                 <button id="show-transfer-modal" class="bg-indigo-600 hover:bg-indigo-700 text-sm px-3 py-2 rounded-lg"><i class="fa-solid fa-arrow-right-arrow-left"></i> Transfer Stock</button>
+                <button id="show-location-modal" class="bg-emerald-600 hover:bg-emerald-700 text-sm px-3 py-2 rounded-lg"><i class="fa-solid fa-plus"></i> Add Location</button>
             </div>
+        </div>
+
+        <!-- Product Search Section (NEW) -->
+        <div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-slate-700 shadow-xl">
+            <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fa-solid fa-magnifying-glass text-green-400"></i> Search Products</h2>
+            <div class="relative">
+                <input type="text" id="product-search-input" placeholder="Search by SKU, description, or product group..." class="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm pl-10">
+                <i class="fa-solid fa-search absolute left-3 top-3.5 text-slate-500"></i>
+                <div id="product-search-results" class="absolute z-20 w-full mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl max-h-64 overflow-y-auto hidden"></div>
+            </div>
+            <p class="text-xs text-slate-400 mt-2"><i class="fa-regular fa-lightbulb"></i> Type SKU or description to quickly find and edit products</p>
         </div>
 
         <!-- Product Form -->
@@ -215,14 +235,20 @@
     </div>
 </div>
 
-<!-- Stock Transfer Modal -->
+<!-- Stock Transfer Modal (with search) -->
 <div id="transfer-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
     <div class="bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-slate-600">
         <h3 class="text-xl font-bold mb-4">Transfer Stock</h3>
         <div class="space-y-3">
             <div>
-                <label class="block text-sm">Product</label>
-                <select id="transfer-product" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select>
+                <label class="block text-sm mb-1">Search Product</label>
+                <div class="relative">
+                    <input type="text" id="transfer-product-search" placeholder="Type SKU or description..." class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
+                    <div id="transfer-search-results" class="absolute z-30 w-full mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl max-h-48 overflow-y-auto hidden"></div>
+                </div>
+                <select id="transfer-product" class="hidden w-full bg-slate-900 border border-slate-700 rounded-lg p-2 mt-2">
+                    <option value="">Select a product</option>
+                </select>
             </div>
             <div>
                 <label class="block text-sm">From Location</label>
@@ -244,6 +270,40 @@
                 <button id="transfer-submit" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg">Transfer</button>
                 <button id="transfer-cancel" class="bg-slate-600 hover:bg-slate-500 px-4 py-2 rounded-lg">Cancel</button>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Location Modal -->
+<div id="location-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+    <div class="bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-slate-600">
+        <h3 class="text-xl font-bold mb-4" id="location-modal-title">Add New Location</h3>
+        <div class="space-y-3">
+            <div>
+                <label class="block text-sm mb-1">Location Name *</label>
+                <input type="text" id="location-name" placeholder="e.g., Online Store, Abuja Warehouse, Lagos Store" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
+            </div>
+            <div>
+                <label class="block text-sm mb-1">Location Type *</label>
+                <select id="location-type" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
+                    <option value="warehouse">Warehouse</option>
+                    <option value="store">Physical Store</option>
+                    <option value="online">Online Store</option>
+                    <option value="fulfillment">Fulfillment Center</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm mb-1">Address (optional)</label>
+                <input type="text" id="location-address" placeholder="Street address, city, etc." class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
+            </div>
+            <div class="flex gap-3 mt-4">
+                <button id="location-submit" class="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg">Create Location</button>
+                <button id="location-cancel" class="bg-slate-600 hover:bg-slate-500 px-4 py-2 rounded-lg">Cancel</button>
+            </div>
+        </div>
+        <div id="existing-locations" class="mt-4 pt-4 border-t border-slate-700">
+            <h4 class="text-sm font-semibold mb-2">Existing Locations</h4>
+            <div id="locations-list" class="text-xs space-y-1 max-h-32 overflow-y-auto"></div>
         </div>
     </div>
 </div>
@@ -318,6 +378,28 @@
             throw new Error(err.detail || 'API error');
         }
         return res.json();
+    }
+
+    // ============================================================
+    // LOCATION MANAGEMENT (NEW)
+    // ============================================================
+    async function createLocation(name, type, address) {
+        try {
+            const result = await apiCall('/v2/inventory/locations', {
+                method: 'POST',
+                body: JSON.stringify({
+                    name: name,
+                    type: type,
+                    address: address || null
+                })
+            });
+            showToast(`Location "${name}" created successfully!`, 'success');
+            await loadLocations(); // Refresh locations list
+            return result;
+        } catch (err) {
+            showToast(`Failed to create location: ${err.message}`, 'error');
+            throw err;
+        }
     }
 
     // ============================================================
@@ -447,6 +529,17 @@
             const transferFrom = document.getElementById('transfer-from');
             const transferTo = document.getElementById('transfer-to');
             
+            // Update locations list in modal
+            const locationsListDiv = document.getElementById('locations-list');
+            if (locationsListDiv && locs.length) {
+                locationsListDiv.innerHTML = locs.map(l => `
+                    <div class="flex justify-between items-center py-1 border-b border-slate-700/50">
+                        <span><i class="fa-${l.type === 'warehouse' ? 'solid fa-warehouse' : l.type === 'online' ? 'solid fa-globe' : 'solid fa-store'} mr-1"></i> ${escapeHtml(l.name)}</span>
+                        <span class="text-slate-500 text-xs">${l.type}</span>
+                    </div>
+                `).join('');
+            }
+            
             if (!locs || locs.length === 0) {
                 filterSelect.innerHTML = '<option value="">No locations available</option>';
                 assignSelect.innerHTML = '<option value="">Default Warehouse</option>';
@@ -546,6 +639,135 @@
                 </div>
             </div>
         `}).join('');
+    }
+
+    // ============================================================
+    // PRODUCT SEARCH FUNCTIONALITY
+    // ============================================================
+    function setupProductSearch() {
+        const searchInput = document.getElementById('product-search-input');
+        const resultsDiv = document.getElementById('product-search-results');
+        
+        if (!searchInput) return;
+        
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase().trim();
+            
+            if (query.length < 2) {
+                resultsDiv.classList.add('hidden');
+                return;
+            }
+            
+            const matches = products.filter(p => 
+                (p.item_code && p.item_code.toLowerCase().includes(query)) ||
+                (p.description && p.description.toLowerCase().includes(query)) ||
+                (p.product_group && p.product_group.toLowerCase().includes(query))
+            ).slice(0, 10); // Limit to 10 results
+            
+            if (matches.length === 0) {
+                resultsDiv.innerHTML = '<div class="p-3 text-center text-slate-400">No products found</div>';
+                resultsDiv.classList.remove('hidden');
+                return;
+            }
+            
+            resultsDiv.innerHTML = matches.map(p => `
+                <div class="product-search-result p-3 border-b border-slate-700 hover:bg-slate-700 transition" data-product-id="${p.id}">
+                    <div class="font-medium text-white">${escapeHtml(p.description)}</div>
+                    <div class="flex gap-3 text-xs text-slate-400 mt-1">
+                        <span><i class="fa-solid fa-barcode"></i> ${escapeHtml(p.item_code || p.id)}</span>
+                        <span><i class="fa-solid fa-tag"></i> ₦${(p.price_naira || 0).toLocaleString()}</span>
+                        ${p.product_group ? `<span><i class="fa-regular fa-folder"></i> ${escapeHtml(p.product_group)}</span>` : ''}
+                    </div>
+                </div>
+            `).join('');
+            
+            resultsDiv.classList.remove('hidden');
+            
+            // Add click handlers to search results
+            document.querySelectorAll('#product-search-results .product-search-result').forEach(el => {
+                el.addEventListener('click', () => {
+                    const productId = el.dataset.productId;
+                    const product = products.find(p => p.id == productId);
+                    if (product) {
+                        editProduct(productId);
+                        searchInput.value = '';
+                        resultsDiv.classList.add('hidden');
+                    }
+                });
+            });
+        });
+        
+        // Hide results when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) {
+                resultsDiv.classList.add('hidden');
+            }
+        });
+    }
+
+    // ============================================================
+    // TRANSFER MODAL WITH SEARCH
+    // ============================================================
+    function setupTransferSearch() {
+        const searchInput = document.getElementById('transfer-product-search');
+        const resultsDiv = document.getElementById('transfer-search-results');
+        const productSelect = document.getElementById('transfer-product');
+        
+        if (!searchInput) return;
+        
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase().trim();
+            
+            if (query.length < 2) {
+                resultsDiv.classList.add('hidden');
+                return;
+            }
+            
+            const matches = products.filter(p => 
+                (p.item_code && p.item_code.toLowerCase().includes(query)) ||
+                (p.description && p.description.toLowerCase().includes(query))
+            ).slice(0, 8);
+            
+            if (matches.length === 0) {
+                resultsDiv.innerHTML = '<div class="p-3 text-center text-slate-400">No products found</div>';
+                resultsDiv.classList.remove('hidden');
+                return;
+            }
+            
+            resultsDiv.innerHTML = matches.map(p => `
+                <div class="product-search-result p-2 border-b border-slate-700 hover:bg-slate-700 transition cursor-pointer" data-product-id="${p.id}" data-product-code="${p.item_code || p.id}" data-product-name="${escapeHtml(p.description)}">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <span class="font-mono text-xs text-slate-400">${escapeHtml(p.item_code || p.id)}</span>
+                            <div class="text-white text-sm">${escapeHtml(p.description)}</div>
+                        </div>
+                        <span class="text-xs bg-blue-600/30 px-2 py-0.5 rounded-full">Stock: ${p.current_qty || 0}</span>
+                    </div>
+                </div>
+            `).join('');
+            
+            resultsDiv.classList.remove('hidden');
+            
+            document.querySelectorAll('#transfer-search-results .product-search-result').forEach(el => {
+                el.addEventListener('click', () => {
+                    const productId = el.dataset.productId;
+                    const productName = el.dataset.productName;
+                    const productCode = el.dataset.productCode;
+                    searchInput.value = `${productCode} - ${productName}`;
+                    productSelect.value = productId;
+                    resultsDiv.classList.add('hidden');
+                    
+                    // Show selected product info
+                    showToast(`Selected: ${productName}`, 'info');
+                });
+            });
+        });
+        
+        document.addEventListener('click', (e) => {
+            if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) {
+                resultsDiv.classList.add('hidden');
+            }
+        });
     }
 
     async function saveProduct(event) {
@@ -790,6 +1012,7 @@
         productSelect.innerHTML = products.map(p => `<option value="${p.id}">${escapeHtml(p.description)} (${p.item_code || p.id})</option>`).join('');
         document.getElementById('transfer-qty').value = '';
         document.getElementById('transfer-reason').value = '';
+        document.getElementById('transfer-product-search').value = '';
         document.getElementById('transfer-modal').classList.remove('hidden');
     }
 
@@ -828,6 +1051,30 @@
     }
 
     // ============================================================
+    // LOCATION MODAL HANDLERS
+    // ============================================================
+    function showLocationModal() {
+        document.getElementById('location-modal').classList.remove('hidden');
+        document.getElementById('location-name').value = '';
+        document.getElementById('location-type').value = 'warehouse';
+        document.getElementById('location-address').value = '';
+    }
+
+    async function submitNewLocation() {
+        const name = document.getElementById('location-name').value.trim();
+        const type = document.getElementById('location-type').value;
+        const address = document.getElementById('location-address').value.trim();
+        
+        if (!name) {
+            showToast('Location name is required', 'error');
+            return;
+        }
+        
+        await createLocation(name, type, address);
+        document.getElementById('location-modal').classList.add('hidden');
+    }
+
+    // ============================================================
     // SWITCH ORGANISATION
     // ============================================================
     function switchOrganisation() {
@@ -858,6 +1105,8 @@
         
         await loadLocations();
         await loadInventory();
+        setupProductSearch();
+        setupTransferSearch();
     }
 
     // ============================================================
@@ -900,6 +1149,8 @@
                     
                     await loadLocations();
                     await loadInventory();
+                    setupProductSearch();
+                    setupTransferSearch();
                     return;
                 }
             }
@@ -929,6 +1180,9 @@
     document.getElementById('show-transfer-modal')?.addEventListener('click', showTransferModal);
     document.getElementById('transfer-submit')?.addEventListener('click', submitTransfer);
     document.getElementById('transfer-cancel')?.addEventListener('click', () => document.getElementById('transfer-modal')?.classList.add('hidden'));
+    document.getElementById('show-location-modal')?.addEventListener('click', showLocationModal);
+    document.getElementById('location-submit')?.addEventListener('click', submitNewLocation);
+    document.getElementById('location-cancel')?.addEventListener('click', () => document.getElementById('location-modal')?.classList.add('hidden'));
 
     // Global navigation
     (function() {
