@@ -12,152 +12,101 @@
         .product-card:hover { transform: translateY(-2px); }
         .field-hint { font-size: 0.7rem; line-height: 1.2; }
         .badge-category { background: #1e293b; }
+        .organisation-selector {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border-bottom: 1px solid #334155;
+        }
+        .org-card {
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+        .org-card:hover {
+            background: #2d3a5e;
+            transform: translateY(-1px);
+        }
+        .org-card.selected {
+            background: #3b82f6;
+            border-color: #60a5fa;
+        }
     </style>
 </head>
-<body class="text-slate-200 p-4 md:p-6">
+<body class="text-slate-200">
+
+<!-- Organisation Selection Modal (shown first) -->
+<div id="org-selection-modal" class="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
+    <div class="bg-slate-800 rounded-2xl max-w-2xl w-full p-6 border border-slate-700 shadow-2xl">
+        <div class="text-center mb-6">
+            <i class="fa-solid fa-building text-4xl text-blue-400 mb-2"></i>
+            <h2 class="text-2xl font-bold">Select Organisation</h2>
+            <p class="text-slate-400 text-sm mt-1">Choose which organisation you want to manage inventory for</p>
+        </div>
+        
+        <div id="org-list-container" class="mb-6 max-h-96 overflow-y-auto">
+            <div class="text-center py-8">
+                <div class="loading-spinner mx-auto"></div>
+                <p class="text-slate-400 mt-2">Loading your organisations...</p>
+            </div>
+        </div>
+        
+        <button id="confirm-org-btn" disabled class="w-full bg-blue-600 text-white py-3 rounded-lg font-medium transition opacity-50 cursor-not-allowed">
+            Continue to Inventory Manager
+        </button>
+        
+        <p class="text-center text-xs text-slate-500 mt-4">
+            <i class="fa-solid fa-shield-alt"></i> You can only access organisations you are a member of
+        </p>
+    </div>
+</div>
+
+<style>
+    .loading-spinner {
+        border: 2px solid #e5e7eb;
+        border-top: 2px solid #3b82f6;
+        border-radius: 50%;
+        width: 30px;
+        height: 30px;
+        animation: spin 0.6s linear infinite;
+        display: inline-block;
+    }
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    .org-card {
+        transition: all 0.2s ease;
+        cursor: pointer;
+        border: 1px solid #334155;
+    }
+    .org-card:hover {
+        background: #2d3a5e;
+        transform: translateY(-2px);
+        border-color: #3b82f6;
+    }
+    .org-card.selected {
+        background: #1e3a5f;
+        border-color: #3b82f6;
+        border-width: 2px;
+    }
+</style>
 
 <!-- Global Navigation -->
 <div id="kevs-nav-container"></div>
-<script>
-(function() {
-    const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
-    const LOGIN_URL = '/kdsiginin';
 
-    const navItems = [
-        { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy', roles: ['owner','admin','sales_rep','finance'] },
-        { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & online payments', roles: ['owner','admin','sales_rep'] },
-        { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', title: 'Order shipping, tracking & dispatch', roles: ['owner','admin','logistics'] },
-        { path: '/kdsupport',     name: 'Support',   icon: 'fa-headset', title: 'Ticket management & customer context', roles: ['owner','admin','support'] },
-        { path: '/kddashboard',   name: 'Exec',      icon: 'fa-chart-simple', title: 'Executive revenue & profit overview', roles: ['owner','admin','finance'] },
-        { path: '/kdadmin',       name: 'Inventory', icon: 'fa-boxes', title: 'Manage products, stock, bulk CSV upload', roles: ['owner','admin','inventory_manager'] },
-        { path: '/kdteam',        name: 'Team',      icon: 'fa-users', title: 'Invite & manage team members', roles: ['owner','admin'] },
-        { path: '/kdknowledge',   name: 'Knowledge', icon: 'fa-database', title: 'Manage AI knowledge base documents', roles: ['owner','admin'] }
-    ];
-
-    function getUserRole() {
-        try {
-            const role = localStorage.getItem('user_role');
-            return role || 'customer';
-        } catch(e) { return 'customer'; }
-    }
-
-    function canAccess(requiredRoles) {
-        const userRole = getUserRole();
-        return requiredRoles.includes(userRole);
-    }
-
-    function buildNavbar() {
-        const currentPath = window.location.pathname;
-        let linksHtml = '';
-        navItems.forEach(item => {
-            if (!canAccess(item.roles)) return;
-            const isActive = currentPath === item.path;
-            const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
-            linksHtml += `
-                <a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}" title="${item.title}">
-                    <i class="fa-solid ${item.icon} w-4"></i> ${item.name}
-                </a>
-            `;
-        });
-        let userName = 'User';
-        try {
-            const profileStr = localStorage.getItem('user_profile_display');
-            if (profileStr) userName = profileStr;
-        } catch(e) {}
-        return `
-            <div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40">
-                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div class="flex flex-wrap items-center justify-between py-3 gap-3">
-                        <div class="flex items-center gap-2">
-                            <i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i>
-                            <span class="text-xl font-bold tracking-tight">${APP_NAME}</span>
-                            <span class="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span>
-                        </div>
-                        <div class="hidden md:flex items-center gap-1 flex-wrap">
-                            ${linksHtml}
-                        </div>
-                        <div class="flex items-center gap-3">
-                            <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full hidden sm:inline-block">
-                                <i class="fa-regular fa-user mr-1"></i> <span id="nav-user-name">${escapeHtml(userName)}</span>
-                            </span>
-                            <button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition flex items-center gap-1">
-                                <i class="fa-solid fa-sign-out-alt"></i> <span class="hidden sm:inline">Logout</span>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="md:hidden flex overflow-x-auto pb-2 gap-1 snap-x">
-                        ${linksHtml}
-                    </div>
-                </div>
+<div class="max-w-7xl mx-auto p-4 md:p-6">
+    <!-- Current Organisation Banner -->
+    <div id="current-org-banner" class="hidden mb-4 p-3 bg-blue-900/30 rounded-lg border border-blue-700 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <i class="fa-solid fa-building text-blue-400"></i>
+            <div>
+                <p class="text-xs text-slate-400">Currently managing inventory for</p>
+                <p id="current-org-name" class="font-semibold text-white">-</p>
             </div>
-        `;
-    }
+        </div>
+        <button id="switch-org-btn" class="text-sm bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg transition">
+            <i class="fa-solid fa-arrow-right-arrow-left mr-1"></i> Switch Organisation
+        </button>
+    </div>
 
-    function escapeHtml(str) {
-        if (!str) return '';
-        return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
-    }
-
-    async function globalLogout() {
-        const token = localStorage.getItem('access_token');
-        if (token) {
-            try {
-                await fetch(`/auth/logout`, {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-                });
-            } catch(e) {}
-        }
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('user_role');
-        localStorage.removeItem('user_profile_display');
-        window.location.href = LOGIN_URL;
-    }
-
-    async function updateUserDisplay() {
-        const token = localStorage.getItem('access_token');
-        if (!token) return;
-        try {
-            const res = await fetch('/auth/me', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                const me = await res.json();
-                const contextRes = await fetch(`/support/customer-context?target_user_id=${me.user_id}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (contextRes.ok) {
-                    const context = await contextRes.json();
-                    const name = context.profile?.first_name || 'User';
-                    localStorage.setItem('user_profile_display', name);
-                    const nameSpan = document.getElementById('nav-user-name');
-                    if (nameSpan) nameSpan.innerText = name;
-                }
-            }
-        } catch(e) {}
-    }
-
-    function initNavigation() {
-        const container = document.getElementById('kevs-nav-container');
-        if (container) {
-            container.innerHTML = buildNavbar();
-            const logoutBtn = document.getElementById('global-logout-btn');
-            if (logoutBtn) logoutBtn.addEventListener('click', globalLogout);
-            updateUserDisplay();
-        }
-    }
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initNavigation);
-    } else {
-        initNavigation();
-    }
-})();
-</script>
-<!-- End Global Navigation -->
-
-<div class="max-w-7xl mx-auto">
     <div class="flex justify-between items-center mb-6 pb-4 border-b border-slate-700">
         <div>
             <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">📦 Inventory Manager (Multi‑Location)</h1>
@@ -318,14 +267,32 @@
 </div>
 
 <script>
-    // Use relative URLs for API calls
+    // ============================================================
+    // CONFIGURATION
+    // ============================================================
     const API_BASE = "";
     let token = localStorage.getItem('access_token');
     let currentUser = null;
     let allLocations = [];
     let currentLocationFilter = '';
     let products = [];
+    let selectedOrganisation = null;
+    let userOrganisations = [];
 
+    // ============================================================
+    // TOAST NOTIFICATIONS
+    // ============================================================
+    function showToast(msg, type) {
+        const toastDiv = document.createElement('div');
+        toastDiv.className = `fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} z-50 text-sm shadow-lg animate-in fade-in slide-in-from-right`;
+        toastDiv.innerText = msg;
+        document.body.appendChild(toastDiv);
+        setTimeout(() => toastDiv.remove(), 3000);
+    }
+
+    // ============================================================
+    // API CALLS WITH ORGANISATION CONTEXT
+    // ============================================================
     async function refreshToken() {
         const refresh = localStorage.getItem('refresh_token');
         if (!refresh) return false;
@@ -352,6 +319,12 @@
             options.headers['Content-Type'] = 'application/json';
         }
         if (token) options.headers['Authorization'] = `Bearer ${token}`;
+        
+        // Add selected organisation ID to headers for multi-tenant support
+        if (selectedOrganisation && selectedOrganisation.id) {
+            options.headers['X-Selected-Org-Id'] = selectedOrganisation.id;
+        }
+        
         let res = await fetch(`${API_BASE}${endpoint}`, options);
         if (res.status === 401 && retry) {
             const ok = await refreshToken();
@@ -365,9 +338,120 @@
         return res.json();
     }
 
-    async function loadLocations() {
+    // ============================================================
+    // FETCH USER'S ORGANISATIONS
+    // ============================================================
+    async function fetchUserOrganisations() {
         try {
-            // Use v2 endpoint for multi-location
+            const response = await fetch(`${API_BASE}/auth/user-organisations`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!response.ok) throw new Error('Failed to fetch organisations');
+            const data = await response.json();
+            return data.organisations || [];
+        } catch (err) {
+            console.error('Error fetching organisations:', err);
+            // Fallback: try to get from /auth/me
+            try {
+                const me = await apiCall('/auth/me');
+                if (me.org_id) {
+                    return [{ org_id: me.org_id, org_name: me.org_name || 'My Organisation', role: me.role }];
+                }
+            } catch(e) {}
+            return [];
+        }
+    }
+
+    // ============================================================
+    // RENDER ORGANISATION SELECTION
+    // ============================================================
+    function renderOrganisationSelection(organisations) {
+        const container = document.getElementById('org-list-container');
+        
+        if (!organisations || organisations.length === 0) {
+            container.innerHTML = `
+                <div class="text-center py-8">
+                    <i class="fa-solid fa-store-slash text-4xl text-red-400 mb-2"></i>
+                    <p class="text-slate-400">You are not a member of any organisation.</p>
+                    <p class="text-sm text-slate-500 mt-2">Please contact an administrator or register a new organisation.</p>
+                    <button id="goto-register" class="mt-4 bg-blue-600 px-4 py-2 rounded-lg">Register Organisation</button>
+                </div>
+            `;
+            const regBtn = document.getElementById('goto-register');
+            if (regBtn) regBtn.addEventListener('click', () => window.location.href = '/kdsiginin');
+            return;
+        }
+        
+        container.innerHTML = `
+            <div class="space-y-3">
+                ${organisations.map(org => `
+                    <div class="org-card p-4 rounded-xl" data-org-id="${org.org_id}" data-org-name="${escapeHtml(org.org_name)}" data-org-role="${org.role}">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <i class="fa-solid fa-building text-2xl ${org.role === 'owner' ? 'text-amber-400' : 'text-blue-400'}"></i>
+                                <div>
+                                    <h3 class="font-semibold text-white">${escapeHtml(org.org_name)}</h3>
+                                    <div class="flex items-center gap-2 mt-1">
+                                        <span class="text-xs px-2 py-0.5 rounded-full ${org.role === 'owner' ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-600 text-slate-300'}">
+                                            <i class="fa-${org.role === 'owner' ? 'solid fa-crown' : 'regular fa-user'} mr-1"></i>${org.role}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                            <i class="fa-regular fa-circle text-slate-500 text-xl org-radio"></i>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        
+        // Add click handlers
+        document.querySelectorAll('.org-card').forEach(card => {
+            card.addEventListener('click', () => {
+                document.querySelectorAll('.org-card').forEach(c => {
+                    c.classList.remove('selected', 'bg-blue-900/50', 'border-blue-500');
+                    const radio = c.querySelector('.org-radio');
+                    if (radio) radio.className = 'fa-regular fa-circle text-slate-500 text-xl org-radio';
+                });
+                
+                card.classList.add('selected', 'bg-blue-900/50', 'border-blue-500');
+                const radio = card.querySelector('.org-radio');
+                if (radio) radio.className = 'fa-solid fa-circle-check text-blue-400 text-xl org-radio';
+                
+                selectedOrganisation = {
+                    id: card.dataset.orgId,
+                    name: card.dataset.orgName,
+                    role: card.dataset.orgRole
+                };
+                
+                const confirmBtn = document.getElementById('confirm-org-btn');
+                confirmBtn.disabled = false;
+                confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                confirmBtn.classList.add('hover:bg-blue-700');
+            });
+        });
+    }
+    
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
+    }
+
+    // ============================================================
+    // INITIALISE ORGANISATION SELECTION
+    // ============================================================
+    async function initialiseOrganisationSelection() {
+        userOrganisations = await fetchUserOrganisations();
+        renderOrganisationSelection(userOrganisations);
+    }
+
+    // ============================================================
+    // LOAD INVENTORY WITH SELECTED ORGANISATION
+    // ============================================================
+    async function loadLocations() {
+        if (!selectedOrganisation) return;
+        
+        try {
             const locs = await apiCall('/v2/inventory/locations');
             allLocations = locs;
             const filterSelect = document.getElementById('location-filter');
@@ -376,7 +460,6 @@
             const transferTo = document.getElementById('transfer-to');
             
             if (!locs || locs.length === 0) {
-                // No locations found - show message
                 filterSelect.innerHTML = '<option value="">No locations available</option>';
                 assignSelect.innerHTML = '<option value="">Default Warehouse</option>';
                 transferFrom.innerHTML = '<option value="">No locations</option>';
@@ -401,9 +484,10 @@
     }
 
     async function loadInventory() {
+        if (!selectedOrganisation) return;
+        
         try {
             let url = '/inventory';
-            // Use v2 endpoint if filtering by location
             if (currentLocationFilter) {
                 url = `/v2/inventory?location_id=${currentLocationFilter}`;
             }
@@ -431,13 +515,10 @@
                 hazardous: 'bg-red-600/30 text-red-300'
             }[p.handling_category] || 'bg-slate-600/30';
             
-            // Handle stock display based on whether we're in filtered view or aggregated view
             let stockHtml = '';
             if (currentLocationFilter) {
-                // Filtered view: backend returns current_qty as the quantity at that location
                 stockHtml = `<div class="mt-1"><span class="text-xs bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full">Stock at this location: ${p.current_qty || 0}</span></div>`;
             } else if (p.location_stocks && Array.isArray(p.location_stocks) && p.location_stocks.length > 0) {
-                // Aggregated view with location breakdown
                 const locationNames = {};
                 allLocations.forEach(loc => { locationNames[loc.id] = loc.name; });
                 stockHtml = `<div class="text-xs text-slate-400 mt-1 space-y-1">
@@ -449,7 +530,6 @@
                     `).join('')}
                 </div>`;
             } else {
-                // Simple view: just show total stock
                 stockHtml = `<div class="mt-1"><span class="text-xs text-slate-400">Total stock: ${p.current_qty || 0}</span></div>`;
             }
             
@@ -493,8 +573,6 @@
         const handling_category = document.getElementById('handling_category').value;
         const product_group = document.getElementById('product_group').value.trim() || null;
         const image_url = document.getElementById('image_url').value.trim() || null;
-        // Note: location_id is NOT sent to the standard /inventory endpoint
-        // The backend auto-assigns to default warehouse
 
         if (!item_code || !description || isNaN(price_naira) || price_naira <= 0) {
             showToast('Item Code, Description and Price (>0) are required.', 'error');
@@ -504,23 +582,8 @@
         if (isNaN(weight_kg) || weight_kg < 0) { showToast('Weight must be ≥ 0', 'error'); return; }
         if (isNaN(size_factor) || size_factor < 1.0) { showToast('Size factor must be ≥ 1.0', 'error'); return; }
         if (cost_price_naira < 0) { showToast('Cost price must be ≥ 0', 'error'); return; }
-        if (!['standard','fragile','bulky','hazardous'].includes(handling_category)) { 
-            showToast('Handling category invalid', 'error'); 
-            return; 
-        }
 
-        const payload = { 
-            item_code, 
-            description, 
-            product_group, 
-            price_naira, 
-            current_qty, 
-            image_url, 
-            weight_kg, 
-            size_factor, 
-            handling_category, 
-            cost_price_naira 
-        };
+        const payload = { item_code, description, product_group, price_naira, current_qty, image_url, weight_kg, size_factor, handling_category, cost_price_naira };
 
         try {
             if (id) {
@@ -533,7 +596,6 @@
                 resetForm();
             }
             loadInventory();
-            // Reload locations in case a new default warehouse was created
             loadLocations();
         } catch (err) {
             showToast(`Error: ${err.message}`, 'error');
@@ -586,7 +648,7 @@
         document.getElementById('cost_price_naira').value = '0';
     }
 
-    // Bulk upload functions
+    // Bulk upload
     function parseCSV(text) {
         const rows = [];
         const lines = text.split(/\r?\n/);
@@ -618,10 +680,7 @@
     }
 
     function validateCSVData(parsedRows, headers) {
-        const requiredColumns = [
-            'description', 'price_naira', 'weight_kg', 'handling_category', 'size_factor',
-            'item_code', 'cost_price_naira', 'product_group', 'current_qty', 'image_url'
-        ];
+        const requiredColumns = ['description', 'price_naira', 'weight_kg', 'handling_category', 'size_factor', 'item_code', 'cost_price_naira', 'product_group', 'current_qty', 'image_url'];
         const missingCols = requiredColumns.filter(col => !headers.includes(col));
         if (missingCols.length) {
             return { valid: false, error: `Missing required columns: ${missingCols.join(', ')}` };
@@ -708,6 +767,8 @@
             const formData = new FormData();
             formData.append('file', file);
             const headersAuth = token ? { 'Authorization': `Bearer ${token}` } : {};
+            if (selectedOrganisation) headersAuth['X-Selected-Org-Id'] = selectedOrganisation.id;
+            
             const res = await fetch(`${API_BASE}/inventory/bulk-upload`, {
                 method: 'POST',
                 headers: headersAuth,
@@ -728,18 +789,16 @@
         }
     }
 
-    // Stock Transfer - using v2 endpoint
     async function showTransferModal() {
         if (!allLocations || allLocations.length === 0) {
             showToast('No locations available for transfer', 'error');
             return;
         }
-        // Populate product dropdown
-        const productSelect = document.getElementById('transfer-product');
         if (!products || products.length === 0) {
             showToast('No products available for transfer', 'error');
             return;
         }
+        const productSelect = document.getElementById('transfer-product');
         productSelect.innerHTML = products.map(p => `<option value="${p.id}">${escapeHtml(p.description)} (${p.item_code || p.id})</option>`).join('');
         document.getElementById('transfer-qty').value = '';
         document.getElementById('transfer-reason').value = '';
@@ -762,7 +821,6 @@
             return;
         }
         try {
-            // Use v2 endpoint for transfer
             await apiCall('/v2/inventory/transfer', {
                 method: 'POST',
                 body: JSON.stringify({
@@ -781,26 +839,82 @@
         }
     }
 
-    async function checkAdminAccess() {
+    // ============================================================
+    // SWITCH ORGANISATION
+    // ============================================================
+    function switchOrganisation() {
+        selectedOrganisation = null;
+        document.getElementById('org-selection-modal').classList.remove('hidden');
+        document.getElementById('admin-panel').classList.add('hidden');
+        document.getElementById('current-org-banner').classList.add('hidden');
+        initialiseOrganisationSelection();
+    }
+
+    // ============================================================
+    // CONFIRM ORGANISATION AND LOAD INVENTORY
+    // ============================================================
+    async function confirmOrganisationAndLoad() {
+        if (!selectedOrganisation) return;
+        
+        document.getElementById('org-selection-modal').classList.add('hidden');
+        document.getElementById('current-org-name').innerText = selectedOrganisation.name;
+        document.getElementById('current-org-banner').classList.remove('hidden');
+        document.getElementById('admin-panel').classList.remove('hidden');
+        
+        showToast(`Loading inventory for ${selectedOrganisation.name}...`, 'info');
+        
+        await loadLocations();
+        await loadInventory();
+    }
+
+    // ============================================================
+    // INITIALISE
+    // ============================================================
+    async function init() {
+        if (!token) {
+            document.getElementById('auth-check-placeholder').innerHTML = '<div class="text-amber-400"><i class="fa-regular fa-lock"></i> Please log in to access admin panel.</div><button id="goto-login" class="mt-4 bg-blue-600 px-4 py-2 rounded">Go to Login</button>';
+            document.getElementById('goto-login')?.addEventListener('click', () => window.location.href = '/kdsiginin');
+            return;
+        }
+        
         try {
+            // Verify token and get user info
             const me = await apiCall('/auth/me');
             currentUser = me;
-            const role = me.role || 'admin';
-            localStorage.setItem('user_role', role);
+            localStorage.setItem('user_role', me.role || 'admin');
+            
             document.getElementById('auth-check-placeholder').classList.add('hidden');
-            document.getElementById('admin-panel').classList.remove('hidden');
-            await loadLocations();
-            await loadInventory();
+            
+            // Show organisation selection first
+            await initialiseOrganisationSelection();
+            
+            // Check if there's a saved organisation
+            const savedOrgId = localStorage.getItem('selected_org_id');
+            if (savedOrgId && userOrganisations.length > 0) {
+                const savedOrg = userOrganisations.find(o => o.org_id === savedOrgId);
+                if (savedOrg) {
+                    selectedOrganisation = {
+                        id: savedOrg.org_id,
+                        name: savedOrg.org_name,
+                        role: savedOrg.role
+                    };
+                    // Auto-select the card
+                    const card = document.querySelector(`.org-card[data-org-id="${savedOrgId}"]`);
+                    if (card) card.click();
+                }
+            }
         } catch (err) {
-            document.getElementById('auth-check-placeholder').innerHTML = `
-                <div class="text-red-400"><i class="fa-solid fa-circle-exclamation text-2xl mb-2"></i><br>${escapeHtml(err.message)}</div>
-                <button id="retry-login" class="mt-4 bg-blue-600 px-4 py-2 rounded-lg">Go to Main App</button>
-            `;
-            document.getElementById('retry-login')?.addEventListener('click', () => { window.location.href = '/'; });
+            console.error('Auth check failed:', err);
+            document.getElementById('auth-check-placeholder').innerHTML = `<div class="text-red-400">Session invalid: ${err.message}</div><button id="relog" class="mt-3 bg-blue-600 px-4 py-2 rounded">Login</button>`;
+            document.getElementById('relog')?.addEventListener('click', () => window.location.href = '/kdsiginin');
         }
     }
 
-    // Event listeners
+    // ============================================================
+    // EVENT LISTENERS
+    // ============================================================
+    document.getElementById('confirm-org-btn')?.addEventListener('click', confirmOrganisationAndLoad);
+    document.getElementById('switch-org-btn')?.addEventListener('click', switchOrganisation);
     document.getElementById('product-form')?.addEventListener('submit', saveProduct);
     document.getElementById('cancel-edit')?.addEventListener('click', resetForm);
     document.getElementById('refresh-list')?.addEventListener('click', loadInventory);
@@ -809,30 +923,76 @@
     document.getElementById('transfer-submit')?.addEventListener('click', submitTransfer);
     document.getElementById('transfer-cancel')?.addEventListener('click', () => document.getElementById('transfer-modal')?.classList.add('hidden'));
 
-    function escapeHtml(str) {
-        if (!str) return '';
-        return String(str).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
-    }
-    
-    function showToast(msg, type) {
-        const toastDiv = document.createElement('div');
-        toastDiv.className = `fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} z-50 text-sm shadow-lg`;
-        toastDiv.innerText = msg;
-        document.body.appendChild(toastDiv);
-        setTimeout(() => toastDiv.remove(), 3000);
-    }
+    // Global navigation
+    (function() {
+        const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
+        const LOGIN_URL = '/kdsiginin';
+        const navItems = [
+            { path: '/kdbi', name: 'Dashboard', icon: 'fa-chart-line', roles: ['owner','admin','sales_rep','finance'] },
+            { path: '/kdpos', name: 'POS', icon: 'fa-cash-register', roles: ['owner','admin','sales_rep'] },
+            { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', roles: ['owner','admin','logistics'] },
+            { path: '/kdsupport', name: 'Support', icon: 'fa-headset', roles: ['owner','admin','support'] },
+            { path: '/kddashboard', name: 'Exec', icon: 'fa-chart-simple', roles: ['owner','admin','finance'] },
+            { path: '/kdadmin', name: 'Inventory', icon: 'fa-boxes', roles: ['owner','admin','inventory_manager'] },
+            { path: '/kdteam', name: 'Team', icon: 'fa-users', roles: ['owner','admin'] },
+            { path: '/kdknowledge', name: 'Knowledge', icon: 'fa-database', roles: ['owner','admin'] }
+        ];
 
-    // Initialize
-    if (token) {
-        checkAdminAccess().catch(err => {
-            console.error('Auth check failed:', err);
-            document.getElementById('auth-check-placeholder').innerHTML = '<div class="text-red-400">Session invalid. Please log in again.</div><button id="relog" class="mt-3 bg-blue-600 px-4 py-2 rounded">Login</button>';
-            document.getElementById('relog')?.addEventListener('click', () => window.location.href = '/');
-        });
-    } else {
-        document.getElementById('auth-check-placeholder').innerHTML = '<div class="text-amber-400"><i class="fa-regular fa-lock"></i> Please log in to access admin panel.</div><button id="goto-login" class="mt-4 bg-blue-600 px-4 py-2 rounded">Go to Login</button>';
-        document.getElementById('goto-login')?.addEventListener('click', () => window.location.href = '/');
-    }
+        function getUserRole() {
+            try { return localStorage.getItem('user_role') || 'customer'; } catch(e) { return 'customer'; }
+        }
+
+        function canAccess(requiredRoles) { return requiredRoles.includes(getUserRole()); }
+
+        function buildNavbar() {
+            const currentPath = window.location.pathname;
+            let linksHtml = '';
+            navItems.forEach(item => {
+                if (!canAccess(item.roles)) return;
+                const isActive = currentPath === item.path;
+                const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
+                linksHtml += `<a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}"><i class="fa-solid ${item.icon} w-4"></i> ${item.name}</a>`;
+            });
+            let userName = 'User';
+            try { userName = localStorage.getItem('user_profile_display') || 'User'; } catch(e) {}
+            return `<div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40">
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div class="flex flex-wrap items-center justify-between py-3 gap-3">
+                        <div class="flex items-center gap-2"><i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i><span class="text-xl font-bold tracking-tight">${APP_NAME}</span><span class="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span></div>
+                        <div class="hidden md:flex items-center gap-1 flex-wrap">${linksHtml}</div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full hidden sm:inline-block"><i class="fa-regular fa-user mr-1"></i> <span id="nav-user-name">${escapeHtml(userName)}</span></span>
+                            <button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition flex items-center gap-1"><i class="fa-solid fa-sign-out-alt"></i> <span class="hidden sm:inline">Logout</span></button>
+                        </div>
+                    </div>
+                    <div class="md:hidden flex overflow-x-auto pb-2 gap-1 snap-x">${linksHtml}</div>
+                </div>
+            </div>`;
+        }
+
+        async function globalLogout() {
+            const token = localStorage.getItem('access_token');
+            if (token) { try { await fetch(`/auth/logout`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } }); } catch(e) {} }
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
+            localStorage.removeItem('user_role');
+            localStorage.removeItem('user_profile_display');
+            localStorage.removeItem('selected_org_id');
+            window.location.href = LOGIN_URL;
+        }
+
+        function initNavigation() {
+            const container = document.getElementById('kevs-nav-container');
+            if (container) {
+                container.innerHTML = buildNavbar();
+                document.getElementById('global-logout-btn')?.addEventListener('click', globalLogout);
+            }
+        }
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initNavigation);
+        else initNavigation();
+    })();
+
+    init();
 </script>
 </body>
 </html>
