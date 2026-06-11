@@ -51,6 +51,7 @@
         .checkout-btn-disabled { opacity: 0.5; cursor: not-allowed; }
         .login-prompt-badge { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 9999px; padding: 0.25rem 0.75rem; font-size: 0.7rem; color: #d97706; display: inline-flex; align-items: center; gap: 0.25rem; }
         .demo-badge { background: linear-gradient(135deg, #10b981, #059669); }
+        .org-header { font-size: 0.8rem; color: #f97316; margin-left: 0.5rem; font-weight: normal; }
     </style>
 </head>
 <body class="text-gray-800">
@@ -61,6 +62,7 @@
             <div class="flex items-center gap-2">
                 <span class="text-3xl font-extrabold text-orange-500" id="store-name">Market</span>
                 <span class="text-xl font-semibold text-gray-700">Place</span>
+                <span id="org-badge" class="org-header"></span>
             </div>
             <div class="flex items-center gap-3">
                 <button id="cart-icon-btn" class="relative bg-orange-50 p-2 rounded-full hover:bg-orange-100 transition">
@@ -187,13 +189,8 @@
             <div class="text-center"><button id="toggle-auth-mode" class="text-sm text-orange-500 hover:underline">Don't have an account? Register</button></div></div></div></div>
 
     <script>
-        // ========== CONFIGURATION (Fixed API Base) ==========
-        // Backend base URL injected from parent template or environment
-        window.STORE_ORG_ID = "{{STORE_ORG_ID}}";
-        window.API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
-        
-        // Primary API_BASE for the script - uses the window variable with fallback
-        const API_BASE = window.API_BASE || "https://kevsono-kevs-digital-bos.hf.space";
+        // ========== CONFIGURATION ==========
+        const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
         
         let token = localStorage.getItem('access_token');
         let userProfile = null;
@@ -212,13 +209,33 @@
         let currentProductForModal = null;
         let isRecalcInProgress = false;
         
-        let inviteCode = window.ORG_INFO?.invite_code || localStorage.getItem('invite_code');
-        let orgId = window.ORG_INFO?.id || null;
-        let orgName = window.ORG_INFO?.name || "MarketPlace";
-        
-        document.getElementById('store-name').innerText = orgName.split(' ')[0] || "Market";
+        // Organisation tracking - these will be set after validation
+        let currentOrgId = null;
+        let currentInviteCode = null;
+        let userOrgId = null;
+        let isLoggedInFlag = false;
         
         // ========== HELPER FUNCTIONS ==========
+        function redirectToOrg(orgId) {
+            const url = new URL(window.location.href);
+            url.searchParams.set('org', orgId);
+            window.location.href = url.toString();
+        }
+        
+        function showOrgMismatchError() {
+            document.body.innerHTML = `
+                <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
+                    <div class="bg-white rounded-2xl p-8 max-w-md text-center shadow-xl">
+                        <i class="fa-solid fa-shield-haltered text-6xl text-red-500 mb-4"></i>
+                        <h1 class="text-2xl font-bold text-gray-800 mb-2">Access Denied</h1>
+                        <p class="text-gray-600 mb-4">You don't have permission to view this store.</p>
+                        <button onclick="window.location.href='/' + window.location.search" class="bg-orange-500 text-white px-6 py-2 rounded-lg hover:bg-orange-600">Go to Home</button>
+                    </div>
+                </div>
+            `;
+            throw new Error('Organisation access denied');
+        }
+        
         function setCartTotalLoading(loading) {
             const totalSpan = document.getElementById('cart-total');
             if (loading) {
@@ -256,11 +273,12 @@
             options.headers['Content-Type'] = 'application/json';
             if (token) options.headers['Authorization'] = `Bearer ${token}`;
             
+            // Use currentInviteCode or currentOrgId for public endpoints
             const isPublicEndpoint = !options.headers['Authorization'] && 
                 (endpoint.includes('/inventory/public') || endpoint === '/inventory/public-list' || endpoint === '/inventory/public-categories');
-            if (isPublicEndpoint && inviteCode && !endpoint.includes('invite_code')) {
+            if (isPublicEndpoint && currentInviteCode && !endpoint.includes('invite_code') && !endpoint.includes('org_id')) {
                 const separator = endpoint.includes('?') ? '&' : '?';
-                endpoint = `${endpoint}${separator}invite_code=${inviteCode}`;
+                endpoint = `${endpoint}${separator}invite_code=${currentInviteCode}`;
             }
             
             let res = await fetch(`${API_BASE}${endpoint}`, options);
@@ -307,10 +325,28 @@
         }
         
         function saveCart() {
-            localStorage.setItem('kevs_cart', JSON.stringify(cart));
+            // Only save cart if we have a valid org context
+            if (currentOrgId) {
+                const cartData = { items: cart, orgId: currentOrgId };
+                localStorage.setItem(`kevs_cart_${currentOrgId}`, JSON.stringify(cartData));
+            }
             updateCartUI();
         }
-        function loadCart() { const saved = localStorage.getItem('kevs_cart'); cart = saved ? JSON.parse(saved) : []; updateCartUI(); }
+        
+        function loadCart() {
+            if (currentOrgId) {
+                const saved = localStorage.getItem(`kevs_cart_${currentOrgId}`);
+                if (saved) {
+                    const cartData = JSON.parse(saved);
+                    cart = cartData.items || [];
+                } else {
+                    cart = [];
+                }
+            } else {
+                cart = [];
+            }
+            updateCartUI();
+        }
         
         function updateCartUI() {
             const subtotal = cart.reduce((s,i) => s + i.price * i.quantity, 0);
@@ -342,7 +378,7 @@
         async function addToCart(product) { 
             let existing = cart.find(i => i.id === product.id); 
             if(existing) existing.quantity++; 
-            else cart.push({ id: product.id, name: product.name, price: product.price, quantity: 1 }); 
+            else cart.push({ id: product.id, name: product.name, price: product.price, quantity: 1, org_id: currentOrgId }); 
             saveCart(); 
             if (deliveryOption === 'delivery' && deliveryAddress) {
                 await recalcDeliveryFee(true);
@@ -380,7 +416,7 @@
         }
         
         async function loadCategories() {
-            if (!inviteCode) return;
+            if (!currentInviteCode && !currentOrgId) return;
             try {
                 const data = await apiCall(`/inventory/public-categories`);
                 if (data.categories && data.categories.length) {
@@ -395,7 +431,7 @@
         }
         
         async function loadProducts() {
-            if (!inviteCode) {
+            if (!currentInviteCode && !currentOrgId) {
                 document.getElementById('products-grid').innerHTML = `<div class="col-span-full text-red-500">⚠️ Store configuration missing. Please contact support.</div>`;
                 return;
             }
@@ -631,17 +667,21 @@
             try { 
                 const me = await apiCall('/auth/me'); 
                 userProfile = me; 
+                userOrgId = me.org_id;
                 const displayName = me.first_name || me.email || 'User'; 
                 document.getElementById('user-info-dropdown').innerHTML = `<i class="fa-regular fa-user"></i> ${escapeHtml(displayName)}`; 
                 document.getElementById('logout-dropdown').classList.remove('hidden'); 
                 await loadUserLoyalty(); 
                 updateCheckoutButton();
+                return userOrgId;
             } catch(e) { 
                 token = null; 
                 userProfile = null; 
+                userOrgId = null;
                 document.getElementById('user-info-dropdown').innerHTML = 'Guest'; 
                 document.getElementById('logout-dropdown').classList.add('hidden'); 
                 updateCheckoutButton();
+                return null;
             } 
         }
         
@@ -665,6 +705,8 @@
                 showToast("Demo login successful! You can now checkout.", 'success');
                 showView('shop');
                 updateCheckoutButton();
+                // Reload page to enforce org isolation
+                window.location.reload();
             } catch(e) {
                 alert("Demo login failed: " + e.message + "\n\nPlease register for a new account.");
             }
@@ -723,6 +765,8 @@
             showToast("Logged in",'success'); 
             showView('shop'); 
             updateCheckoutButton();
+            // Reload to enforce org isolation
+            window.location.reload();
         });
         
         let chatMessagesDiv=null;
@@ -744,24 +788,84 @@
         function showToast(msg,type){ const t=document.createElement('div'); t.className=`fixed bottom-20 left-4 right-4 md:left-auto md:right-6 z-50 bg-${type==='success'?'green-600':'red-600'} text-white px-4 py-2 rounded-xl shadow-lg text-sm`; t.innerText=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),3000); }
         function escapeHtml(str){ if(!str) return ''; return str.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
         
-        (async() => {
-            if (inviteCode) localStorage.setItem('invite_code', inviteCode);
+        // ========== SECURE INITIALISATION WITH ORGANISATION ENFORCEMENT ==========
+        (async () => {
+            // Get organisation from URL
+            const urlParams = new URLSearchParams(window.location.search);
+            let urlOrgId = urlParams.get('org');
+            
+            // First, check if user is logged in
+            let loggedInOrgId = null;
+            if (token) {
+                try {
+                    const me = await apiCall('/auth/me');
+                    userProfile = me;
+                    loggedInOrgId = me.org_id;
+                    isLoggedInFlag = true;
+                    userOrgId = loggedInOrgId;
+                    // Update UI for logged-in user
+                    const displayName = me.first_name || me.email || 'User';
+                    document.getElementById('user-info-dropdown').innerHTML = `<i class="fa-regular fa-user"></i> ${escapeHtml(displayName)}`;
+                    document.getElementById('logout-dropdown').classList.remove('hidden');
+                    updateCheckoutButton();
+                } catch(e) {
+                    // Token invalid - treat as guest
+                    token = null;
+                    userProfile = null;
+                    isLoggedInFlag = false;
+                    loggedInOrgId = null;
+                }
+            }
+            
+            // Enforce organisation isolation for logged-in users
+            if (isLoggedInFlag && loggedInOrgId) {
+                if (!urlOrgId) {
+                    // No org in URL - redirect to user's own store
+                    redirectToOrg(loggedInOrgId);
+                    return;
+                }
+                if (urlOrgId !== loggedInOrgId) {
+                    console.warn(`SECURITY: User ${loggedInOrgId} attempted to access org ${urlOrgId} - redirecting`);
+                    redirectToOrg(loggedInOrgId);
+                    return;
+                }
+                // URL org matches user's org - safe to proceed
+                currentOrgId = loggedInOrgId;
+                currentInviteCode = loggedInOrgId; // Using org_id as invite_code
+                document.getElementById('org-badge').innerHTML = `<i class="fa-solid fa-building"></i> Your Store`;
+            } else {
+                // Guest mode: must have an org in the URL
+                if (!urlOrgId) {
+                    document.body.innerHTML = '<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50"><div class="bg-white rounded-2xl p-8 max-w-md text-center shadow-xl"><i class="fa-solid fa-circle-exclamation text-6xl text-orange-500 mb-4"></i><h1 class="text-2xl font-bold text-gray-800 mb-2">Missing Store Identifier</h1><p class="text-gray-600">Please use a valid store link to continue shopping.</p></div></div>';
+                    throw new Error('No organisation specified');
+                }
+                currentOrgId = urlOrgId;
+                currentInviteCode = urlOrgId; // Using org_id as invite_code
+                document.getElementById('org-badge').innerHTML = `<i class="fa-solid fa-store"></i> Guest Mode`;
+            }
+            
+            // Set org name display
+            document.getElementById('store-name').innerText = "Market";
+            
+            // Load cart for this specific organisation
             loadCart();
+            
+            // Set delivery option and load store content
             setDeliveryOpt('pickup');
-            if (token) { try { await loadUser(); } catch(e) { token = null; } }
-            updateCheckoutButton();
             await loadCategories();
             await loadProducts();
-            const urlParams = new URLSearchParams(window.location.search);
+            
+            // Handle payment success
             const paymentSuccess = urlParams.get('payment') === 'success';
             const pendingFlag = localStorage.getItem('pending_payment') === 'true';
-            if (paymentSuccess || pendingFlag) { 
-                cart = []; 
-                saveCart(); 
-                showToast("Payment successful! Your cart has been cleared.", 'success'); 
-                localStorage.removeItem('pending_payment'); 
-                if (paymentSuccess) window.history.replaceState({}, '', window.location.pathname); 
+            if (paymentSuccess || pendingFlag) {
+                cart = [];
+                saveCart();
+                showToast("Payment successful! Your cart has been cleared.", 'success');
+                localStorage.removeItem('pending_payment');
+                if (paymentSuccess) window.history.replaceState({}, '', window.location.pathname);
             }
+            
             showView('shop');
         })();
     </script>
