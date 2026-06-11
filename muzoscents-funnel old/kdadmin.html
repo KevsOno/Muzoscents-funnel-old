@@ -28,11 +28,24 @@
             background: #3b82f6;
             border-color: #60a5fa;
         }
+        .loading-spinner {
+            border: 2px solid #e5e7eb;
+            border-top: 2px solid #3b82f6;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 0.6s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body class="text-slate-200">
 
-<!-- Organisation Selection Modal (shown first) -->
+<!-- Organisation Selection Modal (shown first if no org selected) -->
 <div id="org-selection-modal" class="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
     <div class="bg-slate-800 rounded-2xl max-w-2xl w-full p-6 border border-slate-700 shadow-2xl">
         <div class="text-center mb-6">
@@ -57,37 +70,6 @@
         </p>
     </div>
 </div>
-
-<style>
-    .loading-spinner {
-        border: 2px solid #e5e7eb;
-        border-top: 2px solid #3b82f6;
-        border-radius: 50%;
-        width: 30px;
-        height: 30px;
-        animation: spin 0.6s linear infinite;
-        display: inline-block;
-    }
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-    .org-card {
-        transition: all 0.2s ease;
-        cursor: pointer;
-        border: 1px solid #334155;
-    }
-    .org-card:hover {
-        background: #2d3a5e;
-        transform: translateY(-2px);
-        border-color: #3b82f6;
-    }
-    .org-card.selected {
-        background: #1e3a5f;
-        border-color: #3b82f6;
-        border-width: 2px;
-    }
-</style>
 
 <!-- Global Navigation -->
 <div id="kevs-nav-container"></div>
@@ -268,9 +250,9 @@
 
 <script>
     // ============================================================
-    // CONFIGURATION
+    // CONFIGURATION - UPDATE THIS TO YOUR BACKEND URL
     // ============================================================
-    const API_BASE = "";
+    const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";  // YOUR BACKEND URL
     let token = localStorage.getItem('access_token');
     let currentUser = null;
     let allLocations = [];
@@ -284,7 +266,7 @@
     // ============================================================
     function showToast(msg, type) {
         const toastDiv = document.createElement('div');
-        toastDiv.className = `fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} z-50 text-sm shadow-lg animate-in fade-in slide-in-from-right`;
+        toastDiv.className = `fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white ${type === 'success' ? 'bg-green-600' : type === 'error' ? 'bg-red-600' : 'bg-blue-600'} z-50 text-sm shadow-lg animate-in fade-in slide-in-from-right`;
         toastDiv.innerText = msg;
         document.body.appendChild(toastDiv);
         setTimeout(() => toastDiv.remove(), 3000);
@@ -332,7 +314,7 @@
             throw new Error('Session expired');
         }
         if (!res.ok) {
-            const err = await res.json().catch(() => ({ detail: 'Error' }));
+            const err = await res.json().catch(() => ({ detail: 'API error' }));
             throw new Error(err.detail || 'API error');
         }
         return res.json();
@@ -365,6 +347,11 @@
     // ============================================================
     // RENDER ORGANISATION SELECTION
     // ============================================================
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
+    }
+    
     function renderOrganisationSelection(organisations) {
         const container = document.getElementById('org-list-container');
         
@@ -385,7 +372,7 @@
         container.innerHTML = `
             <div class="space-y-3">
                 ${organisations.map(org => `
-                    <div class="org-card p-4 rounded-xl" data-org-id="${org.org_id}" data-org-name="${escapeHtml(org.org_name)}" data-org-role="${org.role}">
+                    <div class="org-card p-4 rounded-xl border border-slate-600 hover:bg-slate-700 cursor-pointer transition" data-org-id="${org.org_id}" data-org-name="${escapeHtml(org.org_name)}" data-org-role="${org.role}">
                         <div class="flex items-center justify-between">
                             <div class="flex items-center gap-3">
                                 <i class="fa-solid fa-building text-2xl ${org.role === 'owner' ? 'text-amber-400' : 'text-blue-400'}"></i>
@@ -431,11 +418,6 @@
             });
         });
     }
-    
-    function escapeHtml(str) {
-        if (!str) return '';
-        return String(str).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
-    }
 
     // ============================================================
     // INITIALISE ORGANISATION SELECTION
@@ -452,7 +434,13 @@
         if (!selectedOrganisation) return;
         
         try {
-            const locs = await apiCall('/v2/inventory/locations');
+            let locs = [];
+            try {
+                locs = await apiCall('/v2/inventory/locations');
+            } catch (err) {
+                console.warn('Multi-location not enabled, using fallback');
+                locs = [{ id: 'default', name: 'Main Store', type: 'store' }];
+            }
             allLocations = locs;
             const filterSelect = document.getElementById('location-filter');
             const assignSelect = document.getElementById('location-assign');
@@ -488,7 +476,7 @@
         
         try {
             let url = '/inventory';
-            if (currentLocationFilter) {
+            if (currentLocationFilter && currentLocationFilter !== 'default') {
                 url = `/v2/inventory?location_id=${currentLocationFilter}`;
             }
             const items = await apiCall(url);
@@ -516,7 +504,7 @@
             }[p.handling_category] || 'bg-slate-600/30';
             
             let stockHtml = '';
-            if (currentLocationFilter) {
+            if (currentLocationFilter && currentLocationFilter !== 'default') {
                 stockHtml = `<div class="mt-1"><span class="text-xs bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full">Stock at this location: ${p.current_qty || 0}</span></div>`;
             } else if (p.location_stocks && Array.isArray(p.location_stocks) && p.location_stocks.length > 0) {
                 const locationNames = {};
@@ -648,7 +636,7 @@
         document.getElementById('cost_price_naira').value = '0';
     }
 
-    // Bulk upload
+    // Bulk upload functions
     function parseCSV(text) {
         const rows = [];
         const lines = text.split(/\r?\n/);
@@ -844,6 +832,7 @@
     // ============================================================
     function switchOrganisation() {
         selectedOrganisation = null;
+        localStorage.removeItem('selected_org_id');
         document.getElementById('org-selection-modal').classList.remove('hidden');
         document.getElementById('admin-panel').classList.add('hidden');
         document.getElementById('current-org-banner').classList.add('hidden');
@@ -855,6 +844,10 @@
     // ============================================================
     async function confirmOrganisationAndLoad() {
         if (!selectedOrganisation) return;
+        
+        // Save to localStorage for next visit
+        localStorage.setItem('selected_org_id', selectedOrganisation.id);
+        localStorage.setItem('selected_org_name', selectedOrganisation.name);
         
         document.getElementById('org-selection-modal').classList.add('hidden');
         document.getElementById('current-org-name').innerText = selectedOrganisation.name;
@@ -885,12 +878,12 @@
             
             document.getElementById('auth-check-placeholder').classList.add('hidden');
             
-            // Show organisation selection first
-            await initialiseOrganisationSelection();
-            
             // Check if there's a saved organisation
             const savedOrgId = localStorage.getItem('selected_org_id');
-            if (savedOrgId && userOrganisations.length > 0) {
+            
+            if (savedOrgId) {
+                // Try to validate saved org by fetching user's organisations
+                userOrganisations = await fetchUserOrganisations();
                 const savedOrg = userOrganisations.find(o => o.org_id === savedOrgId);
                 if (savedOrg) {
                     selectedOrganisation = {
@@ -898,15 +891,29 @@
                         name: savedOrg.org_name,
                         role: savedOrg.role
                     };
-                    // Auto-select the card
-                    const card = document.querySelector(`.org-card[data-org-id="${savedOrgId}"]`);
-                    if (card) card.click();
+                    // Auto-load inventory without showing modal
+                    document.getElementById('org-selection-modal').classList.add('hidden');
+                    document.getElementById('current-org-name').innerText = selectedOrganisation.name;
+                    document.getElementById('current-org-banner').classList.remove('hidden');
+                    document.getElementById('admin-panel').classList.remove('hidden');
+                    document.getElementById('auth-check-placeholder').classList.add('hidden');
+                    
+                    await loadLocations();
+                    await loadInventory();
+                    return;
                 }
             }
+            
+            // No saved org or invalid saved org - show selection modal
+            await initialiseOrganisationSelection();
+            
         } catch (err) {
             console.error('Auth check failed:', err);
             document.getElementById('auth-check-placeholder').innerHTML = `<div class="text-red-400">Session invalid: ${err.message}</div><button id="relog" class="mt-3 bg-blue-600 px-4 py-2 rounded">Login</button>`;
-            document.getElementById('relog')?.addEventListener('click', () => window.location.href = '/kdsiginin');
+            document.getElementById('relog')?.addEventListener('click', () => {
+                localStorage.clear();
+                window.location.href = '/kdsiginin';
+            });
         }
     }
 
@@ -972,12 +979,15 @@
 
         async function globalLogout() {
             const token = localStorage.getItem('access_token');
-            if (token) { try { await fetch(`/auth/logout`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } }); } catch(e) {} }
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('refresh_token');
-            localStorage.removeItem('user_role');
-            localStorage.removeItem('user_profile_display');
-            localStorage.removeItem('selected_org_id');
+            if (token) { 
+                try { 
+                    await fetch(`${API_BASE}/auth/logout`, { 
+                        method: 'POST', 
+                        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } 
+                    }); 
+                } catch(e) {} 
+            }
+            localStorage.clear();
             window.location.href = LOGIN_URL;
         }
 
