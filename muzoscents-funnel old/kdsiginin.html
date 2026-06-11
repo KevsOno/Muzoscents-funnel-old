@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         :root { --kevs-orange: #f97316; --kevs-blue: #3b82f6; }
-        body { background-color: #fef9e6; font-family: system-ui, sans-serif; }
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); font-family: system-ui, sans-serif; min-height: 100vh; }
         .loading-spinner { border: 2px solid #e5e7eb; border-top: 2px solid var(--kevs-blue); border-radius: 50%; width: 20px; height: 20px; animation: spin 0.6s linear infinite; display: inline-block; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .address-suggestions {
@@ -30,7 +30,6 @@
         .suggestion-item:hover {
             background-color: #f0f0f0;
         }
-        /* Map modal styles */
         .map-modal {
             display: none;
             position: fixed;
@@ -55,6 +54,15 @@
             width: 100%;
             border-radius: 12px;
         }
+        .password-strength {
+            height: 4px;
+            transition: all 0.3s;
+            border-radius: 2px;
+            margin-top: 4px;
+        }
+        .toast-success { background: #10b981; }
+        .toast-error { background: #ef4444; }
+        .toast-info { background: #3b82f6; }
     </style>
 </head>
 <body class="min-h-screen flex items-center justify-center p-4">
@@ -70,169 +78,243 @@
         <button id="register-tab" class="flex-1 py-2 font-medium text-gray-500">Register</button>
     </div>
 
+    <!-- LOGIN FORM -->
     <form id="login-form">
-        <input type="email" id="login-email" placeholder="Email" class="w-full mb-3 p-3 border rounded-lg" required>
+        <input type="email" id="login-email" placeholder="Email address" class="w-full mb-3 p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" required>
         <div class="relative mb-2">
-            <input type="password" id="login-password" placeholder="Password" class="w-full p-3 border rounded-lg pr-10" required>
+            <input type="password" id="login-password" placeholder="Password" class="w-full p-3 border rounded-lg pr-10 focus:ring-2 focus:ring-blue-500" required>
             <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="login-password">
                 <i class="fa-solid fa-eye"></i>
             </button>
         </div>
-        <div class="text-right mb-4"><button type="button" id="forgot-pwd-btn" class="text-xs text-blue-500 hover:underline">Forgot password?</button></div>
-        <button type="submit" class="w-full bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 font-medium transition">Login</button>
-        <div class="flex items-center my-4"><div class="flex-1 border-t border-gray-200"></div><span class="px-3 text-xs text-gray-400 uppercase">Or</span><div class="flex-1 border-t border-gray-200"></div></div>
-        <button type="button" id="demo-login-btn" class="w-full bg-emerald-600 text-white py-2.5 rounded-lg hover:bg-emerald-700 font-medium flex items-center justify-center gap-2"><i class="fa-solid fa-bolt"></i> One-Click Demo Access</button>
+        <div class="text-right mb-4">
+            <button type="button" id="forgot-pwd-btn" class="text-xs text-blue-500 hover:underline">Forgot password?</button>
+        </div>
+        <button type="submit" id="login-submit-btn" class="w-full bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 font-medium transition">Login</button>
+        <div class="flex items-center my-4">
+            <div class="flex-1 border-t border-gray-200"></div>
+            <span class="px-3 text-xs text-gray-400 uppercase">Or</span>
+            <div class="flex-1 border-t border-gray-200"></div>
+        </div>
+        <button type="button" id="demo-login-btn" class="w-full bg-emerald-600 text-white py-2.5 rounded-lg hover:bg-emerald-700 font-medium flex items-center justify-center gap-2 transition">
+            <i class="fa-solid fa-bolt"></i> One-Click Demo Access
+        </button>
     </form>
 
+    <!-- REGISTER FORM -->
     <form id="register-form" class="hidden">
+        <!-- Invite Code Section -->
         <div class="mb-3">
-            <label class="block text-xs text-gray-500 mb-1">Invite Code (if joining existing)</label>
-            <input type="text" id="reg-invite-code" placeholder="e.g., KD001" class="w-full p-3 border rounded-lg">
-            <div id="org-name-preview" class="text-xs text-gray-500 mt-1 hidden">Organisation: <span id="preview-org-name"></span></div>
+            <label class="block text-xs text-gray-500 mb-1">Invite Code <span class="text-gray-400">(if joining existing organisation)</span></label>
+            <input type="text" id="reg-invite-code" placeholder="e.g., KD001" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500">
+            <div id="org-name-preview" class="text-xs text-gray-500 mt-1 hidden">
+                <i class="fa-solid fa-building"></i> Organisation: <span id="preview-org-name"></span>
+            </div>
         </div>
+        
         <div class="relative my-2">
             <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-gray-200"></div></div>
             <div class="relative flex justify-center text-xs"><span class="bg-white px-2 text-gray-400">OR create new organisation</span></div>
         </div>
         
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">Organisation Name *</label>
-            <input type="text" id="reg-org-name" placeholder="Your Company Name" class="w-full p-3 border rounded-lg mb-2">
-        </div>
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">Location (City, Country) *</label>
-            <input type="text" id="reg-location" placeholder="e.g., Lagos, Nigeria" class="w-full p-3 border rounded-lg mb-2">
-        </div>
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">Niche / Industry *</label>
-            <input type="text" id="reg-niche" placeholder="e.g., Retail, Tech, Logistics" class="w-full p-3 border rounded-lg mb-2">
-        </div>
-        
-        <div class="relative mb-2">
-            <label class="block text-xs text-gray-500 mb-1">Store Address * (for delivery distance calculation)</label>
-            <div class="flex gap-2">
-                <div class="relative flex-1">
-                    <input type="text" id="reg-store-address" placeholder="Start typing your full address..." class="w-full p-3 border rounded-lg" autocomplete="off">
-                    <div id="address-suggestions" class="address-suggestions hidden"></div>
-                </div>
-                <button type="button" id="gps-locate-btn" class="bg-indigo-600 text-white px-3 rounded-lg hover:bg-indigo-700 transition" title="Use my current location">
-                    <i class="fa-solid fa-location-dot"></i> GPS
-                </button>
-                <button type="button" id="map-picker-btn" class="bg-emerald-600 text-white px-3 rounded-lg hover:bg-emerald-700 transition" title="Select on map">
-                    <i class="fa-solid fa-map"></i> Map
-                </button>
+        <!-- New Organisation Fields -->
+        <div id="new-org-fields">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Organisation Name <span class="text-red-500">*</span></label>
+                <input type="text" id="reg-org-name" placeholder="Your Company Name" class="w-full p-3 border rounded-lg mb-2 focus:ring-2 focus:ring-green-500">
             </div>
-            <input type="hidden" id="reg-store-latitude">
-            <input type="hidden" id="reg-store-longitude">
-            <p id="address-status" class="text-xs text-amber-600 mt-1 hidden">⚠️ Please select an address from the dropdown, use GPS, or pick on map</p>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Location (City, Country) <span class="text-red-500">*</span></label>
+                <input type="text" id="reg-location" placeholder="e.g., Lagos, Nigeria" class="w-full p-3 border rounded-lg mb-2 focus:ring-2 focus:ring-green-500">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Niche / Industry <span class="text-red-500">*</span></label>
+                <input type="text" id="reg-niche" placeholder="e.g., Retail, Tech, Logistics" class="w-full p-3 border rounded-lg mb-2 focus:ring-2 focus:ring-green-500">
+            </div>
+            
+            <!-- Store Address with enhanced features -->
+            <div class="relative mb-2">
+                <label class="block text-xs text-gray-500 mb-1">Store Address <span class="text-red-500">*</span> <span class="text-gray-400">(for delivery calculation)</span></label>
+                <div class="flex gap-2">
+                    <div class="relative flex-1">
+                        <input type="text" id="reg-store-address" placeholder="Start typing your full address..." class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500" autocomplete="off">
+                        <div id="address-suggestions" class="address-suggestions hidden"></div>
+                    </div>
+                    <button type="button" id="gps-locate-btn" class="bg-indigo-600 text-white px-3 rounded-lg hover:bg-indigo-700 transition" title="Use my current location">
+                        <i class="fa-solid fa-location-dot"></i>
+                    </button>
+                    <button type="button" id="map-picker-btn" class="bg-emerald-600 text-white px-3 rounded-lg hover:bg-emerald-700 transition" title="Select on map">
+                        <i class="fa-solid fa-map"></i>
+                    </button>
+                </div>
+                <input type="hidden" id="reg-store-latitude">
+                <input type="hidden" id="reg-store-longitude">
+                <div id="address-status" class="text-xs text-amber-600 mt-1 hidden">
+                    <i class="fa-solid fa-info-circle"></i> Please select an address from the dropdown, use GPS, or pick on map
+                </div>
+                <div id="address-confirmed" class="text-xs text-green-600 mt-1 hidden">
+                    <i class="fa-solid fa-check-circle"></i> Address validated!
+                </div>
+            </div>
+
+            <!-- Delivery Settings -->
+            <div class="grid grid-cols-2 gap-2 mb-2">
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Delivery Base Fee (₦)</label>
+                    <input type="number" id="reg-base-fee" value="300" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Per km Rate (₦)</label>
+                    <input type="number" id="reg-per-km" value="80" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500">
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2 mb-4">
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Per kg Rate (₦)</label>
+                    <input type="number" id="reg-per-kg" value="50" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Custom Subdomain <span class="text-gray-400">(optional)</span></label>
+                    <input type="text" id="reg-subdomain" placeholder="yourbrand" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500">
+                    <p class="text-xs text-gray-400 mt-1">Your store will be at: yourbrand.yourdomain.com</p>
+                </div>
+            </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-2 mb-2">
-            <div>
-                <label class="block text-xs text-gray-500 mb-1">Delivery Base Fee (₦)</label>
-                <input type="number" id="reg-base-fee" value="300" class="w-full p-3 border rounded-lg">
+        <!-- Personal Information -->
+        <div class="border-t pt-3 mt-2">
+            <p class="text-xs text-gray-500 mb-2">Your Information</p>
+            <div class="grid grid-cols-2 gap-2 mb-2">
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">First Name <span class="text-red-500">*</span></label>
+                    <input type="text" id="reg-fname" placeholder="John" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Last Name <span class="text-red-500">*</span></label>
+                    <input type="text" id="reg-lname" placeholder="Doe" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500">
+                </div>
             </div>
             <div>
-                <label class="block text-xs text-gray-500 mb-1">Per km Rate (₦)</label>
-                <input type="number" id="reg-per-km" value="80" class="w-full p-3 border rounded-lg">
+                <label class="block text-xs text-gray-500 mb-1">Phone Number <span class="text-red-500">*</span></label>
+                <input type="tel" id="reg-phone" placeholder="e.g., +2348123456789" class="w-full p-3 border rounded-lg mb-2 focus:ring-2 focus:ring-green-500">
             </div>
-        </div>
-        <div class="grid grid-cols-2 gap-2 mb-4">
             <div>
-                <label class="block text-xs text-gray-500 mb-1">Per kg Rate (₦)</label>
-                <input type="number" id="reg-per-kg" value="50" class="w-full p-3 border rounded-lg">
+                <label class="block text-xs text-gray-500 mb-1">Estimated Budget (₦)</label>
+                <input type="number" id="reg-budget" placeholder="Optional" class="w-full p-3 border rounded-lg mb-2 focus:ring-2 focus:ring-green-500">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Email <span class="text-red-500">*</span></label>
+                <input type="email" id="reg-email" placeholder="you@example.com" class="w-full mb-2 p-3 border rounded-lg focus:ring-2 focus:ring-green-500" required>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Password <span class="text-red-500">*</span></label>
+                <div class="relative mb-1">
+                    <input type="password" id="reg-password" placeholder="Create a password" class="w-full p-3 border rounded-lg pr-10 focus:ring-2 focus:ring-green-500" required>
+                    <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reg-password">
+                        <i class="fa-solid fa-eye"></i>
+                    </button>
+                </div>
+                <div id="password-strength-bar" class="password-strength w-full bg-gray-200"></div>
+                <p id="password-requirement" class="text-xs text-gray-400 mt-1">Min. 6 characters</p>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Confirm Password <span class="text-red-500">*</span></label>
+                <div class="relative mb-4">
+                    <input type="password" id="reg-confirm-password" placeholder="Confirm your password" class="w-full p-3 border rounded-lg pr-10 focus:ring-2 focus:ring-green-500" required>
+                    <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reg-confirm-password">
+                        <i class="fa-solid fa-eye"></i>
+                    </button>
+                </div>
+                <p id="password-match-status" class="text-xs hidden"></p>
             </div>
         </div>
         
-        <div class="grid grid-cols-2 gap-2 mb-2">
-            <div>
-                <label class="block text-xs text-gray-500 mb-1">First Name *</label>
-                <input type="text" id="reg-fname" placeholder="John" class="w-full p-3 border rounded-lg">
-            </div>
-            <div>
-                <label class="block text-xs text-gray-500 mb-1">Last Name *</label>
-                <input type="text" id="reg-lname" placeholder="Doe" class="w-full p-3 border rounded-lg">
-            </div>
-        </div>
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">Phone Number *</label>
-            <input type="tel" id="reg-phone" placeholder="e.g., +2348123456789" class="w-full p-3 border rounded-lg mb-2">
-        </div>
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">Estimated Budget (₦)</label>
-            <input type="number" id="reg-budget" placeholder="Optional" class="w-full p-3 border rounded-lg mb-2">
-        </div>
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">Email *</label>
-            <input type="email" id="reg-email" placeholder="Email" class="w-full mb-2 p-3 border rounded-lg" required>
-        </div>
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">Password *</label>
-            <div class="relative mb-2">
-                <input type="password" id="reg-password" placeholder="Password" class="w-full p-3 border rounded-lg pr-10" required>
-                <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reg-password">
-                    <i class="fa-solid fa-eye"></i>
-                </button>
-            </div>
-        </div>
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">Confirm Password *</label>
-            <div class="relative mb-4">
-                <input type="password" id="reg-confirm-password" placeholder="Confirm Password" class="w-full p-3 border rounded-lg pr-10" required>
-                <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reg-confirm-password">
-                    <i class="fa-solid fa-eye"></i>
-                </button>
-            </div>
-        </div>
-        <button type="submit" class="w-full bg-green-600 text-white py-2.5 rounded-lg hover:bg-green-700 transition">Register</button>
+        <button type="submit" id="register-submit-btn" class="w-full bg-green-600 text-white py-2.5 rounded-lg hover:bg-green-700 transition font-medium">Create Account</button>
+        <p class="text-xs text-center text-gray-400 mt-3">By registering, you agree to our terms and conditions.</p>
     </form>
+    
     <div id="auth-message" class="text-xs text-center mt-4 text-red-500 hidden"></div>
 </div>
 
+<!-- Map Modal -->
 <div id="map-modal" class="map-modal">
     <div class="map-container">
         <div class="flex justify-between items-center mb-3">
-            <h3 class="font-bold text-gray-800">📍 Select your store location on map</h3>
-            <button id="close-map-modal" class="text-gray-500 text-2xl">&times;</button>
+            <h3 class="font-bold text-gray-800"><i class="fa-solid fa-location-dot text-emerald-600"></i> Select your store location</h3>
+            <button id="close-map-modal" class="text-gray-500 text-2xl hover:text-gray-700">&times;</button>
         </div>
         <div id="map"></div>
-        <div class="flex justify-end mt-3 gap-2">
-            <button id="confirm-map-btn" class="bg-blue-600 text-white px-4 py-2 rounded-lg">Use this location</button>
+        <div class="flex justify-between mt-3 gap-2">
+            <p class="text-xs text-gray-500 flex-1">Click on the map to drop a pin</p>
+            <button id="confirm-map-btn" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">Use this location</button>
         </div>
-        <p class="text-xs text-gray-500 mt-2">Click on the map to drop a pin. The address will be filled automatically.</p>
     </div>
 </div>
 
 <script>
+    // ============================================================
+    // CONFIGURATION
+    // ============================================================
     const BACKEND_URL = 'https://kevsono-kevs-digital-bos.hf.space';
     const DASHBOARD_URL = '/kdbi';
-
-    // ---------- TOAST ----------
-    function showToast(msg, type='success') {
+    
+    // ============================================================
+    // TOAST NOTIFICATIONS
+    // ============================================================
+    function showToast(message, type = 'success') {
         const container = document.getElementById('toast-container');
         const toast = document.createElement('div');
-        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type==='success'?'bg-green-600':'bg-red-600'} mb-2 text-sm`;
-        toast.innerText = msg;
+        toast.className = `px-4 py-3 rounded-lg shadow-lg text-white text-sm flex items-center gap-2 animate-in fade-in slide-in-from-right duration-300`;
+        
+        let icon = '';
+        if (type === 'success') {
+            toast.classList.add('bg-green-600');
+            icon = '<i class="fa-solid fa-check-circle"></i>';
+        } else if (type === 'error') {
+            toast.classList.add('bg-red-600');
+            icon = '<i class="fa-solid fa-exclamation-circle"></i>';
+        } else {
+            toast.classList.add('bg-blue-600');
+            icon = '<i class="fa-solid fa-info-circle"></i>';
+        }
+        
+        toast.innerHTML = `${icon} <span>${message}</span>`;
         container.appendChild(toast);
-        setTimeout(() => toast.remove(), 3500);
+        
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateX(100%)';
+            setTimeout(() => toast.remove(), 300);
+        }, 4000);
     }
-
-    // ---------- API CALL ----------
-    async function apiCall(endpoint, method='GET', body=null, token=null) {
+    
+    // ============================================================
+    // API CALLS
+    // ============================================================
+    async function apiCall(endpoint, method = 'GET', body = null, token = null) {
         const headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
-        const res = await fetch(`${BACKEND_URL}${endpoint}`, {
+        
+        const response = await fetch(`${BACKEND_URL}${endpoint}`, {
             method,
             headers,
             body: body ? JSON.stringify(body) : undefined
         });
-        if (!res.ok) {
-            const err = await res.json().catch(()=>({detail:'API error'}));
-            throw new Error(err.detail || 'API error');
+        
+        if (!response.ok) {
+            let errorMessage;
+            try {
+                const error = await response.json();
+                errorMessage = error.detail || error.message || 'API error';
+            } catch {
+                errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+            }
+            throw new Error(errorMessage);
         }
-        return res.json();
+        
+        return response.json();
     }
-
+    
     async function fetchAndStoreRole(accessToken) {
         try {
             const me = await apiCall('/auth/me', 'GET', null, accessToken);
@@ -245,29 +327,103 @@
             return 'customer';
         }
     }
-
+    
+    // ============================================================
+    // AUTH FUNCTIONS
+    // ============================================================
     async function login(email, password) {
         const data = await apiCall('/auth/login', 'POST', { email, password });
         localStorage.setItem('access_token', data.access_token);
         localStorage.setItem('refresh_token', data.refresh_token);
         localStorage.setItem('user_id', data.user_id);
+        if (data.display_name) localStorage.setItem('display_name', data.display_name);
         await fetchAndStoreRole(data.access_token);
-        showToast('Login successful, redirecting...');
-        setTimeout(() => { window.location.href = DASHBOARD_URL; }, 1000);
+        showToast(`Welcome back, ${data.display_name || email.split('@')[0]}! Redirecting...`, 'success');
+        setTimeout(() => { window.location.href = DASHBOARD_URL; }, 1200);
     }
-
+    
     async function register(payload) {
-        await apiCall('/auth/register', 'POST', payload);
-        showToast('Registration successful! Please verify email (if required) and then login.');
+        const response = await fetch(`${BACKEND_URL}/auth/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Registration failed');
+        }
+        
+        const data = await response.json();
+        
+        let successMessage = 'Registration successful! ';
+        if (data.store_url) successMessage += `Your store is ready at: ${data.store_url} `;
+        successMessage += 'Please check your email and login.';
+        
+        showToast(successMessage, 'success');
+        
+        // Auto-fill login form
+        document.getElementById('login-email').value = payload.email;
         document.getElementById('login-tab').click();
+        
+        // Store info for reference
+        if (data.subdomain) localStorage.setItem('last_org_subdomain', data.subdomain);
+        if (data.invite_code) localStorage.setItem('last_invite_code', data.invite_code);
+        
+        return data;
     }
-
+    
     async function resetPassword(email) {
         await apiCall('/auth/reset-password', 'POST', { email });
-        showToast('Password reset email sent. Check your inbox.');
+        showToast('Password reset email sent! Check your inbox.', 'info');
     }
-
-    // ---------- PASSWORD TOGGLE ----------
+    
+    // ============================================================
+    // PASSWORD VALIDATION
+    // ============================================================
+    function checkPasswordStrength(password) {
+        let strength = 0;
+        if (password.length >= 6) strength++;
+        if (password.length >= 10) strength++;
+        if (/[A-Z]/.test(password)) strength++;
+        if (/[0-9]/.test(password)) strength++;
+        if (/[^A-Za-z0-9]/.test(password)) strength++;
+        
+        const bar = document.getElementById('password-strength-bar');
+        const colors = ['bg-gray-200', 'bg-red-500', 'bg-orange-500', 'bg-yellow-500', 'bg-green-500', 'bg-emerald-600'];
+        const widths = ['0%', '20%', '40%', '60%', '80%', '100%'];
+        
+        bar.className = `password-strength w-full ${colors[Math.min(strength, 5)]}`;
+        bar.style.width = widths[Math.min(strength, 5)];
+        
+        return strength;
+    }
+    
+    function checkPasswordMatch() {
+        const password = document.getElementById('reg-password').value;
+        const confirm = document.getElementById('reg-confirm-password').value;
+        const statusEl = document.getElementById('password-match-status');
+        
+        if (confirm.length > 0) {
+            if (password === confirm) {
+                statusEl.innerHTML = '<i class="fa-solid fa-check-circle"></i> Passwords match';
+                statusEl.className = 'text-xs text-green-600 mt-1';
+                statusEl.classList.remove('hidden');
+                return true;
+            } else {
+                statusEl.innerHTML = '<i class="fa-solid fa-exclamation-circle"></i> Passwords do not match';
+                statusEl.className = 'text-xs text-red-500 mt-1';
+                statusEl.classList.remove('hidden');
+                return false;
+            }
+        }
+        statusEl.classList.add('hidden');
+        return false;
+    }
+    
+    // ============================================================
+    // PASSWORD TOGGLE
+    // ============================================================
     document.querySelectorAll('.toggle-password-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const targetId = btn.getAttribute('data-target');
@@ -284,42 +440,57 @@
             }
         });
     });
-
-    // ---------- INVITE CODE ORG PREVIEW ----------
+    
+    // ============================================================
+    // INVITE CODE PREVIEW
+    // ============================================================
     let previewTimeout;
-    document.getElementById('reg-invite-code')?.addEventListener('input', async (e) => {
-        const code = e.target.value.trim();
-        const previewDiv = document.getElementById('org-name-preview');
-        const previewSpan = document.getElementById('preview-org-name');
-        if (code.length >= 3) {
-            clearTimeout(previewTimeout);
-            previewTimeout = setTimeout(async () => {
-                try {
-                    const data = await apiCall(`/public/org-info?invite_code=${code}`);
-                    previewSpan.innerText = data.org_name;
-                    previewDiv.classList.remove('hidden');
-                } catch (err) {
-                    previewDiv.classList.add('hidden');
-                }
-            }, 500);
-        } else {
-            previewDiv.classList.add('hidden');
-        }
-    });
-
-    // ---------- OSM AUTOCOMPLETE ----------
+    const inviteCodeInput = document.getElementById('reg-invite-code');
+    const orgNamePreview = document.getElementById('org-name-preview');
+    const previewOrgName = document.getElementById('preview-org-name');
+    const newOrgFields = document.getElementById('new-org-fields');
+    
+    if (inviteCodeInput) {
+        inviteCodeInput.addEventListener('input', async (e) => {
+            const code = e.target.value.trim();
+            
+            if (code.length >= 3) {
+                clearTimeout(previewTimeout);
+                previewTimeout = setTimeout(async () => {
+                    try {
+                        const data = await apiCall(`/public/org-info?invite_code=${code}`);
+                        previewOrgName.innerText = data.org_name;
+                        orgNamePreview.classList.remove('hidden');
+                        newOrgFields.style.opacity = '0.5';
+                        showToast(`Joining ${data.org_name}`, 'info');
+                    } catch (err) {
+                        orgNamePreview.classList.add('hidden');
+                        newOrgFields.style.opacity = '1';
+                    }
+                }, 500);
+            } else {
+                orgNamePreview.classList.add('hidden');
+                newOrgFields.style.opacity = '1';
+            }
+        });
+    }
+    
+    // ============================================================
+    // OSM ADDRESS AUTOCOMPLETE
+    // ============================================================
     const addressInput = document.getElementById('reg-store-address');
     const suggestionsDiv = document.getElementById('address-suggestions');
     const latInput = document.getElementById('reg-store-latitude');
     const lngInput = document.getElementById('reg-store-longitude');
     const addressStatus = document.getElementById('address-status');
+    const addressConfirmed = document.getElementById('address-confirmed');
     let debounceTimer;
-
+    
     function hideSuggestions() {
         suggestionsDiv.classList.add('hidden');
         suggestionsDiv.innerHTML = '';
     }
-
+    
     function showSuggestions(items) {
         if (!items.length) {
             hideSuggestions();
@@ -328,80 +499,89 @@
         suggestionsDiv.innerHTML = '';
         items.forEach(item => {
             const div = document.createElement('div');
-            div.className = 'suggestion-item';
+            div.className = 'suggestion-item hover:bg-gray-100 transition';
             const parts = item.display_name.split(',');
             const shortName = parts.slice(0, 3).join(',');
-            div.textContent = shortName;
+            div.innerHTML = `<i class="fa-solid fa-location-dot text-gray-400 mr-2"></i>${shortName}`;
             div.title = item.display_name;
             div.addEventListener('click', () => {
                 addressInput.value = item.display_name;
                 latInput.value = item.lat;
                 lngInput.value = item.lon;
                 addressStatus.classList.add('hidden');
+                addressConfirmed.classList.remove('hidden');
                 hideSuggestions();
             });
             suggestionsDiv.appendChild(div);
         });
         suggestionsDiv.classList.remove('hidden');
     }
-
+    
     async function fetchAddressSuggestions(query) {
         if (query.length < 3) {
             hideSuggestions();
             return;
         }
-        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=10&dedupe=1`;
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=8&dedupe=1`;
         try {
             const response = await fetch(url, {
                 headers: {
                     'Accept-Language': 'en',
-                    'User-Agent': 'KevsDigital-Registration/1.0'
+                    'User-Agent': 'KevsDigital-Registration/2.0'
                 }
             });
             const data = await response.json();
             showSuggestions(data);
         } catch (err) {
-            console.error('Nominatim fetch error:', err);
+            console.error('Nominatim error:', err);
             hideSuggestions();
         }
     }
-
-    addressInput.addEventListener('input', (e) => {
-        latInput.value = '';
-        lngInput.value = '';
-        addressStatus.classList.remove('hidden');
-        addressStatus.innerText = '⚠️ Please select an address from the dropdown, use GPS, or pick on map';
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
-            fetchAddressSuggestions(e.target.value);
-        }, 500);
-    });
-
+    
+    if (addressInput) {
+        addressInput.addEventListener('input', (e) => {
+            latInput.value = '';
+            lngInput.value = '';
+            addressConfirmed.classList.add('hidden');
+            addressStatus.classList.remove('hidden');
+            addressStatus.innerHTML = '<i class="fa-solid fa-info-circle"></i> Please select an address from the dropdown';
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                fetchAddressSuggestions(e.target.value);
+            }, 500);
+        });
+    }
+    
     document.addEventListener('click', (e) => {
-        if (!addressInput.contains(e.target) && !suggestionsDiv.contains(e.target)) {
+        if (addressInput && !addressInput.contains(e.target) && !suggestionsDiv.contains(e.target)) {
             hideSuggestions();
         }
     });
-
-    // ---------- GPS GEOLOCATION ----------
+    
+    // ============================================================
+    // GPS GEOLOCATION
+    // ============================================================
     async function useCurrentLocation() {
         if (!navigator.geolocation) {
             showToast("Geolocation not supported by your browser", 'error');
             return;
         }
-        showToast("Fetching your location...", 'success');
+        
+        showToast("Fetching your location...", 'info');
+        
         navigator.geolocation.getCurrentPosition(async (position) => {
             const { latitude, longitude } = position.coords;
             try {
                 const revUrl = `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`;
-                const resp = await fetch(revUrl, { headers: { 'User-Agent': 'KevsDigital/1.0' } });
+                const resp = await fetch(revUrl, { headers: { 'User-Agent': 'KevsDigital/2.0' } });
                 const data = await resp.json();
                 const fullAddress = data.display_name || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
                 addressInput.value = fullAddress;
                 latInput.value = latitude;
                 lngInput.value = longitude;
                 addressStatus.classList.add('hidden');
-                showToast("Address set from GPS! Please verify.", 'success');
+                addressConfirmed.classList.remove('hidden');
+                showToast("Address set from GPS!", 'success');
                 hideSuggestions();
             } catch (err) {
                 showToast("Reverse geocoding failed: " + err.message, 'error');
@@ -410,12 +590,15 @@
             showToast("GPS error: " + err.message, 'error');
         });
     }
+    
     document.getElementById('gps-locate-btn')?.addEventListener('click', useCurrentLocation);
-
-    // ---------- MAP PICKER (Leaflet + OSM) ----------
+    
+    // ============================================================
+    // MAP PICKER (Leaflet + OSM)
+    // ============================================================
     let map = null, marker = null, selectedLat = null, selectedLng = null;
     let leafletLoaded = false;
-
+    
     function loadLeaflet() {
         return new Promise((resolve) => {
             if (leafletLoaded) { resolve(); return; }
@@ -438,22 +621,23 @@
             document.head.appendChild(script);
         });
     }
-
+    
     async function openMapPicker() {
         await loadLeaflet();
         const modal = document.getElementById('map-modal');
         modal.classList.add('active');
         
-        const centerLat = selectedLat || 6.5244;
-        const centerLng = selectedLng || 3.3792;
+        const centerLat = selectedLat || (latInput.value ? parseFloat(latInput.value) : 6.5244);
+        const centerLng = selectedLng || (lngInput.value ? parseFloat(lngInput.value) : 3.3792);
+        
         if (!map) {
-            map = L.map('map').setView([centerLat, centerLng], 13);
+            map = L.map('map').setView([centerLat, centerLng], 14);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; OpenStreetMap contributors'
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> contributors'
             }).addTo(map);
             marker = L.marker([centerLat, centerLng], { draggable: true }).addTo(map);
         } else {
-            map.setView([centerLat, centerLng], 13);
+            map.setView([centerLat, centerLng], 14);
             marker.setLatLng([centerLat, centerLng]);
         }
         
@@ -469,7 +653,7 @@
             marker.setLatLng(e.latlng);
         });
     }
-
+    
     document.getElementById('map-picker-btn')?.addEventListener('click', openMapPicker);
     document.getElementById('close-map-modal')?.addEventListener('click', () => {
         document.getElementById('map-modal').classList.remove('active');
@@ -480,73 +664,138 @@
             lngInput.value = selectedLng;
             try {
                 const revUrl = `https://nominatim.openstreetmap.org/reverse?lat=${selectedLat}&lon=${selectedLng}&format=json`;
-                const resp = await fetch(revUrl, { headers: { 'User-Agent': 'KevsDigital/1.0' } });
+                const resp = await fetch(revUrl, { headers: { 'User-Agent': 'KevsDigital/2.0' } });
                 const data = await resp.json();
                 addressInput.value = data.display_name || `${selectedLat.toFixed(4)}, ${selectedLng.toFixed(4)}`;
             } catch (err) {
                 addressInput.value = `Selected location (${selectedLat.toFixed(4)}, ${selectedLng.toFixed(4)})`;
             }
             addressStatus.classList.add('hidden');
+            addressConfirmed.classList.remove('hidden');
             document.getElementById('map-modal').classList.remove('active');
             showToast("Location set from map!", 'success');
         } else {
             showToast("Please click on the map first to select a point.", 'error');
         }
     });
-
-    // ---------- ADDRESS VALIDATION FOR NEW ORG ----------
+    
+    // ============================================================
+    // ADDRESS VALIDATION
+    // ============================================================
     function isAddressValidForNewOrg() {
         const inviteCode = document.getElementById('reg-invite-code').value.trim();
         if (inviteCode) return true;
+        
         const address = addressInput.value.trim();
         const lat = latInput.value;
         const lng = lngInput.value;
+        
         if (!address) {
             addressStatus.classList.remove('hidden');
-            addressStatus.innerText = '❌ Store address is required';
+            addressStatus.innerHTML = '<i class="fa-solid fa-exclamation-triangle"></i> Store address is required';
+            addressConfirmed.classList.add('hidden');
             return false;
         }
+        
         if (!lat || !lng) {
             addressStatus.classList.remove('hidden');
-            addressStatus.innerText = '❌ Please select a valid address from dropdown, use GPS, or pick on map.';
+            addressStatus.innerHTML = '<i class="fa-solid fa-exclamation-triangle"></i> Please select an address from dropdown, use GPS, or pick on map';
+            addressConfirmed.classList.add('hidden');
             return false;
         }
+        
         addressStatus.classList.add('hidden');
+        addressConfirmed.classList.remove('hidden');
         return true;
     }
-
-    // ---------- DEMO LOGIN ----------
+    
+    // ============================================================
+    // DEMO LOGIN (Enhanced)
+    // ============================================================
     document.getElementById('demo-login-btn')?.addEventListener('click', async () => {
         const btn = document.getElementById('demo-login-btn');
-        const original = btn.innerHTML;
-        btn.innerHTML = '<i class="fa-solid fa-circle-notch animate-spin"></i> Authenticating...';
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Authenticating...';
         btn.disabled = true;
-        try {
-            const data = await apiCall('/auth/login', 'POST', { email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' });
-            localStorage.setItem('access_token', data.access_token);
-            localStorage.setItem('refresh_token', data.refresh_token);
-            localStorage.setItem('user_id', data.user_id);
-            await fetchAndStoreRole(data.access_token);
-            showToast('Demo login successful!');
-            setTimeout(() => window.location.href = DASHBOARD_URL, 1000);
-        } catch (err) {
-            showToast('Demo failed: ' + err.message, 'error');
-            btn.innerHTML = original;
+        
+        // Multiple demo account attempts
+        const demoAccounts = [
+            { email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' },
+            { email: 'demo@kevsdigital.com', password: 'demo123' },
+            { email: 'guest@kevsdigital.com', password: 'Guest2024!' }
+        ];
+        
+        let lastError = null;
+        let success = false;
+        
+        for (const creds of demoAccounts) {
+            try {
+                const data = await apiCall('/auth/login', 'POST', creds);
+                localStorage.setItem('access_token', data.access_token);
+                localStorage.setItem('refresh_token', data.refresh_token);
+                localStorage.setItem('user_id', data.user_id);
+                await fetchAndStoreRole(data.access_token);
+                showToast('Demo access granted! Welcome to Kevs Digital.', 'success');
+                success = true;
+                break;
+            } catch (err) {
+                lastError = err;
+                console.log(`Demo attempt failed for ${creds.email}:`, err.message);
+                continue;
+            }
+        }
+        
+        if (success) {
+            setTimeout(() => { window.location.href = DASHBOARD_URL; }, 1200);
+        } else {
+            showToast('Demo login failed. Please register for access.', 'error');
+            btn.innerHTML = originalHtml;
             btn.disabled = false;
         }
     });
-
-    // ---------- LOGIN SUBMIT ----------
+    
+    // ============================================================
+    // LOGIN SUBMIT
+    // ============================================================
     document.getElementById('login-form')?.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const email = document.getElementById('login-email').value;
-        const pwd = document.getElementById('login-password').value;
-        try { await login(email, pwd); } catch (err) { showToast(err.message, 'error'); }
+        const submitBtn = document.getElementById('login-submit-btn');
+        const originalText = submitBtn.innerText;
+        
+        submitBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Logging in...';
+        submitBtn.disabled = true;
+        
+        const email = document.getElementById('login-email').value.trim();
+        const password = document.getElementById('login-password').value;
+        
+        if (!email || !password) {
+            showToast('Please enter both email and password', 'error');
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+            return;
+        }
+        
+        try {
+            await login(email, password);
+        } catch (err) {
+            showToast(err.message, 'error');
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+        }
     });
-
-    // ---------- REGISTER SUBMIT ----------
+    
+    // ============================================================
+    // REGISTER SUBMIT (Enhanced)
+    // ============================================================
     document.getElementById('register-form')?.addEventListener('submit', async (e) => {
         e.preventDefault();
+        const submitBtn = document.getElementById('register-submit-btn');
+        const originalText = submitBtn.innerText;
+        
+        submitBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Creating account...';
+        submitBtn.disabled = true;
+        
+        // Get all values
         const inviteCode = document.getElementById('reg-invite-code').value.trim();
         const orgName = document.getElementById('reg-org-name').value.trim();
         const location = document.getElementById('reg-location').value.trim();
@@ -560,35 +809,73 @@
         const lastName = document.getElementById('reg-lname').value.trim();
         const phone = document.getElementById('reg-phone').value.trim();
         const email = document.getElementById('reg-email').value.trim();
-        const password = document.getElementById('reg-password').value.trim();
-        const confirmPassword = document.getElementById('reg-confirm-password').value.trim();
+        const password = document.getElementById('reg-password').value;
+        const confirmPassword = document.getElementById('reg-confirm-password').value;
+        const customSubdomain = document.getElementById('reg-subdomain').value.trim();
         const latitude = latInput.value ? parseFloat(latInput.value) : null;
         const longitude = lngInput.value ? parseFloat(lngInput.value) : null;
-
-        if (!email || !password) { showToast('Email and password are required', 'error'); return; }
-        if (password !== confirmPassword) { showToast('Passwords do not match!', 'error'); return; }
-        if (!firstName || !lastName || !phone) { showToast('First name, last name, and phone number are required', 'error'); return; }
-
-        if (!inviteCode) {
-            if (!orgName || !location || !niche || !storeAddress) {
-                showToast('When creating a new organisation, please fill organisation name, location, niche, and store address.', 'error');
-                return;
-            }
-            if (!isAddressValidForNewOrg()) {
-                showToast('Please select a valid store address from dropdown, use GPS, or pick on map.', 'error');
-                return;
-            }
+        
+        // Validation
+        if (!email || !password) {
+            showToast('Email and password are required', 'error');
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+            return;
         }
-
+        
+        if (password !== confirmPassword) {
+            showToast('Passwords do not match!', 'error');
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+            return;
+        }
+        
+        if (password.length < 6) {
+            showToast('Password must be at least 6 characters', 'error');
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+            return;
+        }
+        
+        if (!firstName || !lastName) {
+            showToast('First name and last name are required', 'error');
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+            return;
+        }
+        
+        if (!phone) {
+            showToast('Phone number is required', 'error');
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+            return;
+        }
+        
+        // Build payload
         const payload = {
-            email, password,
+            email,
+            password,
             first_name: firstName,
             last_name: lastName,
             phone: phone
         };
+        
         if (inviteCode) {
             payload.invite_code = inviteCode;
         } else {
+            if (!orgName || !location || !niche || !storeAddress) {
+                showToast('Please fill organisation name, location, niche, and store address', 'error');
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+                return;
+            }
+            
+            if (!isAddressValidForNewOrg()) {
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+                return;
+            }
+            
             payload.org_name = orgName;
             payload.location = location;
             payload.niche = niche;
@@ -597,38 +884,106 @@
             payload.delivery_base_fee = baseFee;
             payload.delivery_per_km_rate = perKm;
             payload.delivery_per_kg_rate = perKg;
+            
             if (latitude && longitude) {
                 payload.store_latitude = latitude;
                 payload.store_longitude = longitude;
             }
+            
+            if (customSubdomain) {
+                payload.custom_subdomain = customSubdomain.toLowerCase().replace(/[^a-z0-9-]/g, '');
+            }
         }
+        
         try {
             await register(payload);
-        } catch (err) { showToast(err.message, 'error'); }
+        } catch (err) {
+            showToast(err.message, 'error');
+        } finally {
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+        }
     });
-
-    // ---------- FORGOT PASSWORD ----------
+    
+    // ============================================================
+    // FORGOT PASSWORD
+    // ============================================================
     document.getElementById('forgot-pwd-btn')?.addEventListener('click', async () => {
         const email = document.getElementById('login-email').value;
-        if (!email) { showToast('Enter your email first', 'error'); return; }
-        try { await resetPassword(email); } catch (err) { showToast(err.message, 'error'); }
+        if (!email) {
+            showToast('Please enter your email address first', 'error');
+            return;
+        }
+        
+        const confirm = window.confirm(`Send password reset link to ${email}?`);
+        if (!confirm) return;
+        
+        try {
+            await resetPassword(email);
+        } catch (err) {
+            showToast(err.message, 'error');
+        }
     });
-
-    // ---------- TAB SWITCHING ----------
-    document.getElementById('login-tab')?.addEventListener('click', () => {
-        document.getElementById('login-form').classList.remove('hidden');
-        document.getElementById('register-form').classList.add('hidden');
-        document.getElementById('login-tab').classList.add('border-blue-600', 'text-blue-600');
-        document.getElementById('register-tab').classList.remove('border-blue-600', 'text-blue-600');
-        document.getElementById('register-tab').classList.add('text-gray-500');
+    
+    // ============================================================
+    // PASSWORD VALIDATION LISTENERS
+    // ============================================================
+    const regPassword = document.getElementById('reg-password');
+    const regConfirm = document.getElementById('reg-confirm-password');
+    
+    if (regPassword) {
+        regPassword.addEventListener('input', () => {
+            checkPasswordStrength(regPassword.value);
+            checkPasswordMatch();
+        });
+    }
+    
+    if (regConfirm) {
+        regConfirm.addEventListener('input', checkPasswordMatch);
+    }
+    
+    // ============================================================
+    // TAB SWITCHING
+    // ============================================================
+    const loginTab = document.getElementById('login-tab');
+    const registerTab = document.getElementById('register-tab');
+    const loginForm = document.getElementById('login-form');
+    const registerForm = document.getElementById('register-form');
+    
+    loginTab?.addEventListener('click', () => {
+        loginForm.classList.remove('hidden');
+        registerForm.classList.add('hidden');
+        loginTab.classList.add('border-blue-600', 'text-blue-600');
+        loginTab.classList.remove('text-gray-500');
+        registerTab.classList.remove('border-blue-600', 'text-blue-600');
+        registerTab.classList.add('text-gray-500');
     });
-    document.getElementById('register-tab')?.addEventListener('click', () => {
-        document.getElementById('login-form').classList.add('hidden');
-        document.getElementById('register-form').classList.remove('hidden');
-        document.getElementById('register-tab').classList.add('border-blue-600', 'text-blue-600');
-        document.getElementById('login-tab').classList.remove('border-blue-600', 'text-blue-600');
-        document.getElementById('login-tab').classList.add('text-gray-500');
+    
+    registerTab?.addEventListener('click', () => {
+        loginForm.classList.add('hidden');
+        registerForm.classList.remove('hidden');
+        registerTab.classList.add('border-blue-600', 'text-blue-600');
+        registerTab.classList.remove('text-gray-500');
+        loginTab.classList.remove('border-blue-600', 'text-blue-600');
+        loginTab.classList.add('text-gray-500');
     });
+    
+    // ============================================================
+    // AUTO-FILL FROM URL PARAMETERS
+    // ============================================================
+    const urlParams = new URLSearchParams(window.location.search);
+    const inviteParam = urlParams.get('invite');
+    if (inviteParam && inviteCodeInput) {
+        inviteCodeInput.value = inviteParam;
+        inviteCodeInput.dispatchEvent(new Event('input'));
+    }
+    
+    const emailParam = urlParams.get('email');
+    if (emailParam) {
+        document.getElementById('login-email').value = emailParam;
+    }
+    
+    console.log('✅ Kevs Digital Sign In page loaded successfully');
 </script>
 </body>
 </html>
