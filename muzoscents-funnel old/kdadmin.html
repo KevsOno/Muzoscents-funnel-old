@@ -53,7 +53,7 @@
 </head>
 <body class="text-slate-200">
 
-<!-- Organisation Selection Modal (shown first if no org selected) -->
+<!-- Organisation Selection Modal -->
 <div id="org-selection-modal" class="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
     <div class="bg-slate-800 rounded-2xl max-w-2xl w-full p-6 border border-slate-700 shadow-2xl">
         <div class="text-center mb-6">
@@ -61,18 +61,15 @@
             <h2 class="text-2xl font-bold">Select Organisation</h2>
             <p class="text-slate-400 text-sm mt-1">Choose which organisation you want to manage inventory for</p>
         </div>
-        
         <div id="org-list-container" class="mb-6 max-h-96 overflow-y-auto">
             <div class="text-center py-8">
                 <div class="loading-spinner mx-auto"></div>
                 <p class="text-slate-400 mt-2">Loading your organisations...</p>
             </div>
         </div>
-        
         <button id="confirm-org-btn" disabled class="w-full bg-blue-600 text-white py-3 rounded-lg font-medium transition opacity-50 cursor-not-allowed">
             Continue to Inventory Manager
         </button>
-        
         <p class="text-center text-xs text-slate-500 mt-4">
             <i class="fa-solid fa-shield-alt"></i> You can only access organisations you are a member of
         </p>
@@ -125,7 +122,7 @@
             </div>
         </div>
 
-        <!-- Product Search Section (NEW) -->
+        <!-- Product Search Section -->
         <div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-slate-700 shadow-xl">
             <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fa-solid fa-magnifying-glass text-green-400"></i> Search Products</h2>
             <div class="relative">
@@ -223,7 +220,7 @@
             <div id="bulk-upload-status" class="mt-3 text-sm"></div>
         </div>
         
-        <!-- Product List -->
+        <!-- Product List - SECURE VERSION (no JSON injection) -->
         <div>
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-boxes text-blue-400"></i> All Inventory Items</h2>
@@ -235,7 +232,7 @@
     </div>
 </div>
 
-<!-- Stock Transfer Modal (with search) -->
+<!-- Stock Transfer Modal -->
 <div id="transfer-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
     <div class="bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-slate-600">
         <h3 class="text-xl font-bold mb-4">Transfer Stock</h3>
@@ -274,7 +271,7 @@
     </div>
 </div>
 
-<!-- Add/Edit Location Modal -->
+<!-- Location Modal -->
 <div id="location-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
     <div class="bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-slate-600">
         <h3 class="text-xl font-bold mb-4" id="location-modal-title">Add New Location</h3>
@@ -310,9 +307,9 @@
 
 <script>
     // ============================================================
-    // CONFIGURATION - UPDATE THIS TO YOUR BACKEND URL
+    // CONFIGURATION
     // ============================================================
-    const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";  // YOUR BACKEND URL
+    const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
     let token = localStorage.getItem('access_token');
     let currentUser = null;
     let allLocations = [];
@@ -322,18 +319,30 @@
     let userOrganisations = [];
 
     // ============================================================
-    // TOAST NOTIFICATIONS
+    // UTILITIES
     // ============================================================
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str).replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        }).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function(c) {
+            return c;
+        });
+    }
+
     function showToast(msg, type) {
         const toastDiv = document.createElement('div');
-        toastDiv.className = `fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white ${type === 'success' ? 'bg-green-600' : type === 'error' ? 'bg-red-600' : 'bg-blue-600'} z-50 text-sm shadow-lg animate-in fade-in slide-in-from-right`;
+        toastDiv.className = `fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white ${type === 'success' ? 'bg-green-600' : type === 'error' ? 'bg-red-600' : 'bg-blue-600'} z-50 text-sm shadow-lg`;
         toastDiv.innerText = msg;
         document.body.appendChild(toastDiv);
         setTimeout(() => toastDiv.remove(), 3000);
     }
 
     // ============================================================
-    // API CALLS WITH ORGANISATION CONTEXT
+    // API CALL WITH TENANT ISOLATION (FIXED)
     // ============================================================
     async function refreshToken() {
         const refresh = localStorage.getItem('refresh_token');
@@ -362,9 +371,10 @@
         }
         if (token) options.headers['Authorization'] = `Bearer ${token}`;
         
-        // Add selected organisation ID to headers for multi-tenant support
-        if (selectedOrganisation && selectedOrganisation.id) {
-            options.headers['X-Selected-Org-Id'] = selectedOrganisation.id;
+        // CRITICAL FIX: Pass selected organisation ID for multi-tenant isolation
+        const orgId = selectedOrganisation ? selectedOrganisation.id : localStorage.getItem('selected_org_id');
+        if (orgId) {
+            options.headers['X-Selected-Org-Id'] = orgId;
         }
         
         let res = await fetch(`${API_BASE}${endpoint}`, options);
@@ -381,29 +391,7 @@
     }
 
     // ============================================================
-    // LOCATION MANAGEMENT (NEW)
-    // ============================================================
-    async function createLocation(name, type, address) {
-        try {
-            const result = await apiCall('/v2/inventory/locations', {
-                method: 'POST',
-                body: JSON.stringify({
-                    name: name,
-                    type: type,
-                    address: address || null
-                })
-            });
-            showToast(`Location "${name}" created successfully!`, 'success');
-            await loadLocations(); // Refresh locations list
-            return result;
-        } catch (err) {
-            showToast(`Failed to create location: ${err.message}`, 'error');
-            throw err;
-        }
-    }
-
-    // ============================================================
-    // FETCH USER'S ORGANISATIONS
+    // ORGANISATION MANAGEMENT
     // ============================================================
     async function fetchUserOrganisations() {
         try {
@@ -415,7 +403,6 @@
             return data.organisations || [];
         } catch (err) {
             console.error('Error fetching organisations:', err);
-            // Fallback: try to get from /auth/me
             try {
                 const me = await apiCall('/auth/me');
                 if (me.org_id) {
@@ -426,14 +413,6 @@
         }
     }
 
-    // ============================================================
-    // RENDER ORGANISATION SELECTION
-    // ============================================================
-    function escapeHtml(str) {
-        if (!str) return '';
-        return String(str).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
-    }
-    
     function renderOrganisationSelection(organisations) {
         const container = document.getElementById('org-list-container');
         
@@ -474,7 +453,6 @@
             </div>
         `;
         
-        // Add click handlers
         document.querySelectorAll('.org-card').forEach(card => {
             card.addEventListener('click', () => {
                 document.querySelectorAll('.org-card').forEach(c => {
@@ -502,16 +480,27 @@
     }
 
     // ============================================================
-    // INITIALISE ORGANISATION SELECTION
+    // LOCATION MANAGEMENT
     // ============================================================
-    async function initialiseOrganisationSelection() {
-        userOrganisations = await fetchUserOrganisations();
-        renderOrganisationSelection(userOrganisations);
+    async function createLocation(name, type, address) {
+        try {
+            const result = await apiCall('/v2/inventory/locations', {
+                method: 'POST',
+                body: JSON.stringify({
+                    name: name,
+                    type: type,
+                    address: address || null
+                })
+            });
+            showToast(`Location "${name}" created successfully!`, 'success');
+            await loadLocations();
+            return result;
+        } catch (err) {
+            showToast(`Failed to create location: ${err.message}`, 'error');
+            throw err;
+        }
     }
 
-    // ============================================================
-    // LOAD INVENTORY WITH SELECTED ORGANISATION
-    // ============================================================
     async function loadLocations() {
         if (!selectedOrganisation) return;
         
@@ -529,7 +518,6 @@
             const transferFrom = document.getElementById('transfer-from');
             const transferTo = document.getElementById('transfer-to');
             
-            // Update locations list in modal
             const locationsListDiv = document.getElementById('locations-list');
             if (locationsListDiv && locs.length) {
                 locationsListDiv.innerHTML = locs.map(l => `
@@ -564,6 +552,9 @@
         }
     }
 
+    // ============================================================
+    // INVENTORY MANAGEMENT (SECURE RENDER)
+    // ============================================================
     async function loadInventory() {
         if (!selectedOrganisation) return;
         
@@ -574,21 +565,27 @@
             }
             const items = await apiCall(url);
             products = items;
-            renderProducts(items);
+            renderProductsSecure(items);
         } catch (err) {
             console.error('Error loading inventory:', err);
-            document.getElementById('products-grid').innerHTML = `<div class="col-span-full text-center py-8 text-red-400">❌ Failed to load inventory: ${err.message}</div>`;
+            document.getElementById('products-grid').innerHTML = `<div class="col-span-full text-center py-8 text-red-400">❌ Failed to load inventory: ${escapeHtml(err.message)}</div>`;
         }
     }
 
-    function renderProducts(items) {
+    // SECURE RENDER FUNCTION - No JSON string injection, uses DOM manipulation
+    function renderProductsSecure(items) {
         const container = document.getElementById('products-grid');
         if (!items || items.length === 0) {
             container.innerHTML = '<div class="col-span-full text-center py-8 text-slate-400">📭 No products found. Add your first product above.</div>';
             return;
         }
         
-        container.innerHTML = items.map(p => {
+        container.innerHTML = '';
+        
+        items.forEach(p => {
+            const card = document.createElement('div');
+            card.className = 'product-card bg-slate-800/60 border border-slate-700 rounded-xl p-4 shadow-sm';
+            
             const handlingClass = {
                 standard: 'bg-slate-600/30 text-slate-300',
                 fragile: 'bg-yellow-600/30 text-yellow-300',
@@ -614,8 +611,7 @@
                 stockHtml = `<div class="mt-1"><span class="text-xs text-slate-400">Total stock: ${p.current_qty || 0}</span></div>`;
             }
             
-            return `
-            <div class="product-card bg-slate-800/60 border border-slate-700 rounded-xl p-4 shadow-sm">
+            card.innerHTML = `
                 <div class="flex justify-between items-start">
                     <div class="flex-1">
                         <h3 class="font-bold text-white text-base truncate" title="${escapeHtml(p.description)}">${escapeHtml(p.description)}</h3>
@@ -628,148 +624,29 @@
                             <span class="inline-flex items-center gap-1"><i class="fa-solid fa-weight-hanging"></i> ${p.weight_kg || 0} kg</span>
                             <span class="inline-flex items-center gap-1"><i class="fa-solid fa-arrow-up-wide-short"></i> SF: ${p.size_factor ?? 1.0}</span>
                             <span class="inline-flex items-center gap-1"><i class="fa-solid fa-tag"></i> Cost: ₦${(p.cost_price_naira || 0).toLocaleString()}</span>
-                            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full ${handlingClass}"><i class="fa-regular fa-box"></i> ${p.handling_category || 'standard'}</span>
+                            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full ${handlingClass}"><i class="fa-regular fa-box"></i> ${escapeHtml(p.handling_category || 'standard')}</span>
                         </div>
                         ${p.product_group ? `<p class="text-xs text-slate-400 mt-1"><i class="fa-regular fa-folder-open mr-1"></i> ${escapeHtml(p.product_group)}</p>` : ''}
                     </div>
                     <div class="flex gap-2">
-                        <button onclick="editProduct(${p.id})" class="text-blue-400 hover:text-blue-300 transition"><i class="fa-regular fa-pen-to-square"></i></button>
-                        <button onclick="deleteProduct(${p.id})" class="text-red-400 hover:text-red-300 transition"><i class="fa-regular fa-trash-can"></i></button>
+                        <button class="text-blue-400 hover:text-blue-300 transition edit-product-btn" data-id="${p.id}"><i class="fa-regular fa-pen-to-square"></i></button>
+                        <button class="text-red-400 hover:text-red-300 transition delete-product-btn" data-id="${p.id}"><i class="fa-regular fa-trash-can"></i></button>
                     </div>
                 </div>
-            </div>
-        `}).join('');
-    }
-
-    // ============================================================
-    // PRODUCT SEARCH FUNCTIONALITY
-    // ============================================================
-    function setupProductSearch() {
-        const searchInput = document.getElementById('product-search-input');
-        const resultsDiv = document.getElementById('product-search-results');
-        
-        if (!searchInput) return;
-        
-        searchInput.addEventListener('input', (e) => {
-            const query = e.target.value.toLowerCase().trim();
+            `;
             
-            if (query.length < 2) {
-                resultsDiv.classList.add('hidden');
-                return;
-            }
+            const editBtn = card.querySelector('.edit-product-btn');
+            const deleteBtn = card.querySelector('.delete-product-btn');
+            if (editBtn) editBtn.addEventListener('click', () => editProduct(p.id));
+            if (deleteBtn) deleteBtn.addEventListener('click', () => deleteProduct(p.id));
             
-            const matches = products.filter(p => 
-                (p.item_code && p.item_code.toLowerCase().includes(query)) ||
-                (p.description && p.description.toLowerCase().includes(query)) ||
-                (p.product_group && p.product_group.toLowerCase().includes(query))
-            ).slice(0, 10); // Limit to 10 results
-            
-            if (matches.length === 0) {
-                resultsDiv.innerHTML = '<div class="p-3 text-center text-slate-400">No products found</div>';
-                resultsDiv.classList.remove('hidden');
-                return;
-            }
-            
-            resultsDiv.innerHTML = matches.map(p => `
-                <div class="product-search-result p-3 border-b border-slate-700 hover:bg-slate-700 transition" data-product-id="${p.id}">
-                    <div class="font-medium text-white">${escapeHtml(p.description)}</div>
-                    <div class="flex gap-3 text-xs text-slate-400 mt-1">
-                        <span><i class="fa-solid fa-barcode"></i> ${escapeHtml(p.item_code || p.id)}</span>
-                        <span><i class="fa-solid fa-tag"></i> ₦${(p.price_naira || 0).toLocaleString()}</span>
-                        ${p.product_group ? `<span><i class="fa-regular fa-folder"></i> ${escapeHtml(p.product_group)}</span>` : ''}
-                    </div>
-                </div>
-            `).join('');
-            
-            resultsDiv.classList.remove('hidden');
-            
-            // Add click handlers to search results
-            document.querySelectorAll('#product-search-results .product-search-result').forEach(el => {
-                el.addEventListener('click', () => {
-                    const productId = el.dataset.productId;
-                    const product = products.find(p => p.id == productId);
-                    if (product) {
-                        editProduct(productId);
-                        searchInput.value = '';
-                        resultsDiv.classList.add('hidden');
-                    }
-                });
-            });
-        });
-        
-        // Hide results when clicking outside
-        document.addEventListener('click', (e) => {
-            if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) {
-                resultsDiv.classList.add('hidden');
-            }
+            container.appendChild(card);
         });
     }
 
     // ============================================================
-    // TRANSFER MODAL WITH SEARCH
+    // PRODUCT CRUD
     // ============================================================
-    function setupTransferSearch() {
-        const searchInput = document.getElementById('transfer-product-search');
-        const resultsDiv = document.getElementById('transfer-search-results');
-        const productSelect = document.getElementById('transfer-product');
-        
-        if (!searchInput) return;
-        
-        searchInput.addEventListener('input', (e) => {
-            const query = e.target.value.toLowerCase().trim();
-            
-            if (query.length < 2) {
-                resultsDiv.classList.add('hidden');
-                return;
-            }
-            
-            const matches = products.filter(p => 
-                (p.item_code && p.item_code.toLowerCase().includes(query)) ||
-                (p.description && p.description.toLowerCase().includes(query))
-            ).slice(0, 8);
-            
-            if (matches.length === 0) {
-                resultsDiv.innerHTML = '<div class="p-3 text-center text-slate-400">No products found</div>';
-                resultsDiv.classList.remove('hidden');
-                return;
-            }
-            
-            resultsDiv.innerHTML = matches.map(p => `
-                <div class="product-search-result p-2 border-b border-slate-700 hover:bg-slate-700 transition cursor-pointer" data-product-id="${p.id}" data-product-code="${p.item_code || p.id}" data-product-name="${escapeHtml(p.description)}">
-                    <div class="flex justify-between items-center">
-                        <div>
-                            <span class="font-mono text-xs text-slate-400">${escapeHtml(p.item_code || p.id)}</span>
-                            <div class="text-white text-sm">${escapeHtml(p.description)}</div>
-                        </div>
-                        <span class="text-xs bg-blue-600/30 px-2 py-0.5 rounded-full">Stock: ${p.current_qty || 0}</span>
-                    </div>
-                </div>
-            `).join('');
-            
-            resultsDiv.classList.remove('hidden');
-            
-            document.querySelectorAll('#transfer-search-results .product-search-result').forEach(el => {
-                el.addEventListener('click', () => {
-                    const productId = el.dataset.productId;
-                    const productName = el.dataset.productName;
-                    const productCode = el.dataset.productCode;
-                    searchInput.value = `${productCode} - ${productName}`;
-                    productSelect.value = productId;
-                    resultsDiv.classList.add('hidden');
-                    
-                    // Show selected product info
-                    showToast(`Selected: ${productName}`, 'info');
-                });
-            });
-        });
-        
-        document.addEventListener('click', (e) => {
-            if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) {
-                resultsDiv.classList.add('hidden');
-            }
-        });
-    }
-
     async function saveProduct(event) {
         event.preventDefault();
         const id = document.getElementById('edit-id').value;
@@ -858,20 +735,27 @@
         document.getElementById('cost_price_naira').value = '0';
     }
 
-    // Bulk upload functions
+    // ============================================================
+    // BULK CSV UPLOAD (FULL VERSION)
+    // ============================================================
     function parseCSV(text) {
         const rows = [];
         const lines = text.split(/\r?\n/);
         let inQuote = false;
         let currentRow = [];
         let currentField = '';
+        
         for (let line of lines) {
             if (line.trim() === '' && currentRow.length === 0) continue;
             for (let i = 0; i < line.length; i++) {
                 const ch = line[i];
                 if (ch === '"') {
-                    if (inQuote && line[i+1] === '"') { currentField += '"'; i++; }
-                    else inQuote = !inQuote;
+                    if (inQuote && line[i+1] === '"') { 
+                        currentField += '"'; 
+                        i++; 
+                    } else {
+                        inQuote = !inQuote;
+                    }
                 } else if (ch === ',' && !inQuote) {
                     currentRow.push(currentField);
                     currentField = '';
@@ -895,6 +779,7 @@
         if (missingCols.length) {
             return { valid: false, error: `Missing required columns: ${missingCols.join(', ')}` };
         }
+        
         const idx = {};
         requiredColumns.forEach(col => { idx[col] = headers.indexOf(col); });
         
@@ -905,6 +790,7 @@
                 errors.push(`Row ${rowNum+1}: has fewer columns than headers.`);
                 continue;
             }
+            
             const getVal = (col) => row[idx[col]]?.trim() || '';
             
             const description = getVal('description');
@@ -941,6 +827,7 @@
             
             if (errors.length > 10) break;
         }
+        
         if (errors.length) return { valid: false, error: `Validation errors:\n${errors.slice(0, 15).join('\n')}${errors.length > 15 ? `\n... and ${errors.length-15} more` : ''}` };
         return { valid: true, error: null };
     }
@@ -949,6 +836,7 @@
         const fileInput = document.getElementById('bulk-csv-file');
         const statusDiv = document.getElementById('bulk-upload-status');
         const file = fileInput.files[0];
+        
         if (!file) {
             statusDiv.innerHTML = '<span class="text-red-400"><i class="fa-solid fa-circle-exclamation mr-1"></i> Please select a CSV file.</span>';
             return;
@@ -957,17 +845,22 @@
             statusDiv.innerHTML = '<span class="text-red-400"><i class="fa-solid fa-circle-exclamation mr-1"></i> Only CSV files allowed.</span>';
             return;
         }
+        
         statusDiv.innerHTML = '<span class="text-blue-400"><i class="fa-solid fa-spinner fa-pulse"></i> Reading & validating CSV...</span>';
+        
         try {
             const fileText = await file.text();
             const parsedRows = parseCSV(fileText);
             if (parsedRows.length < 2) throw new Error('CSV must contain header row and at least one data row.');
+            
             const headers = parsedRows[0].map(h => h.trim().toLowerCase());
             const validation = validateCSVData(parsedRows, headers);
+            
             if (!validation.valid) {
                 statusDiv.innerHTML = `<span class="text-red-400"><i class="fa-solid fa-triangle-exclamation mr-1"></i> CSV validation failed:<br><pre class="text-xs bg-slate-950 p-2 mt-1 rounded overflow-auto max-h-64">${escapeHtml(validation.error)}</pre></span>`;
                 return;
             }
+            
             statusDiv.innerHTML = '<span class="text-blue-400"><i class="fa-solid fa-cloud-upload-alt"></i> Valid CSV! Uploading to server...</span>';
             const uploadBtn = document.getElementById('bulk-upload-btn');
             uploadBtn.disabled = true;
@@ -976,8 +869,10 @@
             
             const formData = new FormData();
             formData.append('file', file);
+            
             const headersAuth = token ? { 'Authorization': `Bearer ${token}` } : {};
-            if (selectedOrganisation) headersAuth['X-Selected-Org-Id'] = selectedOrganisation.id;
+            const orgId = selectedOrganisation ? selectedOrganisation.id : localStorage.getItem('selected_org_id');
+            if (orgId) headersAuth['X-Selected-Org-Id'] = orgId;
             
             const res = await fetch(`${API_BASE}/inventory/bulk-upload`, {
                 method: 'POST',
@@ -986,6 +881,7 @@
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.detail || 'Upload failed');
+            
             statusDiv.innerHTML = `<span class="text-green-400"><i class="fa-solid fa-check-circle mr-1"></i> ${data.message} (${(data.inserted || 0) + (data.updated || 0)} products processed)</span>`;
             fileInput.value = '';
             loadInventory();
@@ -993,13 +889,76 @@
             uploadBtn.innerHTML = originalText;
             setTimeout(() => { if (statusDiv.innerHTML.includes('processed')) statusDiv.innerHTML = ''; }, 5000);
         } catch (err) {
-            statusDiv.innerHTML = `<span class="text-red-400"><i class="fa-solid fa-circle-exclamation mr-1"></i> Error: ${err.message}</span>`;
+            statusDiv.innerHTML = `<span class="text-red-400"><i class="fa-solid fa-circle-exclamation mr-1"></i> Error: ${escapeHtml(err.message)}</span>`;
             document.getElementById('bulk-upload-btn').disabled = false;
             document.getElementById('bulk-upload-btn').innerHTML = '<i class="fa-solid fa-cloud-upload-alt"></i> Validate & Upload';
         }
     }
 
-    async function showTransferModal() {
+    // ============================================================
+    // TRANSFER FUNCTIONS
+    // ============================================================
+    function setupTransferSearch() {
+        const searchInput = document.getElementById('transfer-product-search');
+        const resultsDiv = document.getElementById('transfer-search-results');
+        const productSelect = document.getElementById('transfer-product');
+        
+        if (!searchInput) return;
+        
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase().trim();
+            
+            if (query.length < 2) {
+                resultsDiv.classList.add('hidden');
+                return;
+            }
+            
+            const matches = products.filter(p => 
+                (p.item_code && p.item_code.toLowerCase().includes(query)) ||
+                (p.description && p.description.toLowerCase().includes(query))
+            ).slice(0, 8);
+            
+            if (matches.length === 0) {
+                resultsDiv.innerHTML = '<div class="p-3 text-center text-slate-400">No products found</div>';
+                resultsDiv.classList.remove('hidden');
+                return;
+            }
+            
+            resultsDiv.innerHTML = matches.map(p => `
+                <div class="product-search-result p-2 border-b border-slate-700 hover:bg-slate-700 transition cursor-pointer" data-product-id="${p.id}" data-product-code="${escapeHtml(p.item_code || p.id)}" data-product-name="${escapeHtml(p.description)}">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <span class="font-mono text-xs text-slate-400">${escapeHtml(p.item_code || p.id)}</span>
+                            <div class="text-white text-sm">${escapeHtml(p.description)}</div>
+                        </div>
+                        <span class="text-xs bg-blue-600/30 px-2 py-0.5 rounded-full">Stock: ${p.current_qty || 0}</span>
+                    </div>
+                </div>
+            `).join('');
+            
+            resultsDiv.classList.remove('hidden');
+            
+            document.querySelectorAll('#transfer-search-results .product-search-result').forEach(el => {
+                el.addEventListener('click', () => {
+                    const productId = el.dataset.productId;
+                    const productName = el.dataset.productName;
+                    const productCode = el.dataset.productCode;
+                    searchInput.value = `${productCode} - ${productName}`;
+                    productSelect.value = productId;
+                    resultsDiv.classList.add('hidden');
+                    showToast(`Selected: ${productName}`, 'info');
+                });
+            });
+        });
+        
+        document.addEventListener('click', (e) => {
+            if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) {
+                resultsDiv.classList.add('hidden');
+            }
+        });
+    }
+
+    function showTransferModal() {
         if (!allLocations || allLocations.length === 0) {
             showToast('No locations available for transfer', 'error');
             return;
@@ -1009,7 +968,7 @@
             return;
         }
         const productSelect = document.getElementById('transfer-product');
-        productSelect.innerHTML = products.map(p => `<option value="${p.id}">${escapeHtml(p.description)} (${p.item_code || p.id})</option>`).join('');
+        productSelect.innerHTML = products.map(p => `<option value="${p.id}">${escapeHtml(p.description)} (${escapeHtml(p.item_code || p.id)})</option>`).join('');
         document.getElementById('transfer-qty').value = '';
         document.getElementById('transfer-reason').value = '';
         document.getElementById('transfer-product-search').value = '';
@@ -1050,9 +1009,6 @@
         }
     }
 
-    // ============================================================
-    // LOCATION MODAL HANDLERS
-    // ============================================================
     function showLocationModal() {
         document.getElementById('location-modal').classList.remove('hidden');
         document.getElementById('location-name').value = '';
@@ -1075,24 +1031,21 @@
     }
 
     // ============================================================
-    // SWITCH ORGANISATION
+    // ORGANISATION SWITCHING
     // ============================================================
     function switchOrganisation() {
         selectedOrganisation = null;
         localStorage.removeItem('selected_org_id');
+        localStorage.removeItem('selected_org_name');
         document.getElementById('org-selection-modal').classList.remove('hidden');
         document.getElementById('admin-panel').classList.add('hidden');
         document.getElementById('current-org-banner').classList.add('hidden');
         initialiseOrganisationSelection();
     }
 
-    // ============================================================
-    // CONFIRM ORGANISATION AND LOAD INVENTORY
-    // ============================================================
     async function confirmOrganisationAndLoad() {
         if (!selectedOrganisation) return;
         
-        // Save to localStorage for next visit
         localStorage.setItem('selected_org_id', selectedOrganisation.id);
         localStorage.setItem('selected_org_name', selectedOrganisation.name);
         
@@ -1109,82 +1062,73 @@
         setupTransferSearch();
     }
 
-    // ============================================================
-    // INITIALISE
-    // ============================================================
-    async function init() {
-        if (!token) {
-            document.getElementById('auth-check-placeholder').innerHTML = '<div class="text-amber-400"><i class="fa-regular fa-lock"></i> Please log in to access admin panel.</div><button id="goto-login" class="mt-4 bg-blue-600 px-4 py-2 rounded">Go to Login</button>';
-            document.getElementById('goto-login')?.addEventListener('click', () => window.location.href = '/kdsiginin');
-            return;
-        }
+    function setupProductSearch() {
+        const searchInput = document.getElementById('product-search-input');
+        const resultsDiv = document.getElementById('product-search-results');
         
-        try {
-            // Verify token and get user info
-            const me = await apiCall('/auth/me');
-            currentUser = me;
-            localStorage.setItem('user_role', me.role || 'admin');
+        if (!searchInput) return;
+        
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase().trim();
             
-            document.getElementById('auth-check-placeholder').classList.add('hidden');
-            
-            // Check if there's a saved organisation
-            const savedOrgId = localStorage.getItem('selected_org_id');
-            
-            if (savedOrgId) {
-                // Try to validate saved org by fetching user's organisations
-                userOrganisations = await fetchUserOrganisations();
-                const savedOrg = userOrganisations.find(o => o.org_id === savedOrgId);
-                if (savedOrg) {
-                    selectedOrganisation = {
-                        id: savedOrg.org_id,
-                        name: savedOrg.org_name,
-                        role: savedOrg.role
-                    };
-                    // Auto-load inventory without showing modal
-                    document.getElementById('org-selection-modal').classList.add('hidden');
-                    document.getElementById('current-org-name').innerText = selectedOrganisation.name;
-                    document.getElementById('current-org-banner').classList.remove('hidden');
-                    document.getElementById('admin-panel').classList.remove('hidden');
-                    document.getElementById('auth-check-placeholder').classList.add('hidden');
-                    
-                    await loadLocations();
-                    await loadInventory();
-                    setupProductSearch();
-                    setupTransferSearch();
-                    return;
-                }
+            if (query.length < 2) {
+                resultsDiv.classList.add('hidden');
+                return;
             }
             
-            // No saved org or invalid saved org - show selection modal
-            await initialiseOrganisationSelection();
+            const matches = products.filter(p => 
+                (p.item_code && p.item_code.toLowerCase().includes(query)) ||
+                (p.description && p.description.toLowerCase().includes(query)) ||
+                (p.product_group && p.product_group.toLowerCase().includes(query))
+            ).slice(0, 10);
             
-        } catch (err) {
-            console.error('Auth check failed:', err);
-            document.getElementById('auth-check-placeholder').innerHTML = `<div class="text-red-400">Session invalid: ${err.message}</div><button id="relog" class="mt-3 bg-blue-600 px-4 py-2 rounded">Login</button>`;
-            document.getElementById('relog')?.addEventListener('click', () => {
-                localStorage.clear();
-                window.location.href = '/kdsiginin';
+            if (matches.length === 0) {
+                resultsDiv.innerHTML = '<div class="p-3 text-center text-slate-400">No products found</div>';
+                resultsDiv.classList.remove('hidden');
+                return;
+            }
+            
+            resultsDiv.innerHTML = matches.map(p => `
+                <div class="product-search-result p-3 border-b border-slate-700 hover:bg-slate-700 transition" data-product-id="${p.id}">
+                    <div class="font-medium text-white">${escapeHtml(p.description)}</div>
+                    <div class="flex gap-3 text-xs text-slate-400 mt-1">
+                        <span><i class="fa-solid fa-barcode"></i> ${escapeHtml(p.item_code || p.id)}</span>
+                        <span><i class="fa-solid fa-tag"></i> ₦${(p.price_naira || 0).toLocaleString()}</span>
+                        ${p.product_group ? `<span><i class="fa-regular fa-folder"></i> ${escapeHtml(p.product_group)}</span>` : ''}
+                    </div>
+                </div>
+            `).join('');
+            
+            resultsDiv.classList.remove('hidden');
+            
+            document.querySelectorAll('#product-search-results .product-search-result').forEach(el => {
+                el.addEventListener('click', () => {
+                    const productId = el.dataset.productId;
+                    const product = products.find(p => p.id == productId);
+                    if (product) {
+                        editProduct(productId);
+                        searchInput.value = '';
+                        resultsDiv.classList.add('hidden');
+                    }
+                });
             });
-        }
+        });
+        
+        document.addEventListener('click', (e) => {
+            if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) {
+                resultsDiv.classList.add('hidden');
+            }
+        });
+    }
+
+    async function initialiseOrganisationSelection() {
+        userOrganisations = await fetchUserOrganisations();
+        renderOrganisationSelection(userOrganisations);
     }
 
     // ============================================================
-    // EVENT LISTENERS
+    // NAVIGATION BUILDER (FULL)
     // ============================================================
-    document.getElementById('confirm-org-btn')?.addEventListener('click', confirmOrganisationAndLoad);
-    document.getElementById('switch-org-btn')?.addEventListener('click', switchOrganisation);
-    document.getElementById('product-form')?.addEventListener('submit', saveProduct);
-    document.getElementById('cancel-edit')?.addEventListener('click', resetForm);
-    document.getElementById('refresh-list')?.addEventListener('click', loadInventory);
-    document.getElementById('bulk-upload-btn')?.addEventListener('click', bulkUploadWithValidation);
-    document.getElementById('show-transfer-modal')?.addEventListener('click', showTransferModal);
-    document.getElementById('transfer-submit')?.addEventListener('click', submitTransfer);
-    document.getElementById('transfer-cancel')?.addEventListener('click', () => document.getElementById('transfer-modal')?.classList.add('hidden'));
-    document.getElementById('show-location-modal')?.addEventListener('click', showLocationModal);
-    document.getElementById('location-submit')?.addEventListener('click', submitNewLocation);
-    document.getElementById('location-cancel')?.addEventListener('click', () => document.getElementById('location-modal')?.classList.add('hidden'));
-
-    // Global navigation
     (function() {
         const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
         const LOGIN_URL = '/kdsiginin';
@@ -1255,6 +1199,75 @@
         if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initNavigation);
         else initNavigation();
     })();
+
+    // ============================================================
+    // INITIALISATION
+    // ============================================================
+    async function init() {
+        if (!token) {
+            document.getElementById('auth-check-placeholder').innerHTML = '<div class="text-amber-400"><i class="fa-regular fa-lock"></i> Please log in to access admin panel.</div><button id="goto-login" class="mt-4 bg-blue-600 px-4 py-2 rounded">Go to Login</button>';
+            document.getElementById('goto-login')?.addEventListener('click', () => window.location.href = '/kdsiginin');
+            return;
+        }
+        
+        try {
+            const me = await apiCall('/auth/me');
+            currentUser = me;
+            localStorage.setItem('user_role', me.role || 'admin');
+            
+            document.getElementById('auth-check-placeholder').classList.add('hidden');
+            
+            const savedOrgId = localStorage.getItem('selected_org_id');
+            
+            if (savedOrgId) {
+                userOrganisations = await fetchUserOrganisations();
+                const savedOrg = userOrganisations.find(o => o.org_id === savedOrgId);
+                if (savedOrg) {
+                    selectedOrganisation = {
+                        id: savedOrg.org_id,
+                        name: savedOrg.org_name,
+                        role: savedOrg.role
+                    };
+                    document.getElementById('org-selection-modal').classList.add('hidden');
+                    document.getElementById('current-org-name').innerText = selectedOrganisation.name;
+                    document.getElementById('current-org-banner').classList.remove('hidden');
+                    document.getElementById('admin-panel').classList.remove('hidden');
+                    
+                    await loadLocations();
+                    await loadInventory();
+                    setupProductSearch();
+                    setupTransferSearch();
+                    return;
+                }
+            }
+            
+            await initialiseOrganisationSelection();
+            
+        } catch (err) {
+            console.error('Auth check failed:', err);
+            document.getElementById('auth-check-placeholder').innerHTML = `<div class="text-red-400">Session invalid: ${escapeHtml(err.message)}</div><button id="relog" class="mt-3 bg-blue-600 px-4 py-2 rounded">Login</button>`;
+            document.getElementById('relog')?.addEventListener('click', () => {
+                localStorage.clear();
+                window.location.href = '/kdsiginin';
+            });
+        }
+    }
+
+    // ============================================================
+    // EVENT LISTENERS
+    // ============================================================
+    document.getElementById('confirm-org-btn')?.addEventListener('click', confirmOrganisationAndLoad);
+    document.getElementById('switch-org-btn')?.addEventListener('click', switchOrganisation);
+    document.getElementById('product-form')?.addEventListener('submit', saveProduct);
+    document.getElementById('cancel-edit')?.addEventListener('click', resetForm);
+    document.getElementById('refresh-list')?.addEventListener('click', loadInventory);
+    document.getElementById('bulk-upload-btn')?.addEventListener('click', bulkUploadWithValidation);
+    document.getElementById('show-transfer-modal')?.addEventListener('click', showTransferModal);
+    document.getElementById('transfer-submit')?.addEventListener('click', submitTransfer);
+    document.getElementById('transfer-cancel')?.addEventListener('click', () => document.getElementById('transfer-modal')?.classList.add('hidden'));
+    document.getElementById('show-location-modal')?.addEventListener('click', showLocationModal);
+    document.getElementById('location-submit')?.addEventListener('click', submitNewLocation);
+    document.getElementById('location-cancel')?.addEventListener('click', () => document.getElementById('location-modal')?.classList.add('hidden'));
 
     init();
 </script>
