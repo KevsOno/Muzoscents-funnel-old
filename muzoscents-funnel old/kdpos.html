@@ -320,37 +320,40 @@
         setTimeout(() => toast.remove(), 3800);
     }
 
-    async function refreshToken() {
-        const refresh = localStorage.getItem('refresh_token');
-        if (!refresh) return false;
-        try {
-            const res = await fetch(`${BACKEND}/auth/refresh`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ refresh_token: refresh })
-            });
-            if (res.ok) {
-                const { access_token, refresh_token } = await res.json();
-                localStorage.setItem('access_token', access_token);
-                localStorage.setItem('refresh_token', refresh_token);
-                token = access_token;
-                return true;
-            }
-        } catch (e) { }
-        return false;
-    }
-
-    async function call(endpoint, method = 'GET', body = null, retry = true) {
+    // -------- FIXED apiCall with TENANT SCOPE FILTER (X-Selected-Org-Id) --------
+    async function apiCall(endpoint, method = 'GET', body = null, retry = true) {
         const headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
+        
+        // 🔥 FIX: Inject selected organization ID for multi-tenant isolation (fixes kdfulfillment.html bug)
+        const selectedOrgId = localStorage.getItem('selected_org_id');
+        if (selectedOrgId) {
+            headers['X-Selected-Org-Id'] = selectedOrgId;
+        }
+        
         let res = await fetch(`${BACKEND}${endpoint}`, {
             method,
             headers,
             body: body ? JSON.stringify(body) : undefined
         });
         if (res.status === 401 && retry) {
-            const ok = await refreshToken();
-            if (ok) return call(endpoint, method, body, false);
+            const refresh = localStorage.getItem('refresh_token');
+            if (refresh) {
+                try {
+                    const refreshRes = await fetch(`${BACKEND}/auth/refresh`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ refresh_token: refresh })
+                    });
+                    if (refreshRes.ok) {
+                        const { access_token, refresh_token } = await refreshRes.json();
+                        localStorage.setItem('access_token', access_token);
+                        localStorage.setItem('refresh_token', refresh_token);
+                        token = access_token;
+                        return apiCall(endpoint, method, body, false);
+                    }
+                } catch(e) {}
+            }
             showLoginModal();
             throw new Error('Session expired');
         }
@@ -366,7 +369,7 @@
 
     async function loadProducts() {
         try {
-            const data = await call('/inventory');
+            const data = await apiCall('/inventory');
             products = data;
             renderProductGrid();
         } catch (err) {
@@ -378,7 +381,7 @@
 
     async function loadCustomers() {
         try {
-            const data = await call('/organisations/me/users');
+            const data = await apiCall('/organisations/me/users');
             allCustomers = data.users || [];
         } catch (err) {
             console.warn('Failed to load customers:', err);
@@ -414,7 +417,6 @@
                 </div>
             `;
         }).join('');
-        // attach click handlers
         document.querySelectorAll('.customer-suggestion').forEach(el => {
             el.addEventListener('click', () => {
                 const userId = el.dataset.userId;
@@ -442,7 +444,6 @@
         state.customerName = name;
         state.customerPhone = phone;
         state.customerEmail = email;
-        // update UI fields
         customerNameInput.value = name;
         customerPhoneInput.value = phone;
         customerEmailInput.value = email;
@@ -457,7 +458,7 @@
             pointsRedeemSection.classList.add('hidden');
         }
         showToast(`Customer selected: ${name} (${points} points)`, 'success');
-        renderActiveCart(); // ensures points discount UI updates
+        renderActiveCart();
     }
 
     function getDisplaySku(product) {
@@ -477,6 +478,7 @@
         });
     }
 
+    // 🔥 FIXED: No JSON inside HTML attributes — safe programmatic rendering (eliminates XSS & parsing crash)
     function renderProductGrid() {
         const filtered = filterProducts();
         if (!productContainer) return;
@@ -486,21 +488,25 @@
             return;
         }
         emptyMsgDiv.classList.add('hidden');
-        productContainer.innerHTML = filtered.map(p => {
+        // Build DOM elements safely instead of using raw JSON in attributes
+        productContainer.innerHTML = '';
+        filtered.forEach(p => {
             const skuDisplay = getDisplaySku(p);
             const stock = p.current_qty ?? 0;
             const price = p.price_naira ?? 0;
             const descSafe = escapeHtml(p.description || 'Unnamed product');
-            return `
-                <button onclick="addToCart(${p.id}, '${descSafe}', ${price}, ${stock}, '${escapeHtml(skuDisplay)}')" 
-                        class="product-card bg-gray-50 p-3 rounded-xl text-left hover:bg-blue-50 border border-gray-200 transition shadow-sm">
-                    <div class="font-semibold text-gray-800">${descSafe}</div>
-                    <div class="text-xs text-gray-500 font-mono mt-0.5">📟 ${escapeHtml(skuDisplay)}</div>
-                    <div class="text-md font-bold text-blue-700 mt-1">₦${price.toLocaleString()}</div>
-                    <div class="text-xs text-gray-500 mt-1">📦 Stock: ${stock}</div>
-                </button>
+            const card = document.createElement('button');
+            card.className = 'product-card bg-gray-50 p-3 rounded-xl text-left hover:bg-blue-50 border border-gray-200 transition shadow-sm';
+            card.innerHTML = `
+                <div class="font-semibold text-gray-800">${descSafe}</div>
+                <div class="text-xs text-gray-500 font-mono mt-0.5">📟 ${escapeHtml(skuDisplay)}</div>
+                <div class="text-md font-bold text-blue-700 mt-1">₦${price.toLocaleString()}</div>
+                <div class="text-xs text-gray-500 mt-1">📦 Stock: ${stock}</div>
             `;
-        }).join('');
+            // Attach click handler directly referencing product object (safe)
+            card.onclick = () => addToCart(p.id, p.description || 'Product', price, stock, skuDisplay);
+            productContainer.appendChild(card);
+        });
     }
 
     function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, function(m) { if (m === '&') return '&amp;'; if (m === '<') return '&lt;'; if (m === '>') return '&gt;'; return m; }); }
@@ -525,7 +531,6 @@
             tab1Btn.classList.add('tab-inactive');
             tab1Btn.classList.remove('tab-active');
         }
-        // Update loyalty UI
         if (state.loyaltyUserId && state.pointsBalance > 0) {
             customerInfoDiv.classList.remove('hidden');
             customerNameDisplay.innerText = state.customerName || 'Customer';
@@ -561,9 +566,8 @@
         });
         let finalTotal = subtotal;
         if (pointsRedeemed > 0) {
-            const discount = pointsRedeemed; // 1 pt = ₦1
+            const discount = pointsRedeemed;
             if (discount > finalTotal) {
-                // cannot discount more than total
                 state.pointsRedeemed = Math.min(finalTotal, pointsRedeemed);
                 finalTotal = 0;
             } else {
@@ -639,14 +643,13 @@
             return;
         }
         try {
-            // Call backend to redeem points (adds credit to user's account)
-            await call('/loyalty/redeem', 'POST', { points: pointsToRedeem });
+            await apiCall('/loyalty/redeem', 'POST', { points: pointsToRedeem });
             state.pointsRedeemed = (state.pointsRedeemed || 0) + pointsToRedeem;
             state.pointsBalance -= pointsToRedeem;
             redeemPointsInput.value = '';
             renderActiveCart();
             showToast(`✅ ${pointsToRedeem} points redeemed – ₦${pointsToRedeem} off this order!`, 'success');
-            syncUIWithActiveTab(); // refresh points display
+            syncUIWithActiveTab();
         } catch (err) {
             showToast(`Redemption failed: ${err.message}`, 'error');
         }
@@ -664,22 +667,18 @@
         const customerPhone = state.customerPhone.trim() || null;
         let customerEmail = state.customerEmail.trim() || null;
         const pointsRedeemed = state.pointsRedeemed || 0;
-
         if (paymentMethod !== 'cash' && !customerEmail) {
             showToast('📧 Email is required for card/transfer payments', 'error');
             return;
         }
-        
         const itemsPayload = cart.map(i => ({ inventory_id: i.id, quantity: i.qty }));
         const returnUrl = window.location.href.split('?')[0];
         const callback_url = `${returnUrl}?payment=success`;
-
         checkoutBtn.disabled = true;
         checkoutBtn.innerText = 'Processing...';
-
         try {
             if (paymentMethod === 'cash') {
-                const result = await call('/pos/terminal/checkout', 'POST', {
+                const result = await apiCall('/pos/terminal/checkout', 'POST', {
                     items: itemsPayload,
                     payment_method: 'cash',
                     customer_name: customerName,
@@ -688,20 +687,17 @@
                     points_redeemed: pointsRedeemed
                 });
                 showToast(`✅ Sale complete! Receipt: ${result.receipt_number || 'OK'}`, 'success');
-                // Reset cart and loyalty for this tab
                 state.cart = [];
                 state.pointsRedeemed = 0;
                 if (state.loyaltyUserId) {
-                    // refresh points balance (backend awards points automatically)
-                    await loadCustomers(); // reload customer data
+                    await loadCustomers();
                     const updated = allCustomers.find(c => c.id === state.loyaltyUserId);
                     if (updated) state.pointsBalance = updated.loyalty_points || 0;
                 }
                 syncUIWithActiveTab();
                 await loadProducts();
-            } 
-            else {
-                const payload = {
+            } else {
+                const result = await apiCall('/pos/checkout', 'POST', {
                     items: itemsPayload,
                     customer_name: customerName,
                     customer_email: customerEmail,
@@ -709,30 +705,20 @@
                     payment_method: paymentMethod,
                     callback_url: callback_url,
                     points_redeemed: pointsRedeemed
-                };
-                const result = await call('/pos/checkout', 'POST', payload);
+                });
                 if (result.payment_url) {
                     localStorage.setItem('pending_payment', 'true');
                     localStorage.setItem('pending_payment_tab', activeTab.toString());
-                    localStorage.setItem('pending_tab_cart_snapshot', JSON.stringify(cart));
                     localStorage.setItem('pending_points_redeemed', pointsRedeemed.toString());
                     window.location.href = result.payment_url;
                 } else {
-                    throw new Error('Payment initiation failed: no payment URL');
+                    throw new Error('Payment initiation failed');
                 }
             }
         } catch (err) {
             showToast(`❌ Checkout failed: ${err.message}`, 'error');
-        } finally {
-            if (paymentMethod === 'cash') {
-                checkoutBtn.disabled = false;
-                checkoutBtn.innerText = '✅ Complete Sale';
-            } else {
-                if (err) {
-                    checkoutBtn.disabled = false;
-                    checkoutBtn.innerText = '✅ Complete Sale';
-                }
-            }
+            checkoutBtn.disabled = false;
+            checkoutBtn.innerText = '✅ Complete Sale';
         }
     }
 
@@ -740,10 +726,8 @@
         const urlParams = new URLSearchParams(window.location.search);
         const paymentSuccess = urlParams.get('payment') === 'success';
         const wasPending = localStorage.getItem('pending_payment') === 'true';
-        
         if (paymentSuccess && wasPending) {
-            const pendingTabRaw = localStorage.getItem('pending_payment_tab');
-            const pendingTab = pendingTabRaw ? parseInt(pendingTabRaw, 10) : null;
+            const pendingTab = parseInt(localStorage.getItem('pending_payment_tab') || '1', 10);
             const pointsRedeemed = parseInt(localStorage.getItem('pending_points_redeemed') || '0', 10);
             if (pendingTab === 1 || pendingTab === 2) {
                 tabState[pendingTab].cart = [];
@@ -758,31 +742,17 @@
                     if (updated) state.pointsBalance = updated.loyalty_points || 0;
                     if (activeTab === pendingTab) syncUIWithActiveTab();
                 }
-            } else {
-                tabState[activeTab].cart = [];
-                tabState[activeTab].pointsRedeemed = 0;
-                renderActiveCart();
-                showToast(`🎉 Payment successful! Cart cleared.`, 'success');
-                await loadProducts();
             }
             localStorage.removeItem('pending_payment');
             localStorage.removeItem('pending_payment_tab');
-            localStorage.removeItem('pending_tab_cart_snapshot');
             localStorage.removeItem('pending_points_redeemed');
             const cleanUrl = window.location.href.split('?')[0];
             window.history.replaceState({}, document.title, cleanUrl);
-        } else if (!paymentSuccess && wasPending) {
-            localStorage.removeItem('pending_payment');
-            localStorage.removeItem('pending_payment_tab');
-            localStorage.removeItem('pending_tab_cart_snapshot');
-            localStorage.removeItem('pending_points_redeemed');
-            showToast('⚠️ Payment was not completed. Your cart is unchanged.', 'error');
         }
     }
 
     function setActiveTab(tabId) {
         if (tabId === activeTab) return;
-        // Save current tab state
         tabState[activeTab].paymentMethod = paymentMethodSelect.value;
         tabState[activeTab].customerName = customerNameInput.value;
         tabState[activeTab].customerPhone = customerPhoneInput.value;
@@ -790,7 +760,6 @@
         activeTab = tabId;
         syncUIWithActiveTab();
         renderProductGrid();
-        // Clear search input and suggestions
         customerSearchInput.value = '';
         suggestionsDiv.classList.add('hidden');
     }
@@ -801,14 +770,8 @@
     }
 
     function initSearch() {
-        searchInput.addEventListener('input', (e) => {
-            searchTerm = e.target.value;
-            renderProductGrid();
-        });
-        customerSearchInput.addEventListener('input', () => {
-            renderSuggestions();
-        });
-        // hide suggestions when clicking outside
+        searchInput.addEventListener('input', (e) => { searchTerm = e.target.value; renderProductGrid(); });
+        customerSearchInput.addEventListener('input', () => renderSuggestions());
         document.addEventListener('click', (e) => {
             if (!customerSearchInput.contains(e.target) && !suggestionsDiv.contains(e.target)) {
                 suggestionsDiv.classList.add('hidden');
@@ -830,11 +793,8 @@
             token = data.access_token;
             localStorage.setItem('access_token', token);
             localStorage.setItem('refresh_token', data.refresh_token);
-            try {
-                const me = await call('/auth/me');
-                const role = me.role || 'customer';
-                localStorage.setItem('user_role', role);
-            } catch(e) {}
+            const me = await apiCall('/auth/me');
+            localStorage.setItem('user_role', me.role || 'customer');
             await loadProducts();
             await loadCustomers();
             hideLoginModal();
@@ -842,13 +802,9 @@
             tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
             activeTab = 1;
             syncUIWithActiveTab();
-            showToast('Demo login successful — Multi‑Tab & Loyalty ready', 'success');
+            showToast('Demo login — Multi‑Tab & Tenant scope ready', 'success');
             location.reload();
-        } catch (err) {
-            showToast(err.message, 'error');
-        } finally {
-            btn.disabled = false;
-        }
+        } catch (err) { showToast(err.message, 'error'); } finally { btn.disabled = false; }
     }
 
     async function handleLogin() {
@@ -866,9 +822,8 @@
             token = data.access_token;
             localStorage.setItem('access_token', token);
             localStorage.setItem('refresh_token', data.refresh_token);
-            const me = await call('/auth/me');
-            const role = me.role || 'customer';
-            localStorage.setItem('user_role', role);
+            const me = await apiCall('/auth/me');
+            localStorage.setItem('user_role', me.role || 'customer');
             await loadProducts();
             await loadCustomers();
             hideLoginModal();
@@ -878,12 +833,9 @@
             syncUIWithActiveTab();
             showToast('Login successful', 'success');
             location.reload();
-        } catch (err) {
-            showToast(err.message, 'error');
-        }
+        } catch (err) { showToast(err.message, 'error'); }
     }
 
-    // Event listeners
     checkoutBtn.addEventListener('click', processCheckout);
     applyPointsBtn.addEventListener('click', applyPoints);
     document.getElementById('modal-login-btn')?.addEventListener('click', handleLogin);
@@ -895,7 +847,6 @@
         initSearch();
         bindFieldEvents();
         await checkPaymentReturn();
-        
         if (token) {
             try {
                 await loadProducts();
@@ -906,13 +857,8 @@
                 }
                 activeTab = 1;
                 syncUIWithActiveTab();
-            } catch (e) {
-                token = null;
-                showLoginModal();
-            }
-        } else {
-            showLoginModal();
-        }
+            } catch (e) { token = null; showLoginModal(); }
+        } else { showLoginModal(); }
     })();
 </script>
 </body>
