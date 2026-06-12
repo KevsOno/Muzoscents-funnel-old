@@ -480,16 +480,21 @@
     }
 
     // ============================================================
-    // LOCATION MANAGEMENT
+    // LOCATION MANAGEMENT (FIXED)
     // ============================================================
     async function createLocation(name, type, address) {
+        // Map frontend location types to backend 'is_warehouse' boolean
+        // warehouse/fulfillment = true (stock storage locations)
+        // store/online = false (sales/pickup locations)
+        const isWarehouse = (type === 'warehouse' || type === 'fulfillment');
+        
         try {
-            const result = await apiCall('/v2/inventory/locations', {
+            const result = await apiCall('/locations', {
                 method: 'POST',
-                body: JSON.stringify({
-                    name: name,
-                    type: type,
-                    address: address || null
+                body: JSON.stringify({ 
+                    name: name, 
+                    address: address || null,
+                    is_warehouse: isWarehouse
                 })
             });
             showToast(`Location "${name}" created successfully!`, 'success');
@@ -507,7 +512,19 @@
         try {
             let locs = [];
             try {
-                locs = await apiCall('/v2/inventory/locations');
+                // Use the correct backend endpoint
+                const response = await apiCall('/locations');
+                // Handle both response formats
+                const locationsData = response.locations || response || [];
+                
+                // Map backend fields to what frontend expects
+                locs = locationsData.map(loc => ({
+                    id: loc.id,
+                    name: loc.name,
+                    type: loc.is_warehouse ? 'warehouse' : 'store',  // Map boolean back to type
+                    address: loc.address,
+                    is_active: loc.is_active
+                }));
             } catch (err) {
                 console.warn('Multi-location not enabled, using fallback');
                 locs = [{ id: 'default', name: 'Main Store', type: 'store' }];
