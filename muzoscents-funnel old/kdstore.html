@@ -48,6 +48,13 @@
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .category-refresh-btn { background: #f59e0b20; border: 1px solid #f59e0b; border-radius: 9999px; padding: 0.25rem 0.75rem; font-size: 0.75rem; color: #f59e0b; cursor: pointer; transition: all 0.2s; }
         .category-refresh-btn:hover { background: #f59e0b; color: white; }
+        /* FIX 4: 3-bubble dots thinking indicator for AI */
+        .thinking-dots { display: inline-flex; align-items: center; gap: 4px; background: #e5e7eb; padding: 8px 12px; border-radius: 18px; }
+        .thinking-dots span { width: 6px; height: 6px; background-color: #4b5563; border-radius: 50%; display: inline-block; animation: dotPulse 1.2s infinite ease-in-out; }
+        .thinking-dots span:nth-child(1) { animation-delay: 0s; }
+        .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes dotPulse { 0%, 60%, 100% { transform: scale(0.8); opacity: 0.5; } 30% { transform: scale(1.2); opacity: 1; } }
     </style>
 </head>
 <body class="text-gray-800">
@@ -194,6 +201,8 @@
         let currentView = 'shop';
         let currentProductForModal = null;
         let isRecalcInProgress = false;
+        // FIX 3: Add variable to track cart state for race condition handling
+        let lastCalculatedCartState = '';
 
         function setCartTotalLoading(loading) {
             const totalSpan = document.getElementById('cart-total');
@@ -207,10 +216,16 @@
             }
         }
 
+        // FIX 2: Added X-Selected-Org-Id header support
         async function apiCall(endpoint, options = {}, retry = true) {
             if (!options.headers) options.headers = {};
             options.headers['Content-Type'] = 'application/json';
             if (token) options.headers['Authorization'] = `Bearer ${token}`;
+            // FIX 2: Inject tenant scope header
+            const selectedOrgId = localStorage.getItem('selected_org_id');
+            if (selectedOrgId) {
+                options.headers['X-Selected-Org-Id'] = selectedOrgId;
+            }
             let res = await fetch(`${API_BASE}${endpoint}`, options);
             if (res.status === 401 && retry) {
                 const refresh = localStorage.getItem('refresh_token');
@@ -225,12 +240,15 @@
             return res.json();
         }
 
+        // FIX 3: Improved recalcDeliveryFee with race condition handling (queue runner pattern)
         async function recalcDeliveryFee(showFeedback = true) {
             if (deliveryOption !== 'delivery' || !deliveryAddress || cart.length === 0) {
                 if (cart.length === 0) { deliveryFee = 0; handlingFee = 0; updateCartUI(); }
                 return;
             }
             if (isRecalcInProgress) return;
+            // Capture current cart state before async operation
+            const currentCartSnapshot = JSON.stringify(cart);
             isRecalcInProgress = true;
             if (showFeedback) setCartTotalLoading(true);
             try {
@@ -250,6 +268,10 @@
                 else console.warn("Delivery recalc failed:", e);
             } finally {
                 isRecalcInProgress = false;
+                // FIX 3: Force execution audit - if cart changed during network request, re-run calculation
+                if (JSON.stringify(cart) !== currentCartSnapshot && cart.length > 0) {
+                    recalcDeliveryFee(true);
+                }
                 if (showFeedback) setCartTotalLoading(false);
             }
         }
@@ -299,7 +321,7 @@
             showToast(`${product.name} added to cart!`, 'success'); 
         }
 
-        // ---------- CATEGORY EXTRACTION (FIXED) ----------
+        // ---------- CATEGORY EXTRACTION ----------
         function updateCategoryDropdown() {
             const select = document.getElementById('category-select');
             if (!select) return;
@@ -314,15 +336,12 @@
             select.innerHTML = options;
         }
         
-        // Force extract categories from the loaded products
         function extractCategoriesFromProducts() {
             if (!allProducts.length) {
                 console.warn("No products loaded yet");
                 return false;
             }
-            // Log first product to see available fields
             console.log("🔍 Sample product:", allProducts[0]);
-            // Extract unique product_group (case-sensitive, trim)
             const groups = allProducts.map(p => p.product_group).filter(g => g && typeof g === 'string' && g.trim() !== '');
             const unique = [...new Set(groups)];
             console.log(`📦 Extracted ${unique.length} unique product_group values:`, unique);
@@ -331,7 +350,6 @@
                 updateCategoryDropdown();
                 return true;
             } else {
-                // Fallback: try other possible fields (just in case)
                 const altGroups = allProducts.map(p => p.category || p.group || p.type).filter(g => g && g.trim());
                 const altUnique = [...new Set(altGroups)];
                 if (altUnique.length) {
@@ -348,7 +366,6 @@
         }
         
         async function loadCategories() {
-            // Try to fetch from dedicated endpoint (may not exist)
             try {
                 const data = await apiCall('/inventory/categories');
                 if (data.categories && data.categories.length) {
@@ -360,14 +377,12 @@
             } catch(e) {
                 console.log("No /inventory/categories endpoint, will use product data");
             }
-            // If API fails or returns empty, we'll rely on extractCategoriesFromProducts
         }
         
         async function loadProducts() {
             try {
                 allProducts = await apiCall('/inventory/public-list');
                 console.log(`📦 Loaded ${allProducts.length} products`);
-                // Extract categories after products load
                 extractCategoriesFromProducts();
                 renderProducts();
             } catch(e) { 
@@ -376,6 +391,7 @@
             }
         }
         
+        // FIX 1: SECURE DOM BUILDING - No JSON in data-product attribute, use programmatic approach
         function renderProducts() {
             let filtered = allProducts;
             if (searchQuery.trim()) filtered = filtered.filter(p => p.description.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -383,19 +399,21 @@
             const grid = document.getElementById('products-grid');
             if (!grid) return;
             if (filtered.length === 0) { grid.innerHTML = `<div class="col-span-full text-center py-12 text-gray-500"><i class="fa-regular fa-face-frown"></i> No products match your filters.</div>`; return; }
-            grid.innerHTML = filtered.map(p => `<div class="product-card bg-white rounded-2xl p-4 shadow-sm hover:shadow-lg transition flex flex-col" data-product='${JSON.stringify(p).replace(/'/g, "&#39;")}'><div class="h-28 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl flex items-center justify-center mb-3">${p.image_url ? `<img src="${p.image_url}" class="h-24 object-contain rounded">` : `<i class="fa-solid fa-box-open text-4xl text-orange-400"></i>`}</div><h3 class="font-bold text-gray-800 truncate">${escapeHtml(p.description)}</h3><div class="flex justify-between items-center mt-2"><span class="text-orange-600 font-bold text-xl">₦${p.price_naira.toLocaleString()}</span><span class="text-xs bg-gray-100 px-2 py-1 rounded-full">${p.current_qty} left</span></div><div class="flex gap-2 mt-3"><button class="view-details-btn flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-xl text-sm font-semibold"><i class="fa-regular fa-eye"></i> Details</button><button class="add-to-cart-btn flex-1 bg-orange-500 hover:bg-orange-600 text-white py-2 rounded-xl text-sm font-semibold"><i class="fa-solid fa-cart-plus"></i> Add</button></div></div>`).join('');
-            document.querySelectorAll('.product-card').forEach(card => {
-                const productData = JSON.parse(card.getAttribute('data-product'));
-                card.querySelector('.view-details-btn').onclick = (e) => { e.stopPropagation(); showProductDetail(productData); };
-                card.querySelector('.add-to-cart-btn').onclick = async (e) => { 
-                    e.stopPropagation(); 
-                    await addToCart({ id: productData.id, name: productData.description, price: productData.price_naira }); 
-                };
-                card.onclick = (e) => { if (e.target.tagName !== 'BUTTON' && !e.target.closest('button')) showProductDetail(productData); };
+            grid.innerHTML = '';
+            filtered.forEach(p => {
+                const card = document.createElement('div');
+                card.className = "product-card bg-white rounded-2xl p-4 shadow-sm hover:shadow-lg transition flex flex-col";
+                const stockHtml = `<div class="h-28 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl flex items-center justify-center mb-3">${p.image_url ? `<img src="${p.image_url}" class="h-24 object-contain rounded">` : `<i class="fa-solid fa-box-open text-4xl text-orange-400"></i>`}</div><h3 class="font-bold text-gray-800 truncate">${escapeHtml(p.description)}</h3><div class="flex justify-between items-center mt-2"><span class="text-orange-600 font-bold text-xl">₦${p.price_naira.toLocaleString()}</span><span class="text-xs bg-gray-100 px-2 py-1 rounded-full">${p.current_qty} left</span></div><div class="flex gap-2 mt-3"><button class="view-details-btn flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-xl text-sm font-semibold"><i class="fa-regular fa-eye"></i> Details</button><button class="add-to-cart-btn flex-1 bg-orange-500 hover:bg-orange-600 text-white py-2 rounded-xl text-sm font-semibold"><i class="fa-solid fa-cart-plus"></i> Add</button></div>`;
+                card.innerHTML = stockHtml;
+                const viewBtn = card.querySelector('.view-details-btn');
+                const addBtn = card.querySelector('.add-to-cart-btn');
+                viewBtn.onclick = (e) => { e.stopPropagation(); showProductDetail(p); };
+                addBtn.onclick = async (e) => { e.stopPropagation(); await addToCart({ id: p.id, name: p.description, price: p.price_naira }); };
+                card.onclick = (e) => { if (e.target.tagName !== 'BUTTON' && !e.target.closest('button')) showProductDetail(p); };
+                grid.appendChild(card);
             });
         }
 
-        // Manual refresh of categories (useful for debugging)
         function refreshCategories() {
             if (allProducts.length) {
                 const success = extractCategoriesFromProducts();
@@ -406,7 +424,6 @@
             }
         }
         
-        // Search & Category filter
         let searchDebounce;
         const searchInput = document.getElementById('product-search'), searchClear = document.getElementById('search-clear');
         function handleSearch() { clearTimeout(searchDebounce); searchDebounce = setTimeout(() => { searchQuery = searchInput.value; renderProducts(); if(searchClear) searchClear.style.display = searchQuery ? 'block' : 'none'; }, 300); }
@@ -564,8 +581,9 @@
         document.getElementById('auth-submit')?.addEventListener('click',async()=>{ const email=document.getElementById('auth-email').value, pwd=document.getElementById('auth-password').value; if(!email||!pwd) return alert("Email & password required"); const isReg=!document.getElementById('reg-extra').classList.contains('hidden'); if(isReg){ const fname=document.getElementById('first-name').value, lname=document.getElementById('last-name').value, phone=document.getElementById('phone-number').value; if(!fname||!lname||!phone) return alert("First name, last name, phone required"); const invite=document.getElementById('invite-code').value.trim(); const orgName=document.getElementById('org-name').value.trim(); const loc=document.getElementById('org-location').value.trim(), niche=document.getElementById('org-niche').value.trim(); if(!invite&&(!orgName||!loc||!niche)) return alert("Invite code or org details required"); const payload={email,password:pwd,first_name:fname,last_name:lname,phone}; if(invite) payload.invite_code=invite; else{ payload.org_name=orgName; payload.location=loc; payload.niche=niche; payload.budget=parseInt(document.getElementById('budget').value)||0; } await apiCall('/auth/register',{method:'POST',body:JSON.stringify(payload)}); alert("Registration success! Please sign in."); document.getElementById('reg-extra').classList.add('hidden'); return; } const loginRes=await fetch(`${API_BASE}/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pwd})}); const data=await loginRes.json(); if(!loginRes.ok) throw new Error(data.detail); token=data.access_token; localStorage.setItem('access_token',token); localStorage.setItem('refresh_token',data.refresh_token); await loadUser(); hideAuthModal(); showToast("Logged in",'success'); showView('shop'); });
 
         let chatMessagesDiv=null, chatSessionId=sessionId;
-        function addChatMsg(sender,text){ if(!chatMessagesDiv) return; const div=document.createElement('div'); div.className=`p-2 rounded-xl max-w-[85%] text-sm mb-1 ${sender==='user'?'bg-orange-500 text-white ml-auto rounded-br-none':'bg-gray-100 text-gray-800 mr-auto rounded-bl-none'}`; div.innerText=text; chatMessagesDiv.appendChild(div); chatMessagesDiv.scrollTop=chatMessagesDiv.scrollHeight; }
-        async function sendChatMessage(){ const input=document.getElementById('chat-input'); const msg=input.value.trim(); if(!msg) return; addChatMsg('user',msg); input.value=''; addChatMsg('assistant','🤖 Thinking...'); try{ const data=await apiCall('/support/chat-stream',{method:'POST',body:JSON.stringify({session_id:chatSessionId,message:msg})}); chatMessagesDiv.lastChild?.remove(); addChatMsg('assistant',data.response||"Got it!"); } catch(e){ chatMessagesDiv.lastChild?.remove(); addChatMsg('assistant',"Sorry, AI is busy."); } }
+        function addChatMsg(sender, text, isTypingIndicator = false){ if(!chatMessagesDiv) return; const div=document.createElement('div'); div.className=`p-2 rounded-xl max-w-[85%] text-sm mb-1 ${sender==='user'?'bg-orange-500 text-white ml-auto rounded-br-none':'bg-gray-100 text-gray-800 mr-auto rounded-bl-none'}`; if(isTypingIndicator && sender === 'assistant') { div.innerHTML = '<div class="thinking-dots"><span></span><span></span><span></span></div>'; } else { div.innerText = text; } chatMessagesDiv.appendChild(div); chatMessagesDiv.scrollTop=chatMessagesDiv.scrollHeight; }
+        // FIX 4: Updated sendChatMessage with 3-bubble dots thinking indicator (replaces static "🤖 Thinking...")
+        async function sendChatMessage(){ const input=document.getElementById('chat-input'); const msg=input.value.trim(); if(!msg) return; addChatMsg('user',msg); input.value=''; addChatMsg('assistant', '', true); const lastMsgDiv = chatMessagesDiv.lastChild; try{ const data=await apiCall('/support/chat-stream',{method:'POST',body:JSON.stringify({session_id:chatSessionId,message:msg})}); if(lastMsgDiv && lastMsgDiv.classList.contains('bg-gray-100')) lastMsgDiv.remove(); addChatMsg('assistant',data.response||"Got it!"); } catch(e){ if(lastMsgDiv && lastMsgDiv.classList.contains('bg-gray-100')) lastMsgDiv.remove(); addChatMsg('assistant',"Sorry, AI is busy."); } }
         function initChat(){ chatMessagesDiv=document.getElementById('chat-messages'); if(chatMessagesDiv&&chatMessagesDiv.children.length===0) addChatMsg('assistant',"Hi! I'm your AI shopping assistant. Need help?"); }
         document.getElementById('chat-bubble')?.addEventListener('click',()=>{ const modal=document.getElementById('chat-modal'); modal.classList.toggle('active'); if(modal.classList.contains('active')) initChat(); });
         document.getElementById('close-chat-modal')?.addEventListener('click',()=>document.getElementById('chat-modal').classList.remove('active'));
@@ -584,8 +602,8 @@
             loadCart();
             setDeliveryOpt('pickup');
             if (token) { try { await loadUser(); } catch(e) { token = null; } }
-            await loadCategories();   // try API
-            await loadProducts();      // loads products & extracts categories
+            await loadCategories();
+            await loadProducts();
             const urlParams = new URLSearchParams(window.location.search);
             const paymentSuccess = urlParams.get('payment') === 'success';
             const pendingFlag = localStorage.getItem('pending_payment') === 'true';
