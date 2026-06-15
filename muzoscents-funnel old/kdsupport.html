@@ -1,5 +1,4 @@
-Here is the complete, updated `kdsupport.html` file with the customer directory search and display logic fixed as you requested.
-```html
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -610,6 +609,28 @@ Here is the complete, updated `kdsupport.html` file with the customer directory 
         });
     }
 
+    // Add a refresh function that clears cache and reloads
+async function forceRefresh() {
+    // Clear any cached data
+    if (window.allCustomers) window.allCustomers = null;
+    
+    // Reload from server
+    if (typeof loadCustomers === 'function') {
+        await loadCustomers();
+    }
+    if (typeof loadTeam === 'function') {
+        await loadTeam();
+    }
+    if (typeof loadTickets === 'function') {
+        await loadTickets();
+    }
+    
+    showToast('Data refreshed from server', 'success');
+}
+
+// Add refresh button handlers
+document.getElementById('refresh-customers-btn')?.addEventListener('click', forceRefresh);
+document.getElementById('refresh-team-btn')?.addEventListener('click', forceRefresh);
     // TAB SWITCHING
     const userRole = localStorage.getItem('user_role') || 'customer';
     const canAccessSupport = ['owner','admin','support'].includes(userRole);
@@ -632,4 +653,3 @@ Here is the complete, updated `kdsupport.html` file with the customer directory 
 </script>
 </body>
 </html>
-```
