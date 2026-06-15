@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kevs bOS – Admin Inventory Manager (Multi‑Location)</title>
+    <title>Kevs bOS – Admin Inventory Manager (Multi‑Location + Expiry Tracking)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
@@ -49,6 +49,10 @@
             background: #334155;
             cursor: pointer;
         }
+        .expiry-critical { background: #dc2626; }
+        .expiry-warning { background: #f59e0b; }
+        .expiry-info { background: #3b82f6; }
+        .expiry-good { background: #10b981; }
     </style>
 </head>
 <body class="text-slate-200">
@@ -96,8 +100,8 @@
 
     <div class="flex justify-between items-center mb-6 pb-4 border-b border-slate-700">
         <div>
-            <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">📦 Inventory Manager (Multi‑Location)</h1>
-            <p class="text-sm text-slate-400">Manage stock across warehouse, online, and store locations</p>
+            <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">📦 Inventory Manager (Multi‑Location + Expiry)</h1>
+            <p class="text-sm text-slate-400">Manage stock, track batches, and monitor expiring products</p>
         </div>
     </div>
 
@@ -120,91 +124,318 @@
                 <button id="show-transfer-modal" class="bg-indigo-600 hover:bg-indigo-700 text-sm px-3 py-2 rounded-lg"><i class="fa-solid fa-arrow-right-arrow-left"></i> Transfer Stock</button>
                 <button id="show-location-modal" class="bg-emerald-600 hover:bg-emerald-700 text-sm px-3 py-2 rounded-lg"><i class="fa-solid fa-plus"></i> Add Location</button>
             </div>
-            <!-- Expiry Alerts & Batch Management Tab -->
-<div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-slate-700 shadow-xl">
-    <div class="flex justify-between items-center mb-4 border-b border-slate-700 pb-3">
-        <h2 class="text-xl font-bold flex items-center gap-2">
-            <i class="fa-solid fa-calendar-exclamation text-red-400"></i> 
-            Expiry Alerts & Batch Tracking
-        </h2>
-        <div class="flex gap-2">
-            <button id="refresh-expiry-btn" class="bg-slate-700 hover:bg-slate-600 text-sm px-3 py-1.5 rounded-lg">
-                <i class="fa-solid fa-rotate-right mr-1"></i> Refresh
-            </button>
+        </div>
+
+        <!-- Expiry Alerts & Batch Management Tab -->
+        <div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-slate-700 shadow-xl">
+            <div class="flex justify-between items-center mb-4 border-b border-slate-700 pb-3">
+                <h2 class="text-xl font-bold flex items-center gap-2">
+                    <i class="fa-solid fa-calendar-exclamation text-red-400"></i> 
+                    Expiry Alerts & Batch Tracking
+                </h2>
+                <div class="flex gap-2">
+                    <button id="refresh-expiry-btn" class="bg-slate-700 hover:bg-slate-600 text-sm px-3 py-1.5 rounded-lg">
+                        <i class="fa-solid fa-rotate-right mr-1"></i> Refresh
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Expiry Summary Cards -->
+            <div id="expiry-summary-cards" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-red-900/30 rounded-xl p-4 border border-red-700">
+                    <div class="text-2xl font-bold text-red-400" id="critical-30d-count">0</div>
+                    <div class="text-xs text-slate-400">Expiring in ≤30 days</div>
+                </div>
+                <div class="bg-orange-900/30 rounded-xl p-4 border border-orange-700">
+                    <div class="text-2xl font-bold text-orange-400" id="critical-60d-count">0</div>
+                    <div class="text-xs text-slate-400">Expiring in 31-60 days</div>
+                </div>
+                <div class="bg-yellow-900/30 rounded-xl p-4 border border-yellow-700">
+                    <div class="text-2xl font-bold text-yellow-400" id="warning-90d-count">0</div>
+                    <div class="text-xs text-slate-400">Expiring in 61-90 days</div>
+                </div>
+                <div class="bg-blue-900/30 rounded-xl p-4 border border-blue-700">
+                    <div class="text-2xl font-bold text-blue-400" id="info-180d-count">0</div>
+                    <div class="text-xs text-slate-400">Expiring in 91-180 days</div>
+                </div>
+            </div>
+            
+            <!-- Filter Controls -->
+            <div class="flex flex-wrap gap-3 mb-4">
+                <select id="expiry-alert-filter" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
+                    <option value="all">All Alerts</option>
+                    <option value="critical">Critical (≤90 days)</option>
+                    <option value="warning">Warning (91-120 days)</option>
+                    <option value="info">Info (121-180 days)</option>
+                </select>
+                <select id="expiry-location-filter" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
+                    <option value="">All Locations</option>
+                </select>
+                <button id="show-add-batch-modal" class="bg-emerald-600 hover:bg-emerald-700 text-sm px-4 py-2 rounded-lg">
+                    <i class="fa-solid fa-plus mr-1"></i> Add Batch
+                </button>
+                <button id="show-fefo-modal" class="bg-indigo-600 hover:bg-indigo-700 text-sm px-4 py-2 rounded-lg">
+                    <i class="fa-solid fa-chart-line mr-1"></i> FEFO Recommendations
+                </button>
+            </div>
+            
+            <!-- Expiring Products Table -->
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-900/50">
+                        <tr class="border-b border-slate-700">
+                            <th class="text-left p-3">Product</th>
+                            <th class="text-left p-3">Batch #</th>
+                            <th class="text-left p-3">Expiry Date</th>
+                            <th class="text-left p-3">Days Left</th>
+                            <th class="text-left p-3">Stock</th>
+                            <th class="text-left p-3">Location</th>
+                            <th class="text-left p-3">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="expiring-products-table">
+                        <tr><td colspan="7" class="text-center p-8 text-slate-400">Loading expiring products...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- FEFO Best Practices Note -->
+            <div class="mt-4 p-3 bg-amber-900/20 rounded-lg border border-amber-700/50 text-xs">
+                <i class="fa-solid fa-lightbulb text-amber-400 mr-2"></i>
+                <strong class="text-amber-300">FEFO Best Practice:</strong> 
+                <span class="text-slate-300">Always use First Expiry First Out (FEFO) for inventory picking. Products with earliest expiry dates should be sold or used first to minimize waste and maximize profitability.</span>
+            </div>
+        </div>
+
+        <!-- Product Search Section -->
+        <div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-slate-700 shadow-xl">
+            <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fa-solid fa-magnifying-glass text-green-400"></i> Search Products</h2>
+            <div class="relative">
+                <input type="text" id="product-search-input" placeholder="Search by SKU, description, or product group..." class="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm pl-10">
+                <i class="fa-solid fa-search absolute left-3 top-3.5 text-slate-500"></i>
+                <div id="product-search-results" class="absolute z-20 w-full mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl max-h-64 overflow-y-auto hidden"></div>
+            </div>
+            <p class="text-xs text-slate-400 mt-2"><i class="fa-regular fa-lightbulb"></i> Type SKU or description to quickly find and edit products</p>
+        </div>
+
+        <!-- Product Form WITH EXPIRY FIELDS -->
+        <div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-slate-700 shadow-xl">
+            <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fa-solid fa-plus-circle text-blue-400"></i> <span id="form-title">Add New Product</span></h2>
+            <form id="product-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input type="hidden" id="edit-id" value="">
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Item Code (SKU) *</label>
+                    <input id="item_code" type="text" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Description *</label>
+                    <input id="description" type="text" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Product Group (Category)</label>
+                    <input id="product_group" type="text" placeholder="e.g., Electronics, Food" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Selling Price (₦) * >0</label>
+                    <input id="price_naira" type="number" step="1" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Cost Price (₦) ≥0</label>
+                    <input id="cost_price_naira" type="number" step="1" value="0" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Initial Stock Quantity * ≥0</label>
+                    <input id="current_qty" type="number" step="1" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Weight (kg) ≥0</label>
+                    <input id="weight_kg" type="number" step="0.1" value="0" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Size Factor ≥ 1.0</label>
+                    <input id="size_factor" type="number" step="0.1" value="1.0" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Handling Category *</label>
+                    <select id="handling_category" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                        <option value="standard">Standard</option>
+                        <option value="fragile">Fragile</option>
+                        <option value="bulky">Bulky</option>
+                        <option value="hazardous">Hazardous</option>
+                    </select>
+                </div>
+                
+                <!-- EXPIRY AND BATCH TRACKING SECTION -->
+                <div class="border-t border-amber-700 pt-3 md:col-span-2">
+                    <label class="block text-xs text-amber-400 mb-2 flex items-center gap-2">
+                        <i class="fa-solid fa-calendar-exclamation"></i> 
+                        Expiry & Batch Tracking (Fill for perishable items)
+                    </label>
+                </div>
+                
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Batch Number</label>
+                    <input id="batch_number" type="text" placeholder="e.g., BATCH-2024-001" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                    <p class="text-xs text-slate-500 mt-1">Unique identifier for this production batch</p>
+                </div>
+                
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Lot Number</label>
+                    <input id="lot_number" type="text" placeholder="e.g., LOT-A1" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                </div>
+                
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Manufacture Date</label>
+                    <input id="manufacture_date" type="date" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                </div>
+                
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Expiry Date <span id="expiry-warning" class="text-red-400 hidden">⚠️</span></label>
+                    <input id="expiry_date" type="date" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                    <p id="expiry-hint" class="text-xs text-slate-500 mt-1"></p>
+                </div>
+                
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Supplier Name</label>
+                    <input id="supplier_name" type="text" placeholder="Optional" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                </div>
+                
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Supplier Invoice #</label>
+                    <input id="supplier_invoice" type="text" placeholder="Optional" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                </div>
+                
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Image URL (optional)</label>
+                    <input id="image_url" type="url" placeholder="https://..." class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Assign to Location (optional)</label>
+                    <select id="location-assign" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                        <option value="">Default Warehouse (auto-assign)</option>
+                    </select>
+                    <p class="text-xs text-slate-400 mt-1">If empty, product will go to Main Warehouse.</p>
+                </div>
+                <div class="md:col-span-2 flex gap-3">
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded-lg font-medium transition">💾 Save Product</button>
+                    <button type="button" id="cancel-edit" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm transition hidden">Cancel Edit</button>
+                </div>
+            </form>
+        </div>
+        
+        <!-- Bulk Upload -->
+        <div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-slate-700 shadow-xl">
+            <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fa-solid fa-upload text-green-400"></i> Bulk Upload Products (CSV)</h2>
+            <div class="bg-slate-900/60 rounded-lg p-3 mb-4 text-sm border-l-4 border-amber-500">
+                <p class="font-mono text-amber-300 mb-1">📌 REQUIRED COLUMNS (exact header names):</p>
+                <code class="text-xs text-slate-300 break-all">description, price_naira, weight_kg, handling_category, size_factor, item_code, cost_price_naira, product_group, current_qty, image_url</code>
+                <p class="text-xs text-slate-400 mt-2">Optional columns: expiry_date, batch_number, manufacture_date, lot_number, supplier_name, supplier_invoice</p>
+                <ul class="text-xs text-slate-400 mt-2 space-y-1 list-disc pl-5">
+                    <li><span class="text-red-300">⚠️ Rules:</span> handling_category ∈ {standard, fragile, bulky, hazardous}</li>
+                    <li>size_factor ≥ 1.0 &nbsp;|&nbsp; weight_kg ≥ 0 &nbsp;|&nbsp; price_naira > 0 &nbsp;|&nbsp; cost_price_naira ≥ 0 &nbsp;|&nbsp; current_qty ≥ 0</li>
+                    <li>expiry_date format: YYYY-MM-DD (must be in future)</li>
+                    <li>For existing item_code, quantity will be <strong>added</strong> to current stock.</li>
+                </ul>
+            </div>
+            <div class="flex flex-col sm:flex-row gap-4 items-end">
+                <div class="flex-1">
+                    <label class="block text-xs text-slate-400 mb-1">CSV File (UTF-8, comma separated)</label>
+                    <input type="file" id="bulk-csv-file" accept=".csv" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm file:mr-2 file:py-1 file:px-3 file:rounded-md file:bg-slate-700 file:text-white file:border-0">
+                </div>
+                <button id="bulk-upload-btn" class="bg-green-600 hover:bg-green-700 px-5 py-2 rounded-lg font-medium transition flex items-center gap-2"><i class="fa-solid fa-cloud-upload-alt"></i> Validate & Upload</button>
+            </div>
+            <div id="bulk-upload-status" class="mt-3 text-sm"></div>
+        </div>
+        
+        <!-- Product List -->
+        <div>
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-boxes text-blue-400"></i> All Inventory Items</h2>
+            </div>
+            <div id="products-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div class="col-span-full text-center py-8 text-slate-400"><i class="fa-solid fa-spinner fa-pulse mr-2"></i> Loading...</div>
+            </div>
         </div>
     </div>
-    
-    <!-- Expiry Summary Cards -->
-    <div id="expiry-summary-cards" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div class="bg-red-900/30 rounded-xl p-4 border border-red-700">
-            <div class="text-2xl font-bold text-red-400" id="critical-30d-count">0</div>
-            <div class="text-xs text-slate-400">Expiring in ≤30 days</div>
-        </div>
-        <div class="bg-orange-900/30 rounded-xl p-4 border border-orange-700">
-            <div class="text-2xl font-bold text-orange-400" id="critical-60d-count">0</div>
-            <div class="text-xs text-slate-400">Expiring in 31-60 days</div>
-        </div>
-        <div class="bg-yellow-900/30 rounded-xl p-4 border border-yellow-700">
-            <div class="text-2xl font-bold text-yellow-400" id="warning-90d-count">0</div>
-            <div class="text-xs text-slate-400">Expiring in 61-90 days</div>
-        </div>
-        <div class="bg-blue-900/30 rounded-xl p-4 border border-blue-700">
-            <div class="text-2xl font-bold text-blue-400" id="info-180d-count">0</div>
-            <div class="text-xs text-slate-400">Expiring in 91-180 days</div>
+</div>
+
+<!-- Stock Transfer Modal -->
+<div id="transfer-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+    <div class="bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-slate-600">
+        <h3 class="text-xl font-bold mb-4">Transfer Stock</h3>
+        <div class="space-y-3">
+            <div>
+                <label class="block text-sm mb-1">Search Product</label>
+                <div class="relative">
+                    <input type="text" id="transfer-product-search" placeholder="Type SKU or description..." class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
+                    <div id="transfer-search-results" class="absolute z-30 w-full mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl max-h-48 overflow-y-auto hidden"></div>
+                </div>
+                <select id="transfer-product" class="hidden w-full bg-slate-900 border border-slate-700 rounded-lg p-2 mt-2">
+                    <option value="">Select a product</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm">From Location</label>
+                <select id="transfer-from" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select>
+            </div>
+            <div>
+                <label class="block text-sm">To Location</label>
+                <select id="transfer-to" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select>
+            </div>
+            <div>
+                <label class="block text-sm">Quantity</label>
+                <input id="transfer-qty" type="number" min="1" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
+            </div>
+            <div>
+                <label class="block text-sm">Reason (optional)</label>
+                <input id="transfer-reason" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
+            </div>
+            <div class="flex gap-3 mt-4">
+                <button id="transfer-submit" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg">Transfer</button>
+                <button id="transfer-cancel" class="bg-slate-600 hover:bg-slate-500 px-4 py-2 rounded-lg">Cancel</button>
+            </div>
         </div>
     </div>
-    
-    <!-- Filter Controls -->
-    <div class="flex flex-wrap gap-3 mb-4">
-        <select id="expiry-alert-filter" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
-            <option value="all">All Alerts</option>
-            <option value="critical">Critical (≤90 days)</option>
-            <option value="warning">Warning (91-120 days)</option>
-            <option value="info">Info (121-180 days)</option>
-        </select>
-        <select id="expiry-location-filter" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
-            <option value="">All Locations</option>
-        </select>
-        <button id="show-add-batch-modal" class="bg-emerald-600 hover:bg-emerald-700 text-sm px-4 py-2 rounded-lg">
-            <i class="fa-solid fa-plus mr-1"></i> Add Batch
-        </button>
-        <button id="show-fefo-modal" class="bg-indigo-600 hover:bg-indigo-700 text-sm px-4 py-2 rounded-lg">
-            <i class="fa-solid fa-chart-line mr-1"></i> FEFO Recommendations
-        </button>
-    </div>
-    
-    <!-- Expiring Products Table -->
-    <div class="overflow-x-auto">
-        <table class="w-full text-sm">
-            <thead class="bg-slate-900/50">
-                <tr class="border-b border-slate-700">
-                    <th class="text-left p-3">Product</th>
-                    <th class="text-left p-3">Batch #</th>
-                    <th class="text-left p-3">Expiry Date</th>
-                    <th class="text-left p-3">Days Left</th>
-                    <th class="text-left p-3">Stock</th>
-                    <th class="text-left p-3">Location</th>
-                    <th class="text-left p-3">Actions</th>
-                </tr>
-            </thead>
-            <tbody id="expiring-products-table">
-                <tr><td colspan="7" class="text-center p-8 text-slate-400">Loading expiring products...</td></tr>
-            </tbody>
-        </table>
-    </div>
-    
-    <!-- FEFO Best Practices Note -->
-    <div class="mt-4 p-3 bg-amber-900/20 rounded-lg border border-amber-700/50 text-xs">
-        <i class="fa-solid fa-lightbulb text-amber-400 mr-2"></i>
-        <strong class="text-amber-300">FEFO Best Practice:</strong> 
-        <span class="text-slate-300">Always use First Expiry First Out (FEFO) for inventory picking. Products with earliest expiry dates should be sold or used first to minimize waste and maximize profitability.</span>
+</div>
+
+<!-- Location Modal -->
+<div id="location-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+    <div class="bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-slate-600">
+        <h3 class="text-xl font-bold mb-4" id="location-modal-title">Add New Location</h3>
+        <div class="space-y-3">
+            <div>
+                <label class="block text-sm mb-1">Location Name *</label>
+                <input type="text" id="location-name" placeholder="e.g., Online Store, Abuja Warehouse, Lagos Store" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
+            </div>
+            <div>
+                <label class="block text-sm mb-1">Location Type *</label>
+                <select id="location-type" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
+                    <option value="warehouse">Warehouse</option>
+                    <option value="store">Physical Store</option>
+                    <option value="online">Online Store</option>
+                    <option value="fulfillment">Fulfillment Center</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm mb-1">Address (optional)</label>
+                <input type="text" id="location-address" placeholder="Street address, city, etc." class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
+            </div>
+            <div class="flex gap-3 mt-4">
+                <button id="location-submit" class="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg">Create Location</button>
+                <button id="location-cancel" class="bg-slate-600 hover:bg-slate-500 px-4 py-2 rounded-lg">Cancel</button>
+            </div>
+        </div>
+        <div id="existing-locations" class="mt-4 pt-4 border-t border-slate-700">
+            <h4 class="text-sm font-semibold mb-2">Existing Locations</h4>
+            <div id="locations-list" class="text-xs space-y-1 max-h-32 overflow-y-auto"></div>
+        </div>
     </div>
 </div>
 
 <!-- Add Batch Modal -->
 <div id="add-batch-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
     <div class="bg-slate-800 rounded-2xl max-w-lg w-full p-6 border border-slate-600">
-        <h3 class="text-xl font-bold mb-4">Add New Batch</h3>
+        <h3 class="text-xl font-bold mb-4">Add New Batch to Existing Product</h3>
         <div class="space-y-3">
             <div>
                 <label class="block text-sm mb-1">Select Product *</label>
@@ -294,190 +525,6 @@
         </div>
     </div>
 </div>
-        </div>
-
-        <!-- Product Search Section -->
-        <div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-slate-700 shadow-xl">
-            <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fa-solid fa-magnifying-glass text-green-400"></i> Search Products</h2>
-            <div class="relative">
-                <input type="text" id="product-search-input" placeholder="Search by SKU, description, or product group..." class="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm pl-10">
-                <i class="fa-solid fa-search absolute left-3 top-3.5 text-slate-500"></i>
-                <div id="product-search-results" class="absolute z-20 w-full mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl max-h-64 overflow-y-auto hidden"></div>
-            </div>
-            <p class="text-xs text-slate-400 mt-2"><i class="fa-regular fa-lightbulb"></i> Type SKU or description to quickly find and edit products</p>
-        </div>
-
-        <!-- Product Form -->
-        <div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-slate-700 shadow-xl">
-            <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fa-solid fa-plus-circle text-blue-400"></i> <span id="form-title">Add New Product</span></h2>
-            <form id="product-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input type="hidden" id="edit-id" value="">
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1">Item Code (SKU) *</label>
-                    <input id="item_code" type="text" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
-                </div>
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1">Description *</label>
-                    <input id="description" type="text" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
-                </div>
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1">Product Group (Category)</label>
-                    <input id="product_group" type="text" placeholder="e.g., Electronics, Food" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
-                </div>
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1">Selling Price (₦) * >0</label>
-                    <input id="price_naira" type="number" step="1" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
-                </div>
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1">Cost Price (₦) ≥0</label>
-                    <input id="cost_price_naira" type="number" step="1" value="0" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
-                </div>
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1">Initial Stock Quantity * ≥0</label>
-                    <input id="current_qty" type="number" step="1" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
-                </div>
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1">Weight (kg) ≥0</label>
-                    <input id="weight_kg" type="number" step="0.1" value="0" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
-                </div>
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1">Size Factor ≥ 1.0</label>
-                    <input id="size_factor" type="number" step="0.1" value="1.0" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
-                </div>
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1">Handling Category *</label>
-                    <select id="handling_category" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
-                        <option value="standard">Standard</option>
-                        <option value="fragile">Fragile</option>
-                        <option value="bulky">Bulky</option>
-                        <option value="hazardous">Hazardous</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1">Image URL (optional)</label>
-                    <input id="image_url" type="url" placeholder="https://..." class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
-                </div>
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1">Assign to Location (optional)</label>
-                    <select id="location-assign" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
-                        <option value="">Default Warehouse (auto-assign)</option>
-                    </select>
-                    <p class="text-xs text-slate-400 mt-1">If empty, product will go to Main Warehouse.</p>
-                </div>
-                <div class="md:col-span-2 flex gap-3">
-                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded-lg font-medium transition">💾 Save Product</button>
-                    <button type="button" id="cancel-edit" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm transition hidden">Cancel Edit</button>
-                </div>
-            </form>
-        </div>
-        
-        <!-- Bulk Upload -->
-        <div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-slate-700 shadow-xl">
-            <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fa-solid fa-upload text-green-400"></i> Bulk Upload Products (CSV)</h2>
-            <div class="bg-slate-900/60 rounded-lg p-3 mb-4 text-sm border-l-4 border-amber-500">
-                <p class="font-mono text-amber-300 mb-1">📌 REQUIRED COLUMNS (exact header names):</p>
-                <code class="text-xs text-slate-300 break-all">description, price_naira, weight_kg, handling_category, size_factor, item_code, cost_price_naira, product_group, current_qty, image_url</code>
-                <ul class="text-xs text-slate-400 mt-2 space-y-1 list-disc pl-5">
-                    <li><span class="text-red-300">⚠️ Rules:</span> handling_category ∈ {standard, fragile, bulky, hazardous}</li>
-                    <li>size_factor ≥ 1.0 &nbsp;|&nbsp; weight_kg ≥ 0 &nbsp;|&nbsp; price_naira > 0 &nbsp;|&nbsp; cost_price_naira ≥ 0 &nbsp;|&nbsp; current_qty ≥ 0</li>
-                    <li>image_url can be empty but column must exist. All fields mandatory.</li>
-                    <li>For existing item_code, quantity will be <strong>added</strong> to current stock in the default warehouse.</li>
-                </ul>
-            </div>
-            <div class="flex flex-col sm:flex-row gap-4 items-end">
-                <div class="flex-1">
-                    <label class="block text-xs text-slate-400 mb-1">CSV File (UTF-8, comma separated)</label>
-                    <input type="file" id="bulk-csv-file" accept=".csv" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm file:mr-2 file:py-1 file:px-3 file:rounded-md file:bg-slate-700 file:text-white file:border-0">
-                </div>
-                <button id="bulk-upload-btn" class="bg-green-600 hover:bg-green-700 px-5 py-2 rounded-lg font-medium transition flex items-center gap-2"><i class="fa-solid fa-cloud-upload-alt"></i> Validate & Upload</button>
-            </div>
-            <div id="bulk-upload-status" class="mt-3 text-sm"></div>
-        </div>
-        
-        <!-- Product List - SECURE VERSION (no JSON injection) -->
-        <div>
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-boxes text-blue-400"></i> All Inventory Items</h2>
-            </div>
-            <div id="products-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div class="col-span-full text-center py-8 text-slate-400"><i class="fa-solid fa-spinner fa-pulse mr-2"></i> Loading...</div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Stock Transfer Modal -->
-<div id="transfer-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-    <div class="bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-slate-600">
-        <h3 class="text-xl font-bold mb-4">Transfer Stock</h3>
-        <div class="space-y-3">
-            <div>
-                <label class="block text-sm mb-1">Search Product</label>
-                <div class="relative">
-                    <input type="text" id="transfer-product-search" placeholder="Type SKU or description..." class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
-                    <div id="transfer-search-results" class="absolute z-30 w-full mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl max-h-48 overflow-y-auto hidden"></div>
-                </div>
-                <select id="transfer-product" class="hidden w-full bg-slate-900 border border-slate-700 rounded-lg p-2 mt-2">
-                    <option value="">Select a product</option>
-                </select>
-            </div>
-            <div>
-                <label class="block text-sm">From Location</label>
-                <select id="transfer-from" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select>
-            </div>
-            <div>
-                <label class="block text-sm">To Location</label>
-                <select id="transfer-to" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select>
-            </div>
-            <div>
-                <label class="block text-sm">Quantity</label>
-                <input id="transfer-qty" type="number" min="1" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
-            </div>
-            <div>
-                <label class="block text-sm">Reason (optional)</label>
-                <input id="transfer-reason" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
-            </div>
-            <div class="flex gap-3 mt-4">
-                <button id="transfer-submit" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg">Transfer</button>
-                <button id="transfer-cancel" class="bg-slate-600 hover:bg-slate-500 px-4 py-2 rounded-lg">Cancel</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Location Modal -->
-<div id="location-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-    <div class="bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-slate-600">
-        <h3 class="text-xl font-bold mb-4" id="location-modal-title">Add New Location</h3>
-        <div class="space-y-3">
-            <div>
-                <label class="block text-sm mb-1">Location Name *</label>
-                <input type="text" id="location-name" placeholder="e.g., Online Store, Abuja Warehouse, Lagos Store" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
-            </div>
-            <div>
-                <label class="block text-sm mb-1">Location Type *</label>
-                <select id="location-type" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
-                    <option value="warehouse">Warehouse</option>
-                    <option value="store">Physical Store</option>
-                    <option value="online">Online Store</option>
-                    <option value="fulfillment">Fulfillment Center</option>
-                </select>
-            </div>
-            <div>
-                <label class="block text-sm mb-1">Address (optional)</label>
-                <input type="text" id="location-address" placeholder="Street address, city, etc." class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
-            </div>
-            <div class="flex gap-3 mt-4">
-                <button id="location-submit" class="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg">Create Location</button>
-                <button id="location-cancel" class="bg-slate-600 hover:bg-slate-500 px-4 py-2 rounded-lg">Cancel</button>
-            </div>
-        </div>
-        <div id="existing-locations" class="mt-4 pt-4 border-t border-slate-700">
-            <h4 class="text-sm font-semibold mb-2">Existing Locations</h4>
-            <div id="locations-list" class="text-xs space-y-1 max-h-32 overflow-y-auto"></div>
-        </div>
-    </div>
-</div>
 
 <script>
     // ============================================================
@@ -516,7 +563,7 @@
     }
 
     // ============================================================
-    // API CALL WITH TENANT ISOLATION (FIXED)
+    // API CALL WITH TENANT ISOLATION
     // ============================================================
     async function refreshToken() {
         const refresh = localStorage.getItem('refresh_token');
@@ -545,7 +592,6 @@
         }
         if (token) options.headers['Authorization'] = `Bearer ${token}`;
         
-        // CRITICAL FIX: Pass selected organisation ID for multi-tenant isolation
         const orgId = selectedOrganisation ? selectedOrganisation.id : localStorage.getItem('selected_org_id');
         if (orgId) {
             options.headers['X-Selected-Org-Id'] = orgId;
@@ -654,12 +700,9 @@
     }
 
     // ============================================================
-    // LOCATION MANAGEMENT (FIXED)
+    // LOCATION MANAGEMENT
     // ============================================================
     async function createLocation(name, type, address) {
-        // Map frontend location types to backend 'is_warehouse' boolean
-        // warehouse/fulfillment = true (stock storage locations)
-        // store/online = false (sales/pickup locations)
         const isWarehouse = (type === 'warehouse' || type === 'fulfillment');
         
         try {
@@ -686,16 +729,12 @@
         try {
             let locs = [];
             try {
-                // Use the correct backend endpoint
                 const response = await apiCall('/locations');
-                // Handle both response formats
                 const locationsData = response.locations || response || [];
-                
-                // Map backend fields to what frontend expects
                 locs = locationsData.map(loc => ({
                     id: loc.id,
                     name: loc.name,
-                    type: loc.is_warehouse ? 'warehouse' : 'store',  // Map boolean back to type
+                    type: loc.is_warehouse ? 'warehouse' : 'store',
                     address: loc.address,
                     is_active: loc.is_active
                 }));
@@ -737,14 +776,17 @@
                 currentLocationFilter = filterSelect.value;
                 loadInventory();
             };
+            
+            // Update expiry location filter
+            await updateExpiryLocationFilter();
         } catch (err) {
             console.error('Error loading locations:', err);
-            showToast('Failed to load locations. Make sure ENABLE_MULTI_LOCATION=true', 'error');
+            showToast('Failed to load locations', 'error');
         }
     }
 
     // ============================================================
-    // INVENTORY MANAGEMENT (SECURE RENDER)
+    // INVENTORY MANAGEMENT
     // ============================================================
     async function loadInventory() {
         if (!selectedOrganisation) return;
@@ -763,7 +805,6 @@
         }
     }
 
-    // SECURE RENDER FUNCTION - No JSON string injection, uses DOM manipulation
     function renderProductsSecure(items) {
         const container = document.getElementById('products-grid');
         if (!items || items.length === 0) {
@@ -783,6 +824,20 @@
                 bulky: 'bg-orange-600/30 text-orange-300',
                 hazardous: 'bg-red-600/30 text-red-300'
             }[p.handling_category] || 'bg-slate-600/30';
+            
+            // Show expiry badge if product has expiry date
+            let expiryBadge = '';
+            if (p.expiry_date) {
+                const today = new Date();
+                const expiry = new Date(p.expiry_date);
+                const daysUntil = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+                let badgeClass = 'bg-slate-600/30';
+                let badgeText = `Expires: ${p.expiry_date}`;
+                if (daysUntil <= 30) { badgeClass = 'bg-red-600/30 text-red-300'; badgeText = `⚠️ Expires in ${daysUntil} days!`; }
+                else if (daysUntil <= 90) { badgeClass = 'bg-orange-600/30 text-orange-300'; badgeText = `Expires in ${daysUntil} days`; }
+                else if (daysUntil <= 180) { badgeClass = 'bg-yellow-600/30 text-yellow-300'; badgeText = `Expires in ${daysUntil} days`; }
+                expiryBadge = `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] ${badgeClass}"><i class="fa-regular fa-calendar"></i> ${badgeText}</span>`;
+            }
             
             let stockHtml = '';
             if (currentLocationFilter && currentLocationFilter !== 'default') {
@@ -807,6 +862,7 @@
                     <div class="flex-1">
                         <h3 class="font-bold text-white text-base truncate" title="${escapeHtml(p.description)}">${escapeHtml(p.description)}</h3>
                         <p class="text-xs text-slate-400 font-mono">SKU: ${escapeHtml(p.item_code || p.id)}</p>
+                        ${p.batch_number ? `<p class="text-xs text-amber-400 font-mono">Batch: ${escapeHtml(p.batch_number)}</p>` : ''}
                         <div class="mt-2 flex flex-wrap gap-2 items-center">
                             <span class="text-blue-400 font-bold text-lg">₦${(p.price_naira || 0).toLocaleString()}</span>
                             ${stockHtml}
@@ -816,6 +872,7 @@
                             <span class="inline-flex items-center gap-1"><i class="fa-solid fa-arrow-up-wide-short"></i> SF: ${p.size_factor ?? 1.0}</span>
                             <span class="inline-flex items-center gap-1"><i class="fa-solid fa-tag"></i> Cost: ₦${(p.cost_price_naira || 0).toLocaleString()}</span>
                             <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full ${handlingClass}"><i class="fa-regular fa-box"></i> ${escapeHtml(p.handling_category || 'standard')}</span>
+                            ${expiryBadge}
                         </div>
                         ${p.product_group ? `<p class="text-xs text-slate-400 mt-1"><i class="fa-regular fa-folder-open mr-1"></i> ${escapeHtml(p.product_group)}</p>` : ''}
                     </div>
@@ -836,7 +893,7 @@
     }
 
     // ============================================================
-    // PRODUCT CRUD
+    // PRODUCT CRUD WITH EXPIRY FIELDS
     // ============================================================
     async function saveProduct(event) {
         event.preventDefault();
@@ -851,6 +908,14 @@
         const handling_category = document.getElementById('handling_category').value;
         const product_group = document.getElementById('product_group').value.trim() || null;
         const image_url = document.getElementById('image_url').value.trim() || null;
+        
+        // Expiry fields
+        const batch_number = document.getElementById('batch_number').value.trim();
+        const lot_number = document.getElementById('lot_number').value.trim();
+        const manufacture_date = document.getElementById('manufacture_date').value;
+        const expiry_date = document.getElementById('expiry_date').value;
+        const supplier_name = document.getElementById('supplier_name').value.trim();
+        const supplier_invoice = document.getElementById('supplier_invoice').value.trim();
 
         if (!item_code || !description || isNaN(price_naira) || price_naira <= 0) {
             showToast('Item Code, Description and Price (>0) are required.', 'error');
@@ -860,8 +925,34 @@
         if (isNaN(weight_kg) || weight_kg < 0) { showToast('Weight must be ≥ 0', 'error'); return; }
         if (isNaN(size_factor) || size_factor < 1.0) { showToast('Size factor must be ≥ 1.0', 'error'); return; }
         if (cost_price_naira < 0) { showToast('Cost price must be ≥ 0', 'error'); return; }
+        
+        // Validate expiry date if provided
+        if (expiry_date) {
+            const today = new Date().toISOString().split('T')[0];
+            if (expiry_date <= today) {
+                showToast('Expiry date must be in the future', 'error');
+                return;
+            }
+            
+            const expiry = new Date(expiry_date);
+            const todayDate = new Date();
+            const daysUntil = Math.ceil((expiry - todayDate) / (1000 * 60 * 60 * 24));
+            
+            if (daysUntil <= 90) {
+                showToast(`⚠️ CRITICAL: This product expires in ${daysUntil} days!`, 'error');
+            } else if (daysUntil <= 180) {
+                showToast(`⚠️ Warning: This product expires in ${daysUntil} days`, 'warning');
+            }
+        }
 
-        const payload = { item_code, description, product_group, price_naira, current_qty, image_url, weight_kg, size_factor, handling_category, cost_price_naira };
+        const payload = { 
+            item_code, description, product_group, price_naira, current_qty, image_url, 
+            weight_kg, size_factor, handling_category, cost_price_naira,
+            expiry_date: expiry_date || null,
+            batch_number: batch_number || null,
+            manufacture_date: manufacture_date || null,
+            lot_number: lot_number || null
+        };
 
         try {
             if (id) {
@@ -869,12 +960,36 @@
                 showToast('Product updated successfully.', 'success');
                 resetForm();
             } else {
-                await apiCall('/inventory', { method: 'POST', body: JSON.stringify(payload) });
+                const result = await apiCall('/inventory', { method: 'POST', body: JSON.stringify(payload) });
                 showToast('Product added successfully.', 'success');
                 resetForm();
+                
+                // If expiry date and batch number were provided, also create a batch record
+                if (expiry_date && batch_number && result.id) {
+                    try {
+                        await apiCall(`/inventory/batches?inventory_id=${result.id}`, {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                batch_number: batch_number,
+                                lot_number: lot_number || null,
+                                quantity: current_qty,
+                                expiry_date: expiry_date,
+                                manufacture_date: manufacture_date || null,
+                                cost_price_naira: cost_price_naira,
+                                supplier_name: supplier_name || null,
+                                supplier_invoice: supplier_invoice || null
+                            })
+                        });
+                        console.log('Batch created with supplier info');
+                    } catch (batchErr) {
+                        console.warn('Batch creation failed:', batchErr);
+                    }
+                }
             }
             loadInventory();
             loadLocations();
+            loadExpiringProducts();
+            loadExpiryDashboard();
         } catch (err) {
             showToast(`Error: ${err.message}`, 'error');
         }
@@ -895,6 +1010,22 @@
             document.getElementById('size_factor').value = product.size_factor ?? 1.0;
             document.getElementById('handling_category').value = product.handling_category || 'standard';
             document.getElementById('cost_price_naira').value = product.cost_price_naira ?? 0;
+            
+            // Populate expiry fields
+            document.getElementById('batch_number').value = product.batch_number || '';
+            document.getElementById('lot_number').value = product.lot_number || '';
+            document.getElementById('manufacture_date').value = product.manufacture_date || '';
+            document.getElementById('expiry_date').value = product.expiry_date || '';
+            document.getElementById('supplier_name').value = product.supplier_name || '';
+            document.getElementById('supplier_invoice').value = product.supplier_invoice || '';
+            
+            // Trigger warning check if expiry date exists
+            if (product.expiry_date) {
+                const expiryInput = document.getElementById('expiry_date');
+                const event = new Event('change');
+                expiryInput.dispatchEvent(event);
+            }
+            
             document.getElementById('form-title').innerText = '✏️ Edit Product';
             document.getElementById('cancel-edit').classList.remove('hidden');
             document.querySelector('#product-form').scrollIntoView({ behavior: 'smooth' });
@@ -924,10 +1055,76 @@
         document.getElementById('size_factor').value = '1.0';
         document.getElementById('weight_kg').value = '0';
         document.getElementById('cost_price_naira').value = '0';
+        
+        // Clear expiry fields
+        document.getElementById('batch_number').value = '';
+        document.getElementById('lot_number').value = '';
+        document.getElementById('manufacture_date').value = '';
+        document.getElementById('expiry_date').value = '';
+        document.getElementById('supplier_name').value = '';
+        document.getElementById('supplier_invoice').value = '';
+        
+        const expiryHint = document.getElementById('expiry-hint');
+        if (expiryHint) {
+            expiryHint.innerHTML = '';
+            expiryHint.className = 'text-xs text-slate-500 mt-1';
+        }
     }
 
     // ============================================================
-    // BULK CSV UPLOAD (FULL VERSION)
+    // EXPIRY DATE WARNING REAL-TIME
+    // ============================================================
+    function setupExpiryDateWarning() {
+        const expiryInput = document.getElementById('expiry_date');
+        const expiryHint = document.getElementById('expiry-hint');
+        const expiryWarningIcon = document.getElementById('expiry-warning');
+        
+        if (!expiryInput) return;
+        
+        expiryInput.addEventListener('change', function() {
+            const selectedDate = this.value;
+            if (!selectedDate) {
+                expiryHint.innerHTML = '';
+                expiryHint.className = 'text-xs text-slate-500 mt-1';
+                if (expiryWarningIcon) expiryWarningIcon.classList.add('hidden');
+                return;
+            }
+            
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const expiry = new Date(selectedDate);
+            const daysUntil = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+            
+            if (daysUntil < 0) {
+                expiryHint.innerHTML = '❌ Expiry date has already passed!';
+                expiryHint.className = 'text-xs text-red-400 mt-1 font-bold';
+                if (expiryWarningIcon) expiryWarningIcon.classList.remove('hidden');
+            } else if (daysUntil <= 30) {
+                expiryHint.innerHTML = `🔴 CRITICAL: Only ${daysUntil} days until expiry! Immediate action required.`;
+                expiryHint.className = 'text-xs text-red-400 mt-1 font-bold';
+                if (expiryWarningIcon) expiryWarningIcon.classList.remove('hidden');
+            } else if (daysUntil <= 60) {
+                expiryHint.innerHTML = `🟠 URGENT: ${daysUntil} days until expiry. Plan promotion soon.`;
+                expiryHint.className = 'text-xs text-orange-400 mt-1';
+                if (expiryWarningIcon) expiryWarningIcon.classList.remove('hidden');
+            } else if (daysUntil <= 90) {
+                expiryHint.innerHTML = `🟡 WARNING: ${daysUntil} days until expiry. Monitor closely.`;
+                expiryHint.className = 'text-xs text-yellow-400 mt-1';
+                if (expiryWarningIcon) expiryWarningIcon.classList.remove('hidden');
+            } else if (daysUntil <= 180) {
+                expiryHint.innerHTML = `ℹ️ ${daysUntil} days until expiry. OK for now, but track inventory.`;
+                expiryHint.className = 'text-xs text-blue-400 mt-1';
+                if (expiryWarningIcon) expiryWarningIcon.classList.add('hidden');
+            } else {
+                expiryHint.innerHTML = `✅ ${daysUntil} days until expiry. Fresh stock.`;
+                expiryHint.className = 'text-xs text-green-400 mt-1';
+                if (expiryWarningIcon) expiryWarningIcon.classList.add('hidden');
+            }
+        });
+    }
+
+    // ============================================================
+    // BULK CSV UPLOAD
     // ============================================================
     function parseCSV(text) {
         const rows = [];
@@ -1249,8 +1446,10 @@
         
         await loadLocations();
         await loadInventory();
+        await initExpiryFeatures();
         setupProductSearch();
         setupTransferSearch();
+        bindExpiryEventListeners();
     }
 
     function setupProductSearch() {
@@ -1318,7 +1517,7 @@
     }
 
     // ============================================================
-    // NAVIGATION BUILDER (FULL)
+    // NAVIGATION BUILDER
     // ============================================================
     (function() {
         const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
@@ -1392,415 +1591,388 @@
     })();
 
     // ============================================================
-// EXPIRY AND BATCH MANAGEMENT FUNCTIONS
-// ============================================================
+    // EXPIRY AND BATCH MANAGEMENT FUNCTIONS
+    // ============================================================
 
-let currentExpiryData = [];
-let currentFefoData = [];
-let currentBatchId = null;
+    let currentExpiryData = [];
+    let currentFefoData = [];
+    let currentBatchId = null;
 
-async function loadExpiryDashboard() {
-    if (!selectedOrganisation) return;
-    
-    try {
-        const data = await apiCall('/inventory/expiry-dashboard');
-        const dashboard = data.dashboard;
+    async function loadExpiryDashboard() {
+        if (!selectedOrganisation) return;
         
-        document.getElementById('critical-30d-count').innerText = dashboard.critical_expiring_30d || 0;
-        document.getElementById('critical-60d-count').innerText = dashboard.critical_expiring_60d || 0;
-        document.getElementById('warning-90d-count').innerText = dashboard.warning_expiring_90d || 0;
-        document.getElementById('info-180d-count').innerText = dashboard.info_expiring_180d || 0;
-        
-        // Show toast for critical alerts
-        if (dashboard.critical_expiring_30d > 0) {
-            showToast(`⚠️ ${dashboard.critical_expiring_30d} units expiring within 30 days!`, 'error');
-        }
-        if (dashboard.expired_stock > 0) {
-            showToast(`❌ ${dashboard.expired_stock} units have expired and need disposal`, 'error');
-        }
-        
-        // Display recommendations
-        if (dashboard.recommendations && dashboard.recommendations.length > 0) {
-            const recHtml = dashboard.recommendations.map(rec => 
-                `<div class="p-2 ${rec.type === 'urgent' ? 'bg-red-900/30' : rec.type === 'critical' ? 'bg-orange-900/30' : 'bg-blue-900/30'} rounded mb-1">
-                    <div class="text-xs">${rec.message}</div>
-                    <div class="text-xs text-slate-400 mt-1">→ ${rec.action}</div>
-                </div>`
-            ).join('');
-            // You can add a recommendations panel if desired
-        }
-    } catch (err) {
-        console.error('Failed to load expiry dashboard:', err);
-    }
-}
-
-async function loadExpiringProducts() {
-    if (!selectedOrganisation) return;
-    
-    const alertFilter = document.getElementById('expiry-alert-filter').value;
-    let url = `/inventory/expiring-products?days_threshold=180`;
-    if (alertFilter !== 'all') {
-        url += `&alert_level=${alertFilter}`;
-    }
-    
-    try {
-        const data = await apiCall(url);
-        currentExpiryData = data.expiring_products;
-        renderExpiringTable(currentExpiryData, data.summary);
-    } catch (err) {
-        console.error('Failed to load expiring products:', err);
-        document.getElementById('expiring-products-table').innerHTML = `
-            <tr><td colspan="7" class="text-center p-8 text-red-400">Failed to load: ${escapeHtml(err.message)}</td></tr>
-        `;
-    }
-}
-
-function renderExpiringTable(products, summary) {
-    const tbody = document.getElementById('expiring-products-table');
-    
-    if (!products || products.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center p-8 text-slate-400">✅ No products expiring within 180 days</td></tr>';
-        return;
-    }
-    
-    const getAlertClass = (level, days) => {
-        if (level === 'critical' || days <= 30) return 'bg-red-900/50 text-red-300 border-red-700';
-        if (level === 'warning' || days <= 90) return 'bg-orange-900/50 text-orange-300 border-orange-700';
-        if (days <= 120) return 'bg-yellow-900/50 text-yellow-300 border-yellow-700';
-        return 'bg-blue-900/50 text-blue-300 border-blue-700';
-    };
-    
-    tbody.innerHTML = products.map(p => {
-        const alertClass = getAlertClass(p.alert_level, p.days_until_expiry);
-        return `
-            <tr class="border-b border-slate-700 hover:bg-slate-800/50">
-                <td class="p-3">
-                    <div class="font-medium">${escapeHtml(p.product_name)}</div>
-                    <div class="text-xs text-slate-400">${escapeHtml(p.product_code || 'N/A')}</div>
-                </td>
-                <td class="p-3 font-mono text-xs">${escapeHtml(p.batch_number)}</td>
-                <td class="p-3 ${p.days_until_expiry <= 0 ? 'text-red-400' : ''}">${p.expiry_date}</td>
-                <td class="p-3">
-                    <span class="inline-flex px-2 py-1 rounded-full text-xs ${alertClass}">
-                        ${p.days_until_expiry <= 0 ? 'EXPIRED' : `${p.days_until_expiry} days`}
-                    </span>
-                </td>
-                <td class="p-3">${p.current_stock} units</td>
-                <td class="p-3">${escapeHtml(p.location_name || 'Main Warehouse')}</td>
-                <td class="p-3">
-                    <button onclick="viewBatchDetails(${p.batch_id})" class="text-blue-400 hover:text-blue-300 mr-2">
-                        <i class="fa-solid fa-eye"></i>
-                    </button>
-                    <button onclick="viewFefoForProduct(${p.inventory_id})" class="text-indigo-400 hover:text-indigo-300">
-                        <i class="fa-solid fa-chart-line"></i>
-                    </button>
-                </td>
-            </tr>
-        `;
-    }).join('');
-    
-    // Update filter counts in summary cards
-    if (summary) {
-        document.getElementById('critical-30d-count').innerText = summary.critical_count || 0;
-        document.getElementById('warning-90d-count').innerText = summary.warning_count || 0;
-        document.getElementById('info-180d-count').innerText = summary.info_count || 0;
-    }
-}
-
-async function loadBatchSelectOptions() {
-    if (!selectedOrganisation) return;
-    
-    try {
-        const items = await apiCall('/inventory');
-        const select = document.getElementById('batch-product-select');
-        select.innerHTML = '<option value="">Select a product...</option>' + 
-            items.map(p => `<option value="${p.id}">${escapeHtml(p.description)} (${escapeHtml(p.item_code || p.id)})</option>`).join('');
-    } catch (err) {
-        console.error('Failed to load products for batch:', err);
-    }
-}
-
-async function addNewBatch() {
-    const productId = document.getElementById('batch-product-select').value;
-    const batchNumber = document.getElementById('batch-number').value.trim();
-    const lotNumber = document.getElementById('lot-number').value.trim();
-    const quantity = parseInt(document.getElementById('batch-quantity').value);
-    const expiryDate = document.getElementById('batch-expiry-date').value;
-    const manufactureDate = document.getElementById('batch-manufacture-date').value;
-    const supplier = document.getElementById('batch-supplier').value.trim();
-    const invoice = document.getElementById('batch-invoice').value.trim();
-    const cost = parseFloat(document.getElementById('batch-cost').value) || 0;
-    
-    if (!productId) {
-        showToast('Please select a product', 'error');
-        return;
-    }
-    if (!batchNumber) {
-        showToast('Batch number is required', 'error');
-        return;
-    }
-    if (!quantity || quantity <= 0) {
-        showToast('Quantity must be greater than 0', 'error');
-        return;
-    }
-    if (!expiryDate) {
-        showToast('Expiry date is required', 'error');
-        return;
-    }
-    
-    const today = new Date().toISOString().split('T')[0];
-    if (expiryDate <= today) {
-        showToast('Expiry date must be in the future', 'error');
-        return;
-    }
-    
-    try {
-        const result = await apiCall(`/inventory/batches?inventory_id=${productId}`, {
-            method: 'POST',
-            body: JSON.stringify({
-                batch_number: batchNumber,
-                lot_number: lotNumber || null,
-                quantity: quantity,
-                expiry_date: expiryDate,
-                manufacture_date: manufactureDate || null,
-                cost_price_naira: cost,
-                supplier_name: supplier || null,
-                supplier_invoice: invoice || null
-            })
-        });
-        
-        showToast(`Batch ${batchNumber} added successfully! New total quantity: ${result.new_total_quantity}`, 'success');
-        closeBatchModal();
-        await loadInventory();
-        await loadExpiringProducts();
-        await loadExpiryDashboard();
-        
-        // Reset form
-        document.getElementById('batch-number').value = '';
-        document.getElementById('lot-number').value = '';
-        document.getElementById('batch-quantity').value = '';
-        document.getElementById('batch-expiry-date').value = '';
-        document.getElementById('batch-manufacture-date').value = '';
-        document.getElementById('batch-supplier').value = '';
-        document.getElementById('batch-invoice').value = '';
-        document.getElementById('batch-cost').value = '0';
-        
-    } catch (err) {
-        showToast(`Failed to add batch: ${err.message}`, 'error');
-    }
-}
-
-async function viewBatchDetails(batchId) {
-    currentBatchId = batchId;
-    
-    try {
-        // First get batch info - we need to fetch batches for the product
-        // Since we don't have a direct batch endpoint, we'll need to search
-        const product = currentExpiryData.find(p => p.batch_id === batchId);
-        if (product) {
-            const batches = await apiCall(`/inventory/batches/${product.inventory_id}`);
-            const batch = batches.batches.find(b => b.id === batchId);
+        try {
+            const data = await apiCall('/inventory/expiry-dashboard');
+            const dashboard = data.dashboard;
             
-            if (batch) {
-                const expiryDate = new Date(batch.expiry_date);
-                const today = new Date();
-                const daysUntil = Math.ceil((expiryDate - today) / (1000 * 60 * 60 * 24));
-                
-                document.getElementById('batch-details-content').innerHTML = `
-                    <div class="space-y-3">
-                        <div class="flex justify-between border-b border-slate-700 pb-2">
-                            <span class="text-slate-400">Product:</span>
-                            <span class="font-medium">${escapeHtml(product.product_name)}</span>
-                        </div>
-                        <div class="flex justify-between border-b border-slate-700 pb-2">
-                            <span class="text-slate-400">Batch Number:</span>
-                            <span class="font-mono">${escapeHtml(batch.batch_number)}</span>
-                        </div>
-                        <div class="flex justify-between border-b border-slate-700 pb-2">
-                            <span class="text-slate-400">Lot Number:</span>
-                            <span>${escapeHtml(batch.lot_number || 'N/A')}</span>
-                        </div>
-                        <div class="flex justify-between border-b border-slate-700 pb-2">
-                            <span class="text-slate-400">Current Stock:</span>
-                            <span class="font-bold">${batch.quantity} units</span>
-                        </div>
-                        <div class="flex justify-between border-b border-slate-700 pb-2">
-                            <span class="text-slate-400">Expiry Date:</span>
-                            <span class="${daysUntil <= 30 ? 'text-red-400 font-bold' : ''}">${batch.expiry_date} (${daysUntil} days left)</span>
-                        </div>
-                        <div class="flex justify-between border-b border-slate-700 pb-2">
-                            <span class="text-slate-400">Manufacture Date:</span>
-                            <span>${batch.manufacture_date || 'N/A'}</span>
-                        </div>
-                        <div class="flex justify-between border-b border-slate-700 pb-2">
-                            <span class="text-slate-400">Supplier:</span>
-                            <span>${escapeHtml(batch.supplier_name || 'N/A')}</span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span class="text-slate-400">Cost Price:</span>
-                            <span>₦${(batch.cost_price_naira || 0).toLocaleString()}</span>
-                        </div>
-                    </div>
-                `;
-                document.getElementById('batch-adjust-qty').value = '';
-                document.getElementById('batch-details-modal').classList.remove('hidden');
+            document.getElementById('critical-30d-count').innerText = dashboard.critical_expiring_30d || 0;
+            document.getElementById('critical-60d-count').innerText = dashboard.critical_expiring_60d || 0;
+            document.getElementById('warning-90d-count').innerText = dashboard.warning_expiring_90d || 0;
+            document.getElementById('info-180d-count').innerText = dashboard.info_expiring_180d || 0;
+            
+            if (dashboard.critical_expiring_30d > 0) {
+                showToast(`⚠️ ${dashboard.critical_expiring_30d} units expiring within 30 days!`, 'error');
             }
+            if (dashboard.expired_stock > 0) {
+                showToast(`❌ ${dashboard.expired_stock} units have expired and need disposal`, 'error');
+            }
+        } catch (err) {
+            console.error('Failed to load expiry dashboard:', err);
         }
-    } catch (err) {
-        showToast(`Failed to load batch details: ${err.message}`, 'error');
     }
-}
 
-async function adjustBatchQuantity() {
-    const adjustment = parseInt(document.getElementById('batch-adjust-qty').value);
-    const reason = document.getElementById('batch-adjust-reason').value;
-    
-    if (isNaN(adjustment)) {
-        showToast('Please enter a valid quantity adjustment', 'error');
-        return;
-    }
-    
-    try {
-        await apiCall(`/inventory/batches/${currentBatchId}/quantity?quantity_adjustment=${adjustment}&reason=${reason}`, {
-            method: 'PUT'
-        });
+    async function loadExpiringProducts() {
+        if (!selectedOrganisation) return;
         
-        showToast(`Batch quantity adjusted by ${adjustment}`, 'success');
-        document.getElementById('batch-details-modal').classList.add('hidden');
-        await loadInventory();
-        await loadExpiringProducts();
-        await loadExpiryDashboard();
-    } catch (err) {
-        showToast(`Failed to adjust quantity: ${err.message}`, 'error');
+        const alertFilter = document.getElementById('expiry-alert-filter').value;
+        let url = `/inventory/expiring-products?days_threshold=180`;
+        if (alertFilter !== 'all') {
+            url += `&alert_level=${alertFilter}`;
+        }
+        
+        try {
+            const data = await apiCall(url);
+            currentExpiryData = data.expiring_products;
+            renderExpiringTable(currentExpiryData, data.summary);
+        } catch (err) {
+            console.error('Failed to load expiring products:', err);
+            document.getElementById('expiring-products-table').innerHTML = `
+                <tr><td colspan="7" class="text-center p-8 text-red-400">Failed to load: ${escapeHtml(err.message)}</td></tr>
+            `;
+        }
     }
-}
 
-async function loadFefoRecommendations() {
-    if (!selectedOrganisation) return;
-    
-    try {
-        const data = await apiCall('/inventory/expiry-fefo-recommendations');
-        currentFefoData = data.recommendations;
-        renderFefoRecommendations(currentFefoData);
-    } catch (err) {
-        console.error('Failed to load FEFO recommendations:', err);
-        document.getElementById('fefo-recommendations-list').innerHTML = `
-            <div class="text-center p-8 text-red-400">Failed to load: ${escapeHtml(err.message)}</div>
-        `;
+    function renderExpiringTable(products, summary) {
+        const tbody = document.getElementById('expiring-products-table');
+        
+        if (!products || products.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center p-8 text-slate-400">✅ No products expiring within 180 days</td></tr>';
+            return;
+        }
+        
+        const getAlertClass = (level, days) => {
+            if (level === 'critical' || days <= 30) return 'bg-red-900/50 text-red-300 border-red-700';
+            if (level === 'warning' || days <= 90) return 'bg-orange-900/50 text-orange-300 border-orange-700';
+            if (days <= 120) return 'bg-yellow-900/50 text-yellow-300 border-yellow-700';
+            return 'bg-blue-900/50 text-blue-300 border-blue-700';
+        };
+        
+        tbody.innerHTML = products.map(p => {
+            const alertClass = getAlertClass(p.alert_level, p.days_until_expiry);
+            return `
+                <tr class="border-b border-slate-700 hover:bg-slate-800/50">
+                    <td class="p-3">
+                        <div class="font-medium">${escapeHtml(p.product_name)}</div>
+                        <div class="text-xs text-slate-400">${escapeHtml(p.product_code || 'N/A')}</div>
+                    </td>
+                    <td class="p-3 font-mono text-xs">${escapeHtml(p.batch_number)}</td>
+                    <td class="p-3 ${p.days_until_expiry <= 0 ? 'text-red-400' : ''}">${p.expiry_date}</td>
+                    <td class="p-3">
+                        <span class="inline-flex px-2 py-1 rounded-full text-xs ${alertClass}">
+                            ${p.days_until_expiry <= 0 ? 'EXPIRED' : `${p.days_until_expiry} days`}
+                        </span>
+                    </td>
+                    <td class="p-3">${p.current_stock} units</td>
+                    <td class="p-3">${escapeHtml(p.location_name || 'Main Warehouse')}</td>
+                    <td class="p-3">
+                        <button onclick="viewBatchDetails(${p.batch_id})" class="text-blue-400 hover:text-blue-300 mr-2">
+                            <i class="fa-solid fa-eye"></i>
+                        </button>
+                        <button onclick="viewFefoForProduct(${p.inventory_id})" class="text-indigo-400 hover:text-indigo-300">
+                            <i class="fa-solid fa-chart-line"></i>
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+        
+        if (summary) {
+            document.getElementById('critical-30d-count').innerText = summary.critical_count || 0;
+            document.getElementById('warning-90d-count').innerText = summary.warning_count || 0;
+            document.getElementById('info-180d-count').innerText = summary.info_count || 0;
+        }
     }
-}
 
-function renderFefoRecommendations(recommendations) {
-    const container = document.getElementById('fefo-recommendations-list');
-    
-    if (!recommendations || recommendations.length === 0) {
-        container.innerHTML = '<div class="text-center p-8 text-slate-400">✅ No products with stock found. All batches are fresh!</div>';
-        return;
+    async function loadBatchSelectOptions() {
+        if (!selectedOrganisation) return;
+        
+        try {
+            const items = await apiCall('/inventory');
+            const select = document.getElementById('batch-product-select');
+            select.innerHTML = '<option value="">Select a product...</option>' + 
+                items.map(p => `<option value="${p.id}">${escapeHtml(p.description)} (${escapeHtml(p.item_code || p.id)})</option>`).join('');
+        } catch (err) {
+            console.error('Failed to load products for batch:', err);
+        }
     }
-    
-    const priorityColors = {
-        'URGENT - Must sell immediately': 'bg-red-900/50 border-red-700',
-        'HIGH - Priority sell': 'bg-orange-900/50 border-orange-700',
-        'MEDIUM - Monitor closely': 'bg-yellow-900/50 border-yellow-700',
-        'LOW - OK': 'bg-green-900/50 border-green-700'
-    };
-    
-    container.innerHTML = recommendations.map(rec => `
-        <div class="border rounded-lg p-4 ${priorityColors[rec.priority] || 'bg-slate-800'}">
-            <div class="flex justify-between items-start">
-                <div>
-                    <h4 class="font-bold text-white">${escapeHtml(rec.product_name)}</h4>
-                    <div class="text-xs text-slate-400 font-mono mt-1">Batch: ${escapeHtml(rec.batch_number)} | Code: ${escapeHtml(rec.product_code || 'N/A')}</div>
-                </div>
-                <div class="text-right">
-                    <div class="text-lg font-bold ${rec.priority_color === 'red' ? 'text-red-400' : rec.priority_color === 'orange' ? 'text-orange-400' : 'text-yellow-400'}">
-                        ${rec.days_until_expiry} days left
+
+    async function addNewBatch() {
+        const productId = document.getElementById('batch-product-select').value;
+        const batchNumber = document.getElementById('batch-number').value.trim();
+        const lotNumber = document.getElementById('lot-number').value.trim();
+        const quantity = parseInt(document.getElementById('batch-quantity').value);
+        const expiryDate = document.getElementById('batch-expiry-date').value;
+        const manufactureDate = document.getElementById('batch-manufacture-date').value;
+        const supplier = document.getElementById('batch-supplier').value.trim();
+        const invoice = document.getElementById('batch-invoice').value.trim();
+        const cost = parseFloat(document.getElementById('batch-cost').value) || 0;
+        
+        if (!productId) {
+            showToast('Please select a product', 'error');
+            return;
+        }
+        if (!batchNumber) {
+            showToast('Batch number is required', 'error');
+            return;
+        }
+        if (!quantity || quantity <= 0) {
+            showToast('Quantity must be greater than 0', 'error');
+            return;
+        }
+        if (!expiryDate) {
+            showToast('Expiry date is required', 'error');
+            return;
+        }
+        
+        const today = new Date().toISOString().split('T')[0];
+        if (expiryDate <= today) {
+            showToast('Expiry date must be in the future', 'error');
+            return;
+        }
+        
+        try {
+            const result = await apiCall(`/inventory/batches?inventory_id=${productId}`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    batch_number: batchNumber,
+                    lot_number: lotNumber || null,
+                    quantity: quantity,
+                    expiry_date: expiryDate,
+                    manufacture_date: manufactureDate || null,
+                    cost_price_naira: cost,
+                    supplier_name: supplier || null,
+                    supplier_invoice: invoice || null
+                })
+            });
+            
+            showToast(`Batch ${batchNumber} added successfully! New total quantity: ${result.new_total_quantity}`, 'success');
+            closeBatchModal();
+            await loadInventory();
+            await loadExpiringProducts();
+            await loadExpiryDashboard();
+            
+            document.getElementById('batch-number').value = '';
+            document.getElementById('lot-number').value = '';
+            document.getElementById('batch-quantity').value = '';
+            document.getElementById('batch-expiry-date').value = '';
+            document.getElementById('batch-manufacture-date').value = '';
+            document.getElementById('batch-supplier').value = '';
+            document.getElementById('batch-invoice').value = '';
+            document.getElementById('batch-cost').value = '0';
+            
+        } catch (err) {
+            showToast(`Failed to add batch: ${err.message}`, 'error');
+        }
+    }
+
+    async function viewBatchDetails(batchId) {
+        currentBatchId = batchId;
+        
+        try {
+            const product = currentExpiryData.find(p => p.batch_id === batchId);
+            if (product) {
+                const batches = await apiCall(`/inventory/batches/${product.inventory_id}`);
+                const batch = batches.batches.find(b => b.id === batchId);
+                
+                if (batch) {
+                    const expiryDate = new Date(batch.expiry_date);
+                    const today = new Date();
+                    const daysUntil = Math.ceil((expiryDate - today) / (1000 * 60 * 60 * 24));
+                    
+                    document.getElementById('batch-details-content').innerHTML = `
+                        <div class="space-y-3">
+                            <div class="flex justify-between border-b border-slate-700 pb-2">
+                                <span class="text-slate-400">Product:</span>
+                                <span class="font-medium">${escapeHtml(product.product_name)}</span>
+                            </div>
+                            <div class="flex justify-between border-b border-slate-700 pb-2">
+                                <span class="text-slate-400">Batch Number:</span>
+                                <span class="font-mono">${escapeHtml(batch.batch_number)}</span>
+                            </div>
+                            <div class="flex justify-between border-b border-slate-700 pb-2">
+                                <span class="text-slate-400">Lot Number:</span>
+                                <span>${escapeHtml(batch.lot_number || 'N/A')}</span>
+                            </div>
+                            <div class="flex justify-between border-b border-slate-700 pb-2">
+                                <span class="text-slate-400">Current Stock:</span>
+                                <span class="font-bold">${batch.quantity} units</span>
+                            </div>
+                            <div class="flex justify-between border-b border-slate-700 pb-2">
+                                <span class="text-slate-400">Expiry Date:</span>
+                                <span class="${daysUntil <= 30 ? 'text-red-400 font-bold' : ''}">${batch.expiry_date} (${daysUntil} days left)</span>
+                            </div>
+                            <div class="flex justify-between border-b border-slate-700 pb-2">
+                                <span class="text-slate-400">Manufacture Date:</span>
+                                <span>${batch.manufacture_date || 'N/A'}</span>
+                            </div>
+                            <div class="flex justify-between border-b border-slate-700 pb-2">
+                                <span class="text-slate-400">Supplier:</span>
+                                <span>${escapeHtml(batch.supplier_name || 'N/A')}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">Cost Price:</span>
+                                <span>₦${(batch.cost_price_naira || 0).toLocaleString()}</span>
+                            </div>
+                        </div>
+                    `;
+                    document.getElementById('batch-adjust-qty').value = '';
+                    document.getElementById('batch-details-modal').classList.remove('hidden');
+                }
+            }
+        } catch (err) {
+            showToast(`Failed to load batch details: ${err.message}`, 'error');
+        }
+    }
+
+    async function adjustBatchQuantity() {
+        const adjustment = parseInt(document.getElementById('batch-adjust-qty').value);
+        const reason = document.getElementById('batch-adjust-reason').value;
+        
+        if (isNaN(adjustment)) {
+            showToast('Please enter a valid quantity adjustment', 'error');
+            return;
+        }
+        
+        try {
+            await apiCall(`/inventory/batches/${currentBatchId}/quantity?quantity_adjustment=${adjustment}&reason=${reason}`, {
+                method: 'PUT'
+            });
+            
+            showToast(`Batch quantity adjusted by ${adjustment}`, 'success');
+            document.getElementById('batch-details-modal').classList.add('hidden');
+            await loadInventory();
+            await loadExpiringProducts();
+            await loadExpiryDashboard();
+        } catch (err) {
+            showToast(`Failed to adjust quantity: ${err.message}`, 'error');
+        }
+    }
+
+    async function loadFefoRecommendations() {
+        if (!selectedOrganisation) return;
+        
+        try {
+            const data = await apiCall('/inventory/expiry-fefo-recommendations');
+            currentFefoData = data.recommendations;
+            renderFefoRecommendations(currentFefoData);
+        } catch (err) {
+            console.error('Failed to load FEFO recommendations:', err);
+            document.getElementById('fefo-recommendations-list').innerHTML = `
+                <div class="text-center p-8 text-red-400">Failed to load: ${escapeHtml(err.message)}</div>
+            `;
+        }
+    }
+
+    function renderFefoRecommendations(recommendations) {
+        const container = document.getElementById('fefo-recommendations-list');
+        
+        if (!recommendations || recommendations.length === 0) {
+            container.innerHTML = '<div class="text-center p-8 text-slate-400">✅ No products with stock found. All batches are fresh!</div>';
+            return;
+        }
+        
+        const priorityColors = {
+            'URGENT - Must sell immediately': 'bg-red-900/50 border-red-700',
+            'HIGH - Priority sell': 'bg-orange-900/50 border-orange-700',
+            'MEDIUM - Monitor closely': 'bg-yellow-900/50 border-yellow-700',
+            'LOW - OK': 'bg-green-900/50 border-green-700'
+        };
+        
+        container.innerHTML = recommendations.map(rec => `
+            <div class="border rounded-lg p-4 ${priorityColors[rec.priority] || 'bg-slate-800'}">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h4 class="font-bold text-white">${escapeHtml(rec.product_name)}</h4>
+                        <div class="text-xs text-slate-400 font-mono mt-1">Batch: ${escapeHtml(rec.batch_number)} | Code: ${escapeHtml(rec.product_code || 'N/A')}</div>
                     </div>
-                    <div class="text-xs">Stock: ${rec.quantity_available} units</div>
+                    <div class="text-right">
+                        <div class="text-lg font-bold ${rec.priority_color === 'red' ? 'text-red-400' : rec.priority_color === 'orange' ? 'text-orange-400' : 'text-yellow-400'}">
+                            ${rec.days_until_expiry} days left
+                        </div>
+                        <div class="text-xs">Stock: ${rec.quantity_available} units</div>
+                    </div>
+                </div>
+                <div class="mt-3 p-2 bg-black/30 rounded text-sm">
+                    <i class="fa-solid fa-bullhorn mr-2 ${rec.priority_color === 'red' ? 'text-red-400' : 'text-amber-400'}"></i>
+                    ${rec.recommended_action}
+                </div>
+                <div class="mt-2 text-xs text-slate-400">
+                    Expires: ${rec.expiry_date} | Cost: ₦${rec.cost_price.toLocaleString()}
                 </div>
             </div>
-            <div class="mt-3 p-2 bg-black/30 rounded text-sm">
-                <i class="fa-solid fa-bullhorn mr-2 ${rec.priority_color === 'red' ? 'text-red-400' : 'text-amber-400'}"></i>
-                ${rec.recommended_action}
-            </div>
-            <div class="mt-2 text-xs text-slate-400">
-                Expires: ${rec.expiry_date} | Cost: ₦${rec.cost_price.toLocaleString()}
-            </div>
-        </div>
-    `).join('');
-}
-
-async function viewFefoForProduct(inventoryId) {
-    try {
-        const data = await apiCall(`/inventory/expiry-fefo-recommendations?inventory_id=${inventoryId}`);
-        renderFefoRecommendations(data.recommendations);
-        document.getElementById('fefo-modal').classList.remove('hidden');
-    } catch (err) {
-        showToast(`Failed to load recommendations: ${err.message}`, 'error');
+        `).join('');
     }
-}
 
-function showAddBatchModal() {
-    loadBatchSelectOptions();
-    document.getElementById('add-batch-modal').classList.remove('hidden');
-}
+    async function viewFefoForProduct(inventoryId) {
+        try {
+            const data = await apiCall(`/inventory/expiry-fefo-recommendations?inventory_id=${inventoryId}`);
+            renderFefoRecommendations(data.recommendations);
+            document.getElementById('fefo-modal').classList.remove('hidden');
+        } catch (err) {
+            showToast(`Failed to load recommendations: ${err.message}`, 'error');
+        }
+    }
 
-function closeBatchModal() {
-    document.getElementById('add-batch-modal').classList.add('hidden');
-}
+    function showAddBatchModal() {
+        loadBatchSelectOptions();
+        document.getElementById('add-batch-modal').classList.remove('hidden');
+    }
 
-function showFefoModal() {
-    loadFefoRecommendations();
-    document.getElementById('fefo-modal').classList.remove('hidden');
-}
+    function closeBatchModal() {
+        document.getElementById('add-batch-modal').classList.add('hidden');
+    }
 
-function closeFefoModal() {
-    document.getElementById('fefo-modal').classList.add('hidden');
-}
+    function showFefoModal() {
+        loadFefoRecommendations();
+        document.getElementById('fefo-modal').classList.remove('hidden');
+    }
 
-// Update location filter for expiry tab
-async function updateExpiryLocationFilter() {
-    if (!allLocations || allLocations.length === 0) return;
-    
-    const filter = document.getElementById('expiry-location-filter');
-    filter.innerHTML = '<option value="">All Locations</option>' + 
-        allLocations.map(loc => `<option value="${loc.id}">${escapeHtml(loc.name)}</option>`).join('');
-}
+    function closeFefoModal() {
+        document.getElementById('fefo-modal').classList.add('hidden');
+    }
 
-// ============================================================
-// UPDATE INITIALISATION
-// ============================================================
+    async function updateExpiryLocationFilter() {
+        if (!allLocations || allLocations.length === 0) return;
+        
+        const filter = document.getElementById('expiry-location-filter');
+        filter.innerHTML = '<option value="">All Locations</option>' + 
+            allLocations.map(loc => `<option value="${loc.id}">${escapeHtml(loc.name)}</option>`).join('');
+    }
 
-// Add these to your existing init() function or call them after organisation selection
-async function initExpiryFeatures() {
-    await loadExpiryDashboard();
-    await loadExpiringProducts();
-    await updateExpiryLocationFilter();
-}
+    async function initExpiryFeatures() {
+        await loadExpiryDashboard();
+        await loadExpiringProducts();
+        await updateExpiryLocationFilter();
+        setupExpiryDateWarning();
+    }
 
-// Add event listeners for new buttons
-function bindExpiryEventListeners() {
-    document.getElementById('refresh-expiry-btn')?.addEventListener('click', () => {
-        loadExpiryDashboard();
-        loadExpiringProducts();
-    });
-    document.getElementById('expiry-alert-filter')?.addEventListener('change', loadExpiringProducts);
-    document.getElementById('expiry-location-filter')?.addEventListener('change', loadExpiringProducts);
-    document.getElementById('show-add-batch-modal')?.addEventListener('click', showAddBatchModal);
-    document.getElementById('show-fefo-modal')?.addEventListener('click', showFefoModal);
-    document.getElementById('batch-submit')?.addEventListener('click', addNewBatch);
-    document.getElementById('batch-cancel')?.addEventListener('click', closeBatchModal);
-    document.getElementById('fefo-close')?.addEventListener('click', closeFefoModal);
-    document.getElementById('batch-details-close')?.addEventListener('click', () => {
-        document.getElementById('batch-details-modal').classList.add('hidden');
-    });
-    document.getElementById('batch-adjust-submit')?.addEventListener('click', adjustBatchQuantity);
-}
-
-// Call these after organisation selection
-// Add to your confirmOrganisationAndLoad() function:
-// await initExpiryFeatures();
-// bindExpiryEventListeners();
+    function bindExpiryEventListeners() {
+        document.getElementById('refresh-expiry-btn')?.addEventListener('click', () => {
+            loadExpiryDashboard();
+            loadExpiringProducts();
+        });
+        document.getElementById('expiry-alert-filter')?.addEventListener('change', loadExpiringProducts);
+        document.getElementById('expiry-location-filter')?.addEventListener('change', loadExpiringProducts);
+        document.getElementById('show-add-batch-modal')?.addEventListener('click', showAddBatchModal);
+        document.getElementById('show-fefo-modal')?.addEventListener('click', showFefoModal);
+        document.getElementById('batch-submit')?.addEventListener('click', addNewBatch);
+        document.getElementById('batch-cancel')?.addEventListener('click', closeBatchModal);
+        document.getElementById('fefo-close')?.addEventListener('click', closeFefoModal);
+        document.getElementById('batch-details-close')?.addEventListener('click', () => {
+            document.getElementById('batch-details-modal').classList.add('hidden');
+        });
+        document.getElementById('batch-adjust-submit')?.addEventListener('click', adjustBatchQuantity);
+    }
 
     // ============================================================
     // INITIALISATION
@@ -1837,8 +2009,10 @@ function bindExpiryEventListeners() {
                     
                     await loadLocations();
                     await loadInventory();
+                    await initExpiryFeatures();
                     setupProductSearch();
                     setupTransferSearch();
+                    bindExpiryEventListeners();
                     return;
                 }
             }
