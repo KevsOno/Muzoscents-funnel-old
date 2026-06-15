@@ -410,6 +410,28 @@
 
     document.getElementById('refresh-team-btn')?.addEventListener('click', () => loadTeam());
 
+    // Add a refresh function that clears cache and reloads
+async function forceRefresh() {
+    // Clear any cached data
+    if (window.allCustomers) window.allCustomers = null;
+    
+    // Reload from server
+    if (typeof loadCustomers === 'function') {
+        await loadCustomers();
+    }
+    if (typeof loadTeam === 'function') {
+        await loadTeam();
+    }
+    if (typeof loadTickets === 'function') {
+        await loadTickets();
+    }
+    
+    showToast('Data refreshed from server', 'success');
+}
+
+// Add refresh button handlers
+document.getElementById('refresh-customers-btn')?.addEventListener('click', forceRefresh);
+document.getElementById('refresh-team-btn')?.addEventListener('click', forceRefresh);
     // Initialization: check auth and load team
     (async () => {
         try {
