@@ -17,6 +17,12 @@
             display: inline-block;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .toast-slide {
+            transition: all 0.2s ease;
+        }
+        tr.border-b:hover {
+            background-color: #f9fafb;
+        }
     </style>
 </head>
 <body class="bg-gray-50 font-sans">
@@ -166,17 +172,17 @@
 <div class="max-w-6xl mx-auto p-6">
     <div class="flex justify-between items-center mb-6">
         <h1 class="text-2xl font-bold text-gray-800"><i class="fas fa-users mr-2 text-orange-500"></i>Team Management</h1>
-        <button id="refresh-team-btn" class="text-sm bg-white px-4 py-2 rounded-lg shadow hover:bg-gray-50"><i class="fas fa-sync-alt mr-1"></i> Refresh</button>
+        <button id="refresh-team-btn" class="text-sm bg-white px-4 py-2 rounded-lg shadow hover:bg-gray-50 transition"><i class="fas fa-sync-alt mr-1"></i> Refresh</button>
     </div>
 
     <!-- Add staff form -->
     <div class="bg-white rounded-xl shadow-md p-6 mb-8">
         <h2 class="text-lg font-semibold mb-4"><i class="fas fa-user-plus mr-2 text-green-600"></i>Invite new staff member</h2>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <input type="text" id="new-firstname" placeholder="First name *" class="border rounded-lg p-2">
-            <input type="text" id="new-lastname" placeholder="Last name *" class="border rounded-lg p-2">
-            <input type="email" id="new-email" placeholder="Email *" class="border rounded-lg p-2" required>
-            <select id="new-role" class="border rounded-lg p-2">
+            <input type="text" id="new-firstname" placeholder="First name *" class="border rounded-lg p-2 focus:ring-2 focus:ring-orange-300 outline-none">
+            <input type="text" id="new-lastname" placeholder="Last name *" class="border rounded-lg p-2 focus:ring-2 focus:ring-orange-300 outline-none">
+            <input type="email" id="new-email" placeholder="Email *" class="border rounded-lg p-2 focus:ring-2 focus:ring-orange-300 outline-none" required>
+            <select id="new-role" class="border rounded-lg p-2 focus:ring-2 focus:ring-orange-300 outline-none">
                 <option value="admin">Admin</option>
                 <option value="inventory_manager">Inventory Manager</option>
                 <option value="sales_rep">Sales Representative</option>
@@ -185,10 +191,10 @@
                 <option value="support">Support</option>
                 <option value="customer">Customer (no dashboard)</option>
             </select>
-            <input type="tel" id="new-phone" placeholder="Phone (optional)" class="border rounded-lg p-2">
-            <button id="create-user-btn" class="bg-orange-500 text-white rounded-lg px-4 py-2 hover:bg-orange-600 transition"><i class="fas fa-paper-plane mr-1"></i> Send Invite</button>
+            <input type="tel" id="new-phone" placeholder="Phone (optional)" class="border rounded-lg p-2 focus:ring-2 focus:ring-orange-300 outline-none">
+            <button id="create-user-btn" class="bg-orange-500 text-white rounded-lg px-4 py-2 hover:bg-orange-600 transition flex items-center justify-center gap-2"><i class="fas fa-paper-plane"></i> Send Invite</button>
         </div>
-        <div id="form-message" class="mt-3 text-sm hidden"></div>
+        <div id="form-message" class="mt-3 text-sm hidden transition-all"></div>
     </div>
 
     <!-- Existing team members table -->
@@ -199,9 +205,17 @@
         <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
-                    <tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th><th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th></tr>
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
                 </thead>
-                <tbody id="team-table-body" class="divide-y divide-gray-200"><tr><td colspan="5" class="text-center py-6 text-gray-400"><div class="loading-spinner-sm inline-block mr-2"></div> Loading team...</td></tr></tbody>
+                <tbody id="team-table-body" class="divide-y divide-gray-200">
+                    <tr><td colspan="5" class="text-center py-6 text-gray-400"><div class="loading-spinner-sm inline-block mr-2"></div> Loading team...</td></tr>
+                </tbody>
             </table>
         </div>
     </div>
@@ -221,7 +235,7 @@
             document.body.appendChild(container);
         }
         const toast = document.createElement('div');
-        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} mb-2 text-sm`;
+        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} mb-2 text-sm animate-pulse transition-all`;
         toast.innerText = msg;
         container.appendChild(toast);
         setTimeout(() => toast.remove(), 3500);
@@ -260,37 +274,59 @@
             }
             return role;
         } catch (e) {
-            document.body.innerHTML = `<div class="p-8 text-center text-red-600">Access denied or not logged in.</div>`;
+            if(!document.body.innerHTML.includes('Access denied')) {
+                document.body.innerHTML = `<div class="p-8 text-center text-red-600">Access denied or not logged in.</div>`;
+            }
             throw e;
         }
     }
 
+    // ========== FIXED loadTeam function with proper error handling and status normalization ==========
     async function loadTeam() {
         const tbody = document.getElementById('team-table-body');
+        if (!tbody) return;
         tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6"><div class="loading-spinner-sm inline-block mr-2"></div> Loading...</td></tr>`;
         try {
             const data = await apiFetch('/organisations/me/users');
             const users = data.users || [];
+            console.log('Team members loaded:', users.length);
+            
             if (users.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-gray-400">No team members yet. Invite your first staff member above.</td></tr>`;
                 return;
             }
-            tbody.innerHTML = users.map(user => `
-                <tr>
-                    <td class="px-6 py-3">${escapeHtml(user.first_name || '')} ${escapeHtml(user.last_name || '')}</td>
-                    <td class="px-6 py-3">${escapeHtml(user.email)}</td>
-                    <td class="px-6 py-3"><span class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800 capitalize">${user.role}</span></td>
-                    <td class="px-6 py-3"><span class="px-2 py-1 text-xs rounded-full ${user.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}">${user.status || 'active'}</span></td>
+            
+            tbody.innerHTML = users.map(user => {
+                // Normalize status: handle 'Active' / 'active' or any casing
+                let userStatus = (user.status || 'active').toLowerCase();
+                const isActive = userStatus === 'active';
+                const statusText = user.status === 'Active' ? 'Active' : (user.status || 'active');
+                return `
+                <tr class="border-b hover:bg-gray-50 transition">
+                    <td class="px-6 py-3 font-medium text-gray-800">${escapeHtml(user.first_name || '')} ${escapeHtml(user.last_name || '')}</td>
+                    <td class="px-6 py-3 text-gray-600">${escapeHtml(user.email)}</td>
+                    <td class="px-6 py-3"><span class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800 capitalize">${escapeHtml(user.role || 'customer')}</span></td>
+                    <td class="px-6 py-3"><span class="px-2 py-1 text-xs rounded-full ${isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}">${escapeHtml(statusText)}</span></td>
                     <td class="px-6 py-3 text-right">
-                        <button class="reset-pwd-btn text-blue-600 hover:text-blue-800 mr-2" data-email="${user.email}" title="Reset password"><i class="fas fa-key"></i></button>
-                        <button class="remove-user-btn text-red-600 hover:text-red-800" data-user-id="${user.id}" data-user-role="${user.role}" title="Remove user"><i class="fas fa-trash-alt"></i></button>
+                        <button class="reset-pwd-btn text-blue-600 hover:text-blue-800 mr-2 transition" data-email="${escapeHtml(user.email)}" title="Reset password"><i class="fas fa-key"></i></button>
+                        <button class="remove-user-btn text-red-600 hover:text-red-800 transition" data-user-id="${user.id}" data-user-role="${escapeHtml(user.role || 'customer')}" title="Remove user"><i class="fas fa-trash-alt"></i></button>
                     </td>
                 </tr>
-            `).join('');
-            document.querySelectorAll('.reset-pwd-btn').forEach(btn => btn.addEventListener('click', () => resetUserPassword(btn.dataset.email)));
-            document.querySelectorAll('.remove-user-btn').forEach(btn => btn.addEventListener('click', () => removeUser(btn.dataset.userId, btn.dataset.userRole)));
+            `}).join('');
+            
+            // Re-attach event listeners after DOM update
+            document.querySelectorAll('.reset-pwd-btn').forEach(btn => btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                resetUserPassword(btn.dataset.email);
+            }));
+            document.querySelectorAll('.remove-user-btn').forEach(btn => btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                removeUser(btn.dataset.userId, btn.dataset.userRole);
+            }));
         } catch (err) {
-            tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-red-500">Error: ${err.message}</td></tr>`;
+            console.error('Load team error:', err);
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-red-500">Error: ${escapeHtml(err.message)}</td></tr>`;
+            showToast(`Failed to load team: ${err.message}`, 'error');
         }
     }
 
@@ -316,13 +352,17 @@
         }
         try {
             await apiFetch(`/organisations/me/users/${userId}`, { method: 'DELETE', headers });
-            showToast('User removed', 'success');
+            showToast('User removed successfully', 'success');
             loadTeam();
         } catch (err) { showToast(err.message, 'error'); }
     }
 
-    function escapeHtml(str) { return String(str).replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
+    function escapeHtml(str) { 
+        if (!str) return '';
+        return String(str).replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
+    }
 
+    // Create user / invite logic
     document.getElementById('create-user-btn')?.addEventListener('click', async () => {
         const firstName = document.getElementById('new-firstname').value.trim();
         const lastName = document.getElementById('new-lastname').value.trim();
@@ -331,8 +371,10 @@
         const phone = document.getElementById('new-phone').value.trim();
         const msgDiv = document.getElementById('form-message');
         if (!firstName || !lastName || !email) {
-            msgDiv.className = 'mt-3 text-sm text-red-600'; msgDiv.innerText = 'First name, last name and email are required.';
-            msgDiv.classList.remove('hidden'); return;
+            msgDiv.className = 'mt-3 text-sm text-red-600 block';
+            msgDiv.innerText = 'First name, last name and email are required.';
+            msgDiv.classList.remove('hidden');
+            return;
         }
         msgDiv.classList.add('hidden');
         const btn = document.getElementById('create-user-btn');
@@ -344,16 +386,20 @@
                 method: 'POST',
                 body: JSON.stringify({ first_name: firstName, last_name: lastName, email, role, phone: phone || null, send_invite_email: true })
             });
-            msgDiv.className = 'mt-3 text-sm text-green-600';
-            msgDiv.innerText = `Invitation sent to ${email}. They will receive an email with a temporary password.`;
+            msgDiv.className = 'mt-3 text-sm text-green-600 block';
+            msgDiv.innerText = `✓ Invitation sent to ${email}. They will receive an email with a temporary password.`;
             msgDiv.classList.remove('hidden');
             document.getElementById('new-firstname').value = '';
             document.getElementById('new-lastname').value = '';
             document.getElementById('new-email').value = '';
             document.getElementById('new-phone').value = '';
-            loadTeam();
+            // Refresh table to show newly added user
+            await loadTeam();
+            setTimeout(() => {
+                msgDiv.classList.add('hidden');
+            }, 5000);
         } catch (err) {
-            msgDiv.className = 'mt-3 text-sm text-red-600';
+            msgDiv.className = 'mt-3 text-sm text-red-600 block';
             msgDiv.innerText = err.message;
             msgDiv.classList.remove('hidden');
         } finally {
@@ -364,9 +410,18 @@
 
     document.getElementById('refresh-team-btn')?.addEventListener('click', () => loadTeam());
 
+    // Initialization: check auth and load team
     (async () => {
-        await ensureOwnerRole();
-        await loadTeam();
+        try {
+            await ensureOwnerRole();
+            await loadTeam();
+        } catch (err) {
+            console.error("Init error:", err);
+            if(!document.body.innerHTML.includes('Access denied')) {
+                const tbody = document.getElementById('team-table-body');
+                if(tbody) tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-red-500">Authentication error: ${escapeHtml(err.message)}</td></tr>`;
+            }
+        }
     })();
 </script>
 </body>
