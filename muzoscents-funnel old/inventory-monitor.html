@@ -110,6 +110,7 @@
         <!-- ========== TABS ========== -->
         <div class="flex flex-wrap gap-2 border-b border-slate-700 mb-6">
             <button class="tab-btn px-4 py-2 text-sm font-medium tab-active" data-tab="inventory">📦 Inventory</button>
+            <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="expiry">⏳ Expiry & Batch</button>
             <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="alerts">🚨 Alerts</button>
             <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="risk">⚠️ Risk Scores</button>
             <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="transfers">🔄 Transfers</button>
@@ -261,6 +262,40 @@
                 <div id="products-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     <div class="col-span-full text-center py-8 text-slate-400"><i class="fa-solid fa-spinner fa-pulse mr-2"></i> Loading...</div>
                 </div>
+            </div>
+        </div>
+
+        <!-- ========== TAB CONTENT: EXPIRY & BATCH ========== -->
+        <div id="tab-expiry" class="tab-content hidden">
+            <div class="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
+                <div class="flex flex-wrap justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-calendar-exclamation text-red-400"></i> Expiry Alerts & Batch Tracking</h2>
+                    <div class="flex gap-2">
+                        <button id="refresh-expiry-btn" class="bg-slate-700 hover:bg-slate-600 text-sm px-3 py-1.5 rounded-lg"><i class="fa-solid fa-rotate-right mr-1"></i> Refresh</button>
+                        <button id="show-add-batch-modal" class="bg-emerald-600 hover:bg-emerald-700 text-sm px-4 py-2 rounded-lg"><i class="fa-solid fa-plus mr-1"></i> Add Batch</button>
+                        <button id="show-fefo-modal" class="bg-indigo-600 hover:bg-indigo-700 text-sm px-4 py-2 rounded-lg"><i class="fa-solid fa-chart-line mr-1"></i> FEFO</button>
+                    </div>
+                </div>
+                <!-- summary cards -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div class="bg-red-900/30 rounded-xl p-4 border border-red-700"><div class="text-2xl font-bold text-red-400" id="critical-30d-count">0</div><div class="text-xs text-slate-400">Expiring ≤30d</div></div>
+                    <div class="bg-orange-900/30 rounded-xl p-4 border border-orange-700"><div class="text-2xl font-bold text-orange-400" id="critical-60d-count">0</div><div class="text-xs text-slate-400">Expiring 31-60d</div></div>
+                    <div class="bg-yellow-900/30 rounded-xl p-4 border border-yellow-700"><div class="text-2xl font-bold text-yellow-400" id="warning-90d-count">0</div><div class="text-xs text-slate-400">Expiring 61-90d</div></div>
+                    <div class="bg-blue-900/30 rounded-xl p-4 border border-blue-700"><div class="text-2xl font-bold text-blue-400" id="info-180d-count">0</div><div class="text-xs text-slate-400">Expiring 91-180d</div></div>
+                </div>
+                <!-- filters -->
+                <div class="flex flex-wrap gap-3 mb-4">
+                    <select id="expiry-alert-filter" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm"><option value="all">All Alerts</option><option value="critical">Critical (≤90d)</option><option value="warning">Warning (91-120d)</option><option value="info">Info (121-180d)</option></select>
+                    <select id="expiry-location-filter" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm"><option value="">All Locations</option></select>
+                </div>
+                <!-- table -->
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-900/50"><tr class="border-b border-slate-700"><th class="text-left p-3">Product</th><th class="text-left p-3">Batch #</th><th class="text-left p-3">Expiry Date</th><th class="text-left p-3">Days Left</th><th class="text-left p-3">Stock</th><th class="text-left p-3">Location</th><th class="text-left p-3">Actions</th></tr></thead>
+                        <tbody id="expiring-products-table"><tr><td colspan="7" class="text-center p-8 text-slate-400">Loading expiring products...</td></tr></tbody>
+                    </table>
+                </div>
+                <div class="mt-4 p-3 bg-amber-900/20 rounded-lg border border-amber-700/50 text-xs"><i class="fa-solid fa-lightbulb text-amber-400 mr-2"></i><strong class="text-amber-300">FEFO Best Practice:</strong> <span class="text-slate-300">Always use First Expiry First Out for picking. Products with earliest expiry dates should be sold first.</span></div>
             </div>
         </div>
 
@@ -839,6 +874,13 @@
                     <span class="text-slate-500 text-xs">${l.type}</span>
                 </div>
             `).join('');
+            
+            // Update expiry location filter
+            const expiryLocFilter = document.getElementById('expiry-location-filter');
+            if (expiryLocFilter) {
+                expiryLocFilter.innerHTML = '<option value="">All Locations</option>' + allLocations.map(l => `<option value="${l.id}">${escapeHtml(l.name)}</option>`).join('');
+                expiryLocFilter.onchange = loadExpiringProducts;
+            }
         } catch (err) {
             console.error('Error loading locations:', err);
             showToast('Failed to load locations', 'error');
@@ -861,7 +903,7 @@
     }
 
     // ============================================================
-    // DASHBOARD METRICS with graceful error handling
+    // DASHBOARD METRICS
     // ============================================================
     async function loadDashboardMetrics() {
         try {
@@ -872,7 +914,6 @@
             document.getElementById('metric-compliance').innerText = `${data.alert_compliance || 0}%`;
         } catch (err) {
             console.error('Failed to load dashboard metrics:', err);
-            // Keep zeros, don't show error
         }
     }
 
@@ -1085,7 +1126,7 @@
     }
 
     // ============================================================
-    // ALERTS with graceful error handling
+    // ALERTS
     // ============================================================
     async function loadAlerts() {
         const status = document.getElementById('alert-status-filter').value;
@@ -1096,21 +1137,9 @@
         
         try {
             const data = await apiCall(url);
-            if (data.alerts) {
-                renderAlerts(data.alerts);
-            } else {
-                renderAlerts([]);
-                showToast('No alert data available', 'info');
-            }
+            renderAlerts(data.alerts || []);
         } catch (err) {
-            console.error('Error loading alerts:', err);
-            document.getElementById('alerts-container').innerHTML = `
-                <div class="text-center py-8 text-yellow-400">
-                    <i class="fa-solid fa-triangle-exclamation text-2xl mb-2 block"></i>
-                    Alerts feature not fully configured yet.
-                    <div class="text-xs text-slate-500 mt-2">${escapeHtml(err.message)}</div>
-                </div>
-            `;
+            document.getElementById('alerts-container').innerHTML = `<div class="text-center py-8 text-red-400">❌ ${escapeHtml(err.message)}</div>`;
         }
     }
 
@@ -1121,7 +1150,7 @@
             return;
         }
         container.innerHTML = alerts.map(alert => {
-            const isResolved = alert.is_resolved || alert.action_taken;
+            const isResolved = alert.is_resolved || alert.action_taken || alert.status === 'Resolved';
             const urgencyIcon = alert.alert_type?.includes('CRITICAL') ? '🔴' : 
                                alert.alert_type?.includes('WARNING') ? '🟠' : 
                                alert.alert_type?.includes('MEDIUM') ? '🟡' : '🟢';
@@ -1195,7 +1224,7 @@
     };
 
     // ============================================================
-    // RISK SCORES with graceful error handling
+    // RISK SCORES
     // ============================================================
     async function loadRiskScores() {
         const level = document.getElementById('risk-level-filter').value;
@@ -1204,26 +1233,19 @@
         
         try {
             const data = await apiCall(url);
-            const scores = data.risk_scores || [];
+            const scores = data.risk_scores || data || [];
             renderRiskScores(scores);
         } catch (err) {
-            console.error('Error loading risk scores:', err);
-            document.getElementById('risk-container').innerHTML = `
-                <div class="text-center py-8 text-yellow-400">
-                    <i class="fa-solid fa-triangle-exclamation text-2xl mb-2 block"></i>
-                    Risk scores feature not fully configured yet.
-                    <div class="text-xs text-slate-500 mt-2">${escapeHtml(err.message)}</div>
-                </div>
-            `;
-            ['risk-critical-count', 'risk-high-count', 'risk-moderate-count', 'risk-low-count'].forEach(id => {
-                document.getElementById(id).innerText = '0';
-            });
+            document.getElementById('risk-container').innerHTML = `<div class="text-center py-8 text-red-400">❌ ${escapeHtml(err.message)}</div>`;
         }
     }
 
     function renderRiskScores(scores) {
+        // Summary
         const counts = { CRITICAL: 0, HIGH: 0, MODERATE: 0, LOW: 0 };
-        scores.forEach(s => { if (counts.hasOwnProperty(s.risk_level)) counts[s.risk_level]++; });
+        if (Array.isArray(scores)) {
+            scores.forEach(s => { if (counts.hasOwnProperty(s.risk_level)) counts[s.risk_level]++; });
+        }
         document.getElementById('risk-critical-count').innerText = counts.CRITICAL || 0;
         document.getElementById('risk-high-count').innerText = counts.HIGH || 0;
         document.getElementById('risk-moderate-count').innerText = counts.MODERATE || 0;
@@ -1238,7 +1260,7 @@
             <div class="border rounded-lg p-3 mb-2 ${getRiskColor(item.risk_level)}">
                 <div class="flex justify-between items-start">
                     <div>
-                        <div class="font-medium">${escapeHtml(item.product_name || 'Unknown')}</div>
+                        <div class="font-medium">${escapeHtml(item.product_name || item.inventory_id || 'Unknown')}</div>
                         <div class="text-xs text-slate-400">${escapeHtml(item.sku || '')} ${item.batch ? `• Batch: ${item.batch}` : ''}</div>
                     </div>
                     <div class="text-right">
@@ -1265,7 +1287,8 @@
         
         try {
             const data = await apiCall(url);
-            renderTransferSuggestions(data.suggestions || []);
+            const suggestions = data.suggestions || data || [];
+            renderTransferSuggestions(suggestions);
         } catch (err) {
             document.getElementById('transfer-container').innerHTML = `<div class="text-center py-8 text-red-400">❌ ${escapeHtml(err.message)}</div>`;
         }
@@ -1286,7 +1309,7 @@
                         <div class="flex-1">
                             <div class="flex items-center gap-2">
                                 <span>${urgencyIcon}</span>
-                                <span class="font-medium">${escapeHtml(s.product_name || 'Unknown')}</span>
+                                <span class="font-medium">${escapeHtml(s.product_name || s.inventory_id || 'Unknown')}</span>
                                 <span class="text-xs text-slate-400 font-mono">(${escapeHtml(s.sku || '')})</span>
                             </div>
                             <div class="text-sm text-slate-400">${s.quantity || 0} units • ${s.from_branch || '?'} → ${s.to_branch || '?'}</div>
@@ -1326,26 +1349,15 @@
     };
 
     // ============================================================
-    // STOCK LIMITS with graceful error handling
+    // STOCK LIMITS
     // ============================================================
     async function loadStockLimits() {
         try {
             const data = await apiCall('/stock-limits?limit=100');
-            if (data.stock_limits) {
-                renderStockLimits(data.stock_limits);
-            } else {
-                renderStockLimits([]);
-                showToast('Stock limits not configured', 'info');
-            }
+            const limits = data.stock_limits || data || [];
+            renderStockLimits(limits);
         } catch (err) {
-            console.error('Error loading stock limits:', err);
-            document.getElementById('stock-limits-container').innerHTML = `
-                <div class="text-center py-8 text-yellow-400">
-                    <i class="fa-solid fa-triangle-exclamation text-2xl mb-2 block"></i>
-                    Stock limits feature not fully configured yet.
-                    <div class="text-xs text-slate-500 mt-2">${escapeHtml(err.message)}</div>
-                </div>
-            `;
+            document.getElementById('stock-limits-container').innerHTML = `<div class="text-center py-8 text-red-400">❌ ${escapeHtml(err.message)}</div>`;
         }
     }
 
@@ -1372,8 +1384,8 @@
                     <tbody>
                         ${limits.map(l => `
                             <tr class="border-b border-slate-700">
-                                <td class="p-3 text-xs">${escapeHtml(l.branch_id || 'N/A')}</td>
-                                <td class="p-3">${escapeHtml(l.product_id || 'N/A')}</td>
+                                <td class="p-3 text-xs">${escapeHtml(l.branch_id || l.branch || 'N/A')}</td>
+                                <td class="p-3">${escapeHtml(l.product_id || l.inventory_id || 'N/A')}</td>
                                 <td class="p-3">${l.avg_daily_demand || 0}</td>
                                 <td class="p-3">${l.safety_stock || 0}</td>
                                 <td class="p-3">${l.reorder_point || 0}</td>
@@ -1397,7 +1409,8 @@
         
         try {
             const data = await apiCall(url);
-            renderLogs(data.logs || []);
+            const logs = data.logs || data || [];
+            renderLogs(logs);
         } catch (err) {
             document.getElementById('logs-container').innerHTML = `<div class="text-center py-8 text-red-400">❌ ${escapeHtml(err.message)}</div>`;
         }
@@ -1429,7 +1442,8 @@
     async function loadBranches() {
         try {
             const data = await apiCall('/branches');
-            renderBranches(data.branches || []);
+            const branches = data.branches || data || [];
+            renderBranches(branches);
         } catch (err) {
             document.getElementById('branches-container').innerHTML = `<div class="text-center py-8 text-red-400">❌ ${escapeHtml(err.message)}</div>`;
         }
@@ -1446,7 +1460,7 @@
                 <div class="flex justify-between items-start">
                     <div>
                         <div class="font-bold">${escapeHtml(b.name)}</div>
-                        <div class="text-xs text-slate-400 font-mono">Code: ${escapeHtml(b.code || 'N/A')}</div>
+                        <div class="text-xs text-slate-400 font-mono">Code: ${escapeHtml(b.code || b.branch_code || 'N/A')}</div>
                     </div>
                     <span class="text-xs text-slate-500">ID: ${b.id}</span>
                 </div>
@@ -1609,7 +1623,7 @@
         if (alertFilter !== 'all') url += `&alert_level=${alertFilter}`;
         try {
             const data = await apiCall(url);
-            const products = data.expiring_products || [];
+            const products = data.expiring_products || data || [];
             renderExpiringTable(products, data.summary);
         } catch (err) {
             document.getElementById('expiring-products-table').innerHTML = `<tr><td colspan="7" class="text-center p-8 text-red-400">❌ ${escapeHtml(err.message)}</td></tr>`;
@@ -1628,18 +1642,19 @@
                               p.alert_level === 'info' ? 'bg-yellow-900/50 text-yellow-300' : 'bg-blue-900/50 text-blue-300';
             return `
                 <tr class="border-b border-slate-700 hover:bg-slate-800/50">
-                    <td class="p-3"><div class="font-medium">${escapeHtml(p.product_name)}</div><div class="text-xs text-slate-400">${escapeHtml(p.product_code || '')}</div></td>
-                    <td class="p-3 font-mono text-xs">${escapeHtml(p.batch_number)}</td>
+                    <td class="p-3"><div class="font-medium">${escapeHtml(p.product_name || p.description || 'Unknown')}</div><div class="text-xs text-slate-400">${escapeHtml(p.product_code || p.sku || '')}</div></td>
+                    <td class="p-3 font-mono text-xs">${escapeHtml(p.batch_number || p.batch || '')}</td>
                     <td class="p-3">${p.expiry_date}</td>
                     <td class="p-3"><span class="inline-flex px-2 py-1 rounded-full text-xs ${alertClass}">${p.days_until_expiry} days</span></td>
-                    <td class="p-3">${p.current_stock}</td>
+                    <td class="p-3">${p.current_stock || p.quantity || 0}</td>
                     <td class="p-3">${escapeHtml(p.location_name || 'Main')}</td>
-                    <td class="p-3"><button onclick="viewBatchDetails(${p.batch_id})" class="text-blue-400 hover:text-blue-300"><i class="fa-solid fa-eye"></i></button></td>
+                    <td class="p-3"><button onclick="viewBatchDetails(${p.batch_id || p.id})" class="text-blue-400 hover:text-blue-300"><i class="fa-solid fa-eye"></i></button></td>
                 </tr>
             `;
         }).join('');
         if (summary) {
             document.getElementById('critical-30d-count').innerText = summary.critical_count || 0;
+            document.getElementById('critical-60d-count').innerText = summary.critical_count || 0;
             document.getElementById('warning-90d-count').innerText = summary.warning_count || 0;
             document.getElementById('info-180d-count').innerText = summary.info_count || 0;
         }
@@ -1667,13 +1682,30 @@
         document.getElementById('batch-details-modal').classList.add('hidden');
     });
 
+    document.getElementById('batch-adjust-submit')?.addEventListener('click', async function() {
+        const qty = parseInt(document.getElementById('batch-adjust-qty').value);
+        const reason = document.getElementById('batch-adjust-reason').value;
+        if (isNaN(qty)) { showToast('Enter a valid quantity', 'error'); return; }
+        try {
+            await apiCall(`/inventory/batches/${currentBatchId}/quantity?quantity_adjustment=${qty}&reason=${reason}`, {
+                method: 'PUT'
+            });
+            showToast(`Quantity adjusted by ${qty}`, 'success');
+            document.getElementById('batch-details-modal').classList.add('hidden');
+            loadInventory();
+            loadExpiringProducts();
+        } catch (err) {
+            showToast(`Adjust failed: ${err.message}`, 'error');
+        }
+    });
+
     // ============================================================
     // FEFO
     // ============================================================
     document.getElementById('show-fefo-modal')?.addEventListener('click', async function() {
         try {
             const data = await apiCall('/inventory/expiry-fefo-recommendations');
-            const recs = data.recommendations || [];
+            const recs = data.recommendations || data || [];
             const container = document.getElementById('fefo-recommendations-list');
             if (!recs || recs.length === 0) {
                 container.innerHTML = '<div class="text-center py-8 text-slate-400">✅ All batches are fresh!</div>';
@@ -1713,6 +1745,7 @@
             document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
             document.getElementById(`tab-${this.dataset.tab}`).classList.remove('hidden');
             
+            // Load data for the tab
             const tab = this.dataset.tab;
             if (tab === 'alerts') loadAlerts();
             else if (tab === 'risk') loadRiskScores();
@@ -1720,6 +1753,7 @@
             else if (tab === 'limits') loadStockLimits();
             else if (tab === 'logs') loadSystemLogs();
             else if (tab === 'branches') loadBranches();
+            else if (tab === 'expiry') loadExpiringProducts();
         });
     });
 
@@ -1805,6 +1839,7 @@
         await loadBranches();
         await loadExpiringProducts();
         
+        // Setup expiry warning
         document.getElementById('expiry_date')?.addEventListener('change', function() {
             const hint = document.getElementById('expiry-hint');
             const selected = this.value;
