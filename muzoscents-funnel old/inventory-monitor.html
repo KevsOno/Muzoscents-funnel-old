@@ -805,7 +805,7 @@
         }
 
         // ============================================================
-        // ORGANISATION MANAGEMENT — FIXED
+        // ORGANISATION MANAGEMENT — FIXED: uses /auth/org fallback
         // ============================================================
         async function fetchUserOrganisations() {
             try {
@@ -815,31 +815,28 @@
                 if (!response.ok) throw new Error('Failed to fetch organisations');
                 const data = await response.json();
                 // Normalise the data: the backend returns "id", "org_name", "role"
-                // We make both "id" and "org_id" available for maximum compatibility
                 const orgs = data.organisations || data || [];
                 return orgs.map(org => ({
                     id: org.id || org.org_id,
                     org_id: org.id || org.org_id,
-                    org_name: org.org_name || org.name || 'Unnamed Organisation',
+                    org_name: org.org_name || `Org: ${org.id}`,
                     role: org.role || 'member'
                 }));
             } catch (err) {
-                console.warn('Primary org fetch failed, falling back to /auth/me', err);
+                console.warn('Primary org fetch failed, falling back to /auth/me + /auth/org', err);
                 try {
                     const me = await apiCall('/auth/me');
                     if (me.org_id) {
-                        // Try to get organisation name from /organisations/{id}
-                        let orgName = me.org_name || null;
-                        if (!orgName) {
-                            try {
-                                const orgDetails = await apiCall(`/organisations/${me.org_id}`);
-                                orgName = orgDetails.name || orgDetails.org_name || null;
-                            } catch (e) {
-                                console.warn('Could not fetch organisation details', e);
-                            }
+                        // Use the existing /auth/org endpoint to get the name
+                        let orgName = null;
+                        try {
+                            const orgInfo = await apiCall('/auth/org');
+                            orgName = orgInfo.org_name || null;
+                        } catch (e) {
+                            console.warn('Could not fetch org name via /auth/org', e);
                         }
                         if (!orgName) {
-                            orgName = 'My Organisation'; // fallback
+                            orgName = `Org: ${me.org_id}`;
                         }
                         return [{
                             id: me.org_id,
@@ -848,7 +845,9 @@
                             role: me.role || 'admin'
                         }];
                     }
-                } catch (e) {}
+                } catch (e) {
+                    console.error('Fallback also failed', e);
+                }
                 return [];
             }
         }
@@ -870,9 +869,8 @@
             container.innerHTML = `
                 <div class="space-y-3">
                     ${organisations.map(org => {
-                        // Safely handle both data schemas — use id or org_id
                         const targetId = org.id || org.org_id;
-                        const targetName = org.org_name || 'Unnamed Organisation';
+                        const targetName = org.org_name || `Org: ${targetId}`;
                         return `
                         <div class="org-card p-4 rounded-xl border border-slate-600 hover:bg-slate-700 transition"
                              data-org-id="${targetId}"
@@ -896,7 +894,6 @@
                 </div>
             `;
 
-            // Re-bind click events
             document.querySelectorAll('.org-card').forEach(card => {
                 card.addEventListener('click', () => {
                     document.querySelectorAll('.org-card').forEach(c => {
@@ -943,7 +940,6 @@
                     dev_team: loc.dev_team || ''
                 }));
 
-                // Update location filter dropdowns
                 const filterSelect = document.getElementById('location-filter');
                 const assignSelect = document.getElementById('location-assign');
                 const transferFrom = document.getElementById('transfer-from');
@@ -968,7 +964,6 @@
                     loadInventory();
                 };
 
-                // Update expiry location filter
                 const expiryLocFilter = document.getElementById('expiry-location-filter');
                 if (expiryLocFilter) {
                     expiryLocFilter.innerHTML = '<option value="">All Locations</option>' + allLocations.map(l =>
