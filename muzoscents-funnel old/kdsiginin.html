@@ -1,16 +1,42 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Kevs Digital – Sign In</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com">
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
     <style>
-        :root { --kevs-orange: #f97316; --kevs-blue: #3b82f6; }
-        body { background-color: #fef9e6; font-family: system-ui, sans-serif; }
-        .loading-spinner { border: 2px solid #e5e7eb; border-top: 2px solid var(--kevs-blue); border-radius: 50%; width: 20px; height: 20px; animation: spin 0.6s linear infinite; display: inline-block; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        :root {
+            --kevs-orange: #f97316;
+            --kevs-blue: #3b82f6;
+        }
+        body {
+            background-color: #fef9e6;
+            font-family: system-ui, sans-serif;
+        }
+
+        /* ── spinner ── */
+        .loading-spinner {
+            border: 2px solid #e5e7eb;
+            border-top: 2px solid var(--kevs-blue);
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 0.6s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* ── address suggestions ── */
         .address-suggestions {
             position: absolute;
             z-index: 1000;
@@ -20,7 +46,7 @@
             max-height: 200px;
             overflow-y: auto;
             width: 100%;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
         .suggestion-item {
             padding: 8px 12px;
@@ -30,12 +56,13 @@
         .suggestion-item:hover {
             background-color: #f0f0f0;
         }
-        /* Map modal styles */
+
+        /* ── map modal ── */
         .map-modal {
             display: none;
             position: fixed;
             inset: 0;
-            background: rgba(0,0,0,0.7);
+            background: rgba(0, 0, 0, 0.7);
             z-index: 10000;
             align-items: center;
             justify-content: center;
@@ -55,8 +82,11 @@
             width: 100%;
             border-radius: 12px;
         }
-        /* Style for disabled fields */
-        input:disabled, select:disabled, button:disabled {
+
+        /* ── disabled fields ── */
+        input:disabled,
+        select:disabled,
+        button:disabled {
             opacity: 0.6;
             cursor: not-allowed;
             background-color: #f3f4f6;
@@ -76,452 +106,577 @@
         .disabled-banner i {
             color: #b45309;
         }
+
+        /* ── ANIMATED LOGIN BUTTON ── */
+        .btn-login {
+            position: relative;
+            overflow: hidden;
+            transition: background 0.3s ease, transform 0.15s ease, box-shadow 0.25s ease;
+            will-change: transform;
+        }
+        .btn-login:active:not(:disabled) {
+            transform: scale(0.96);
+        }
+        .btn-login.loading {
+            pointer-events: none;
+            background-color: #2563eb !important;
+        }
+        .btn-login.loading .btn-text {
+            visibility: hidden;
+        }
+        .btn-login.loading .btn-loader {
+            display: inline-flex;
+        }
+        .btn-login .btn-loader {
+            display: none;
+            position: absolute;
+            inset: 0;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            color: white;
+            font-weight: 500;
+        }
+        .btn-login .btn-loader .spinner {
+            width: 22px;
+            height: 22px;
+            border: 2.5px solid rgba(255, 255, 255, 0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.65s linear infinite;
+        }
+        .btn-login .btn-loader .loader-text {
+            font-size: 0.95rem;
+        }
+
+        /* ripple */
+        .btn-login .ripple {
+            position: absolute;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.35);
+            transform: scale(0);
+            animation: rippleAnim 0.6s ease-out forwards;
+            pointer-events: none;
+        }
+        @keyframes rippleAnim {
+            to {
+                transform: scale(4);
+                opacity: 0;
+            }
+        }
+
+        /* success pulse */
+        .btn-login.success {
+            background-color: #059669 !important;
+            transition: background 0.3s ease;
+        }
+        .btn-login.success .btn-text {
+            visibility: visible;
+        }
+        .btn-login.success .btn-loader {
+            display: none !important;
+        }
+        .btn-login .btn-text {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn-login .btn-text i {
+            font-size: 1rem;
+        }
+
+        /* error shake */
+        @keyframes shake {
+            0%,
+            100% {
+                transform: translateX(0);
+            }
+            20% {
+                transform: translateX(-8px);
+            }
+            40% {
+                transform: translateX(8px);
+            }
+            60% {
+                transform: translateX(-5px);
+            }
+            80% {
+                transform: translateX(5px);
+            }
+        }
+        .btn-login.error {
+            animation: shake 0.45s ease forwards;
+            background-color: #dc2626 !important;
+        }
+        .btn-login.error .btn-text {
+            visibility: visible;
+        }
+        .btn-login.error .btn-loader {
+            display: none !important;
+        }
+
+        /* ── toast ── */
+        #toast-container .toast {
+            transform: translateX(120%);
+            animation: slideIn 0.35s ease forwards;
+        }
+        @keyframes slideIn {
+            to {
+                transform: translateX(0);
+            }
+        }
+        #toast-container .toast.removing {
+            animation: slideOut 0.3s ease forwards;
+        }
+        @keyframes slideOut {
+            to {
+                transform: translateX(120%);
+                opacity: 0;
+            }
+        }
     </style>
 </head>
 <body class="min-h-screen flex items-center justify-center p-4">
-<div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
-<div class="max-w-md w-full bg-white rounded-2xl shadow-xl p-8">
-    <div class="text-center mb-6">
-        <span class="text-3xl font-bold text-orange-500">Kevs</span><span class="text-2xl font-semibold text-gray-800">BI</span>
-        <p class="text-xs text-gray-400 mt-1">Intelligence dashboard</p>
-    </div>
-    <div class="flex border-b mb-6">
-        <button id="login-tab" class="flex-1 py-2 font-medium text-blue-600 border-b-2 border-blue-600">Login</button>
-        <button id="register-tab" class="flex-1 py-2 font-medium text-gray-500">Register</button>
-    </div>
 
-    <form id="login-form">
-        <input type="email" id="login-email" placeholder="Email" class="w-full mb-3 p-3 border rounded-lg" required>
-        <div class="relative mb-2">
-            <input type="password" id="login-password" placeholder="Password" class="w-full p-3 border rounded-lg pr-10" required>
-            <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="login-password">
-                <i class="fa-solid fa-eye"></i>
-            </button>
-        </div>
-        <div class="text-right mb-4"><button type="button" id="forgot-pwd-btn" class="text-xs text-blue-500 hover:underline">Forgot password?</button></div>
-        <button type="submit" class="w-full bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 font-medium transition">Login</button>
-        <div class="flex items-center my-4"><div class="flex-1 border-t border-gray-200"></div><span class="px-3 text-xs text-gray-400 uppercase">Or</span><div class="flex-1 border-t border-gray-200"></div></div>
-        <button type="button" id="demo-login-btn" class="w-full bg-emerald-600 text-white py-2.5 rounded-lg hover:bg-emerald-700 font-medium flex items-center justify-center gap-2"><i class="fa-solid fa-bolt"></i> One-Click Demo Access</button>
-    </form>
+    <!-- TOASTS -->
+    <div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
 
-    <!-- REGISTRATION FORM – ALL FIELDS DISABLED -->
-    <form id="register-form" class="hidden">
-        <!-- Disabled banner -->
-        <div class="disabled-banner">
-            <i class="fa-solid fa-lock"></i>
-            <span>Registration is currently disabled. Please contact admin to register.</span>
+    <!-- CARD -->
+    <div class="max-w-md w-full bg-white rounded-2xl shadow-xl p-8">
+        <div class="text-center mb-6">
+            <span class="text-3xl font-bold text-orange-500">Kevs</span><span class="text-2xl font-semibold text-gray-800">BI</span>
+            <p class="text-xs text-gray-400 mt-1">Intelligence dashboard</p>
         </div>
 
-        <div class="mb-3">
-            <label class="block text-xs text-gray-500 mb-1">Invite Code (if joining existing)</label>
-            <input type="text" id="reg-invite-code" placeholder="e.g., KD001" class="w-full p-3 border rounded-lg" disabled>
-            <div id="org-name-preview" class="text-xs text-gray-500 mt-1 hidden">Organisation: <span id="preview-org-name"></span></div>
-        </div>
-        <div class="relative my-2">
-            <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-gray-200"></div></div>
-            <div class="relative flex justify-center text-xs"><span class="bg-white px-2 text-gray-400">OR create new organisation</span></div>
-        </div>
-        
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">Organisation Name *</label>
-            <input type="text" id="reg-org-name" placeholder="Your Company Name" class="w-full p-3 border rounded-lg mb-2" disabled>
-        </div>
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">Location (City, Country) *</label>
-            <input type="text" id="reg-location" placeholder="e.g., Lagos, Nigeria" class="w-full p-3 border rounded-lg mb-2" disabled>
-        </div>
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">Niche / Industry *</label>
-            <input type="text" id="reg-niche" placeholder="e.g., Retail, Tech, Logistics" class="w-full p-3 border rounded-lg mb-2" disabled>
-        </div>
-        
-        <!-- Store Address with Autocomplete + GPS + Map -->
-        <div class="relative mb-2">
-            <label class="block text-xs text-gray-500 mb-1">Store Address * (for delivery distance calculation)</label>
-            <div class="flex gap-2">
-                <div class="relative flex-1">
-                    <input type="text" id="reg-store-address" placeholder="Start typing your full address..." class="w-full p-3 border rounded-lg" autocomplete="off" disabled>
-                    <div id="address-suggestions" class="address-suggestions hidden"></div>
-                </div>
-                <button type="button" id="gps-locate-btn" class="bg-indigo-600 text-white px-3 rounded-lg hover:bg-indigo-700 transition" title="Use my current location" disabled>
-                    <i class="fa-solid fa-location-dot"></i> GPS
-                </button>
-                <button type="button" id="map-picker-btn" class="bg-emerald-600 text-white px-3 rounded-lg hover:bg-emerald-700 transition" title="Select on map" disabled>
-                    <i class="fa-solid fa-map"></i> Map
-                </button>
-            </div>
-            <input type="hidden" id="reg-store-latitude" disabled>
-            <input type="hidden" id="reg-store-longitude" disabled>
-            <p id="address-status" class="text-xs text-amber-600 mt-1 hidden">⚠️ Please select an address from the dropdown, use GPS, or pick on map</p>
+        <!-- Tabs -->
+        <div class="flex border-b mb-6">
+            <button id="login-tab" class="flex-1 py-2 font-medium text-blue-600 border-b-2 border-blue-600">Login</button>
+            <button id="register-tab" class="flex-1 py-2 font-medium text-gray-500">Register</button>
         </div>
 
-        <div class="grid grid-cols-2 gap-2 mb-2">
-            <div>
-                <label class="block text-xs text-gray-500 mb-1">Delivery Base Fee (₦)</label>
-                <input type="number" id="reg-base-fee" value="300" class="w-full p-3 border rounded-lg" disabled>
-            </div>
-            <div>
-                <label class="block text-xs text-gray-500 mb-1">Per km Rate (₦)</label>
-                <input type="number" id="reg-per-km" value="80" class="w-full p-3 border rounded-lg" disabled>
-            </div>
-        </div>
-        <div class="grid grid-cols-2 gap-2 mb-4">
-            <div>
-                <label class="block text-xs text-gray-500 mb-1">Per kg Rate (₦)</label>
-                <input type="number" id="reg-per-kg" value="50" class="w-full p-3 border rounded-lg" disabled>
-            </div>
-        </div>
-        
-        <div class="grid grid-cols-2 gap-2 mb-2">
-            <div>
-                <label class="block text-xs text-gray-500 mb-1">First Name *</label>
-                <input type="text" id="reg-fname" placeholder="John" class="w-full p-3 border rounded-lg" disabled>
-            </div>
-            <div>
-                <label class="block text-xs text-gray-500 mb-1">Last Name *</label>
-                <input type="text" id="reg-lname" placeholder="Doe" class="w-full p-3 border rounded-lg" disabled>
-            </div>
-        </div>
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">Phone Number *</label>
-            <input type="tel" id="reg-phone" placeholder="e.g., +2348123456789" class="w-full p-3 border rounded-lg mb-2" disabled>
-        </div>
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">Estimated Budget (₦)</label>
-            <input type="number" id="reg-budget" placeholder="Optional" class="w-full p-3 border rounded-lg mb-2" disabled>
-        </div>
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">Email *</label>
-            <input type="email" id="reg-email" placeholder="Email" class="w-full mb-2 p-3 border rounded-lg" required disabled>
-        </div>
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">Password *</label>
+        <!-- ─── LOGIN FORM ─── -->
+        <form id="login-form">
+            <input type="email" id="login-email" placeholder="Email" class="w-full mb-3 p-3 border rounded-lg" required />
             <div class="relative mb-2">
-                <input type="password" id="reg-password" placeholder="Password" class="w-full p-3 border rounded-lg pr-10" required disabled>
-                <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reg-password" disabled>
+                <input type="password" id="login-password" placeholder="Password" class="w-full p-3 border rounded-lg pr-10" required />
+                <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="login-password">
                     <i class="fa-solid fa-eye"></i>
                 </button>
             </div>
-        </div>
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">Confirm Password *</label>
-            <div class="relative mb-4">
-                <input type="password" id="reg-confirm-password" placeholder="Confirm Password" class="w-full p-3 border rounded-lg pr-10" required disabled>
-                <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reg-confirm-password" disabled>
-                    <i class="fa-solid fa-eye"></i>
-                </button>
+            <div class="text-right mb-4">
+                <button type="button" id="forgot-pwd-btn" class="text-xs text-blue-500 hover:underline">Forgot password?</button>
             </div>
-        </div>
-        <button type="submit" class="w-full bg-green-600 text-white py-2.5 rounded-lg hover:bg-green-700 transition" disabled>Register</button>
-    </form>
-    <div id="auth-message" class="text-xs text-center mt-4 text-red-500 hidden"></div>
-</div>
 
-<!-- Map Modal -->
-<div id="map-modal" class="map-modal">
-    <div class="map-container">
-        <div class="flex justify-between items-center mb-3">
-            <h3 class="font-bold text-gray-800">📍 Select your store location on map</h3>
-            <button id="close-map-modal" class="text-gray-500 text-2xl">&times;</button>
-        </div>
-        <div id="map"></div>
-        <div class="flex justify-end mt-3 gap-2">
-            <button id="confirm-map-btn" class="bg-blue-600 text-white px-4 py-2 rounded-lg">Use this location</button>
-        </div>
-        <p class="text-xs text-gray-500 mt-2">Click on the map to drop a pin. The address will be filled automatically.</p>
+            <!-- ✦ ANIMATED LOGIN BUTTON ✦ -->
+            <button type="submit" id="login-submit-btn" class="btn-login w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium transition">
+                <span class="btn-text">
+                    <i class="fa-regular fa-circle-check"></i> Login
+                </span>
+                <span class="btn-loader">
+                    <span class="spinner"></span>
+                    <span class="loader-text">Signing in…</span>
+                </span>
+            </button>
+
+            <div class="flex items-center my-4">
+                <div class="flex-1 border-t border-gray-200"></div>
+                <span class="px-3 text-xs text-gray-400 uppercase">Or</span>
+                <div class="flex-1 border-t border-gray-200"></div>
+            </div>
+
+            <button type="button" id="demo-login-btn" class="w-full bg-emerald-600 text-white py-2.5 rounded-lg hover:bg-emerald-700 font-medium flex items-center justify-center gap-2 transition">
+                <i class="fa-solid fa-bolt"></i> One-Click Demo Access
+            </button>
+        </form>
+
+        <!-- ─── REGISTER FORM (disabled) ─── -->
+        <form id="register-form" class="hidden">
+            <div class="disabled-banner">
+                <i class="fa-solid fa-lock"></i>
+                <span>Registration is currently disabled. Please contact admin to register.</span>
+            </div>
+
+            <div class="mb-3">
+                <label class="block text-xs text-gray-500 mb-1">Invite Code (if joining existing)</label>
+                <input type="text" id="reg-invite-code" placeholder="e.g., KD001" class="w-full p-3 border rounded-lg" disabled />
+                <div id="org-name-preview" class="text-xs text-gray-500 mt-1 hidden">Organisation: <span id="preview-org-name"></span></div>
+            </div>
+            <div class="relative my-2">
+                <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-gray-200"></div></div>
+                <div class="relative flex justify-center text-xs"><span class="bg-white px-2 text-gray-400">OR create new organisation</span></div>
+            </div>
+
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Organisation Name *</label>
+                <input type="text" id="reg-org-name" placeholder="Your Company Name" class="w-full p-3 border rounded-lg mb-2" disabled />
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Location (City, Country) *</label>
+                <input type="text" id="reg-location" placeholder="e.g., Lagos, Nigeria" class="w-full p-3 border rounded-lg mb-2" disabled />
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Niche / Industry *</label>
+                <input type="text" id="reg-niche" placeholder="e.g., Retail, Tech, Logistics" class="w-full p-3 border rounded-lg mb-2" disabled />
+            </div>
+
+            <div class="relative mb-2">
+                <label class="block text-xs text-gray-500 mb-1">Store Address * (for delivery distance calculation)</label>
+                <div class="flex gap-2">
+                    <div class="relative flex-1">
+                        <input type="text" id="reg-store-address" placeholder="Start typing your full address…" class="w-full p-3 border rounded-lg" autocomplete="off" disabled />
+                        <div id="address-suggestions" class="address-suggestions hidden"></div>
+                    </div>
+                    <button type="button" class="bg-indigo-600 text-white px-3 rounded-lg hover:bg-indigo-700 transition" disabled><i class="fa-solid fa-location-dot"></i> GPS</button>
+                    <button type="button" class="bg-emerald-600 text-white px-3 rounded-lg hover:bg-emerald-700 transition" disabled><i class="fa-solid fa-map"></i> Map</button>
+                </div>
+                <input type="hidden" id="reg-store-latitude" disabled />
+                <input type="hidden" id="reg-store-longitude" disabled />
+                <p id="address-status" class="text-xs text-amber-600 mt-1 hidden">⚠️ Please select an address from the dropdown, use GPS, or pick on map</p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2 mb-2">
+                <div><label class="block text-xs text-gray-500 mb-1">Delivery Base Fee (₦)</label><input type="number" id="reg-base-fee" value="300" class="w-full p-3 border rounded-lg" disabled /></div>
+                <div><label class="block text-xs text-gray-500 mb-1">Per km Rate (₦)</label><input type="number" id="reg-per-km" value="80" class="w-full p-3 border rounded-lg" disabled /></div>
+            </div>
+            <div class="grid grid-cols-2 gap-2 mb-4">
+                <div><label class="block text-xs text-gray-500 mb-1">Per kg Rate (₦)</label><input type="number" id="reg-per-kg" value="50" class="w-full p-3 border rounded-lg" disabled /></div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2 mb-2">
+                <div><label class="block text-xs text-gray-500 mb-1">First Name *</label><input type="text" id="reg-fname" placeholder="John" class="w-full p-3 border rounded-lg" disabled /></div>
+                <div><label class="block text-xs text-gray-500 mb-1">Last Name *</label><input type="text" id="reg-lname" placeholder="Doe" class="w-full p-3 border rounded-lg" disabled /></div>
+            </div>
+            <div><label class="block text-xs text-gray-500 mb-1">Phone Number *</label><input type="tel" id="reg-phone" placeholder="e.g., +2348123456789" class="w-full p-3 border rounded-lg mb-2" disabled /></div>
+            <div><label class="block text-xs text-gray-500 mb-1">Estimated Budget (₦)</label><input type="number" id="reg-budget" placeholder="Optional" class="w-full p-3 border rounded-lg mb-2" disabled /></div>
+            <div><label class="block text-xs text-gray-500 mb-1">Email *</label><input type="email" id="reg-email" placeholder="Email" class="w-full mb-2 p-3 border rounded-lg" required disabled /></div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Password *</label>
+                <div class="relative mb-2">
+                    <input type="password" id="reg-password" placeholder="Password" class="w-full p-3 border rounded-lg pr-10" required disabled />
+                    <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reg-password" disabled><i class="fa-solid fa-eye"></i></button>
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Confirm Password *</label>
+                <div class="relative mb-4">
+                    <input type="password" id="reg-confirm-password" placeholder="Confirm Password" class="w-full p-3 border rounded-lg pr-10" required disabled />
+                    <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reg-confirm-password" disabled><i class="fa-solid fa-eye"></i></button>
+                </div>
+            </div>
+            <button type="submit" class="w-full bg-green-600 text-white py-2.5 rounded-lg hover:bg-green-700 transition" disabled>Register</button>
+        </form>
+
+        <div id="auth-message" class="text-xs text-center mt-4 text-red-500 hidden"></div>
     </div>
-</div>
 
-<script>
-    const BACKEND_URL = 'https://kevsono-kevs-digital-bos.hf.space';
-    const DASHBOARD_URL = '/kdadmin';  // <--- CHANGED to inventory manager
+    <!-- MAP MODAL (unused) -->
+    <div id="map-modal" class="map-modal">
+        <div class="map-container">
+            <div class="flex justify-between items-center mb-3">
+                <h3 class="font-bold text-gray-800">📍 Select your store location on map</h3>
+                <button id="close-map-modal" class="text-gray-500 text-2xl">&times;</button>
+            </div>
+            <div id="map"></div>
+            <div class="flex justify-end mt-3 gap-2">
+                <button id="confirm-map-btn" class="bg-blue-600 text-white px-4 py-2 rounded-lg">Use this location</button>
+            </div>
+            <p class="text-xs text-gray-500 mt-2">Click on the map to drop a pin. The address will be filled automatically.</p>
+        </div>
+    </div>
 
-    // ---------- TOAST ----------
-    function showToast(msg, type='success') {
-        const container = document.getElementById('toast-container');
-        const toast = document.createElement('div');
-        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type==='success'?'bg-green-600':'bg-red-600'} mb-2 text-sm`;
-        toast.innerText = msg;
-        container.appendChild(toast);
-        setTimeout(() => toast.remove(), 3500);
-    }
+    <script>
+        const BACKEND_URL = 'https://kevsono-kevs-digital-bos.hf.space';
+        const DASHBOARD_URL = '/kdadmin';
 
-    // ---------- API CALL ----------
-    async function apiCall(endpoint, method='GET', body=null, token=null) {
-        const headers = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-        const res = await fetch(`${BACKEND_URL}${endpoint}`, {
-            method,
-            headers,
-            body: body ? JSON.stringify(body) : undefined
-        });
-        if (!res.ok) {
-            const err = await res.json().catch(()=>({detail:'API error'}));
-            throw new Error(err.detail || 'API error');
+        // ─── TOAST ────────────────────────────────────────────────
+        function showToast(msg, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className =
+                `toast px-4 py-2 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} mb-2 text-sm`;
+            toast.innerText = msg;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.classList.add('removing');
+                setTimeout(() => toast.remove(), 350);
+            }, 3500);
         }
-        return res.json();
-    }
 
-    async function fetchAndStoreRole(accessToken) {
-        try {
-            const me = await apiCall('/auth/me', 'GET', null, accessToken);
-            const role = me.role || 'customer';
-            localStorage.setItem('user_role', role);
-            return role;
-        } catch (err) {
-            console.warn('Could not fetch role:', err);
-            localStorage.setItem('user_role', 'customer');
-            return 'customer';
-        }
-    }
-
-    async function login(email, password) {
-        const data = await apiCall('/auth/login', 'POST', { email, password });
-        localStorage.setItem('access_token', data.access_token);
-        localStorage.setItem('refresh_token', data.refresh_token);
-        localStorage.setItem('user_id', data.user_id);
-        await fetchAndStoreRole(data.access_token);
-        showToast('Login successful, redirecting...');
-        setTimeout(() => { window.location.href = DASHBOARD_URL; }, 1000);
-    }
-
-    // Registration function kept but never called because form is disabled
-    async function register(payload) {
-        await apiCall('/auth/register', 'POST', payload);
-        showToast('Registration successful! Please verify email (if required) and then login.');
-        document.getElementById('login-tab').click();
-    }
-
-    async function resetPassword(email) {
-        await apiCall('/auth/reset-password', 'POST', { email });
-        showToast('Password reset email sent. Check your inbox.');
-    }
-
-    // ---------- PASSWORD TOGGLE ----------
-    document.querySelectorAll('.toggle-password-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const targetId = btn.getAttribute('data-target');
-            const input = document.getElementById(targetId);
-            const icon = btn.querySelector('i');
-            if (input.type === 'password') {
-                input.type = 'text';
-                icon.classList.remove('fa-eye');
-                icon.classList.add('fa-eye-slash');
-            } else {
-                input.type = 'password';
-                icon.classList.remove('fa-eye-slash');
-                icon.classList.add('fa-eye');
-            }
-        });
-    });
-
-    // ---------- INVITE CODE ORG PREVIEW (disabled but kept for structure) ----------
-    let previewTimeout;
-    document.getElementById('reg-invite-code')?.addEventListener('input', async (e) => {
-        const code = e.target.value.trim();
-        const previewDiv = document.getElementById('org-name-preview');
-        const previewSpan = document.getElementById('preview-org-name');
-        if (code.length >= 3) {
-            clearTimeout(previewTimeout);
-            previewTimeout = setTimeout(async () => {
-                try {
-                    const data = await apiCall(`/public/org-info?invite_code=${code}`);
-                    previewSpan.innerText = data.org_name;
-                    previewDiv.classList.remove('hidden');
-                } catch (err) {
-                    previewDiv.classList.add('hidden');
-                }
-            }, 500);
-        } else {
-            previewDiv.classList.add('hidden');
-        }
-    });
-
-    // ---------- OSM AUTOCOMPLETE (disabled but kept) ----------
-    const addressInput = document.getElementById('reg-store-address');
-    const suggestionsDiv = document.getElementById('address-suggestions');
-    const latInput = document.getElementById('reg-store-latitude');
-    const lngInput = document.getElementById('reg-store-longitude');
-    const addressStatus = document.getElementById('address-status');
-    let debounceTimer;
-
-    function hideSuggestions() {
-        suggestionsDiv.classList.add('hidden');
-        suggestionsDiv.innerHTML = '';
-    }
-
-    function showSuggestions(items) {
-        if (!items.length) {
-            hideSuggestions();
-            return;
-        }
-        suggestionsDiv.innerHTML = '';
-        items.forEach(item => {
-            const div = document.createElement('div');
-            div.className = 'suggestion-item';
-            const parts = item.display_name.split(',');
-            const shortName = parts.slice(0, 3).join(',');
-            div.textContent = shortName;
-            div.title = item.display_name;
-            div.addEventListener('click', () => {
-                addressInput.value = item.display_name;
-                latInput.value = item.lat;
-                lngInput.value = item.lon;
-                addressStatus.classList.add('hidden');
-                hideSuggestions();
+        // ─── API ──────────────────────────────────────────────────
+        async function apiCall(endpoint, method = 'GET', body = null, token = null) {
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+            const res = await fetch(`${BACKEND_URL}${endpoint}`, {
+                method,
+                headers,
+                body: body ? JSON.stringify(body) : undefined
             });
-            suggestionsDiv.appendChild(div);
-        });
-        suggestionsDiv.classList.remove('hidden');
-    }
-
-    async function fetchAddressSuggestions(query) {
-        if (query.length < 3) {
-            hideSuggestions();
-            return;
-        }
-        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=10&dedupe=1`;
-        try {
-            const response = await fetch(url, {
-                headers: {
-                    'Accept-Language': 'en',
-                    'User-Agent': 'KevsDigital-Registration/1.0'
-                }
-            });
-            const data = await response.json();
-            showSuggestions(data);
-        } catch (err) {
-            console.error('Nominatim fetch error:', err);
-            hideSuggestions();
-        }
-    }
-
-    addressInput.addEventListener('input', (e) => {
-        // This event will never fire because the input is disabled, but keep for completeness
-        latInput.value = '';
-        lngInput.value = '';
-        addressStatus.classList.remove('hidden');
-        addressStatus.innerText = '⚠️ Please select an address from the dropdown, use GPS, or pick on map';
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
-            fetchAddressSuggestions(e.target.value);
-        }, 500);
-    });
-
-    document.addEventListener('click', (e) => {
-        if (!addressInput.contains(e.target) && !suggestionsDiv.contains(e.target)) {
-            hideSuggestions();
-        }
-    });
-
-    // ---------- GPS (disabled) ----------
-    async function useCurrentLocation() {
-        showToast("Registration is disabled.", 'error');
-    }
-    document.getElementById('gps-locate-btn')?.addEventListener('click', useCurrentLocation);
-
-    // ---------- MAP (disabled) ----------
-    let map = null, marker = null, selectedLat = null, selectedLng = null;
-    let leafletLoaded = false;
-
-    function loadLeaflet() {
-        return new Promise((resolve) => {
-            if (leafletLoaded) { resolve(); return; }
-            if (document.querySelector('#leaflet-css')) {
-                leafletLoaded = true;
-                resolve();
-                return;
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: 'API error' }));
+                throw new Error(err.detail || 'API error');
             }
-            const link = document.createElement('link');
-            link.id = 'leaflet-css';
-            link.rel = 'stylesheet';
-            link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-            document.head.appendChild(link);
-            const script = document.createElement('script');
-            script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-            script.onload = () => {
-                leafletLoaded = true;
-                resolve();
-            };
-            document.head.appendChild(script);
-        });
-    }
+            return res.json();
+        }
 
-    async function openMapPicker() {
-        showToast("Registration is disabled.", 'error');
-        return;
-        // The rest is never reached
-    }
-    document.getElementById('map-picker-btn')?.addEventListener('click', openMapPicker);
-    document.getElementById('close-map-modal')?.addEventListener('click', () => {
-        document.getElementById('map-modal').classList.remove('active');
-    });
-    document.getElementById('confirm-map-btn')?.addEventListener('click', async () => {
-        // No-op because map can't be opened
-    });
+        async function fetchAndStoreRole(accessToken) {
+            try {
+                const me = await apiCall('/auth/me', 'GET', null, accessToken);
+                const role = me.role || 'customer';
+                localStorage.setItem('user_role', role);
+                return role;
+            } catch (_) {
+                localStorage.setItem('user_role', 'customer');
+                return 'customer';
+            }
+        }
 
-    // ---------- ADDRESS VALIDATION (unused) ----------
-    function isAddressValidForNewOrg() {
-        return false; // always false because disabled
-    }
-
-    // ---------- DEMO LOGIN ----------
-    document.getElementById('demo-login-btn')?.addEventListener('click', async () => {
-        const btn = document.getElementById('demo-login-btn');
-        const original = btn.innerHTML;
-        btn.innerHTML = '<i class="fa-solid fa-circle-notch animate-spin"></i> Authenticating...';
-        btn.disabled = true;
-        try {
-            const data = await apiCall('/auth/login', 'POST', { email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' });
+        async function login(email, password) {
+            const data = await apiCall('/auth/login', 'POST', { email, password });
             localStorage.setItem('access_token', data.access_token);
             localStorage.setItem('refresh_token', data.refresh_token);
             localStorage.setItem('user_id', data.user_id);
             await fetchAndStoreRole(data.access_token);
-            showToast('Demo login successful!');
-            setTimeout(() => window.location.href = DASHBOARD_URL, 1000);
-        } catch (err) {
-            showToast('Demo failed: ' + err.message, 'error');
-            btn.innerHTML = original;
-            btn.disabled = false;
+            showToast('Login successful, redirecting…');
+            setTimeout(() => { window.location.href = DASHBOARD_URL; }, 1000);
         }
-    });
 
-    // ---------- LOGIN SUBMIT ----------
-    document.getElementById('login-form')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const email = document.getElementById('login-email').value;
-        const pwd = document.getElementById('login-password').value;
-        try { await login(email, pwd); } catch (err) { showToast(err.message, 'error'); }
-    });
+        async function resetPassword(email) {
+            await apiCall('/auth/reset-password', 'POST', { email });
+            showToast('Password reset email sent. Check your inbox.');
+        }
 
-    // ---------- REGISTER SUBMIT (disabled) ----------
-    document.getElementById('register-form')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        showToast('Registration is currently disabled. Please use login or demo access.', 'error');
-    });
+        // ─── PASSWORD TOGGLE ──────────────────────────────────────
+        document.querySelectorAll('.toggle-password-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const input = document.getElementById(btn.dataset.target);
+                const icon = btn.querySelector('i');
+                if (input.type === 'password') {
+                    input.type = 'text';
+                    icon.classList.replace('fa-eye', 'fa-eye-slash');
+                } else {
+                    input.type = 'password';
+                    icon.classList.replace('fa-eye-slash', 'fa-eye');
+                }
+            });
+        });
 
-    // ---------- FORGOT PASSWORD ----------
-    document.getElementById('forgot-pwd-btn')?.addEventListener('click', async () => {
-        const email = document.getElementById('login-email').value;
-        if (!email) { showToast('Enter your email first', 'error'); return; }
-        try { await resetPassword(email); } catch (err) { showToast(err.message, 'error'); }
-    });
+        // ─── LOGIN BUTTON ANIMATION ──────────────────────────────
+        const loginBtn = document.getElementById('login-submit-btn');
+        const loginForm = document.getElementById('login-form');
 
-    // ---------- TAB SWITCHING ----------
-    document.getElementById('login-tab')?.addEventListener('click', () => {
-        document.getElementById('login-form').classList.remove('hidden');
-        document.getElementById('register-form').classList.add('hidden');
-        document.getElementById('login-tab').classList.add('border-blue-600', 'text-blue-600');
-        document.getElementById('register-tab').classList.remove('border-blue-600', 'text-blue-600');
-        document.getElementById('register-tab').classList.add('text-gray-500');
-    });
-    document.getElementById('register-tab')?.addEventListener('click', () => {
-        document.getElementById('login-form').classList.add('hidden');
-        document.getElementById('register-form').classList.remove('hidden');
-        document.getElementById('register-tab').classList.add('border-blue-600', 'text-blue-600');
-        document.getElementById('login-tab').classList.remove('border-blue-600', 'text-blue-600');
-        document.getElementById('login-tab').classList.add('text-gray-500');
-    });
-</script>
+        // helper: reset button to idle state (no extra classes)
+        function resetLoginBtn() {
+            loginBtn.classList.remove('loading', 'success', 'error');
+            loginBtn.disabled = false;
+            // ensure text is visible
+            const text = loginBtn.querySelector('.btn-text');
+            if (text) text.style.visibility = 'visible';
+            const loader = loginBtn.querySelector('.btn-loader');
+            if (loader) loader.style.display = 'none';
+        }
+
+        // helper: set loading state
+        function setLoginLoading() {
+            loginBtn.classList.remove('success', 'error');
+            loginBtn.classList.add('loading');
+            loginBtn.disabled = true;
+            const text = loginBtn.querySelector('.btn-text');
+            if (text) text.style.visibility = 'hidden';
+            const loader = loginBtn.querySelector('.btn-loader');
+            if (loader) loader.style.display = 'inline-flex';
+        }
+
+        // helper: set success state (briefly)
+        function setLoginSuccess() {
+            loginBtn.classList.remove('loading', 'error');
+            loginBtn.classList.add('success');
+            loginBtn.disabled = false;
+            const text = loginBtn.querySelector('.btn-text');
+            if (text) {
+                text.style.visibility = 'visible';
+                text.innerHTML = '<i class="fa-regular fa-circle-check"></i> Logged in!';
+            }
+            const loader = loginBtn.querySelector('.btn-loader');
+            if (loader) loader.style.display = 'none';
+            // after 1.8s, reset to normal
+            setTimeout(() => {
+                resetLoginBtn();
+                const text2 = loginBtn.querySelector('.btn-text');
+                if (text2) text2.innerHTML = '<i class="fa-regular fa-circle-check"></i> Login';
+            }, 1800);
+        }
+
+        // helper: set error state (shake + red)
+        function setLoginError() {
+            loginBtn.classList.remove('loading', 'success');
+            loginBtn.classList.add('error');
+            loginBtn.disabled = false;
+            const text = loginBtn.querySelector('.btn-text');
+            if (text) {
+                text.style.visibility = 'visible';
+                text.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Error';
+            }
+            const loader = loginBtn.querySelector('.btn-loader');
+            if (loader) loader.style.display = 'none';
+            // after 1.2s, reset
+            setTimeout(() => {
+                resetLoginBtn();
+                const text2 = loginBtn.querySelector('.btn-text');
+                if (text2) text2.innerHTML = '<i class="fa-regular fa-circle-check"></i> Login';
+            }, 1200);
+        }
+
+        // ─── LOGIN SUBMIT ──────────────────────────────────────────
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const email = document.getElementById('login-email').value;
+            const pwd = document.getElementById('login-password').value;
+
+            // basic validation
+            if (!email || !pwd) {
+                showToast('Please fill in both email and password.', 'error');
+                setLoginError();
+                return;
+            }
+
+            // start loading
+            setLoginLoading();
+
+            try {
+                await login(email, pwd);
+                // login() redirects after 1s, but we show success briefly
+                setLoginSuccess();
+            } catch (err) {
+                showToast(err.message || 'Login failed.', 'error');
+                setLoginError();
+            }
+        });
+
+        // ─── DEMO LOGIN ────────────────────────────────────────────
+        document.getElementById('demo-login-btn')?.addEventListener('click', async () => {
+            const btn = document.getElementById('demo-login-btn');
+            const original = btn.innerHTML;
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Authenticating…';
+            btn.disabled = true;
+            try {
+                const data = await apiCall('/auth/login', 'POST', { email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' });
+                localStorage.setItem('access_token', data.access_token);
+                localStorage.setItem('refresh_token', data.refresh_token);
+                localStorage.setItem('user_id', data.user_id);
+                await fetchAndStoreRole(data.access_token);
+                showToast('Demo login successful!');
+                setTimeout(() => window.location.href = DASHBOARD_URL, 1000);
+            } catch (err) {
+                showToast('Demo failed: ' + err.message, 'error');
+                btn.innerHTML = original;
+                btn.disabled = false;
+            }
+        });
+
+        // ─── FORGOT PASSWORD ──────────────────────────────────────
+        document.getElementById('forgot-pwd-btn')?.addEventListener('click', async () => {
+            const email = document.getElementById('login-email').value;
+            if (!email) { showToast('Enter your email first.', 'error'); return; }
+            try { await resetPassword(email); } catch (err) { showToast(err.message, 'error'); }
+        });
+
+        // ─── TAB SWITCHING ────────────────────────────────────────
+        const loginTab = document.getElementById('login-tab');
+        const registerTab = document.getElementById('register-tab');
+
+        loginTab?.addEventListener('click', () => {
+            document.getElementById('login-form').classList.remove('hidden');
+            document.getElementById('register-form').classList.add('hidden');
+            loginTab.classList.add('border-blue-600', 'text-blue-600');
+            registerTab.classList.remove('border-blue-600', 'text-blue-600');
+            registerTab.classList.add('text-gray-500');
+            resetLoginBtn(); // clean up button state when switching
+        });
+
+        registerTab?.addEventListener('click', () => {
+            document.getElementById('login-form').classList.add('hidden');
+            document.getElementById('register-form').classList.remove('hidden');
+            registerTab.classList.add('border-blue-600', 'text-blue-600');
+            loginTab.classList.remove('border-blue-600', 'text-blue-600');
+            loginTab.classList.add('text-gray-500');
+            resetLoginBtn();
+        });
+
+        // ─── ADDRESS SUGGESTIONS (disabled but kept) ─────────────
+        const addressInput = document.getElementById('reg-store-address');
+        const suggestionsDiv = document.getElementById('address-suggestions');
+        let debounceTimer;
+
+        function hideSuggestions() {
+            suggestionsDiv.classList.add('hidden');
+            suggestionsDiv.innerHTML = '';
+        }
+
+        function showSuggestions(items) {
+            if (!items.length) { hideSuggestions(); return; }
+            suggestionsDiv.innerHTML = '';
+            items.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'suggestion-item';
+                const parts = item.display_name.split(',');
+                div.textContent = parts.slice(0, 3).join(',');
+                div.title = item.display_name;
+                div.addEventListener('click', () => {
+                    addressInput.value = item.display_name;
+                    document.getElementById('reg-store-latitude').value = item.lat;
+                    document.getElementById('reg-store-longitude').value = item.lon;
+                    document.getElementById('address-status').classList.add('hidden');
+                    hideSuggestions();
+                });
+                suggestionsDiv.appendChild(div);
+            });
+            suggestionsDiv.classList.remove('hidden');
+        }
+
+        async function fetchAddressSuggestions(query) {
+            if (query.length < 3) { hideSuggestions(); return; }
+            const url =
+                `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=10&dedupe=1`;
+            try {
+                const res = await fetch(url, { headers: { 'Accept-Language': 'en', 'User-Agent': 'KevsDigital-Reg/1.0' } });
+                const data = await res.json();
+                showSuggestions(data);
+            } catch (_) { hideSuggestions(); }
+        }
+
+        addressInput?.addEventListener('input', (e) => {
+            document.getElementById('reg-store-latitude').value = '';
+            document.getElementById('reg-store-longitude').value = '';
+            const status = document.getElementById('address-status');
+            status.classList.remove('hidden');
+            status.innerText = '⚠️ Please select an address from the dropdown, use GPS, or pick on map';
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => fetchAddressSuggestions(e.target.value), 500);
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!addressInput?.contains(e.target) && !suggestionsDiv.contains(e.target)) hideSuggestions();
+        });
+
+        // ─── REGISTER SUBMIT (blocked) ────────────────────────────
+        document.getElementById('register-form')?.addEventListener('submit', (e) => {
+            e.preventDefault();
+            showToast('Registration is currently disabled. Please use login or demo access.', 'error');
+        });
+
+        // ─── MAP (unused) ──────────────────────────────────────────
+        document.getElementById('map-picker-btn')?.addEventListener('click', () => {
+            showToast('Registration is disabled.', 'error');
+        });
+        document.getElementById('gps-locate-btn')?.addEventListener('click', () => {
+            showToast('Registration is disabled.', 'error');
+        });
+        document.getElementById('close-map-modal')?.addEventListener('click', () => {
+            document.getElementById('map-modal').classList.remove('active');
+        });
+
+        console.log('✅ Kevs Digital – Sign In (with animated login button)');
+    </script>
 </body>
 </html>
