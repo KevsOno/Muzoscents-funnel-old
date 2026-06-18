@@ -814,25 +814,37 @@
                 });
                 if (!response.ok) throw new Error('Failed to fetch organisations');
                 const data = await response.json();
-
                 // Normalise the data: the backend returns "id", "org_name", "role"
                 // We make both "id" and "org_id" available for maximum compatibility
                 const orgs = data.organisations || data || [];
                 return orgs.map(org => ({
                     id: org.id || org.org_id,
                     org_id: org.id || org.org_id,
-                    org_name: org.org_name || 'Unnamed Organisation',
+                    org_name: org.org_name || org.name || 'Unnamed Organisation',
                     role: org.role || 'member'
                 }));
             } catch (err) {
-                // Fallback: try /auth/me
+                console.warn('Primary org fetch failed, falling back to /auth/me', err);
                 try {
                     const me = await apiCall('/auth/me');
                     if (me.org_id) {
+                        // Try to get organisation name from /organisations/{id}
+                        let orgName = me.org_name || null;
+                        if (!orgName) {
+                            try {
+                                const orgDetails = await apiCall(`/organisations/${me.org_id}`);
+                                orgName = orgDetails.name || orgDetails.org_name || null;
+                            } catch (e) {
+                                console.warn('Could not fetch organisation details', e);
+                            }
+                        }
+                        if (!orgName) {
+                            orgName = 'My Organisation'; // fallback
+                        }
                         return [{
                             id: me.org_id,
                             org_id: me.org_id,
-                            org_name: me.org_name || me.org_id.substring(0, 8),
+                            org_name: orgName,
                             role: me.role || 'admin'
                         }];
                     }
