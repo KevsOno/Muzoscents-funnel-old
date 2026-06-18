@@ -1754,16 +1754,24 @@
         window.viewBatchDetails = async function(batchId) {
             try {
                 const batch = await apiCall(`/inventory/batches/${batchId}`);
-                // batch now includes product_description and product_sku from backend join
+                // Look up product from the global products array using inventory_id
+                let product = null;
+                if (batch.inventory_id) {
+                    product = products.find(p => p.id == batch.inventory_id);
+                }
+                // Fallback: if no product found, try using product fields from batch if available
+                const productName = product ? product.description : (batch.product_description || batch.inventory_description || 'N/A');
+                const productSku = product ? product.item_code : (batch.product_sku || batch.inventory_item_code || 'N/A');
+
                 document.getElementById('batch-details-content').innerHTML = `
                     <div class="space-y-2 text-sm">
                         <div class="flex justify-between border-b border-slate-700 pb-1">
                             <span class="text-slate-400">Product:</span>
-                            <span class="font-medium">${escapeHtml(batch.product_description || batch.inventory_description || 'N/A')}</span>
+                            <span class="font-medium">${escapeHtml(productName)}</span>
                         </div>
                         <div class="flex justify-between border-b border-slate-700 pb-1">
                             <span class="text-slate-400">SKU:</span>
-                            <span class="font-mono">${escapeHtml(batch.product_sku || batch.inventory_item_code || 'N/A')}</span>
+                            <span class="font-mono">${escapeHtml(productSku)}</span>
                         </div>
                         <div class="flex justify-between border-b border-slate-700 pb-1">
                             <span class="text-slate-400">Batch:</span>
@@ -1787,7 +1795,7 @@
                         </div>
                     </div>
                 `;
-                // Store the batch ID in a global for the adjust button
+                // Store the batch ID for adjustment
                 window.currentBatchId = batchId;
                 document.getElementById('batch-details-modal').classList.remove('hidden');
             } catch (err) {
@@ -1800,7 +1808,7 @@
         });
 
         // ============================================================
-        // BATCH ADJUST — FIXED: use window.currentBatchId
+        // BATCH ADJUST — uses window.currentBatchId
         // ============================================================
         document.getElementById('batch-adjust-submit')?.addEventListener('click', async function() {
             const qty = parseInt(document.getElementById('batch-adjust-qty').value);
