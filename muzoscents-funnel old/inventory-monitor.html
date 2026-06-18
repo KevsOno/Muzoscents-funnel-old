@@ -31,6 +31,10 @@
         .risk-high { background: #f59e0b; }
         .risk-moderate { background: #eab308; }
         .risk-low { background: #22c55e; }
+        /* Fix search results overlay */
+        #product-search-results {
+            z-index: 9999 !important;
+        }
     </style>
 </head>
 <body class="text-slate-200">
@@ -142,7 +146,7 @@
                 <div class="relative">
                     <input type="text" id="product-search-input" placeholder="Search by SKU, description, or product group..." class="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm pl-10">
                     <i class="fa-solid fa-search absolute left-3 top-3.5 text-slate-500"></i>
-                    <div id="product-search-results" class="absolute z-20 w-full mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl max-h-64 overflow-y-auto hidden"></div>
+                    <div id="product-search-results" class="absolute w-full mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl max-h-64 overflow-y-auto hidden"></div>
                 </div>
             </div>
 
@@ -1923,6 +1927,72 @@
     document.getElementById('alert-type-filter')?.addEventListener('change', loadAlerts);
     document.getElementById('transfer-status-filter')?.addEventListener('change', loadTransferSuggestions);
     document.getElementById('log-level-filter')?.addEventListener('change', loadSystemLogs);
+
+    // ============================================================
+    // PRODUCT SEARCH
+    // ============================================================
+    const searchInput = document.getElementById('product-search-input');
+    const searchResults = document.getElementById('product-search-results');
+
+    if (searchInput) {
+        searchInput.addEventListener('input', function(e) {
+            const query = this.value.trim().toLowerCase();
+            if (query.length < 2) {
+                searchResults.classList.add('hidden');
+                return;
+            }
+
+            // Filter products from the global `products` array
+            const matches = products.filter(p => {
+                const desc = (p.description || '').toLowerCase();
+                const sku = (p.item_code || p.id || '').toLowerCase();
+                const group = (p.product_group || '').toLowerCase();
+                return desc.includes(query) || sku.includes(query) || group.includes(query);
+            });
+
+            if (matches.length === 0) {
+                searchResults.innerHTML = '<div class="p-2 text-sm text-slate-400">No products found</div>';
+                searchResults.classList.remove('hidden');
+                return;
+            }
+
+            // Render results
+            let html = '';
+            matches.slice(0, 10).forEach(p => {
+                html += `
+                    <div class="product-search-result p-2 border-b border-slate-700 hover:bg-slate-700 transition flex justify-between items-center" data-id="${p.id}">
+                        <div>
+                            <div class="text-sm font-medium">${escapeHtml(p.description)}</div>
+                            <div class="text-xs text-slate-400">${escapeHtml(p.item_code || p.id)} • ₦${(p.price_naira || 0).toLocaleString()}</div>
+                        </div>
+                        <span class="text-xs text-slate-500">${p.current_qty || 0} in stock</span>
+                    </div>
+                `;
+            });
+            searchResults.innerHTML = html;
+            searchResults.classList.remove('hidden');
+
+            // Click on a result => fill the edit form
+            searchResults.querySelectorAll('.product-search-result').forEach(el => {
+                el.addEventListener('click', function() {
+                    const id = this.dataset.id;
+                    const product = products.find(p => p.id == id);
+                    if (product) {
+                        editProduct(id);
+                        searchInput.value = '';
+                        searchResults.classList.add('hidden');
+                    }
+                });
+            });
+        });
+
+        // Click outside to close results
+        document.addEventListener('click', function(e) {
+            if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+                searchResults.classList.add('hidden');
+            }
+        });
+    }
 
     // ============================================================
     // INIT
