@@ -1728,18 +1728,33 @@
                 const alertClass = p.alert_level === 'critical' ? 'bg-red-900/50 text-red-300' :
                     p.alert_level === 'warning' ? 'bg-orange-900/50 text-orange-300' :
                     p.alert_level === 'info' ? 'bg-yellow-900/50 text-yellow-300' : 'bg-blue-900/50 text-blue-300';
-                // Pass both batch_id (or product id fallback) and the actual inventory/product id
                 const batchId = p.batch_id || p.id;
                 const productId = p.inventory_id || p.id;
+                // store batch details in data attributes
+                const batchNumber = escapeHtml(p.batch_number || p.batch || '');
+                const expiryDate = p.expiry_date || '';
+                const quantity = p.current_stock || p.quantity || 0;
+                const cost = p.cost_price_naira || 0;
+                const supplier = escapeHtml(p.supplier_name || '');
                 return `
                     <tr class="border-b border-slate-700 hover:bg-slate-800/50">
                         <td class="p-3"><div class="font-medium">${escapeHtml(p.product_name || p.description || 'Unknown')}</div><div class="text-xs text-slate-400">${escapeHtml(p.product_code || p.sku || '')}</div></td>
-                        <td class="p-3 font-mono text-xs">${escapeHtml(p.batch_number || p.batch || '')}</td>
-                        <td class="p-3">${p.expiry_date}</td>
+                        <td class="p-3 font-mono text-xs">${batchNumber}</td>
+                        <td class="p-3">${expiryDate}</td>
                         <td class="p-3"><span class="inline-flex px-2 py-1 rounded-full text-xs ${alertClass}">${p.days_until_expiry} days</span></td>
-                        <td class="p-3">${p.current_stock || p.quantity || 0}</td>
+                        <td class="p-3">${quantity}</td>
                         <td class="p-3">${escapeHtml(p.location_name || 'Main')}</td>
-                        <td class="p-3"><button onclick="viewBatchDetails(${batchId}, ${productId})" class="text-blue-400 hover:text-blue-300"><i class="fa-solid fa-eye"></i></button></td>
+                        <td class="p-3">
+                            <button onclick="viewBatchDetails(this, ${batchId}, ${productId})" 
+                                    data-batch-number="${batchNumber}"
+                                    data-expiry="${expiryDate}"
+                                    data-quantity="${quantity}"
+                                    data-cost="${cost}"
+                                    data-supplier="${supplier}"
+                                    class="text-blue-400 hover:text-blue-300">
+                                <i class="fa-solid fa-eye"></i>
+                            </button>
+                        </td>
                     </tr>
                 `;
             }).join('');
@@ -1752,22 +1767,52 @@
         }
 
         // ============================================================
-        // BATCH DETAILS — FIXED: uses productId from expiring table
+        // BATCH DETAILS — uses dataset from button + API fallback
         // ============================================================
-        window.viewBatchDetails = async function(batchId, productId) {
+        window.viewBatchDetails = async function(button, batchId, productId) {
             try {
-                // Fetch batch details
-                const batch = await apiCall(`/inventory/batches/${batchId}`);
-                // Get product from global products array using productId (if provided) or fallback to batch.inventory_id
+                // Read data from the button's dataset (from the expiring table)
+                const dataset = button.dataset;
+                const batchNumber = dataset.batchNumber || 'N/A';
+                const expiryDate = dataset.expiry || 'N/A';
+                const quantity = dataset.quantity || '0';
+                const cost = dataset.cost || '0';
+                const supplier = dataset.supplier || 'N/A';
+
+                // Try to fetch batch details from API to get cost and supplier if not present in dataset
+                let apiBatch = null;
+                try {
+                    apiBatch = await apiCall(`/inventory/batches/${batchId}`);
+                } catch (e) {
+                    // If API fails, we still have dataset data
+                }
+
+                // Use API data if available and dataset missing or default
+                const finalBatchNumber = (apiBatch && apiBatch.batch_number) ? apiBatch.batch_number : batchNumber;
+                const finalExpiry = (apiBatch && apiBatch.expiry_date) ? apiBatch.expiry_date : expiryDate;
+                const finalQuantity = (apiBatch && apiBatch.quantity !== undefined) ? apiBatch.quantity : quantity;
+                // Cost: try API, then dataset
+                let finalCost = cost;
+                if (apiBatch) {
+                    if (apiBatch.cost_price_naira !== undefined) finalCost = apiBatch.cost_price_naira;
+                    else if (apiBatch.cost_price !== undefined) finalCost = apiBatch.cost_price;
+                    else if (apiBatch.cost !== undefined) finalCost = apiBatch.cost;
+                }
+                let finalSupplier = supplier;
+                if (apiBatch) {
+                    if (apiBatch.supplier_name) finalSupplier = apiBatch.supplier_name;
+                    else if (apiBatch.supplier) finalSupplier = apiBatch.supplier;
+                }
+
+                // Get product details from global products array
                 let product = null;
                 if (productId) {
                     product = products.find(p => p.id == productId);
-                } else if (batch.inventory_id) {
-                    product = products.find(p => p.id == batch.inventory_id);
+                } else if (apiBatch && apiBatch.inventory_id) {
+                    product = products.find(p => p.id == apiBatch.inventory_id);
                 }
-                // Fallback to batch fields if product not found
-                const productName = product ? product.description : (batch.product_description || batch.inventory_description || 'N/A');
-                const productSku = product ? product.item_code : (batch.product_sku || batch.inventory_item_code || 'N/A');
+                const productName = product ? product.description : (apiBatch && (apiBatch.product_description || apiBatch.inventory_description)) || 'N/A';
+                const productSku = product ? product.item_code : (apiBatch && (apiBatch.product_sku || apiBatch.inventory_item_code)) || 'N/A';
 
                 document.getElementById('batch-details-content').innerHTML = `
                     <div class="space-y-2 text-sm">
@@ -1781,23 +1826,23 @@
                         </div>
                         <div class="flex justify-between border-b border-slate-700 pb-1">
                             <span class="text-slate-400">Batch:</span>
-                            <span class="font-mono">${escapeHtml(batch.batch_number || 'N/A')}</span>
+                            <span class="font-mono">${escapeHtml(finalBatchNumber)}</span>
                         </div>
                         <div class="flex justify-between border-b border-slate-700 pb-1">
                             <span class="text-slate-400">Quantity:</span>
-                            <span>${batch.quantity || 0}</span>
+                            <span>${finalQuantity}</span>
                         </div>
                         <div class="flex justify-between border-b border-slate-700 pb-1">
                             <span class="text-slate-400">Expiry:</span>
-                            <span>${batch.expiry_date || 'N/A'}</span>
+                            <span>${finalExpiry}</span>
                         </div>
                         <div class="flex justify-between border-b border-slate-700 pb-1">
                             <span class="text-slate-400">Cost:</span>
-                            <span>₦${(batch.cost_price_naira || 0).toLocaleString()}</span>
+                            <span>₦${Number(finalCost).toLocaleString()}</span>
                         </div>
                         <div class="flex justify-between">
                             <span class="text-slate-400">Supplier:</span>
-                            <span>${escapeHtml(batch.supplier_name || 'N/A')}</span>
+                            <span>${escapeHtml(finalSupplier)}</span>
                         </div>
                     </div>
                 `;
