@@ -805,7 +805,7 @@
         }
 
         // ============================================================
-        // ORGANISATION MANAGEMENT
+        // ORGANISATION MANAGEMENT — FIXED
         // ============================================================
         async function fetchUserOrganisations() {
             try {
@@ -814,12 +814,27 @@
                 });
                 if (!response.ok) throw new Error('Failed to fetch organisations');
                 const data = await response.json();
-                return data.organisations || [];
+
+                // Normalise the data: the backend returns "id", "org_name", "role"
+                // We make both "id" and "org_id" available for maximum compatibility
+                const orgs = data.organisations || data || [];
+                return orgs.map(org => ({
+                    id: org.id || org.org_id,
+                    org_id: org.id || org.org_id,
+                    org_name: org.org_name || 'Unnamed Organisation',
+                    role: org.role || 'member'
+                }));
             } catch (err) {
+                // Fallback: try /auth/me
                 try {
                     const me = await apiCall('/auth/me');
                     if (me.org_id) {
-                        return [{ org_id: me.org_id, org_name: me.org_name || 'My Organisation', role: me.role }];
+                        return [{
+                            id: me.org_id,
+                            org_id: me.org_id,
+                            org_name: me.org_name || me.org_id.substring(0, 8),
+                            role: me.role || 'admin'
+                        }];
                     }
                 } catch (e) {}
                 return [];
@@ -839,26 +854,37 @@
                 document.getElementById('goto-register')?.addEventListener('click', () => window.location.href = '/kdsiginin');
                 return;
             }
+
             container.innerHTML = `
                 <div class="space-y-3">
-                    ${organisations.map(org => `
-                        <div class="org-card p-4 rounded-xl border border-slate-600 hover:bg-slate-700 transition" data-org-id="${org.org_id}" data-org-name="${escapeHtml(org.org_name)}" data-org-role="${org.role}">
+                    ${organisations.map(org => {
+                        // Safely handle both data schemas — use id or org_id
+                        const targetId = org.id || org.org_id;
+                        const targetName = org.org_name || 'Unnamed Organisation';
+                        return `
+                        <div class="org-card p-4 rounded-xl border border-slate-600 hover:bg-slate-700 transition"
+                             data-org-id="${targetId}"
+                             data-org-name="${escapeHtml(targetName)}"
+                             data-org-role="${org.role || 'member'}">
                             <div class="flex items-center justify-between">
                                 <div class="flex items-center gap-3">
                                     <i class="fa-solid fa-building text-2xl ${org.role === 'owner' ? 'text-amber-400' : 'text-blue-400'}"></i>
                                     <div>
-                                        <h3 class="font-semibold text-white">${escapeHtml(org.org_name)}</h3>
+                                        <h3 class="font-semibold text-white">${escapeHtml(targetName)}</h3>
                                         <span class="text-xs px-2 py-0.5 rounded-full ${org.role === 'owner' ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-600 text-slate-300'}">
-                                            ${org.role}
+                                            ${org.role || 'member'}
                                         </span>
                                     </div>
                                 </div>
                                 <i class="fa-regular fa-circle text-slate-500 text-xl org-radio"></i>
                             </div>
                         </div>
-                    `).join('')}
+                        `;
+                    }).join('')}
                 </div>
             `;
+
+            // Re-bind click events
             document.querySelectorAll('.org-card').forEach(card => {
                 card.addEventListener('click', () => {
                     document.querySelectorAll('.org-card').forEach(c => {
@@ -869,11 +895,13 @@
                     card.classList.add('selected', 'bg-blue-900/50', 'border-blue-500');
                     const radio = card.querySelector('.org-radio');
                     if (radio) radio.className = 'fa-solid fa-circle-check text-blue-400 text-xl org-radio';
+
                     selectedOrganisation = {
                         id: card.dataset.orgId,
                         name: card.dataset.orgName,
                         role: card.dataset.orgRole
                     };
+
                     const confirmBtn = document.getElementById('confirm-org-btn');
                     confirmBtn.disabled = false;
                     confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
@@ -883,7 +911,7 @@
         }
 
         // ============================================================
-        // LOCATION MANAGEMENT (shared between inventory filter and locations tab)
+        // LOCATION MANAGEMENT
         // ============================================================
         async function loadLocations() {
             if (!selectedOrganisation) return;
@@ -936,7 +964,6 @@
                     expiryLocFilter.onchange = loadExpiringProducts;
                 }
 
-                // Also update the locations tab if it's visible
                 loadLocationsUI();
             } catch (err) {
                 console.error('Error loading locations:', err);
@@ -1333,7 +1360,6 @@
         }
 
         function renderRiskScores(scores) {
-            // Summary
             const counts = { CRITICAL: 0, HIGH: 0, MODERATE: 0, LOW: 0 };
             if (Array.isArray(scores)) {
                 scores.forEach(s => { if (counts.hasOwnProperty(s.risk_level)) counts[s.risk_level]++; });
@@ -1610,6 +1636,8 @@
             document.getElementById('transfer-modal').classList.add('hidden');
         });
 
+        document.getElementById('show-transfer-modal')?.addEventListener('click', showTransferModal);
+
         // ============================================================
         // LOCATION MODAL (quick add from inventory tab)
         // ============================================================
@@ -1730,7 +1758,6 @@
                     p.alert_level === 'info' ? 'bg-yellow-900/50 text-yellow-300' : 'bg-blue-900/50 text-blue-300';
                 const batchId = p.batch_id || p.id;
                 const productId = p.inventory_id || p.id;
-                // store batch details in data attributes
                 const batchNumber = escapeHtml(p.batch_number || p.batch || '');
                 const expiryDate = p.expiry_date || '';
                 const quantity = p.current_stock || p.quantity || 0;
@@ -1767,52 +1794,43 @@
         }
 
         // ============================================================
-        // BATCH DETAILS — uses dataset from button + API fallback
+        // BATCH DETAILS
         // ============================================================
         window.viewBatchDetails = async function(button, batchId, productId) {
             try {
-                // Read data from the button's dataset (from the expiring table)
                 const dataset = button.dataset;
-                const batchNumber = dataset.batchNumber || 'N/A';
-                const expiryDate = dataset.expiry || 'N/A';
-                const quantity = dataset.quantity || '0';
-                const cost = dataset.cost || '0';
-                const supplier = dataset.supplier || 'N/A';
+                let batchNumber = dataset.batchNumber || 'N/A';
+                let expiryDate = dataset.expiry || 'N/A';
+                let quantity = dataset.quantity || '0';
+                let cost = dataset.cost || '0';
+                let supplier = dataset.supplier || 'N/A';
 
-                // Try to fetch batch details from API to get cost and supplier if not present in dataset
                 let apiBatch = null;
                 try {
                     apiBatch = await apiCall(`/inventory/batches/${batchId}`);
-                } catch (e) {
-                    // If API fails, we still have dataset data
+                } catch (e) {}
+
+                if (apiBatch) {
+                    if (apiBatch.batch_number) batchNumber = apiBatch.batch_number;
+                    if (apiBatch.expiry_date) expiryDate = apiBatch.expiry_date;
+                    if (apiBatch.quantity !== undefined) quantity = apiBatch.quantity;
+                    if (apiBatch.cost_price_naira !== undefined) cost = apiBatch.cost_price_naira;
+                    else if (apiBatch.cost_price !== undefined) cost = apiBatch.cost_price;
+                    else if (apiBatch.cost !== undefined) cost = apiBatch.cost;
+                    if (apiBatch.supplier_name) supplier = apiBatch.supplier_name;
+                    else if (apiBatch.supplier) supplier = apiBatch.supplier;
                 }
 
-                // Use API data if available and dataset missing or default
-                const finalBatchNumber = (apiBatch && apiBatch.batch_number) ? apiBatch.batch_number : batchNumber;
-                const finalExpiry = (apiBatch && apiBatch.expiry_date) ? apiBatch.expiry_date : expiryDate;
-                const finalQuantity = (apiBatch && apiBatch.quantity !== undefined) ? apiBatch.quantity : quantity;
-                // Cost: try API, then dataset
-                let finalCost = cost;
-                if (apiBatch) {
-                    if (apiBatch.cost_price_naira !== undefined) finalCost = apiBatch.cost_price_naira;
-                    else if (apiBatch.cost_price !== undefined) finalCost = apiBatch.cost_price;
-                    else if (apiBatch.cost !== undefined) finalCost = apiBatch.cost;
-                }
-                let finalSupplier = supplier;
-                if (apiBatch) {
-                    if (apiBatch.supplier_name) finalSupplier = apiBatch.supplier_name;
-                    else if (apiBatch.supplier) finalSupplier = apiBatch.supplier;
-                }
-
-                // Get product details from global products array
                 let product = null;
                 if (productId) {
                     product = products.find(p => p.id == productId);
                 } else if (apiBatch && apiBatch.inventory_id) {
                     product = products.find(p => p.id == apiBatch.inventory_id);
                 }
-                const productName = product ? product.description : (apiBatch && (apiBatch.product_description || apiBatch.inventory_description)) || 'N/A';
-                const productSku = product ? product.item_code : (apiBatch && (apiBatch.product_sku || apiBatch.inventory_item_code)) || 'N/A';
+                const productName = product ? product.description : (apiBatch && (apiBatch.product_description || apiBatch
+                    .inventory_description)) || 'N/A';
+                const productSku = product ? product.item_code : (apiBatch && (apiBatch.product_sku || apiBatch
+                    .inventory_item_code)) || 'N/A';
 
                 document.getElementById('batch-details-content').innerHTML = `
                     <div class="space-y-2 text-sm">
@@ -1826,27 +1844,26 @@
                         </div>
                         <div class="flex justify-between border-b border-slate-700 pb-1">
                             <span class="text-slate-400">Batch:</span>
-                            <span class="font-mono">${escapeHtml(finalBatchNumber)}</span>
+                            <span class="font-mono">${escapeHtml(batchNumber)}</span>
                         </div>
                         <div class="flex justify-between border-b border-slate-700 pb-1">
                             <span class="text-slate-400">Quantity:</span>
-                            <span>${finalQuantity}</span>
+                            <span>${quantity}</span>
                         </div>
                         <div class="flex justify-between border-b border-slate-700 pb-1">
                             <span class="text-slate-400">Expiry:</span>
-                            <span>${finalExpiry}</span>
+                            <span>${expiryDate}</span>
                         </div>
                         <div class="flex justify-between border-b border-slate-700 pb-1">
                             <span class="text-slate-400">Cost:</span>
-                            <span>₦${Number(finalCost).toLocaleString()}</span>
+                            <span>₦${Number(cost).toLocaleString()}</span>
                         </div>
                         <div class="flex justify-between">
                             <span class="text-slate-400">Supplier:</span>
-                            <span>${escapeHtml(finalSupplier)}</span>
+                            <span>${escapeHtml(supplier)}</span>
                         </div>
                     </div>
                 `;
-                // Store the batch ID for adjustment
                 window.currentBatchId = batchId;
                 document.getElementById('batch-details-modal').classList.remove('hidden');
             } catch (err) {
@@ -1858,9 +1875,6 @@
             document.getElementById('batch-details-modal').classList.add('hidden');
         });
 
-        // ============================================================
-        // BATCH ADJUST — uses window.currentBatchId
-        // ============================================================
         document.getElementById('batch-adjust-submit')?.addEventListener('click', async function() {
             const qty = parseInt(document.getElementById('batch-adjust-qty').value);
             const reason = document.getElementById('batch-adjust-reason').value;
@@ -2165,9 +2179,9 @@
                 const savedOrgId = localStorage.getItem('selected_org_id');
                 if (savedOrgId) {
                     userOrganisations = await fetchUserOrganisations();
-                    const savedOrg = userOrganisations.find(o => o.org_id === savedOrgId);
+                    const savedOrg = userOrganisations.find(o => o.id === savedOrgId || o.org_id === savedOrgId);
                     if (savedOrg) {
-                        selectedOrganisation = { id: savedOrg.org_id, name: savedOrg.org_name, role: savedOrg.role };
+                        selectedOrganisation = { id: savedOrg.id, name: savedOrg.org_name, role: savedOrg.role };
                         document.getElementById('org-selection-modal').classList.add('hidden');
                         document.getElementById('current-org-name').innerText = selectedOrganisation.name;
                         document.getElementById('current-org-banner').classList.remove('hidden');
