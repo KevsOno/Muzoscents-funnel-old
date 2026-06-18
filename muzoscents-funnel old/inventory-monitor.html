@@ -1728,6 +1728,9 @@
                 const alertClass = p.alert_level === 'critical' ? 'bg-red-900/50 text-red-300' :
                     p.alert_level === 'warning' ? 'bg-orange-900/50 text-orange-300' :
                     p.alert_level === 'info' ? 'bg-yellow-900/50 text-yellow-300' : 'bg-blue-900/50 text-blue-300';
+                // Pass both batch_id (or product id fallback) and the actual inventory/product id
+                const batchId = p.batch_id || p.id;
+                const productId = p.inventory_id || p.id;
                 return `
                     <tr class="border-b border-slate-700 hover:bg-slate-800/50">
                         <td class="p-3"><div class="font-medium">${escapeHtml(p.product_name || p.description || 'Unknown')}</div><div class="text-xs text-slate-400">${escapeHtml(p.product_code || p.sku || '')}</div></td>
@@ -1736,7 +1739,7 @@
                         <td class="p-3"><span class="inline-flex px-2 py-1 rounded-full text-xs ${alertClass}">${p.days_until_expiry} days</span></td>
                         <td class="p-3">${p.current_stock || p.quantity || 0}</td>
                         <td class="p-3">${escapeHtml(p.location_name || 'Main')}</td>
-                        <td class="p-3"><button onclick="viewBatchDetails(${p.batch_id || p.id})" class="text-blue-400 hover:text-blue-300"><i class="fa-solid fa-eye"></i></button></td>
+                        <td class="p-3"><button onclick="viewBatchDetails(${batchId}, ${productId})" class="text-blue-400 hover:text-blue-300"><i class="fa-solid fa-eye"></i></button></td>
                     </tr>
                 `;
             }).join('');
@@ -1749,17 +1752,20 @@
         }
 
         // ============================================================
-        // BATCH DETAILS — FIXED: product info + currentBatchId
+        // BATCH DETAILS — FIXED: uses productId from expiring table
         // ============================================================
-        window.viewBatchDetails = async function(batchId) {
+        window.viewBatchDetails = async function(batchId, productId) {
             try {
+                // Fetch batch details
                 const batch = await apiCall(`/inventory/batches/${batchId}`);
-                // Look up product from the global products array using inventory_id
+                // Get product from global products array using productId (if provided) or fallback to batch.inventory_id
                 let product = null;
-                if (batch.inventory_id) {
+                if (productId) {
+                    product = products.find(p => p.id == productId);
+                } else if (batch.inventory_id) {
                     product = products.find(p => p.id == batch.inventory_id);
                 }
-                // Fallback: if no product found, try using product fields from batch if available
+                // Fallback to batch fields if product not found
                 const productName = product ? product.description : (batch.product_description || batch.inventory_description || 'N/A');
                 const productSku = product ? product.item_code : (batch.product_sku || batch.inventory_item_code || 'N/A');
 
