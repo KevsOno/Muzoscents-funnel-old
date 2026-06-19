@@ -31,14 +31,19 @@
             opacity: 0;
             pointer-events: none;
         }
+        /* ── READONLY fields will look normal ── */
+        input[readonly] {
+            background-color: white;
+            cursor: text;
+        }
     </style>
 </head>
 <body class="bg-gray-100 p-4 font-sans">
 
-    <!-- ─── HIDDEN DUMMY FIELDS TO CONFUSE AUTOFILL ─── -->
+    <!-- ─── HIDDEN DUMMY FIELDS ─── -->
     <div class="dummy-autofill">
-        <input type="text" id="dummy-email" name="email" value="">
-        <input type="password" id="dummy-password" name="password" value="">
+        <input type="text" name="email" value="">
+        <input type="password" name="password" value="">
     </div>
 
     <!-- ========== GLOBAL NAVIGATION ========== -->
@@ -184,7 +189,7 @@
             </div>
         </div>
 
-        <!-- TABS for two customers -->
+        <!-- TABS -->
         <div class="flex gap-3 mb-4 border-b border-gray-200 pb-1">
             <button id="tab1-btn" data-tab="1" class="tab-active px-6 py-2.5 rounded-t-lg font-semibold text-sm transition flex items-center gap-2 shadow-sm border">
                 <i class="fa-solid fa-user"></i> Customer A <span class="bg-white/20 text-xs px-1.5 py-0.5 rounded-full ml-1 hidden md:inline-block">Tab 1</span>
@@ -200,8 +205,11 @@
                     <h2 class="text-xl font-semibold">📦 Product Catalog</h2>
                     <div class="relative w-full sm:w-64">
                         <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-                        <!-- ─── FIX: added autocomplete="off" and name="search" ─── -->
-                        <input type="text" id="product-search" name="search" placeholder="Search by SKU, name or ID" autocomplete="off" class="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none">
+                        <!-- 🔥 FIX: readonly + autocomplete="off" + remove readonly on focus -->
+                        <input type="text" id="product-search" name="search" placeholder="Search by SKU, name or ID" 
+                               autocomplete="off" readonly
+                               onfocus="this.removeAttribute('readonly')" 
+                               class="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none">
                     </div>
                 </div>
                 <div id="product-list" class="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[500px] overflow-y-auto"></div>
@@ -217,7 +225,10 @@
                 <!-- Customer Search -->
                 <div class="bg-blue-50 p-3 rounded-lg mb-3 space-y-2">
                     <div class="relative">
-                        <input type="text" id="customer-search" placeholder="Search by name, phone or email" autocomplete="off" class="w-full border rounded-lg p-2 text-sm pr-8">
+                        <input type="text" id="customer-search" placeholder="Search by name, phone or email" 
+                               autocomplete="off" readonly
+                               onfocus="this.removeAttribute('readonly')"
+                               class="w-full border rounded-lg p-2 text-sm pr-8">
                         <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
                         <div id="customer-suggestions" class="absolute z-10 left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto hidden"></div>
                     </div>
@@ -228,7 +239,10 @@
                     <div id="points-redeem-section" class="hidden border-t border-blue-200 pt-2 mt-1">
                         <label class="text-xs font-medium">Redeem points (1 pt = ₦1)</label>
                         <div class="flex gap-2 mt-1">
-                            <input type="number" id="redeem-points-input" min="1" autocomplete="off" class="w-full border rounded-lg p-1 text-sm" placeholder="Points to use">
+                            <input type="number" id="redeem-points-input" min="1" 
+                                   autocomplete="off" readonly
+                                   onfocus="this.removeAttribute('readonly')"
+                                   class="w-full border rounded-lg p-1 text-sm" placeholder="Points to use">
                             <button id="apply-points-btn" class="bg-emerald-600 text-white px-3 py-1 rounded-lg text-sm hover:bg-emerald-700">Apply</button>
                         </div>
                     </div>
@@ -245,13 +259,19 @@
                         </select>
                     </div>
                     <div class="mt-3"><label class="block text-sm font-medium">Customer Name</label>
-                        <input id="customer-name" class="w-full border rounded-lg p-2" placeholder="Walk-in Customer" autocomplete="off">
+                        <input id="customer-name" class="w-full border rounded-lg p-2" placeholder="Walk-in Customer" 
+                               autocomplete="off" readonly
+                               onfocus="this.removeAttribute('readonly')">
                     </div>
                     <div class="mt-2"><label class="block text-sm font-medium">Phone Number</label>
-                        <input id="customer-phone" class="w-full border rounded-lg p-2" placeholder="Optional" autocomplete="off">
+                        <input id="customer-phone" class="w-full border rounded-lg p-2" placeholder="Optional" 
+                               autocomplete="off" readonly
+                               onfocus="this.removeAttribute('readonly')">
                     </div>
                     <div class="mt-2"><label class="block text-sm font-medium">Email (for receipt/payment)</label>
-                        <input id="customer-email" type="email" class="w-full border rounded-lg p-2" placeholder="customer@example.com" autocomplete="off">
+                        <input id="customer-email" type="email" class="w-full border rounded-lg p-2" placeholder="customer@example.com" 
+                               autocomplete="off" readonly
+                               onfocus="this.removeAttribute('readonly')">
                     </div>
                     <button id="checkout-btn" class="mt-4 w-full bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-lg font-bold transition shadow-md">
                         ✅ Complete Sale
@@ -616,9 +636,10 @@
 
         function bindFieldEvents() {
             paymentMethodSelect.onchange = () => { tabState[activeTab].paymentMethod = paymentMethodSelect.value; };
-            customerNameInput.oninput = () => { tabState[activeTab].customerName = customerNameInput.value; };
-            customerPhoneInput.oninput = () => { tabState[activeTab].customerPhone = customerPhoneInput.value; };
-            customerEmailInput.oninput = () => { tabState[activeTab].customerEmail = customerEmailInput.value; };
+            // For readonly fields, we must also update state on input after focus (readonly removed)
+            customerNameInput.addEventListener('input', () => { tabState[activeTab].customerName = customerNameInput.value; });
+            customerPhoneInput.addEventListener('input', () => { tabState[activeTab].customerPhone = customerPhoneInput.value; });
+            customerEmailInput.addEventListener('input', () => { tabState[activeTab].customerEmail = customerEmailInput.value; });
         }
 
         async function applyPoints() {
@@ -764,7 +785,12 @@
         }
 
         function initSearch() {
-            searchInput.addEventListener('input', (e) => { searchTerm = e.target.value; renderProductGrid(); });
+            searchInput.addEventListener('input', (e) => { 
+                // If field is readonly, user can't type, but they will have focused and removed readonly.
+                // The readonly is removed on focus, so input event will work after that.
+                searchTerm = e.target.value; 
+                renderProductGrid(); 
+            });
             customerSearchInput.addEventListener('input', () => renderSuggestions());
             document.addEventListener('click', (e) => {
                 if (!customerSearchInput.contains(e.target) && !suggestionsDiv.contains(e.target)) {
@@ -836,13 +862,38 @@
         document.getElementById('demo-login-btn')?.addEventListener('click', demoLogin);
         document.getElementById('close-modal-btn')?.addEventListener('click', hideLoginModal);
         
-        // ─── CLEAR SEARCH ON PAGE LOAD ───
-        (function clearSearchOnLoad() {
+        // ─── CLEAR SEARCH AND REMOVE READONLY ON LOAD ───
+        (function clearAndEnableSearch() {
             const searchField = document.getElementById('product-search');
             if (searchField) {
                 searchField.value = '';
+                // Remove readonly to allow typing after page load (but keep readonly until focus)
+                // We'll keep readonly initially; user will click to remove it.
+                // But some users may want to start typing immediately; we can remove readonly on load.
+                // However, keeping readonly ensures no autofill. We'll leave it and rely on onfocus.
+                // Alternatively, remove readonly after a timeout.
+                setTimeout(() => {
+                    // Remove readonly after 500ms so browser autofill can't fill it.
+                    searchField.removeAttribute('readonly');
+                }, 500);
                 localStorage.removeItem('productSearchQuery');
             }
+            // Also for customer search
+            const custSearch = document.getElementById('customer-search');
+            if (custSearch) {
+                setTimeout(() => {
+                    custSearch.removeAttribute('readonly');
+                }, 500);
+            }
+            // And other fields
+            ['customer-name', 'customer-phone', 'customer-email', 'redeem-points-input'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    setTimeout(() => {
+                        el.removeAttribute('readonly');
+                    }, 500);
+                }
+            });
         })();
 
         (async () => {
