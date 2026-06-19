@@ -2100,7 +2100,7 @@
         }, { passive: true });
 
         // ================================================================
-        // INIT
+        // INIT — FIXED: redirect if not authenticated
         // ================================================================
         document.getElementById('confirm-org-btn')?.addEventListener('click', async function() {
             if (!selectedOrganisation) return;
@@ -2186,24 +2186,26 @@
         document.getElementById('log-level-filter')?.addEventListener('change', loadSystemLogs);
 
         // ================================================================
-        // INIT
+        // INIT (FIXED: redirect immediately if not authenticated)
         // ================================================================
         async function init() {
+            // 1. If no token, redirect to sign‑in immediately
             if (!token) {
-                document.getElementById('auth-check-placeholder').innerHTML = `
-                    <div class="text-amber-400"><i class="fa-regular fa-lock"></i> Please log in</div>
-                    <button id="goto-login" class="mt-4 bg-blue-600 px-4 py-2 rounded">Go to Login</button>
-                `;
-                document.getElementById('goto-login')?.addEventListener('click', () => window.location.href = '/kdsiginin');
+                window.location.href = '/kdsiginin';
                 return;
             }
+
             try {
+                // 2. Verify session with /auth/me – throws if invalid
                 const me = await apiCall('/auth/me');
                 currentUser = me;
                 localStorage.setItem('user_role', me.role || 'admin');
                 document.getElementById('auth-check-placeholder').classList.add('hidden');
+
+                // 3. Check if we have a saved organisation
                 const savedOrgId = localStorage.getItem('selected_org_id');
                 if (savedOrgId) {
+                    // Fetch organisations and try to match saved one
                     userOrganisations = await fetchUserOrganisations();
                     const savedOrg = userOrganisations.find(o => o.id === savedOrgId || o.org_id === savedOrgId);
                     if (savedOrg) {
@@ -2212,6 +2214,8 @@
                         document.getElementById('current-org-name').innerText = selectedOrganisation.name;
                         document.getElementById('current-org-banner').classList.remove('hidden');
                         document.getElementById('admin-panel').classList.remove('hidden');
+
+                        // Load all data
                         await loadLocations();
                         await loadInventory();
                         await loadDashboardMetrics();
@@ -2224,22 +2228,31 @@
                         return;
                     }
                 }
+
+                // 4. No saved org or it no longer exists → show organisation selection
                 await initialiseOrganisationSelection();
+
             } catch (err) {
-                document.getElementById('auth-check-placeholder').innerHTML = `
-                    <div class="text-red-400">Session invalid: ${escapeHtml(err.message)}</div>
-                    <button id="relog" class="mt-3 bg-blue-600 px-4 py-2 rounded">Login</button>
-                `;
-                document.getElementById('relog')?.addEventListener('click', () => { localStorage.clear();
-                    window.location.href = '/kdsiginin'; });
+                // Any error here means the session is invalid – redirect to login
+                console.error('Init error:', err);
+                localStorage.clear();
+                window.location.href = '/kdsiginin';
             }
         }
 
         async function initialiseOrganisationSelection() {
-            userOrganisations = await fetchUserOrganisations();
-            renderOrganisationSelection(userOrganisations);
+            try {
+                userOrganisations = await fetchUserOrganisations();
+                renderOrganisationSelection(userOrganisations);
+            } catch (err) {
+                // If fetching organisations fails due to auth, redirect
+                console.error('Failed to load organisations:', err);
+                localStorage.clear();
+                window.location.href = '/kdsiginin';
+            }
         }
 
+        // Start the app
         init();
     </script>
 </body>
