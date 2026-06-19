@@ -25,9 +25,26 @@
         .customer-suggestion:hover {
             background-color: #e0f2fe;
         }
+        /* ── HIDDEN DUMMY FIELDS TO CONFUSE AUTOFILL ── */
+        .dummy-autofill {
+            position: absolute;
+            left: -9999px;
+            top: -9999px;
+            height: 0;
+            width: 0;
+            overflow: hidden;
+            opacity: 0;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body class="bg-gray-100 p-4 font-sans">
+
+<!-- ─── HIDDEN DUMMY FIELDS ─── -->
+<div class="dummy-autofill">
+    <input type="text" id="dummy-email" name="email" value="">
+    <input type="password" id="dummy-password" name="password" value="">
+</div>
 
 <!-- ========== GLOBAL NAVIGATION (Kevs bOS) ========== -->
 <div id="kevs-nav-container"></div>
@@ -197,7 +214,8 @@
                 <h2 class="text-xl font-semibold">📦 Product Catalog</h2>
                 <div class="relative w-full sm:w-64">
                     <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-                    <input type="text" id="product-search" placeholder="Search by SKU, name or ID" class="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none">
+                    <!-- ─── FIX: autocomplete="off" on product search ─── -->
+                    <input type="text" id="product-search" placeholder="Search by SKU, name or ID" autocomplete="off" class="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none">
                 </div>
             </div>
             <div id="product-list" class="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[500px] overflow-y-auto"></div>
@@ -210,10 +228,11 @@
                 <span class="text-xs bg-gray-100 px-2 py-1 rounded-full" id="tab-badge">Tab 1 active</span>
             </div>
 
-            <!-- Customer Search (reuses /organisations/me/users logic from kdsupport) -->
+            <!-- Customer Search -->
             <div class="bg-blue-50 p-3 rounded-lg mb-3 space-y-2">
                 <div class="relative">
-                    <input type="text" id="customer-search" placeholder="Search by name, phone or email" class="w-full border rounded-lg p-2 text-sm pr-8">
+                    <!-- ─── FIX: autocomplete="off" on customer search ─── -->
+                    <input type="text" id="customer-search" placeholder="Search by name, phone or email" autocomplete="off" class="w-full border rounded-lg p-2 text-sm pr-8">
                     <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
                     <div id="customer-suggestions" class="absolute z-10 left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto hidden"></div>
                 </div>
@@ -224,7 +243,7 @@
                 <div id="points-redeem-section" class="hidden border-t border-blue-200 pt-2 mt-1">
                     <label class="text-xs font-medium">Redeem points (1 pt = ₦1)</label>
                     <div class="flex gap-2 mt-1">
-                        <input type="number" id="redeem-points-input" min="1" class="w-full border rounded-lg p-1 text-sm" placeholder="Points to use">
+                        <input type="number" id="redeem-points-input" min="1" class="w-full border rounded-lg p-1 text-sm" placeholder="Points to use" autocomplete="off">
                         <button id="apply-points-btn" class="bg-emerald-600 text-white px-3 py-1 rounded-lg text-sm hover:bg-emerald-700">Apply</button>
                     </div>
                 </div>
@@ -241,6 +260,7 @@
                     </select>
                 </div>
                 <div class="mt-3"><label class="block text-sm font-medium">Customer Name</label>
+                    <!-- ─── FIX: autocomplete="off" on customer fields ─── -->
                     <input id="customer-name" class="w-full border rounded-lg p-2" placeholder="Walk-in Customer" autocomplete="off">
                 </div>
                 <div class="mt-2"><label class="block text-sm font-medium">Phone Number</label>
@@ -265,8 +285,9 @@
             <button id="close-modal-btn" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
         </div>
         <div class="space-y-3">
-            <input id="login-email" type="email" placeholder="Email" class="w-full border rounded-lg p-2 text-sm">
-            <input id="login-password" type="password" placeholder="Password" class="w-full border rounded-lg p-2 text-sm">
+            <!-- ─── FIX: autocomplete="off" on login modal fields ─── -->
+            <input id="login-email" type="email" placeholder="Email" class="w-full border rounded-lg p-2 text-sm" autocomplete="off">
+            <input id="login-password" type="password" placeholder="Password" class="w-full border rounded-lg p-2 text-sm" autocomplete="off">
             <button id="modal-login-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white p-2.5 rounded-lg text-sm font-medium">Sign In</button>
             <button id="demo-login-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white p-2.5 rounded-lg text-sm font-medium">
                 <i class="fa-solid fa-bolt mr-1"></i> Demo Login
@@ -279,10 +300,9 @@
     const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
     let token = localStorage.getItem('access_token');
     let products = [];
-    let allCustomers = [];      // from /organisations/me/users
+    let allCustomers = [];
     let searchTerm = '';
     let activeTab = 1;
-    // Each tab stores cart, payment method, customer details, and loyalty info
     const tabState = {
         1: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 },
         2: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 }
@@ -320,17 +340,13 @@
         setTimeout(() => toast.remove(), 3800);
     }
 
-    // -------- FIXED apiCall with TENANT SCOPE FILTER (X-Selected-Org-Id) --------
     async function apiCall(endpoint, method = 'GET', body = null, retry = true) {
         const headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
-        
-        // 🔥 FIX: Inject selected organization ID for multi-tenant isolation (fixes kdfulfillment.html bug)
         const selectedOrgId = localStorage.getItem('selected_org_id');
         if (selectedOrgId) {
             headers['X-Selected-Org-Id'] = selectedOrgId;
         }
-        
         let res = await fetch(`${BACKEND}${endpoint}`, {
             method,
             headers,
@@ -478,7 +494,6 @@
         });
     }
 
-    // 🔥 FIXED: No JSON inside HTML attributes — safe programmatic rendering (eliminates XSS & parsing crash)
     function renderProductGrid() {
         const filtered = filterProducts();
         if (!productContainer) return;
@@ -488,7 +503,6 @@
             return;
         }
         emptyMsgDiv.classList.add('hidden');
-        // Build DOM elements safely instead of using raw JSON in attributes
         productContainer.innerHTML = '';
         filtered.forEach(p => {
             const skuDisplay = getDisplaySku(p);
@@ -503,7 +517,6 @@
                 <div class="text-md font-bold text-blue-700 mt-1">₦${price.toLocaleString()}</div>
                 <div class="text-xs text-gray-500 mt-1">📦 Stock: ${stock}</div>
             `;
-            // Attach click handler directly referencing product object (safe)
             card.onclick = () => addToCart(p.id, p.description || 'Product', price, stock, skuDisplay);
             productContainer.appendChild(card);
         });
@@ -842,6 +855,17 @@
     document.getElementById('demo-login-btn')?.addEventListener('click', demoLogin);
     document.getElementById('close-modal-btn')?.addEventListener('click', hideLoginModal);
     
+    // ─── FORCE CLEAR SEARCH ON LOAD ───
+    (function clearSearchOnLoad() {
+        const searchField = document.getElementById('product-search');
+        if (searchField) {
+            searchField.value = '';
+            localStorage.removeItem('productSearchQuery'); // if any
+        }
+        const custSearch = document.getElementById('customer-search');
+        if (custSearch) custSearch.value = '';
+    })();
+
     (async () => {
         initTabs();
         initSearch();
