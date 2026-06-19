@@ -48,16 +48,32 @@
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .category-refresh-btn { background: #f59e0b20; border: 1px solid #f59e0b; border-radius: 9999px; padding: 0.25rem 0.75rem; font-size: 0.75rem; color: #f59e0b; cursor: pointer; transition: all 0.2s; }
         .category-refresh-btn:hover { background: #f59e0b; color: white; }
-        /* FIX 4: 3-bubble dots thinking indicator for AI */
         .thinking-dots { display: inline-flex; align-items: center; gap: 4px; background: #e5e7eb; padding: 8px 12px; border-radius: 18px; }
         .thinking-dots span { width: 6px; height: 6px; background-color: #4b5563; border-radius: 50%; display: inline-block; animation: dotPulse 1.2s infinite ease-in-out; }
         .thinking-dots span:nth-child(1) { animation-delay: 0s; }
         .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
         .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
         @keyframes dotPulse { 0%, 60%, 100% { transform: scale(0.8); opacity: 0.5; } 30% { transform: scale(1.2); opacity: 1; } }
+        /* ── HIDDEN DUMMY FIELD TO CONFUSE AUTOFILL ── */
+        .dummy-autofill {
+            position: absolute;
+            left: -9999px;
+            top: -9999px;
+            height: 0;
+            width: 0;
+            overflow: hidden;
+            opacity: 0;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body class="text-gray-800">
+
+    <!-- ─── HIDDEN DUMMY FIELDS TO CONFUSE AUTOFILL ─── -->
+    <div class="dummy-autofill">
+        <input type="text" id="dummy-email" name="email" value="">
+        <input type="password" id="dummy-password" name="password" value="">
+    </div>
 
     <!-- Header / Navigation -->
     <header class="sticky top-0 z-30 bg-white/90 backdrop-blur-md shadow-sm border-b border-orange-100">
@@ -135,7 +151,8 @@
                     </select>
                     <div class="search-container w-full md:w-72">
                         <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
-                        <input type="text" id="product-search" placeholder="Search products..." autocomplete="off" class="w-full pl-10 pr-8 py-2 border border-gray-300 rounded-full focus:ring-2 focus:ring-orange-400 outline-none">
+                        <!-- ─── FIX: added autocomplete="off" and name="search" ─── -->
+                        <input type="text" id="product-search" name="search" placeholder="Search products..." autocomplete="off" class="w-full pl-10 pr-8 py-2 border border-gray-300 rounded-full focus:ring-2 focus:ring-orange-400 outline-none">
                         <span id="search-clear" class="search-clear"><i class="fa-solid fa-times-circle"></i></span>
                     </div>
                     <button id="refresh-categories-btn" class="category-refresh-btn" title="Refresh categories from products"><i class="fa-solid fa-rotate-right"></i> Categories</button>
@@ -173,14 +190,14 @@
     <div id="product-detail-modal" class="product-modal"><div class="product-modal-content"><div class="product-modal-close" id="close-product-modal"><i class="fa-solid fa-times"></i></div><div class="p-6"><div id="product-detail-content"></div><div class="mt-6 flex gap-3"><button id="modal-add-to-cart" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl font-semibold transition"><i class="fa-solid fa-cart-plus mr-2"></i> Add to Cart</button><button id="modal-close-btn" class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-3 rounded-xl font-semibold transition">Continue Shopping</button></div></div></div></div>
 
     <!-- Track Order Modal -->
-    <div id="track-modal" class="track-modal"><div class="track-modal-content"><div class="track-modal-close" id="close-track-modal"><i class="fa-solid fa-times"></i></div><div class="p-6"><h3 class="text-xl font-bold mb-4"><i class="fa-solid fa-truck-fast text-orange-500"></i> Track Your Order</h3><div class="space-y-4"><div><label class="block text-sm font-medium text-gray-700">Receipt Number</label><input type="text" id="track-receipt" class="w-full border border-gray-300 rounded-lg p-2" placeholder="e.g., REC-12345"></div><div><label class="block text-sm font-medium text-gray-700">Email Address</label><input type="email" id="track-email" class="w-full border border-gray-300 rounded-lg p-2" placeholder="your@email.com"></div><button id="track-submit" class="w-full bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600">Track Order</button><div id="track-result" class="mt-4 text-sm hidden"></div></div></div></div></div>
+    <div id="track-modal" class="track-modal"><div class="track-modal-content"><div class="track-modal-close" id="close-track-modal"><i class="fa-solid fa-times"></i></div><div class="p-6"><h3 class="text-xl font-bold mb-4"><i class="fa-solid fa-truck-fast text-orange-500"></i> Track Your Order</h3><div class="space-y-4"><div><label class="block text-sm font-medium text-gray-700">Receipt Number</label><input type="text" id="track-receipt" class="w-full border border-gray-300 rounded-lg p-2" placeholder="e.g., REC-12345" autocomplete="off"></div><div><label class="block text-sm font-medium text-gray-700">Email Address</label><input type="email" id="track-email" class="w-full border border-gray-300 rounded-lg p-2" placeholder="your@email.com" autocomplete="off"></div><button id="track-submit" class="w-full bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600">Track Order</button><div id="track-result" class="mt-4 text-sm hidden"></div></div></div></div></div>
 
     <!-- Floating AI Chat -->
     <button id="chat-bubble" class="floating-chat fixed bottom-6 right-6 bg-orange-500 text-white p-4 rounded-full shadow-xl z-40"><i class="fa-regular fa-message text-2xl"></i></button>
-    <div id="chat-modal" class="chat-modal"><div class="flex justify-between items-center p-3 border-b border-orange-200 bg-orange-50 rounded-t-2xl"><span class="font-bold"><i class="fa-regular fa-comment-dots text-orange-500"></i> Kevs AI Concierge</span><button id="close-chat-modal" class="text-gray-500">&times;</button></div><div id="chat-messages" class="chat-messages p-3 space-y-2"></div><div class="p-3 border-t border-gray-200 bg-white rounded-b-2xl"><div class="flex gap-2"><input id="chat-input" type="text" placeholder="Ask about products, orders..." class="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm"><button id="chat-send" class="bg-orange-500 text-white px-4 rounded-full"><i class="fa-regular fa-paper-plane"></i></button></div></div></div>
+    <div id="chat-modal" class="chat-modal"><div class="flex justify-between items-center p-3 border-b border-orange-200 bg-orange-50 rounded-t-2xl"><span class="font-bold"><i class="fa-regular fa-comment-dots text-orange-500"></i> Kevs AI Concierge</span><button id="close-chat-modal" class="text-gray-500">&times;</button></div><div id="chat-messages" class="chat-messages p-3 space-y-2"></div><div class="p-3 border-t border-gray-200 bg-white rounded-b-2xl"><div class="flex gap-2"><input id="chat-input" type="text" placeholder="Ask about products, orders..." class="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm" autocomplete="off"><button id="chat-send" class="bg-orange-500 text-white px-4 rounded-full"><i class="fa-regular fa-paper-plane"></i></button></div></div></div>
 
     <!-- Login/Register Modal -->
-    <div id="auth-modal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[100]"><div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl"><div class="flex justify-between items-center mb-4"><h3 id="modal-title" class="text-xl font-bold">Sign In</h3><button id="close-auth-modal" class="text-2xl">&times;</button></div><div class="space-y-3"><input id="auth-email" type="email" placeholder="Email address" class="w-full border border-gray-300 rounded-lg p-2.5"><input id="auth-password" type="password" placeholder="Password" class="w-full border border-gray-300 rounded-lg p-2.5"><div id="reg-extra" class="hidden space-y-3 border-t pt-3"><input id="invite-code" placeholder="Invite code (optional)" class="w-full border border-gray-300 rounded-lg p-2"><div class="text-xs text-center">— OR create new org —</div><input id="org-name" placeholder="Organization name *" class="w-full border border-gray-300 rounded-lg p-2"><div class="grid grid-cols-2 gap-2"><input id="org-location" placeholder="City, Country *" class="border rounded p-2"><input id="org-niche" placeholder="Industry *" class="border rounded p-2"></div><input id="budget" type="number" placeholder="Budget (₦)" class="border p-2 rounded"><div class="grid grid-cols-2 gap-2"><input id="first-name" placeholder="First name *" class="border p-2 rounded"><input id="last-name" placeholder="Last name *" class="border p-2 rounded"></div><input id="phone-number" placeholder="Phone number *" class="border p-2 rounded"></div><button id="auth-submit" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2.5 rounded-lg">Sign In</button><button id="demo-access" class="w-full bg-emerald-500 text-white py-2.5 rounded-lg flex items-center justify-center gap-2"><i class="fa-solid fa-flask"></i> Demo Access</button><div class="text-center"><button id="toggle-auth-mode" class="text-sm text-orange-500 hover:underline">Don't have an account? Register</button></div></div></div></div>
+    <div id="auth-modal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[100]"><div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl"><div class="flex justify-between items-center mb-4"><h3 id="modal-title" class="text-xl font-bold">Sign In</h3><button id="close-auth-modal" class="text-2xl">&times;</button></div><div class="space-y-3"><input id="auth-email" type="email" placeholder="Email address" class="w-full border border-gray-300 rounded-lg p-2.5" autocomplete="off"><input id="auth-password" type="password" placeholder="Password" class="w-full border border-gray-300 rounded-lg p-2.5" autocomplete="off"><div id="reg-extra" class="hidden space-y-3 border-t pt-3"><input id="invite-code" placeholder="Invite code (optional)" class="w-full border border-gray-300 rounded-lg p-2" autocomplete="off"><div class="text-xs text-center">— OR create new org —</div><input id="org-name" placeholder="Organization name *" class="w-full border border-gray-300 rounded-lg p-2" autocomplete="off"><div class="grid grid-cols-2 gap-2"><input id="org-location" placeholder="City, Country *" class="border rounded p-2" autocomplete="off"><input id="org-niche" placeholder="Industry *" class="border rounded p-2" autocomplete="off"></div><input id="budget" type="number" placeholder="Budget (₦)" class="border p-2 rounded" autocomplete="off"><div class="grid grid-cols-2 gap-2"><input id="first-name" placeholder="First name *" class="border p-2 rounded" autocomplete="off"><input id="last-name" placeholder="Last name *" class="border p-2 rounded" autocomplete="off"></div><input id="phone-number" placeholder="Phone number *" class="border p-2 rounded" autocomplete="off"></div><button id="auth-submit" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2.5 rounded-lg">Sign In</button><button id="demo-access" class="w-full bg-emerald-500 text-white py-2.5 rounded-lg flex items-center justify-center gap-2"><i class="fa-solid fa-flask"></i> Demo Access</button><div class="text-center"><button id="toggle-auth-mode" class="text-sm text-orange-500 hover:underline">Don't have an account? Register</button></div></div></div></div>
 
     <script>
         // ---------- API & GLOBALS ----------
@@ -201,7 +218,6 @@
         let currentView = 'shop';
         let currentProductForModal = null;
         let isRecalcInProgress = false;
-        // FIX 3: Add variable to track cart state for race condition handling
         let lastCalculatedCartState = '';
 
         function setCartTotalLoading(loading) {
@@ -216,12 +232,10 @@
             }
         }
 
-        // FIX 2: Added X-Selected-Org-Id header support
         async function apiCall(endpoint, options = {}, retry = true) {
             if (!options.headers) options.headers = {};
             options.headers['Content-Type'] = 'application/json';
             if (token) options.headers['Authorization'] = `Bearer ${token}`;
-            // FIX 2: Inject tenant scope header
             const selectedOrgId = localStorage.getItem('selected_org_id');
             if (selectedOrgId) {
                 options.headers['X-Selected-Org-Id'] = selectedOrgId;
@@ -240,14 +254,12 @@
             return res.json();
         }
 
-        // FIX 3: Improved recalcDeliveryFee with race condition handling (queue runner pattern)
         async function recalcDeliveryFee(showFeedback = true) {
             if (deliveryOption !== 'delivery' || !deliveryAddress || cart.length === 0) {
                 if (cart.length === 0) { deliveryFee = 0; handlingFee = 0; updateCartUI(); }
                 return;
             }
             if (isRecalcInProgress) return;
-            // Capture current cart state before async operation
             const currentCartSnapshot = JSON.stringify(cart);
             isRecalcInProgress = true;
             if (showFeedback) setCartTotalLoading(true);
@@ -268,7 +280,6 @@
                 else console.warn("Delivery recalc failed:", e);
             } finally {
                 isRecalcInProgress = false;
-                // FIX 3: Force execution audit - if cart changed during network request, re-run calculation
                 if (JSON.stringify(cart) !== currentCartSnapshot && cart.length > 0) {
                     recalcDeliveryFee(true);
                 }
@@ -391,7 +402,7 @@
             }
         }
         
-        // FIX 1: SECURE DOM BUILDING - No JSON in data-product attribute, use programmatic approach
+        // Secure DOM building (no JSON injection)
         function renderProducts() {
             let filtered = allProducts;
             if (searchQuery.trim()) filtered = filtered.filter(p => p.description.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -582,7 +593,6 @@
 
         let chatMessagesDiv=null, chatSessionId=sessionId;
         function addChatMsg(sender, text, isTypingIndicator = false){ if(!chatMessagesDiv) return; const div=document.createElement('div'); div.className=`p-2 rounded-xl max-w-[85%] text-sm mb-1 ${sender==='user'?'bg-orange-500 text-white ml-auto rounded-br-none':'bg-gray-100 text-gray-800 mr-auto rounded-bl-none'}`; if(isTypingIndicator && sender === 'assistant') { div.innerHTML = '<div class="thinking-dots"><span></span><span></span><span></span></div>'; } else { div.innerText = text; } chatMessagesDiv.appendChild(div); chatMessagesDiv.scrollTop=chatMessagesDiv.scrollHeight; }
-        // FIX 4: Updated sendChatMessage with 3-bubble dots thinking indicator (replaces static "🤖 Thinking...")
         async function sendChatMessage(){ const input=document.getElementById('chat-input'); const msg=input.value.trim(); if(!msg) return; addChatMsg('user',msg); input.value=''; addChatMsg('assistant', '', true); const lastMsgDiv = chatMessagesDiv.lastChild; try{ const data=await apiCall('/support/chat-stream',{method:'POST',body:JSON.stringify({session_id:chatSessionId,message:msg})}); if(lastMsgDiv && lastMsgDiv.classList.contains('bg-gray-100')) lastMsgDiv.remove(); addChatMsg('assistant',data.response||"Got it!"); } catch(e){ if(lastMsgDiv && lastMsgDiv.classList.contains('bg-gray-100')) lastMsgDiv.remove(); addChatMsg('assistant',"Sorry, AI is busy."); } }
         function initChat(){ chatMessagesDiv=document.getElementById('chat-messages'); if(chatMessagesDiv&&chatMessagesDiv.children.length===0) addChatMsg('assistant',"Hi! I'm your AI shopping assistant. Need help?"); }
         document.getElementById('chat-bubble')?.addEventListener('click',()=>{ const modal=document.getElementById('chat-modal'); modal.classList.toggle('active'); if(modal.classList.contains('active')) initChat(); });
@@ -592,14 +602,21 @@
         document.getElementById('cart-icon-btn')?.addEventListener('click',()=>document.getElementById('cart-drawer').classList.remove('translate-x-full'));
         document.getElementById('close-drawer')?.addEventListener('click',()=>document.getElementById('cart-drawer').classList.add('translate-x-full'));
         document.getElementById('checkout-btn')?.addEventListener('click',checkout);
-        document.getElementById('marketplace-logo')?.addEventListener('click', () => {
-    showView('shop');
-});
+        document.getElementById('marketplace-logo')?.addEventListener('click', () => { showView('shop'); });
         document.getElementById('track-order-dropdown')?.addEventListener('click',openTrackModal);
         document.getElementById('user-menu-btn')?.addEventListener('click',()=>document.getElementById('user-dropdown')?.classList.toggle('hidden'));
         document.addEventListener('click',(e)=>{ if(!e.target.closest('#user-menu-btn')&&!e.target.closest('#user-dropdown')) document.getElementById('user-dropdown')?.classList.add('hidden'); });
         function showToast(msg,type){ const t=document.createElement('div'); t.className=`fixed bottom-20 left-4 right-4 md:left-auto md:right-6 z-50 bg-${type==='success'?'green-600':'red-600'} text-white px-4 py-2 rounded-xl shadow-lg text-sm`; t.innerText=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),3000); }
         function escapeHtml(str){ if(!str) return ''; return str.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
+
+        // ─── CLEAR SEARCH ON PAGE LOAD ───
+        (function clearSearchOnLoad() {
+            const searchField = document.getElementById('product-search');
+            if (searchField) {
+                searchField.value = '';
+                localStorage.removeItem('productSearchQuery'); // if any
+            }
+        })();
 
         (async() => {
             loadCart();
