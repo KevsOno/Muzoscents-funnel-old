@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Kevs bOS – Admin Inventory Manager</title>
     <script src="https://cdn.tailwindcss.com">
     </script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
     <style>
         body {
             background: #0F172A;
@@ -72,14 +72,116 @@
         .risk-low {
             background: #22c55e;
         }
-        #product-search-results {
-            z-index: 9999 !important;
+
+        /* ── SEARCH OVERLAY FIX ── */
+        #product-search-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 99999;
+            pointer-events: none;
+            display: none;
+        }
+        #product-search-overlay.active {
+            display: block;
+            pointer-events: auto;
+        }
+        #product-search-results-fixed {
+            position: fixed;
+            z-index: 100000;
+            background: #1e293b;
+            border: 1px solid #475569;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+            max-height: 320px;
+            overflow-y: auto;
+            min-width: 320px;
+            display: none;
+            pointer-events: auto;
+        }
+        #product-search-results-fixed.active {
+            display: block;
+        }
+        #product-search-results-fixed .result-item {
+            padding: 10px 14px;
+            border-bottom: 1px solid #334155;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        #product-search-results-fixed .result-item:hover {
+            background: #334155;
+        }
+        #product-search-results-fixed .result-item:last-child {
+            border-bottom: none;
+        }
+        #product-search-results-fixed .result-name {
+            font-weight: 500;
+            font-size: 0.9rem;
+            color: #f1f5f9;
+        }
+        #product-search-results-fixed .result-meta {
+            font-size: 0.75rem;
+            color: #94a3b8;
+        }
+        #product-search-results-fixed .result-stock {
+            font-size: 0.8rem;
+            color: #64748b;
+            background: #0f172a;
+            padding: 2px 10px;
+            border-radius: 20px;
+        }
+        #product-search-results-fixed .no-results {
+            padding: 20px;
+            text-align: center;
+            color: #64748b;
+            font-size: 0.9rem;
+        }
+
+        /* scrollbar */
+        #product-search-results-fixed::-webkit-scrollbar {
+            width: 5px;
+        }
+        #product-search-results-fixed::-webkit-scrollbar-track {
+            background: #0f172a;
+            border-radius: 4px;
+        }
+        #product-search-results-fixed::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 4px;
+        }
+
+        /* location badge in product cards */
+        .loc-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.7rem;
+            background: #1e293b;
+            padding: 2px 10px;
+            border-radius: 20px;
+            border: 1px solid #334155;
+            color: #94a3b8;
+        }
+        .loc-badge .loc-name {
+            color: #e2e8f0;
+            font-weight: 500;
+        }
+        .loc-badge i {
+            font-size: 0.6rem;
+            color: #3b82f6;
         }
     </style>
 </head>
 <body class="text-slate-200">
 
-    <!-- Organisation Selection Modal -->
+    <!-- ============================================================ -->
+    <!-- ORGANISATION SELECTION MODAL                                   -->
+    <!-- ============================================================ -->
     <div id="org-selection-modal" class="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
         <div class="bg-slate-800 rounded-2xl max-w-2xl w-full p-6 border border-slate-700 shadow-2xl">
             <div class="text-center mb-6">
@@ -99,10 +201,16 @@
         </div>
     </div>
 
-    <!-- Global Navigation -->
+    <!-- ============================================================ -->
+    <!-- GLOBAL NAV                                                    -->
+    <!-- ============================================================ -->
     <div id="kevs-nav-container"></div>
 
+    <!-- ============================================================ -->
+    <!-- MAIN CONTENT                                                  -->
+    <!-- ============================================================ -->
     <div class="max-w-7xl mx-auto p-4 md:p-6">
+
         <!-- Current Organisation Banner -->
         <div id="current-org-banner" class="hidden mb-4 p-3 bg-blue-900/30 rounded-lg border border-blue-700 flex items-center justify-between">
             <div class="flex items-center gap-3">
@@ -117,6 +225,7 @@
             </button>
         </div>
 
+        <!-- Header -->
         <div class="flex justify-between items-center mb-6 pb-4 border-b border-slate-700">
             <div>
                 <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">📦 Inventory Manager</h1>
@@ -124,14 +233,18 @@
             </div>
         </div>
 
+        <!-- Auth placeholder -->
         <div id="auth-check-placeholder" class="bg-slate-800/50 rounded-2xl p-8 text-center">
             <i class="fa-solid fa-spinner fa-pulse text-3xl mb-3"></i>
             <p>Verifying admin access...</p>
         </div>
 
+        <!-- ============================================================ -->
+        <!-- ADMIN PANEL                                                   -->
+        <!-- ============================================================ -->
         <div id="admin-panel" class="hidden">
 
-            <!-- ========== DASHBOARD METRICS ========== -->
+            <!-- DASHBOARD METRICS -->
             <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                 <div class="bg-slate-800/70 rounded-xl p-4 border border-slate-700">
                     <div class="text-2xl font-bold text-blue-400" id="metric-total-value">₦0</div>
@@ -151,7 +264,7 @@
                 </div>
             </div>
 
-            <!-- ========== TABS ========== -->
+            <!-- TABS -->
             <div class="flex flex-wrap gap-2 border-b border-slate-700 mb-6">
                 <button class="tab-btn px-4 py-2 text-sm font-medium tab-active" data-tab="inventory">📦 Inventory</button>
                 <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="expiry">⏳ Expiry & Batch</button>
@@ -163,9 +276,12 @@
                 <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="locations">🏢 Locations</button>
             </div>
 
-            <!-- ========== TAB CONTENT: INVENTORY ========== -->
+            <!-- ========================================================== -->
+            <!-- TAB: INVENTORY                                              -->
+            <!-- ========================================================== -->
             <div id="tab-inventory" class="tab-content">
-                <!-- Location filter -->
+
+                <!-- Location filter + actions -->
                 <div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-6 border border-slate-700">
                     <div class="flex flex-wrap gap-4 items-end justify-between">
                         <div class="flex-1">
@@ -180,52 +296,55 @@
                     </div>
                 </div>
 
-                <!-- Product Search -->
-                <div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-6 border border-slate-700">
+                <!-- Product Search (with fixed overlay) -->
+                <div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-6 border border-slate-700 relative" style="z-index:100;">
                     <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fa-solid fa-magnifying-glass text-green-400"></i> Search Products</h2>
-                    <div class="relative">
-                        <input type="text" id="product-search-input" placeholder="Search by SKU, description, or product group..." class="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm pl-10">
+                    <div class="relative" id="search-input-wrapper">
+                        <input type="text" id="product-search-input" placeholder="Search by SKU, description, or product group..." class="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm pl-10" autocomplete="off" />
                         <i class="fa-solid fa-search absolute left-3 top-3.5 text-slate-500"></i>
-                        <div id="product-search-results" class="absolute w-full mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl max-h-64 overflow-y-auto hidden"></div>
                     </div>
                 </div>
 
-                <!-- Product Form -->
+                <!-- Fixed search overlay (rendered at body level) -->
+                <div id="product-search-overlay"></div>
+                <div id="product-search-results-fixed"></div>
+
+                <!-- Product Form (removed location assign dropdown) -->
                 <div class="bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 mb-6 border border-slate-700">
                     <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fa-solid fa-plus-circle text-blue-400"></i> <span id="form-title">Add New Product</span></h2>
                     <form id="product-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <input type="hidden" id="edit-id" value="">
+                        <input type="hidden" id="edit-id" value="" />
                         <div>
                             <label class="block text-xs text-slate-400 mb-1">Item Code (SKU) *</label>
-                            <input id="item_code" type="text" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                            <input id="item_code" type="text" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
                         </div>
                         <div>
                             <label class="block text-xs text-slate-400 mb-1">Description *</label>
-                            <input id="description" type="text" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                            <input id="description" type="text" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
                         </div>
                         <div>
                             <label class="block text-xs text-slate-400 mb-1">Product Group (Category)</label>
-                            <input id="product_group" type="text" placeholder="e.g., Electronics, Food" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                            <input id="product_group" type="text" placeholder="e.g., Electronics, Food" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
                         </div>
                         <div>
                             <label class="block text-xs text-slate-400 mb-1">Selling Price (₦) * >0</label>
-                            <input id="price_naira" type="number" step="1" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                            <input id="price_naira" type="number" step="1" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
                         </div>
                         <div>
                             <label class="block text-xs text-slate-400 mb-1">Cost Price (₦) ≥0</label>
-                            <input id="cost_price_naira" type="number" step="1" value="0" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                            <input id="cost_price_naira" type="number" step="1" value="0" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
                         </div>
                         <div>
                             <label class="block text-xs text-slate-400 mb-1">Initial Stock Quantity * ≥0</label>
-                            <input id="current_qty" type="number" step="1" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                            <input id="current_qty" type="number" step="1" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
                         </div>
                         <div>
                             <label class="block text-xs text-slate-400 mb-1">Weight (kg) ≥0</label>
-                            <input id="weight_kg" type="number" step="0.1" value="0" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                            <input id="weight_kg" type="number" step="0.1" value="0" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
                         </div>
                         <div>
                             <label class="block text-xs text-slate-400 mb-1">Size Factor ≥ 1.0</label>
-                            <input id="size_factor" type="number" step="0.1" value="1.0" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                            <input id="size_factor" type="number" step="0.1" value="1.0" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
                         </div>
                         <div>
                             <label class="block text-xs text-slate-400 mb-1">Handling Category *</label>
@@ -245,39 +364,34 @@
 
                         <div>
                             <label class="block text-xs text-slate-400 mb-1">Batch Number</label>
-                            <input id="batch_number" type="text" placeholder="e.g., BATCH-2024-001" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                            <input id="batch_number" type="text" placeholder="e.g., BATCH-2024-001" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
                         </div>
                         <div>
                             <label class="block text-xs text-slate-400 mb-1">Lot Number</label>
-                            <input id="lot_number" type="text" placeholder="e.g., LOT-A1" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                            <input id="lot_number" type="text" placeholder="e.g., LOT-A1" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
                         </div>
                         <div>
                             <label class="block text-xs text-slate-400 mb-1">Manufacture Date</label>
-                            <input id="manufacture_date" type="date" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                            <input id="manufacture_date" type="date" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
                         </div>
                         <div>
                             <label class="block text-xs text-slate-400 mb-1">Expiry Date <span id="expiry-warning" class="text-red-400 hidden">⚠️</span></label>
-                            <input id="expiry_date" type="date" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                            <input id="expiry_date" type="date" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
                             <p id="expiry-hint" class="text-xs text-slate-500 mt-1"></p>
                         </div>
                         <div>
                             <label class="block text-xs text-slate-400 mb-1">Supplier Name</label>
-                            <input id="supplier_name" type="text" placeholder="Optional" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                            <input id="supplier_name" type="text" placeholder="Optional" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
                         </div>
                         <div>
                             <label class="block text-xs text-slate-400 mb-1">Supplier Invoice #</label>
-                            <input id="supplier_invoice" type="text" placeholder="Optional" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                            <input id="supplier_invoice" type="text" placeholder="Optional" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
                         </div>
                         <div>
                             <label class="block text-xs text-slate-400 mb-1">Image URL (optional)</label>
-                            <input id="image_url" type="url" placeholder="https://..." class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+                            <input id="image_url" type="url" placeholder="https://..." class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
                         </div>
-                        <div>
-                            <label class="block text-xs text-slate-400 mb-1">Assign to Location (optional)</label>
-                            <select id="location-assign" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
-                                <option value="">Default Warehouse</option>
-                            </select>
-                        </div>
+                        <!-- Removed location-assign dropdown -->
                         <div class="md:col-span-2 flex gap-3">
                             <button type="submit" class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded-lg font-medium transition">💾 Save Product</button>
                             <button type="button" id="cancel-edit" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm transition hidden">Cancel Edit</button>
@@ -291,7 +405,7 @@
                     <div class="flex flex-col sm:flex-row gap-4 items-end">
                         <div class="flex-1">
                             <label class="block text-xs text-slate-400 mb-1">CSV File</label>
-                            <input type="file" id="bulk-csv-file" accept=".csv" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm file:mr-2 file:py-1 file:px-3 file:rounded-md file:bg-slate-700 file:text-white file:border-0">
+                            <input type="file" id="bulk-csv-file" accept=".csv" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm file:mr-2 file:py-1 file:px-3 file:rounded-md file:bg-slate-700 file:text-white file:border-0" />
                         </div>
                         <button id="bulk-upload-btn" class="bg-green-600 hover:bg-green-700 px-5 py-2 rounded-lg font-medium transition"><i class="fa-solid fa-cloud-upload-alt mr-2"></i> Upload</button>
                     </div>
@@ -309,7 +423,9 @@
                 </div>
             </div>
 
-            <!-- ========== TAB CONTENT: EXPIRY & BATCH ========== -->
+            <!-- ========================================================== -->
+            <!-- TAB: EXPIRY & BATCH                                         -->
+            <!-- ========================================================== -->
             <div id="tab-expiry" class="tab-content hidden">
                 <div class="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
                     <div class="flex flex-wrap justify-between items-center mb-4">
@@ -343,7 +459,9 @@
                 </div>
             </div>
 
-            <!-- ========== TAB CONTENT: ALERTS ========== -->
+            <!-- ========================================================== -->
+            <!-- TAB: ALERTS                                                 -->
+            <!-- ========================================================== -->
             <div id="tab-alerts" class="tab-content hidden">
                 <div class="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
                     <div class="flex flex-wrap justify-between items-center mb-4">
@@ -361,21 +479,17 @@
                                 <option value="EXPIRY_MEDIUM">Medium</option>
                                 <option value="EXPIRY_LOW">Low</option>
                             </select>
-                            <button onclick="loadAlerts()" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-sm">
-                                <i class="fa-solid fa-refresh"></i>
-                            </button>
-                            <button onclick="exportAlerts()" class="bg-emerald-600 hover:bg-emerald-700 px-3 py-2 rounded-lg text-sm">
-                                <i class="fa-solid fa-download"></i>
-                            </button>
+                            <button onclick="loadAlerts()" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-sm"><i class="fa-solid fa-refresh"></i></button>
+                            <button onclick="exportAlerts()" class="bg-emerald-600 hover:bg-emerald-700 px-3 py-2 rounded-lg text-sm"><i class="fa-solid fa-download"></i></button>
                         </div>
                     </div>
-                    <div id="alerts-container">
-                        <div class="text-center py-8 text-slate-400">Loading alerts...</div>
-                    </div>
+                    <div id="alerts-container"><div class="text-center py-8 text-slate-400">Loading alerts...</div></div>
                 </div>
             </div>
 
-            <!-- ========== TAB CONTENT: RISK SCORES ========== -->
+            <!-- ========================================================== -->
+            <!-- TAB: RISK SCORES                                            -->
+            <!-- ========================================================== -->
             <div id="tab-risk" class="tab-content hidden">
                 <div class="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
                     <div class="flex flex-wrap justify-between items-center mb-4">
@@ -388,36 +502,22 @@
                                 <option value="MODERATE">Moderate</option>
                                 <option value="LOW">Low</option>
                             </select>
-                            <button onclick="loadRiskScores()" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-sm">
-                                <i class="fa-solid fa-refresh"></i>
-                            </button>
+                            <button onclick="loadRiskScores()" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-sm"><i class="fa-solid fa-refresh"></i></button>
                         </div>
                     </div>
                     <div id="risk-summary" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                        <div class="bg-red-900/30 rounded-lg p-3 text-center border border-red-700">
-                            <div class="text-xl font-bold text-red-400" id="risk-critical-count">0</div>
-                            <div class="text-xs text-slate-400">Critical</div>
-                        </div>
-                        <div class="bg-orange-900/30 rounded-lg p-3 text-center border border-orange-700">
-                            <div class="text-xl font-bold text-orange-400" id="risk-high-count">0</div>
-                            <div class="text-xs text-slate-400">High</div>
-                        </div>
-                        <div class="bg-yellow-900/30 rounded-lg p-3 text-center border border-yellow-700">
-                            <div class="text-xl font-bold text-yellow-400" id="risk-moderate-count">0</div>
-                            <div class="text-xs text-slate-400">Moderate</div>
-                        </div>
-                        <div class="bg-green-900/30 rounded-lg p-3 text-center border border-green-700">
-                            <div class="text-xl font-bold text-green-400" id="risk-low-count">0</div>
-                            <div class="text-xs text-slate-400">Low</div>
-                        </div>
+                        <div class="bg-red-900/30 rounded-lg p-3 text-center border border-red-700"><div class="text-xl font-bold text-red-400" id="risk-critical-count">0</div><div class="text-xs text-slate-400">Critical</div></div>
+                        <div class="bg-orange-900/30 rounded-lg p-3 text-center border border-orange-700"><div class="text-xl font-bold text-orange-400" id="risk-high-count">0</div><div class="text-xs text-slate-400">High</div></div>
+                        <div class="bg-yellow-900/30 rounded-lg p-3 text-center border border-yellow-700"><div class="text-xl font-bold text-yellow-400" id="risk-moderate-count">0</div><div class="text-xs text-slate-400">Moderate</div></div>
+                        <div class="bg-green-900/30 rounded-lg p-3 text-center border border-green-700"><div class="text-xl font-bold text-green-400" id="risk-low-count">0</div><div class="text-xs text-slate-400">Low</div></div>
                     </div>
-                    <div id="risk-container">
-                        <div class="text-center py-8 text-slate-400">Loading risk scores...</div>
-                    </div>
+                    <div id="risk-container"><div class="text-center py-8 text-slate-400">Loading risk scores...</div></div>
                 </div>
             </div>
 
-            <!-- ========== TAB CONTENT: TRANSFERS ========== -->
+            <!-- ========================================================== -->
+            <!-- TAB: TRANSFERS                                              -->
+            <!-- ========================================================== -->
             <div id="tab-transfers" class="tab-content hidden">
                 <div class="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
                     <div class="flex flex-wrap justify-between items-center mb-4">
@@ -429,33 +529,29 @@
                                 <option value="Partial">Partial</option>
                                 <option value="Complete">Complete</option>
                             </select>
-                            <button onclick="loadTransferSuggestions()" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-sm">
-                                <i class="fa-solid fa-refresh"></i>
-                            </button>
+                            <button onclick="loadTransferSuggestions()" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-sm"><i class="fa-solid fa-refresh"></i></button>
                         </div>
                     </div>
-                    <div id="transfer-container">
-                        <div class="text-center py-8 text-slate-400">Loading transfer suggestions...</div>
-                    </div>
+                    <div id="transfer-container"><div class="text-center py-8 text-slate-400">Loading transfer suggestions...</div></div>
                 </div>
             </div>
 
-            <!-- ========== TAB CONTENT: STOCK LIMITS ========== -->
+            <!-- ========================================================== -->
+            <!-- TAB: STOCK LIMITS                                           -->
+            <!-- ========================================================== -->
             <div id="tab-limits" class="tab-content hidden">
                 <div class="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
                     <div class="flex justify-between items-center mb-4">
                         <h2 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-chart-bar text-blue-400"></i> Stock & Demand Limits</h2>
-                        <button onclick="loadStockLimits()" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-sm">
-                            <i class="fa-solid fa-refresh"></i>
-                        </button>
+                        <button onclick="loadStockLimits()" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-sm"><i class="fa-solid fa-refresh"></i></button>
                     </div>
-                    <div id="stock-limits-container">
-                        <div class="text-center py-8 text-slate-400">Loading stock limits...</div>
-                    </div>
+                    <div id="stock-limits-container"><div class="text-center py-8 text-slate-400">Loading stock limits...</div></div>
                 </div>
             </div>
 
-            <!-- ========== TAB CONTENT: LOGS ========== -->
+            <!-- ========================================================== -->
+            <!-- TAB: LOGS                                                   -->
+            <!-- ========================================================== -->
             <div id="tab-logs" class="tab-content hidden">
                 <div class="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
                     <div class="flex flex-wrap justify-between items-center mb-4">
@@ -468,222 +564,107 @@
                                 <option value="ERROR">Error</option>
                                 <option value="CRITICAL">Critical</option>
                             </select>
-                            <button onclick="loadSystemLogs()" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-sm">
-                                <i class="fa-solid fa-refresh"></i>
-                            </button>
+                            <button onclick="loadSystemLogs()" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-sm"><i class="fa-solid fa-refresh"></i></button>
                         </div>
                     </div>
-                    <div id="logs-container">
-                        <div class="text-center py-8 text-slate-400">Loading logs...</div>
-                    </div>
+                    <div id="logs-container"><div class="text-center py-8 text-slate-400">Loading logs...</div></div>
                 </div>
             </div>
 
-            <!-- ========== TAB CONTENT: LOCATIONS ========== -->
+            <!-- ========================================================== -->
+            <!-- TAB: LOCATIONS                                              -->
+            <!-- ========================================================== -->
             <div id="tab-locations" class="tab-content hidden">
                 <div class="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
                     <div class="flex justify-between items-center mb-4">
                         <h2 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-building text-blue-400"></i> Locations</h2>
-                        <button onclick="loadLocationsUI()" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-sm">
-                            <i class="fa-solid fa-refresh"></i>
-                        </button>
+                        <button onclick="loadLocationsUI()" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-sm"><i class="fa-solid fa-refresh"></i></button>
                     </div>
-                    <div id="locations-container">
-                        <div class="text-center py-8 text-slate-400">Loading locations...</div>
-                    </div>
+                    <div id="locations-container"><div class="text-center py-8 text-slate-400">Loading locations...</div></div>
                     <div class="mt-6 border-t border-slate-700 pt-6">
                         <h3 class="text-lg font-bold mb-4">Add New Location</h3>
                         <form id="location-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-xs text-slate-400 mb-1">Location Name *</label>
-                                <input id="location-name" type="text" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-xs text-slate-400 mb-1">Location Type *</label>
-                                <select id="location-type" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
-                                    <option value="store">Store</option>
-                                    <option value="warehouse">Warehouse</option>
-                                    <option value="fulfillment">Fulfillment Center</option>
-                                </select>
-                            </div>
-                            <div class="md:col-span-2">
-                                <label class="block text-xs text-slate-400 mb-1">Address</label>
-                                <input id="location-address" type="text" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
-                            </div>
-                            <!-- Email fields -->
-                            <div>
-                                <label class="block text-xs text-slate-400 mb-1">Manager Email</label>
-                                <input id="location-manager-email" type="email" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-xs text-slate-400 mb-1">Inventory Email</label>
-                                <input id="location-inventory-email" type="email" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-xs text-slate-400 mb-1">Procurement Email</label>
-                                <input id="location-procurement-email" type="email" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-xs text-slate-400 mb-1">Auditor Email</label>
-                                <input id="location-auditor-email" type="email" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-xs text-slate-400 mb-1">Dev Team Email</label>
-                                <input id="location-dev-email" type="email" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
-                            </div>
-                            <div class="md:col-span-2">
-                                <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 px-6 py-2 rounded-lg font-medium transition">➕ Add Location</button>
-                            </div>
+                            <div><label class="block text-xs text-slate-400 mb-1">Location Name *</label><input id="location-name" type="text" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" /></div>
+                            <div><label class="block text-xs text-slate-400 mb-1">Location Type *</label><select id="location-type" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm"><option value="store">Store</option><option value="warehouse">Warehouse</option><option value="fulfillment">Fulfillment Center</option></select></div>
+                            <div class="md:col-span-2"><label class="block text-xs text-slate-400 mb-1">Address</label><input id="location-address" type="text" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" /></div>
+                            <div><label class="block text-xs text-slate-400 mb-1">Manager Email</label><input id="location-manager-email" type="email" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" /></div>
+                            <div><label class="block text-xs text-slate-400 mb-1">Inventory Email</label><input id="location-inventory-email" type="email" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" /></div>
+                            <div><label class="block text-xs text-slate-400 mb-1">Procurement Email</label><input id="location-procurement-email" type="email" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" /></div>
+                            <div><label class="block text-xs text-slate-400 mb-1">Auditor Email</label><input id="location-auditor-email" type="email" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" /></div>
+                            <div><label class="block text-xs text-slate-400 mb-1">Dev Team Email</label><input id="location-dev-email" type="email" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" /></div>
+                            <div class="md:col-span-2"><button type="submit" class="bg-emerald-600 hover:bg-emerald-700 px-6 py-2 rounded-lg font-medium transition">➕ Add Location</button></div>
                         </form>
                     </div>
                 </div>
             </div>
 
-        </div>
-    </div>
+        </div><!-- end admin-panel -->
+    </div><!-- end max-w-7xl -->
 
-    <!-- ========== MODALS ========== -->
+    <!-- ============================================================ -->
+    <!-- MODALS                                                        -->
+    <!-- ============================================================ -->
 
-    <!-- Stock Transfer Modal -->
+    <!-- Transfer Modal -->
     <div id="transfer-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
         <div class="bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-slate-600">
             <h3 class="text-xl font-bold mb-4">Transfer Stock</h3>
             <div class="space-y-3">
-                <div>
-                    <label class="block text-sm mb-1">Product</label>
-                    <select id="transfer-product" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select>
-                </div>
-                <div>
-                    <label class="block text-sm mb-1">From Location</label>
-                    <select id="transfer-from" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select>
-                </div>
-                <div>
-                    <label class="block text-sm mb-1">To Location</label>
-                    <select id="transfer-to" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select>
-                </div>
-                <div>
-                    <label class="block text-sm mb-1">Quantity</label>
-                    <input id="transfer-qty" type="number" min="1" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
-                </div>
-                <div>
-                    <label class="block text-sm mb-1">Reason</label>
-                    <input id="transfer-reason" placeholder="Optional" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
-                </div>
-                <div class="flex gap-3 mt-4">
-                    <button id="transfer-submit" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg">Transfer</button>
-                    <button id="transfer-cancel" class="bg-slate-600 hover:bg-slate-500 px-4 py-2 rounded-lg">Cancel</button>
-                </div>
+                <div><label class="block text-sm mb-1">Product</label><select id="transfer-product" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select></div>
+                <div><label class="block text-sm mb-1">From Location</label><select id="transfer-from" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select></div>
+                <div><label class="block text-sm mb-1">To Location</label><select id="transfer-to" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select></div>
+                <div><label class="block text-sm mb-1">Quantity</label><input id="transfer-qty" type="number" min="1" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2" /></div>
+                <div><label class="block text-sm mb-1">Reason</label><input id="transfer-reason" placeholder="Optional" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2" /></div>
+                <div class="flex gap-3 mt-4"><button id="transfer-submit" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg">Transfer</button><button id="transfer-cancel" class="bg-slate-600 hover:bg-slate-500 px-4 py-2 rounded-lg">Cancel</button></div>
             </div>
         </div>
     </div>
 
-    <!-- Location Modal (used for quick add) -->
+    <!-- Location Modal (quick add) -->
     <div id="location-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
         <div class="bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-slate-600">
             <h3 class="text-xl font-bold mb-4">Add New Location</h3>
             <div class="space-y-3">
-                <div>
-                    <label class="block text-sm mb-1">Location Name *</label>
-                    <input type="text" id="location-modal-name" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
-                </div>
-                <div>
-                    <label class="block text-sm mb-1">Location Type</label>
-                    <select id="location-modal-type" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
-                        <option value="warehouse">Warehouse</option>
-                        <option value="store">Physical Store</option>
-                        <option value="online">Online Store</option>
-                        <option value="fulfillment">Fulfillment Center</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-sm mb-1">Address</label>
-                    <input type="text" id="location-modal-address" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
-                </div>
-                <div class="flex gap-3 mt-4">
-                    <button id="location-modal-submit" class="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg">Create</button>
-                    <button id="location-modal-cancel" class="bg-slate-600 hover:bg-slate-500 px-4 py-2 rounded-lg">Cancel</button>
-                </div>
+                <div><label class="block text-sm mb-1">Location Name *</label><input type="text" id="location-modal-name" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2" /></div>
+                <div><label class="block text-sm mb-1">Location Type</label><select id="location-modal-type" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"><option value="warehouse">Warehouse</option><option value="store">Physical Store</option><option value="online">Online Store</option><option value="fulfillment">Fulfillment Center</option></select></div>
+                <div><label class="block text-sm mb-1">Address</label><input type="text" id="location-modal-address" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2" /></div>
+                <div class="flex gap-3 mt-4"><button id="location-modal-submit" class="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg">Create</button><button id="location-modal-cancel" class="bg-slate-600 hover:bg-slate-500 px-4 py-2 rounded-lg">Cancel</button></div>
             </div>
-            <div id="existing-locations" class="mt-4 pt-4 border-t border-slate-700">
-                <h4 class="text-sm font-semibold mb-2">Existing Locations</h4>
-                <div id="locations-list" class="text-xs space-y-1 max-h-32 overflow-y-auto"></div>
-            </div>
+            <div id="existing-locations" class="mt-4 pt-4 border-t border-slate-700"><h4 class="text-sm font-semibold mb-2">Existing Locations</h4><div id="locations-list" class="text-xs space-y-1 max-h-32 overflow-y-auto"></div></div>
         </div>
     </div>
 
     <!-- Add Batch Modal -->
     <div id="add-batch-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
         <div class="bg-slate-800 rounded-2xl max-w-2xl w-full border border-slate-600 max-h-[90vh] flex flex-col">
-            <div class="p-5 border-b border-slate-700">
-                <h3 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-layer-group text-emerald-400"></i> Add Batch</h3>
-            </div>
+            <div class="p-5 border-b border-slate-700"><h3 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-layer-group text-emerald-400"></i> Add Batch</h3></div>
             <div class="p-5 overflow-y-auto flex-1">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="md:col-span-2">
-                        <label class="block text-sm font-medium mb-1">Select Product *</label>
-                        <select id="batch-product-select" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm">
-                            <option value="">Select a product...</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Batch Number *</label>
-                        <input type="text" id="batch-number" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Lot Number</label>
-                        <input type="text" id="lot-number" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Quantity *</label>
-                        <input type="number" id="batch-quantity" min="1" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Expiry Date *</label>
-                        <input type="date" id="batch-expiry-date" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Manufacture Date</label>
-                        <input type="date" id="batch-manufacture-date" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Supplier Name</label>
-                        <input type="text" id="batch-supplier" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Supplier Invoice</label>
-                        <input type="text" id="batch-invoice" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm">
-                    </div>
-                    <div class="md:col-span-2">
-                        <label class="block text-sm font-medium mb-1">Cost Price (₦)</label>
-                        <input type="number" id="batch-cost" step="1" value="0" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm">
-                    </div>
+                    <div class="md:col-span-2"><label class="block text-sm font-medium mb-1">Select Product *</label><select id="batch-product-select" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm"><option value="">Select a product...</option></select></div>
+                    <div><label class="block text-sm font-medium mb-1">Batch Number *</label><input type="text" id="batch-number" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm" /></div>
+                    <div><label class="block text-sm font-medium mb-1">Lot Number</label><input type="text" id="lot-number" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm" /></div>
+                    <div><label class="block text-sm font-medium mb-1">Quantity *</label><input type="number" id="batch-quantity" min="1" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm" /></div>
+                    <div><label class="block text-sm font-medium mb-1">Expiry Date *</label><input type="date" id="batch-expiry-date" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm" /></div>
+                    <div><label class="block text-sm font-medium mb-1">Manufacture Date</label><input type="date" id="batch-manufacture-date" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm" /></div>
+                    <div><label class="block text-sm font-medium mb-1">Supplier Name</label><input type="text" id="batch-supplier" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm" /></div>
+                    <div><label class="block text-sm font-medium mb-1">Supplier Invoice</label><input type="text" id="batch-invoice" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm" /></div>
+                    <div class="md:col-span-2"><label class="block text-sm font-medium mb-1">Cost Price (₦)</label><input type="number" id="batch-cost" step="1" value="0" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm" /></div>
                 </div>
             </div>
-            <div class="p-5 border-t border-slate-700 flex justify-end gap-3">
-                <button id="batch-cancel" class="bg-slate-700 hover:bg-slate-600 px-5 py-2 rounded-lg">Cancel</button>
-                <button id="batch-submit" class="bg-emerald-600 hover:bg-emerald-700 px-6 py-2 rounded-lg">Add Batch</button>
-            </div>
+            <div class="p-5 border-t border-slate-700 flex justify-end gap-3"><button id="batch-cancel" class="bg-slate-700 hover:bg-slate-600 px-5 py-2 rounded-lg">Cancel</button><button id="batch-submit" class="bg-emerald-600 hover:bg-emerald-700 px-6 py-2 rounded-lg">Add Batch</button></div>
         </div>
     </div>
 
     <!-- Batch Details Modal -->
     <div id="batch-details-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
         <div class="bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-slate-600">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-xl font-bold">Batch Details</h3>
-                <button id="batch-details-close" class="text-slate-400 hover:text-white text-xl">&times;</button>
-            </div>
+            <div class="flex justify-between items-center mb-4"><h3 class="text-xl font-bold">Batch Details</h3><button id="batch-details-close" class="text-slate-400 hover:text-white text-xl">&times;</button></div>
             <div id="batch-details-content"><div class="text-center p-4 text-slate-400">Loading...</div></div>
             <div class="mt-4 pt-4 border-t border-slate-700">
                 <label class="block text-sm mb-2">Adjust Quantity</label>
                 <div class="flex gap-2">
-                    <input type="number" id="batch-adjust-qty" placeholder="+ or -" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm">
-                    <select id="batch-adjust-reason" class="bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm">
-                        <option value="sale">Sale</option>
-                        <option value="damaged">Damaged</option>
-                        <option value="expired">Expired</option>
-                        <option value="return">Return</option>
-                    </select>
+                    <input type="number" id="batch-adjust-qty" placeholder="+ or -" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm" />
+                    <select id="batch-adjust-reason" class="bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm"><option value="sale">Sale</option><option value="damaged">Damaged</option><option value="expired">Expired</option><option value="return">Return</option></select>
                     <button id="batch-adjust-submit" class="bg-amber-600 hover:bg-amber-700 px-3 py-2 rounded-lg text-sm">Apply</button>
                 </div>
             </div>
@@ -693,18 +674,18 @@
     <!-- FEFO Modal -->
     <div id="fefo-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
         <div class="bg-slate-800 rounded-2xl max-w-3xl w-full p-6 border border-slate-600 max-h-[80vh] overflow-y-auto">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-xl font-bold">📦 FEFO Recommendations</h3>
-                <button id="fefo-close" class="text-slate-400 hover:text-white text-xl">&times;</button>
-            </div>
+            <div class="flex justify-between items-center mb-4"><h3 class="text-xl font-bold">📦 FEFO Recommendations</h3><button id="fefo-close" class="text-slate-400 hover:text-white text-xl">&times;</button></div>
             <div id="fefo-recommendations-list"><div class="text-center p-8 text-slate-400">Loading...</div></div>
         </div>
     </div>
 
+    <!-- ============================================================ -->
+    <!-- JAVASCRIPT                                                    -->
+    <!-- ============================================================ -->
     <script>
-        // ============================================================
+        // ================================================================
         // CONFIGURATION
-        // ============================================================
+        // ================================================================
         const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
         let token = localStorage.getItem('access_token');
         let currentUser = null;
@@ -716,9 +697,9 @@
         let currentPage = 1;
         const PAGE_SIZE = 20;
 
-        // ============================================================
+        // ================================================================
         // UTILITIES
-        // ============================================================
+        // ================================================================
         function escapeHtml(str) {
             if (!str) return '';
             return String(str).replace(/[&<>]/g, function(m) {
@@ -756,9 +737,9 @@
             return '🟢';
         }
 
-        // ============================================================
+        // ================================================================
         // API CALLS
-        // ============================================================
+        // ================================================================
         async function refreshToken() {
             const refresh = localStorage.getItem('refresh_token');
             if (!refresh) return false;
@@ -804,9 +785,9 @@
             return res.json();
         }
 
-        // ============================================================
-        // ORGANISATION MANAGEMENT — FIXED: uses /auth/org fallback
-        // ============================================================
+        // ================================================================
+        // ORGANISATION MANAGEMENT
+        // ================================================================
         async function fetchUserOrganisations() {
             try {
                 const response = await fetch(`${API_BASE}/auth/user-organisations`, {
@@ -814,7 +795,6 @@
                 });
                 if (!response.ok) throw new Error('Failed to fetch organisations');
                 const data = await response.json();
-                // Normalise the data: the backend returns "id", "org_name", "role"
                 const orgs = data.organisations || data || [];
                 return orgs.map(org => ({
                     id: org.id || org.org_id,
@@ -827,27 +807,15 @@
                 try {
                     const me = await apiCall('/auth/me');
                     if (me.org_id) {
-                        // Use the existing /auth/org endpoint to get the name
                         let orgName = null;
                         try {
                             const orgInfo = await apiCall('/auth/org');
                             orgName = orgInfo.org_name || null;
-                        } catch (e) {
-                            console.warn('Could not fetch org name via /auth/org', e);
-                        }
-                        if (!orgName) {
-                            orgName = `Org: ${me.org_id}`;
-                        }
-                        return [{
-                            id: me.org_id,
-                            org_id: me.org_id,
-                            org_name: orgName,
-                            role: me.role || 'admin'
-                        }];
+                        } catch (e) { console.warn('Could not fetch org name via /auth/org', e); }
+                        if (!orgName) orgName = `Org: ${me.org_id}`;
+                        return [{ id: me.org_id, org_id: me.org_id, org_name: orgName, role: me.role || 'admin' }];
                     }
-                } catch (e) {
-                    console.error('Fallback also failed', e);
-                }
+                } catch (e) { console.error('Fallback also failed', e); }
                 return [];
             }
         }
@@ -881,9 +849,7 @@
                                     <i class="fa-solid fa-building text-2xl ${org.role === 'owner' ? 'text-amber-400' : 'text-blue-400'}"></i>
                                     <div>
                                         <h3 class="font-semibold text-white">${escapeHtml(targetName)}</h3>
-                                        <span class="text-xs px-2 py-0.5 rounded-full ${org.role === 'owner' ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-600 text-slate-300'}">
-                                            ${org.role || 'member'}
-                                        </span>
+                                        <span class="text-xs px-2 py-0.5 rounded-full ${org.role === 'owner' ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-600 text-slate-300'}">${org.role || 'member'}</span>
                                     </div>
                                 </div>
                                 <i class="fa-regular fa-circle text-slate-500 text-xl org-radio"></i>
@@ -919,9 +885,9 @@
             });
         }
 
-        // ============================================================
+        // ================================================================
         // LOCATION MANAGEMENT
-        // ============================================================
+        // ================================================================
         async function loadLocations() {
             if (!selectedOrganisation) return;
             try {
@@ -941,13 +907,11 @@
                 }));
 
                 const filterSelect = document.getElementById('location-filter');
-                const assignSelect = document.getElementById('location-assign');
                 const transferFrom = document.getElementById('transfer-from');
                 const transferTo = document.getElementById('transfer-to');
 
                 if (!allLocations || allLocations.length === 0) {
                     filterSelect.innerHTML = '<option value="">No locations</option>';
-                    assignSelect.innerHTML = '<option value="">Default</option>';
                     transferFrom.innerHTML = '<option value="">No locations</option>';
                     transferTo.innerHTML = '<option value="">No locations</option>';
                     return;
@@ -955,7 +919,6 @@
 
                 const optionsHtml = allLocations.map(l => `<option value="${l.id}">${escapeHtml(l.name)}</option>`).join('');
                 filterSelect.innerHTML = '<option value="">All Locations</option>' + optionsHtml;
-                assignSelect.innerHTML = '<option value="">Default Warehouse</option>' + optionsHtml;
                 transferFrom.innerHTML = optionsHtml;
                 transferTo.innerHTML = optionsHtml;
 
@@ -978,9 +941,9 @@
             }
         }
 
-        // ============================================================
+        // ================================================================
         // LOCATIONS TAB UI
-        // ============================================================
+        // ================================================================
         async function loadLocationsUI() {
             const container = document.getElementById('locations-container');
             if (!container) return;
@@ -1019,9 +982,9 @@
             `).join('');
         }
 
-        // ============================================================
+        // ================================================================
         // DASHBOARD METRICS
-        // ============================================================
+        // ================================================================
         async function loadDashboardMetrics() {
             try {
                 const data = await apiCall('/dashboard/metrics');
@@ -1034,9 +997,9 @@
             }
         }
 
-        // ============================================================
+        // ================================================================
         // INVENTORY MANAGEMENT
-        // ============================================================
+        // ================================================================
         async function loadInventory() {
             if (!selectedOrganisation) return;
             try {
@@ -1052,6 +1015,13 @@
                 document.getElementById('products-grid').innerHTML =
                     `<div class="col-span-full text-center py-8 text-red-400">❌ ${escapeHtml(err.message)}</div>`;
             }
+        }
+
+        // ── helper: get location name by id ──
+        function getLocationName(locId) {
+            if (!locId) return null;
+            const found = allLocations.find(l => l.id == locId);
+            return found ? found.name : null;
         }
 
         function renderProducts(items) {
@@ -1072,6 +1042,7 @@
                     hazardous: 'bg-red-600/30 text-red-300'
                 } [p.handling_category] || 'bg-slate-600/30';
 
+                // ── expiry badge ──
                 let expiryBadge = '';
                 if (p.expiry_date) {
                     const today = new Date();
@@ -1089,15 +1060,27 @@
                         `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] ${badgeClass}"><i class="fa-regular fa-calendar"></i> ${badgeText}</span>`;
                 }
 
+                // ── location stock display ──
                 let stockHtml = '';
+                const locationNames = {};
+                allLocations.forEach(loc => { locationNames[loc.id] = loc.name; });
+
                 if (p.location_stocks && p.location_stocks.length > 0) {
-                    const locationNames = {};
-                    allLocations.forEach(loc => { locationNames[loc.id] = loc.name; });
-                    stockHtml = `<div class="text-xs text-slate-400 mt-1">${p.location_stocks.map(s => 
-                        `<div class="flex justify-between"><span>${escapeHtml(locationNames[s.location_id] || s.location_id)}:</span><span class="font-mono">${s.quantity}</span></div>`
-                    ).join('')}</div>`;
-                } else {
+                    const stockItems = p.location_stocks.map(s => {
+                        const locId = s.location_id || s.id;
+                        const locName = locationNames[locId] || s.location_name || `Location ${locId}`;
+                        return `<div class="flex justify-between"><span class="loc-badge"><i class="fa-solid fa-location-dot"></i> <span class="loc-name">${escapeHtml(locName)}</span></span><span class="font-mono">${s.quantity}</span></div>`;
+                    }).join('');
+                    stockHtml = `<div class="text-xs text-slate-400 mt-1 space-y-0.5">${stockItems}</div>`;
+                } else if (p.location_id) {
+                    // fallback: product has a direct location_id
+                    const locName = locationNames[p.location_id] || `Location ${p.location_id}`;
+                    stockHtml =
+                        `<div class="text-xs text-slate-400 mt-1"><span class="loc-badge"><i class="fa-solid fa-location-dot"></i> <span class="loc-name">${escapeHtml(locName)}</span></span> <span class="font-mono">${p.current_qty || 0}</span></div>`;
+                } else if (p.current_qty !== undefined) {
                     stockHtml = `<div class="mt-1"><span class="text-xs text-slate-400">Stock: ${p.current_qty || 0}</span></div>`;
+                } else {
+                    stockHtml = `<div class="mt-1"><span class="text-xs text-slate-400">Stock: 0</span></div>`;
                 }
 
                 card.innerHTML = `
@@ -1131,9 +1114,9 @@
             });
         }
 
-        // ============================================================
-        // PRODUCT CRUD
-        // ============================================================
+        // ================================================================
+        // PRODUCT CRUD (removed location_id)
+        // ================================================================
         async function saveProduct(event) {
             event.preventDefault();
             const id = document.getElementById('edit-id').value;
@@ -1166,10 +1149,23 @@
                 }
             }
 
-            const payload = { item_code, description, product_group, price_naira, current_qty, image_url,
-                weight_kg, size_factor, handling_category, cost_price_naira,
-                expiry_date: expiry_date || null, batch_number: batch_number || null,
-                manufacture_date: manufacture_date || null, lot_number: lot_number || null };
+            const payload = {
+                item_code,
+                description,
+                product_group,
+                price_naira,
+                current_qty,
+                image_url,
+                weight_kg,
+                size_factor,
+                handling_category,
+                cost_price_naira,
+                expiry_date: expiry_date || null,
+                batch_number: batch_number || null,
+                manufacture_date: manufacture_date || null,
+                lot_number: lot_number || null
+                // location_id removed
+            };
 
             try {
                 if (id) {
@@ -1208,6 +1204,7 @@
                 document.getElementById('expiry_date').value = product.expiry_date || '';
                 document.getElementById('supplier_name').value = product.supplier_name || '';
                 document.getElementById('supplier_invoice').value = product.supplier_invoice || '';
+                // No location assignment
                 document.getElementById('form-title').innerText = '✏️ Edit Product';
                 document.getElementById('cancel-edit').classList.remove('hidden');
                 document.querySelector('#product-form').scrollIntoView({ behavior: 'smooth' });
@@ -1248,9 +1245,9 @@
                 expiryHint.className = 'text-xs text-slate-500 mt-1'; }
         }
 
-        // ============================================================
+        // ================================================================
         // ALERTS
-        // ============================================================
+        // ================================================================
         async function loadAlerts() {
             const status = document.getElementById('alert-status-filter').value;
             const type = document.getElementById('alert-type-filter').value;
@@ -1348,9 +1345,9 @@
             }
         };
 
-        // ============================================================
+        // ================================================================
         // RISK SCORES
-        // ============================================================
+        // ================================================================
         async function loadRiskScores() {
             const level = document.getElementById('risk-level-filter').value;
             let url = '/risk-scores?limit=100';
@@ -1402,9 +1399,9 @@
             `).join('');
         }
 
-        // ============================================================
+        // ================================================================
         // TRANSFER SUGGESTIONS
-        // ============================================================
+        // ================================================================
         async function loadTransferSuggestions() {
             const status = document.getElementById('transfer-status-filter').value;
             let url = '/transfer-suggestions?limit=50';
@@ -1475,9 +1472,9 @@
             }
         };
 
-        // ============================================================
+        // ================================================================
         // STOCK LIMITS
-        // ============================================================
+        // ================================================================
         async function loadStockLimits() {
             try {
                 const data = await apiCall('/stock-limits?limit=100');
@@ -1527,9 +1524,9 @@
             `;
         }
 
-        // ============================================================
+        // ================================================================
         // SYSTEM LOGS
-        // ============================================================
+        // ================================================================
         async function loadSystemLogs() {
             const level = document.getElementById('log-level-filter').value;
             let url = '/system-logs?limit=100';
@@ -1566,9 +1563,9 @@
             `).join('');
         }
 
-        // ============================================================
+        // ================================================================
         // LOCATION FORM (in locations tab)
-        // ============================================================
+        // ================================================================
         document.getElementById('location-form')?.addEventListener('submit', async function(e) {
             e.preventDefault();
             const name = document.getElementById('location-name').value.trim();
@@ -1591,10 +1588,7 @@
                 if (auditor_email) payload.auditor_email = auditor_email;
                 if (dev_team) payload.dev_team = dev_team;
 
-                await apiCall('/locations', {
-                    method: 'POST',
-                    body: JSON.stringify(payload)
-                });
+                await apiCall('/locations', { method: 'POST', body: JSON.stringify(payload) });
                 showToast(`Location "${name}" created!`, 'success');
                 this.reset();
                 loadLocations();
@@ -1603,9 +1597,9 @@
             }
         });
 
-        // ============================================================
+        // ================================================================
         // TRANSFER MODAL
-        // ============================================================
+        // ================================================================
         function showTransferModal() {
             if (!allLocations || allLocations.length < 2) { showToast('Need at least 2 locations for transfer',
                 'error'); return; }
@@ -1645,9 +1639,9 @@
 
         document.getElementById('show-transfer-modal')?.addEventListener('click', showTransferModal);
 
-        // ============================================================
+        // ================================================================
         // LOCATION MODAL (quick add from inventory tab)
-        // ============================================================
+        // ================================================================
         document.getElementById('show-location-modal')?.addEventListener('click', () => {
             document.getElementById('location-modal').classList.remove('hidden');
             document.getElementById('location-modal-name').value = '';
@@ -1662,10 +1656,8 @@
             if (!name) { showToast('Location name is required', 'error'); return; }
             const is_warehouse = type === 'warehouse' || type === 'fulfillment';
             try {
-                await apiCall('/locations', {
-                    method: 'POST',
-                    body: JSON.stringify({ name, address: address || null, is_warehouse })
-                });
+                await apiCall('/locations', { method: 'POST', body: JSON.stringify({ name, address: address ||
+                            null, is_warehouse }) });
                 showToast(`Location "${name}" created!`, 'success');
                 document.getElementById('location-modal').classList.add('hidden');
                 await loadLocations();
@@ -1678,9 +1670,9 @@
             document.getElementById('location-modal').classList.add('hidden');
         });
 
-        // ============================================================
+        // ================================================================
         // BATCH MODAL
-        // ============================================================
+        // ================================================================
         async function loadBatchProducts() {
             try {
                 const data = await apiCall('/inventory');
@@ -1736,9 +1728,9 @@
             }
         });
 
-        // ============================================================
+        // ================================================================
         // EXPIRY FEATURES
-        // ============================================================
+        // ================================================================
         async function loadExpiringProducts() {
             const alertFilter = document.getElementById('expiry-alert-filter').value;
             let url = `/inventory/expiring-products?days_threshold=180`;
@@ -1770,6 +1762,8 @@
                 const quantity = p.current_stock || p.quantity || 0;
                 const cost = p.cost_price_naira || 0;
                 const supplier = escapeHtml(p.supplier_name || '');
+                // location name
+                const locName = p.location_name || getLocationName(p.location_id) || 'Main';
                 return `
                     <tr class="border-b border-slate-700 hover:bg-slate-800/50">
                         <td class="p-3"><div class="font-medium">${escapeHtml(p.product_name || p.description || 'Unknown')}</div><div class="text-xs text-slate-400">${escapeHtml(p.product_code || p.sku || '')}</div></td>
@@ -1777,7 +1771,7 @@
                         <td class="p-3">${expiryDate}</td>
                         <td class="p-3"><span class="inline-flex px-2 py-1 rounded-full text-xs ${alertClass}">${p.days_until_expiry} days</span></td>
                         <td class="p-3">${quantity}</td>
-                        <td class="p-3">${escapeHtml(p.location_name || 'Main')}</td>
+                        <td class="p-3">${escapeHtml(locName)}</td>
                         <td class="p-3">
                             <button onclick="viewBatchDetails(this, ${batchId}, ${productId})" 
                                     data-batch-number="${batchNumber}"
@@ -1800,9 +1794,9 @@
             }
         }
 
-        // ============================================================
+        // ================================================================
         // BATCH DETAILS
-        // ============================================================
+        // ================================================================
         window.viewBatchDetails = async function(button, batchId, productId) {
             try {
                 const dataset = button.dataset;
@@ -1813,9 +1807,7 @@
                 let supplier = dataset.supplier || 'N/A';
 
                 let apiBatch = null;
-                try {
-                    apiBatch = await apiCall(`/inventory/batches/${batchId}`);
-                } catch (e) {}
+                try { apiBatch = await apiCall(`/inventory/batches/${batchId}`); } catch (e) {}
 
                 if (apiBatch) {
                     if (apiBatch.batch_number) batchNumber = apiBatch.batch_number;
@@ -1829,11 +1821,8 @@
                 }
 
                 let product = null;
-                if (productId) {
-                    product = products.find(p => p.id == productId);
-                } else if (apiBatch && apiBatch.inventory_id) {
-                    product = products.find(p => p.id == apiBatch.inventory_id);
-                }
+                if (productId) { product = products.find(p => p.id == productId); } else if (apiBatch && apiBatch
+                    .inventory_id) { product = products.find(p => p.id == apiBatch.inventory_id); }
                 const productName = product ? product.description : (apiBatch && (apiBatch.product_description || apiBatch
                     .inventory_description)) || 'N/A';
                 const productSku = product ? product.item_code : (apiBatch && (apiBatch.product_sku || apiBatch
@@ -1841,34 +1830,13 @@
 
                 document.getElementById('batch-details-content').innerHTML = `
                     <div class="space-y-2 text-sm">
-                        <div class="flex justify-between border-b border-slate-700 pb-1">
-                            <span class="text-slate-400">Product:</span>
-                            <span class="font-medium">${escapeHtml(productName)}</span>
-                        </div>
-                        <div class="flex justify-between border-b border-slate-700 pb-1">
-                            <span class="text-slate-400">SKU:</span>
-                            <span class="font-mono">${escapeHtml(productSku)}</span>
-                        </div>
-                        <div class="flex justify-between border-b border-slate-700 pb-1">
-                            <span class="text-slate-400">Batch:</span>
-                            <span class="font-mono">${escapeHtml(batchNumber)}</span>
-                        </div>
-                        <div class="flex justify-between border-b border-slate-700 pb-1">
-                            <span class="text-slate-400">Quantity:</span>
-                            <span>${quantity}</span>
-                        </div>
-                        <div class="flex justify-between border-b border-slate-700 pb-1">
-                            <span class="text-slate-400">Expiry:</span>
-                            <span>${expiryDate}</span>
-                        </div>
-                        <div class="flex justify-between border-b border-slate-700 pb-1">
-                            <span class="text-slate-400">Cost:</span>
-                            <span>₦${Number(cost).toLocaleString()}</span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span class="text-slate-400">Supplier:</span>
-                            <span>${escapeHtml(supplier)}</span>
-                        </div>
+                        <div class="flex justify-between border-b border-slate-700 pb-1"><span class="text-slate-400">Product:</span><span class="font-medium">${escapeHtml(productName)}</span></div>
+                        <div class="flex justify-between border-b border-slate-700 pb-1"><span class="text-slate-400">SKU:</span><span class="font-mono">${escapeHtml(productSku)}</span></div>
+                        <div class="flex justify-between border-b border-slate-700 pb-1"><span class="text-slate-400">Batch:</span><span class="font-mono">${escapeHtml(batchNumber)}</span></div>
+                        <div class="flex justify-between border-b border-slate-700 pb-1"><span class="text-slate-400">Quantity:</span><span>${quantity}</span></div>
+                        <div class="flex justify-between border-b border-slate-700 pb-1"><span class="text-slate-400">Expiry:</span><span>${expiryDate}</span></div>
+                        <div class="flex justify-between border-b border-slate-700 pb-1"><span class="text-slate-400">Cost:</span><span>₦${Number(cost).toLocaleString()}</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">Supplier:</span><span>${escapeHtml(supplier)}</span></div>
                     </div>
                 `;
                 window.currentBatchId = batchId;
@@ -1889,9 +1857,9 @@
             if (!window.currentBatchId) { showToast('No batch selected', 'error'); return; }
             try {
                 await apiCall(
-                    `/inventory/batches/${window.currentBatchId}/quantity?quantity_adjustment=${qty}&reason=${reason}`, {
-                        method: 'PUT'
-                    });
+                    `/inventory/batches/${window.currentBatchId}/quantity?quantity_adjustment=${qty}&reason=${reason}`,
+                    { method: 'PUT' }
+                );
                 showToast(`Quantity adjusted by ${qty}`, 'success');
                 document.getElementById('batch-details-modal').classList.add('hidden');
                 loadInventory();
@@ -1901,9 +1869,9 @@
             }
         });
 
-        // ============================================================
+        // ================================================================
         // FEFO
-        // ============================================================
+        // ================================================================
         document.getElementById('show-fefo-modal')?.addEventListener('click', async function() {
             try {
                 const data = await apiCall('/inventory/expiry-fefo-recommendations');
@@ -1932,9 +1900,9 @@
             document.getElementById('fefo-modal').classList.add('hidden');
         });
 
-        // ============================================================
+        // ================================================================
         // TAB SWITCHING
-        // ============================================================
+        // ================================================================
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', function() {
                 document.querySelectorAll('.tab-btn').forEach(b => {
@@ -1958,9 +1926,9 @@
             });
         });
 
-        // ============================================================
+        // ================================================================
         // NAVIGATION
-        // ============================================================
+        // ================================================================
         (function() {
             const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
             const LOGIN_URL = '/kdsiginin';
@@ -2018,9 +1986,122 @@
             }
         })();
 
-        // ============================================================
-        // INITIALISATION
-        // ============================================================
+        // ================================================================
+        // FIXED SEARCH — overlay + fixed positioning
+        // ================================================================
+        const searchInput = document.getElementById('product-search-input');
+        const searchOverlay = document.getElementById('product-search-overlay');
+        const searchResultsFixed = document.getElementById('product-search-results-fixed');
+
+        function positionSearchResults() {
+            if (!searchInput) return;
+            const rect = searchInput.getBoundingClientRect();
+            const top = rect.bottom + 6;
+            const left = rect.left;
+            // clamp to viewport
+            const w = Math.min(rect.width, 500);
+            searchResultsFixed.style.top = top + 'px';
+            searchResultsFixed.style.left = left + 'px';
+            searchResultsFixed.style.width = Math.max(320, w) + 'px';
+        }
+
+        function closeSearchResults() {
+            searchResultsFixed.classList.remove('active');
+            searchOverlay.classList.remove('active');
+            searchResultsFixed.innerHTML = '';
+        }
+
+        if (searchInput) {
+            searchInput.addEventListener('focus', function() {
+                const query = this.value.trim();
+                if (query.length >= 2) performSearch(query);
+            });
+
+            searchInput.addEventListener('input', function(e) {
+                const query = this.value.trim();
+                if (query.length < 2) { closeSearchResults(); return; }
+                performSearch(query);
+            });
+
+            searchInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') closeSearchResults();
+            });
+
+            // click outside -> close
+            document.addEventListener('click', function(e) {
+                const target = e.target;
+                if (!target.closest('#search-input-wrapper') && !target.closest('#product-search-results-fixed')) {
+                    closeSearchResults();
+                }
+            });
+
+            // overlay click closes
+            searchOverlay.addEventListener('click', closeSearchResults);
+        }
+
+        function performSearch(query) {
+            if (!query || query.length < 2) { closeSearchResults(); return; }
+
+            const matches = products.filter(p => {
+                const desc = (p.description || '').toLowerCase();
+                const sku = (p.item_code || p.id || '').toLowerCase();
+                const group = (p.product_group || '').toLowerCase();
+                return desc.includes(query) || sku.includes(query) || group.includes(query);
+            });
+
+            let html = '';
+            if (matches.length === 0) {
+                html = `<div class="no-results">No products found for “${escapeHtml(query)}”</div>`;
+            } else {
+                const sliced = matches.slice(0, 12);
+                sliced.forEach(p => {
+                    const locName = p.location_stocks && p.location_stocks.length > 0 ?
+                        getLocationName(p.location_stocks[0].location_id) :
+                        getLocationName(p.location_id);
+                    const locDisplay = locName ? `<span class="text-xs text-slate-500">📍 ${escapeHtml(locName)}</span>` :
+                        '';
+                    html += `
+                        <div class="result-item" data-id="${p.id}">
+                            <div>
+                                <div class="result-name">${escapeHtml(p.description)}</div>
+                                <div class="result-meta">${escapeHtml(p.item_code || p.id)} ${locDisplay}</div>
+                            </div>
+                            <div class="result-stock">${p.current_qty || 0} in stock</div>
+                        </div>
+                    `;
+                });
+            }
+
+            searchResultsFixed.innerHTML = html;
+            searchResultsFixed.classList.add('active');
+            searchOverlay.classList.add('active');
+            positionSearchResults();
+
+            // click on result
+            searchResultsFixed.querySelectorAll('.result-item').forEach(el => {
+                el.addEventListener('click', function() {
+                    const id = this.dataset.id;
+                    const product = products.find(p => p.id == id);
+                    if (product) {
+                        editProduct(id);
+                        searchInput.value = '';
+                        closeSearchResults();
+                    }
+                });
+            });
+        }
+
+        // reposition on scroll / resize
+        window.addEventListener('scroll', function() {
+            if (searchResultsFixed.classList.contains('active')) positionSearchResults();
+        }, { passive: true });
+        window.addEventListener('resize', function() {
+            if (searchResultsFixed.classList.contains('active')) positionSearchResults();
+        }, { passive: true });
+
+        // ================================================================
+        // INIT
+        // ================================================================
         document.getElementById('confirm-org-btn')?.addEventListener('click', async function() {
             if (!selectedOrganisation) return;
             localStorage.setItem('selected_org_id', selectedOrganisation.id);
@@ -2104,71 +2185,9 @@
         document.getElementById('transfer-status-filter')?.addEventListener('change', loadTransferSuggestions);
         document.getElementById('log-level-filter')?.addEventListener('change', loadSystemLogs);
 
-        // ============================================================
-        // PRODUCT SEARCH
-        // ============================================================
-        const searchInput = document.getElementById('product-search-input');
-        const searchResults = document.getElementById('product-search-results');
-
-        if (searchInput) {
-            searchInput.addEventListener('input', function(e) {
-                const query = this.value.trim().toLowerCase();
-                if (query.length < 2) {
-                    searchResults.classList.add('hidden');
-                    return;
-                }
-
-                const matches = products.filter(p => {
-                    const desc = (p.description || '').toLowerCase();
-                    const sku = (p.item_code || p.id || '').toLowerCase();
-                    const group = (p.product_group || '').toLowerCase();
-                    return desc.includes(query) || sku.includes(query) || group.includes(query);
-                });
-
-                if (matches.length === 0) {
-                    searchResults.innerHTML = '<div class="p-2 text-sm text-slate-400">No products found</div>';
-                    searchResults.classList.remove('hidden');
-                    return;
-                }
-
-                let html = '';
-                matches.slice(0, 10).forEach(p => {
-                    html += `
-                        <div class="product-search-result p-2 border-b border-slate-700 hover:bg-slate-700 transition flex justify-between items-center" data-id="${p.id}">
-                            <div>
-                                <div class="text-sm font-medium">${escapeHtml(p.description)}</div>
-                                <div class="text-xs text-slate-400">${escapeHtml(p.item_code || p.id)} • ₦${(p.price_naira || 0).toLocaleString()}</div>
-                            </div>
-                            <span class="text-xs text-slate-500">${p.current_qty || 0} in stock</span>
-                        </div>
-                    `;
-                });
-                searchResults.innerHTML = html;
-                searchResults.classList.remove('hidden');
-
-                searchResults.querySelectorAll('.product-search-result').forEach(el => {
-                    el.addEventListener('click', function() {
-                        const id = this.dataset.id;
-                        const product = products.find(p => p.id == id);
-                        if (product) {
-                            editProduct(id);
-                            searchInput.value = '';
-                            searchResults.classList.add('hidden');
-                        }
-                    });
-                });
-            });
-
-            document.addEventListener('click', function(e) {
-                if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
-                    searchResults.classList.add('hidden');
-                }
-            });
-        }
-
-        // ============================================================
+        // ================================================================
         // INIT
-        // ============================================================
+        // ================================================================
         async function init() {
             if (!token) {
                 document.getElementById('auth-check-placeholder').innerHTML = `
