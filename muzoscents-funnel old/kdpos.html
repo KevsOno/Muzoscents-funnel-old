@@ -18,14 +18,9 @@
         .loading-spinner { border: 2px solid #e5e7eb; border-top: 2px solid #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 0.8s linear infinite; display: inline-block; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .transition-smooth { transition: all 0.2s ease; }
-        .customer-suggestion {
-            cursor: pointer;
-            transition: background 0.1s;
-        }
-        .customer-suggestion:hover {
-            background-color: #e0f2fe;
-        }
-        /* ── HIDDEN DUMMY FIELDS TO CONFUSE AUTOFILL ── */
+        .customer-suggestion { cursor: pointer; transition: background 0.1s; }
+        .customer-suggestion:hover { background-color: #e0f2fe; }
+        /* ── HIDDEN DUMMY FIELD ── */
         .dummy-autofill {
             position: absolute;
             left: -9999px;
@@ -40,850 +35,834 @@
 </head>
 <body class="bg-gray-100 p-4 font-sans">
 
-<!-- ─── HIDDEN DUMMY FIELDS ─── -->
-<div class="dummy-autofill">
-    <input type="text" id="dummy-email" name="email" value="">
-    <input type="password" id="dummy-password" name="password" value="">
-</div>
+    <!-- ─── HIDDEN DUMMY FIELDS TO CONFUSE AUTOFILL ─── -->
+    <div class="dummy-autofill">
+        <input type="text" id="dummy-email" name="email" value="">
+        <input type="password" id="dummy-password" name="password" value="">
+    </div>
 
-<!-- ========== GLOBAL NAVIGATION (Kevs bOS) ========== -->
-<div id="kevs-nav-container"></div>
-<script>
-(function() {
-    const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
-    const LOGIN_URL = '/kdsiginin';
+    <!-- ========== GLOBAL NAVIGATION ========== -->
+    <div id="kevs-nav-container"></div>
+    <script>
+    (function() {
+        const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
+        const LOGIN_URL = '/kdsiginin';
+        const navItems = [
+            { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy', roles: ['owner','admin','sales_rep','finance'] },
+            { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & loyalty', roles: ['owner','admin','sales_rep'] },
+            { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', title: 'Order shipping, tracking & dispatch', roles: ['owner','admin','logistics'] },
+            { path: '/kdsupport',     name: 'Support',   icon: 'fa-headset', title: 'Ticket management & customer context', roles: ['owner','admin','support'] },
+            { path: '/kddashboard',   name: 'Exec',      icon: 'fa-chart-simple', title: 'Executive revenue & profit overview', roles: ['owner','admin','finance'] },
+            { path: '/kdadmin',       name: 'Inventory', icon: 'fa-boxes', title: 'Manage products, stock, bulk CSV upload', roles: ['owner','admin','inventory_manager'] },
+            { path: '/kdteam',        name: 'Team',      icon: 'fa-users', title: 'Invite & manage team members', roles: ['owner','admin'] },
+            { path: '/kdknowledge',   name: 'Knowledge', icon: 'fa-database', title: 'Manage AI knowledge base documents', roles: ['owner','admin'] }
+        ];
 
-    const navItems = [
-        { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy', roles: ['owner','admin','sales_rep','finance'] },
-        { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & loyalty', roles: ['owner','admin','sales_rep'] },
-        { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', title: 'Order shipping, tracking & dispatch', roles: ['owner','admin','logistics'] },
-        { path: '/kdsupport',     name: 'Support',   icon: 'fa-headset', title: 'Ticket management & customer context', roles: ['owner','admin','support'] },
-        { path: '/kddashboard',   name: 'Exec',      icon: 'fa-chart-simple', title: 'Executive revenue & profit overview', roles: ['owner','admin','finance'] },
-        { path: '/kdadmin',       name: 'Inventory', icon: 'fa-boxes', title: 'Manage products, stock, bulk CSV upload', roles: ['owner','admin','inventory_manager'] },
-        { path: '/kdteam',        name: 'Team',      icon: 'fa-users', title: 'Invite & manage team members', roles: ['owner','admin'] },
-        { path: '/kdknowledge',   name: 'Knowledge', icon: 'fa-database', title: 'Manage AI knowledge base documents', roles: ['owner','admin'] }
-    ];
+        function getUserRole() {
+            try { return localStorage.getItem('user_role') || 'customer'; } catch(e) { return 'customer'; }
+        }
 
-    function getUserRole() {
-        try {
-            const role = localStorage.getItem('user_role');
-            return role || 'customer';
-        } catch(e) { return 'customer'; }
-    }
+        function canAccess(requiredRoles) {
+            return requiredRoles.includes(getUserRole());
+        }
 
-    function canAccess(requiredRoles) {
-        const userRole = getUserRole();
-        return requiredRoles.includes(userRole);
-    }
-
-    function buildNavbar() {
-        const currentPath = window.location.pathname;
-        let linksHtml = '';
-        navItems.forEach(item => {
-            if (!canAccess(item.roles)) return;
-            const isActive = currentPath === item.path;
-            const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
-            linksHtml += `
-                <a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}" title="${item.title}">
-                    <i class="fa-solid ${item.icon} w-4"></i> ${item.name}
-                </a>
-            `;
-        });
-        let userName = 'User';
-        try {
-            const profileStr = localStorage.getItem('user_profile_display');
-            if (profileStr) userName = profileStr;
-        } catch(e) {}
-        return `
-            <div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40">
-                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div class="flex flex-wrap items-center justify-between py-3 gap-3">
-                        <div class="flex items-center gap-2">
-                            <i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i>
-                            <span class="text-xl font-bold tracking-tight">${APP_NAME}</span>
-                            <span class="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span>
+        function buildNavbar() {
+            const currentPath = window.location.pathname;
+            let linksHtml = '';
+            navItems.forEach(item => {
+                if (!canAccess(item.roles)) return;
+                const isActive = currentPath === item.path;
+                const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
+                linksHtml += `
+                    <a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}" title="${item.title}">
+                        <i class="fa-solid ${item.icon} w-4"></i> ${item.name}
+                    </a>
+                `;
+            });
+            let userName = 'User';
+            try {
+                const profileStr = localStorage.getItem('user_profile_display');
+                if (profileStr) userName = profileStr;
+            } catch(e) {}
+            return `
+                <div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40">
+                    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                        <div class="flex flex-wrap items-center justify-between py-3 gap-3">
+                            <div class="flex items-center gap-2">
+                                <i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i>
+                                <span class="text-xl font-bold tracking-tight">${APP_NAME}</span>
+                                <span class="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span>
+                            </div>
+                            <div class="hidden md:flex items-center gap-1 flex-wrap">${linksHtml}</div>
+                            <div class="flex items-center gap-3">
+                                <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full hidden sm:inline-block">
+                                    <i class="fa-regular fa-user mr-1"></i> <span id="nav-user-name">${escapeHtml(userName)}</span>
+                                </span>
+                                <button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition flex items-center gap-1">
+                                    <i class="fa-solid fa-sign-out-alt"></i> <span class="hidden sm:inline">Logout</span>
+                                </button>
+                            </div>
                         </div>
-                        <div class="hidden md:flex items-center gap-1 flex-wrap">
-                            ${linksHtml}
-                        </div>
-                        <div class="flex items-center gap-3">
-                            <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full hidden sm:inline-block">
-                                <i class="fa-regular fa-user mr-1"></i> <span id="nav-user-name">${escapeHtml(userName)}</span>
-                            </span>
-                            <button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition flex items-center gap-1">
-                                <i class="fa-solid fa-sign-out-alt"></i> <span class="hidden sm:inline">Logout</span>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="md:hidden flex overflow-x-auto pb-2 gap-1 snap-x">
-                        ${linksHtml}
+                        <div class="md:hidden flex overflow-x-auto pb-2 gap-1 snap-x">${linksHtml}</div>
                     </div>
                 </div>
-            </div>
-        `;
-    }
-
-    function escapeHtml(str) {
-        if (!str) return '';
-        return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
-    }
-
-    async function globalLogout() {
-        const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
-        const token = localStorage.getItem('access_token');
-        if (token) {
-            try {
-                await fetch(`${BACKEND}/auth/logout`, {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-                });
-            } catch(e) {}
+            `;
         }
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('user_role');
-        localStorage.removeItem('user_profile_display');
-        window.location.href = LOGIN_URL;
-    }
 
-    async function updateUserDisplay() {
-        const token = localStorage.getItem('access_token');
-        if (!token) return;
-        try {
-            const res = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/me', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                const me = await res.json();
-                const contextRes = await fetch(`https://kevsono-kevs-digital-bos.hf.space/support/customer-context?target_user_id=${me.user_id}`, {
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
+        }
+
+        async function globalLogout() {
+            const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
+            const token = localStorage.getItem('access_token');
+            if (token) {
+                try {
+                    await fetch(`${BACKEND}/auth/logout`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+                    });
+                } catch(e) {}
+            }
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
+            localStorage.removeItem('user_role');
+            localStorage.removeItem('user_profile_display');
+            window.location.href = LOGIN_URL;
+        }
+
+        async function updateUserDisplay() {
+            const token = localStorage.getItem('access_token');
+            if (!token) return;
+            try {
+                const res = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/me', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
-                if (contextRes.ok) {
-                    const context = await contextRes.json();
-                    const name = context.profile?.first_name || 'User';
-                    localStorage.setItem('user_profile_display', name);
-                    const nameSpan = document.getElementById('nav-user-name');
-                    if (nameSpan) nameSpan.innerText = name;
+                if (res.ok) {
+                    const me = await res.json();
+                    const contextRes = await fetch(`https://kevsono-kevs-digital-bos.hf.space/support/customer-context?target_user_id=${me.user_id}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    if (contextRes.ok) {
+                        const context = await contextRes.json();
+                        const name = context.profile?.first_name || 'User';
+                        localStorage.setItem('user_profile_display', name);
+                        const nameSpan = document.getElementById('nav-user-name');
+                        if (nameSpan) nameSpan.innerText = name;
+                    }
                 }
-            }
-        } catch(e) {}
-    }
-
-    function initNavigation() {
-        const container = document.getElementById('kevs-nav-container');
-        if (container) {
-            container.innerHTML = buildNavbar();
-            const logoutBtn = document.getElementById('global-logout-btn');
-            if (logoutBtn) logoutBtn.addEventListener('click', globalLogout);
-            updateUserDisplay();
+            } catch(e) {}
         }
-    }
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initNavigation);
-    } else {
-        initNavigation();
-    }
-})();
-</script>
-<!-- ========== END GLOBAL NAVIGATION ========== -->
+        function initNavigation() {
+            const container = document.getElementById('kevs-nav-container');
+            if (container) {
+                container.innerHTML = buildNavbar();
+                const logoutBtn = document.getElementById('global-logout-btn');
+                if (logoutBtn) logoutBtn.addEventListener('click', globalLogout);
+                updateUserDisplay();
+            }
+        }
 
-<div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initNavigation);
+        } else {
+            initNavigation();
+        }
+    })();
+    </script>
+    <!-- ========== END GLOBAL NAVIGATION ========== -->
 
-<div class="max-w-7xl mx-auto">
-    <div class="bg-white rounded-xl shadow-md p-4 mb-4 flex flex-wrap justify-between items-center gap-3">
-        <div>
-            <h1 class="text-2xl font-bold">💳 Kevs POS Terminal</h1>
-            <p class="text-xs text-gray-500">Multi‑Tab | SKU Search | Loyalty Points & Discount</p>
-        </div>
-    </div>
+    <div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
 
-    <!-- TABS for two customers -->
-    <div class="flex gap-3 mb-4 border-b border-gray-200 pb-1">
-        <button id="tab1-btn" data-tab="1" class="tab-active px-6 py-2.5 rounded-t-lg font-semibold text-sm transition flex items-center gap-2 shadow-sm border">
-            <i class="fa-solid fa-user"></i> Customer A <span class="bg-white/20 text-xs px-1.5 py-0.5 rounded-full ml-1 hidden md:inline-block">Tab 1</span>
-        </button>
-        <button id="tab2-btn" data-tab="2" class="tab-inactive px-6 py-2.5 rounded-t-lg font-semibold text-sm transition flex items-center gap-2 border">
-            <i class="fa-solid fa-user-group"></i> Customer B <span class="bg-white/20 text-xs px-1.5 py-0.5 rounded-full ml-1 hidden md:inline-block">Tab 2</span>
-        </button>
-    </div>
-
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div class="lg:col-span-2 bg-white rounded-xl shadow-md p-4">
-            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
-                <h2 class="text-xl font-semibold">📦 Product Catalog</h2>
-                <div class="relative w-full sm:w-64">
-                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-                    <!-- ─── FIX: autocomplete="off" on product search ─── -->
-                    <input type="text" id="product-search" placeholder="Search by SKU, name or ID" autocomplete="off" class="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none">
-                </div>
+    <div class="max-w-7xl mx-auto">
+        <div class="bg-white rounded-xl shadow-md p-4 mb-4 flex flex-wrap justify-between items-center gap-3">
+            <div>
+                <h1 class="text-2xl font-bold">💳 Kevs POS Terminal</h1>
+                <p class="text-xs text-gray-500">Multi‑Tab | SKU Search | Loyalty Points & Discount</p>
             </div>
-            <div id="product-list" class="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[500px] overflow-y-auto"></div>
-            <div id="product-list-empty" class="hidden text-center py-8 text-gray-400 col-span-full">No products match your search</div>
         </div>
 
-        <div class="bg-white rounded-xl shadow-md p-4 flex flex-col">
-            <div class="flex justify-between items-center border-b pb-2 mb-2">
-                <h2 class="text-xl font-semibold"><i class="fa-solid fa-cart-shopping"></i> <span id="active-customer-label">Customer A</span> Sale</h2>
-                <span class="text-xs bg-gray-100 px-2 py-1 rounded-full" id="tab-badge">Tab 1 active</span>
-            </div>
+        <!-- TABS for two customers -->
+        <div class="flex gap-3 mb-4 border-b border-gray-200 pb-1">
+            <button id="tab1-btn" data-tab="1" class="tab-active px-6 py-2.5 rounded-t-lg font-semibold text-sm transition flex items-center gap-2 shadow-sm border">
+                <i class="fa-solid fa-user"></i> Customer A <span class="bg-white/20 text-xs px-1.5 py-0.5 rounded-full ml-1 hidden md:inline-block">Tab 1</span>
+            </button>
+            <button id="tab2-btn" data-tab="2" class="tab-inactive px-6 py-2.5 rounded-t-lg font-semibold text-sm transition flex items-center gap-2 border">
+                <i class="fa-solid fa-user-group"></i> Customer B <span class="bg-white/20 text-xs px-1.5 py-0.5 rounded-full ml-1 hidden md:inline-block">Tab 2</span>
+            </button>
+        </div>
 
-            <!-- Customer Search -->
-            <div class="bg-blue-50 p-3 rounded-lg mb-3 space-y-2">
-                <div class="relative">
-                    <!-- ─── FIX: autocomplete="off" on customer search ─── -->
-                    <input type="text" id="customer-search" placeholder="Search by name, phone or email" autocomplete="off" class="w-full border rounded-lg p-2 text-sm pr-8">
-                    <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-                    <div id="customer-suggestions" class="absolute z-10 left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto hidden"></div>
-                </div>
-                <div id="customer-info" class="text-xs text-gray-700 hidden">
-                    <span id="customer-name-display"></span> · 
-                    <strong>Points: <span id="customer-points">0</span></strong>
-                </div>
-                <div id="points-redeem-section" class="hidden border-t border-blue-200 pt-2 mt-1">
-                    <label class="text-xs font-medium">Redeem points (1 pt = ₦1)</label>
-                    <div class="flex gap-2 mt-1">
-                        <input type="number" id="redeem-points-input" min="1" class="w-full border rounded-lg p-1 text-sm" placeholder="Points to use" autocomplete="off">
-                        <button id="apply-points-btn" class="bg-emerald-600 text-white px-3 py-1 rounded-lg text-sm hover:bg-emerald-700">Apply</button>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-2 bg-white rounded-xl shadow-md p-4">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+                    <h2 class="text-xl font-semibold">📦 Product Catalog</h2>
+                    <div class="relative w-full sm:w-64">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                        <!-- ─── FIX: added autocomplete="off" and name="search" ─── -->
+                        <input type="text" id="product-search" name="search" placeholder="Search by SKU, name or ID" autocomplete="off" class="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none">
                     </div>
                 </div>
+                <div id="product-list" class="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[500px] overflow-y-auto"></div>
+                <div id="product-list-empty" class="hidden text-center py-8 text-gray-400 col-span-full">No products match your search</div>
             </div>
 
-            <div id="cart-items" class="space-y-2 max-h-80 overflow-y-auto flex-1 min-h-[180px]"></div>
-            <div class="border-t pt-3 mt-2">
-                <div class="flex justify-between text-lg font-bold"><span>Total:</span><span id="cart-total">₦0</span></div>
-                <div class="mt-3"><label class="block text-sm font-medium">Payment Method</label>
-                    <select id="payment-method" class="w-full border rounded-lg p-2 bg-white">
-                        <option value="cash">💵 Cash</option>
-                        <option value="card">💳 Card</option>
-                        <option value="transfer">🏦 Bank Transfer</option>
-                    </select>
+            <div class="bg-white rounded-xl shadow-md p-4 flex flex-col">
+                <div class="flex justify-between items-center border-b pb-2 mb-2">
+                    <h2 class="text-xl font-semibold"><i class="fa-solid fa-cart-shopping"></i> <span id="active-customer-label">Customer A</span> Sale</h2>
+                    <span class="text-xs bg-gray-100 px-2 py-1 rounded-full" id="tab-badge">Tab 1 active</span>
                 </div>
-                <div class="mt-3"><label class="block text-sm font-medium">Customer Name</label>
-                    <!-- ─── FIX: autocomplete="off" on customer fields ─── -->
-                    <input id="customer-name" class="w-full border rounded-lg p-2" placeholder="Walk-in Customer" autocomplete="off">
+
+                <!-- Customer Search -->
+                <div class="bg-blue-50 p-3 rounded-lg mb-3 space-y-2">
+                    <div class="relative">
+                        <input type="text" id="customer-search" placeholder="Search by name, phone or email" autocomplete="off" class="w-full border rounded-lg p-2 text-sm pr-8">
+                        <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                        <div id="customer-suggestions" class="absolute z-10 left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto hidden"></div>
+                    </div>
+                    <div id="customer-info" class="text-xs text-gray-700 hidden">
+                        <span id="customer-name-display"></span> · 
+                        <strong>Points: <span id="customer-points">0</span></strong>
+                    </div>
+                    <div id="points-redeem-section" class="hidden border-t border-blue-200 pt-2 mt-1">
+                        <label class="text-xs font-medium">Redeem points (1 pt = ₦1)</label>
+                        <div class="flex gap-2 mt-1">
+                            <input type="number" id="redeem-points-input" min="1" autocomplete="off" class="w-full border rounded-lg p-1 text-sm" placeholder="Points to use">
+                            <button id="apply-points-btn" class="bg-emerald-600 text-white px-3 py-1 rounded-lg text-sm hover:bg-emerald-700">Apply</button>
+                        </div>
+                    </div>
                 </div>
-                <div class="mt-2"><label class="block text-sm font-medium">Phone Number</label>
-                    <input id="customer-phone" class="w-full border rounded-lg p-2" placeholder="Optional" autocomplete="off">
+
+                <div id="cart-items" class="space-y-2 max-h-80 overflow-y-auto flex-1 min-h-[180px]"></div>
+                <div class="border-t pt-3 mt-2">
+                    <div class="flex justify-between text-lg font-bold"><span>Total:</span><span id="cart-total">₦0</span></div>
+                    <div class="mt-3"><label class="block text-sm font-medium">Payment Method</label>
+                        <select id="payment-method" class="w-full border rounded-lg p-2 bg-white">
+                            <option value="cash">💵 Cash</option>
+                            <option value="card">💳 Card</option>
+                            <option value="transfer">🏦 Bank Transfer</option>
+                        </select>
+                    </div>
+                    <div class="mt-3"><label class="block text-sm font-medium">Customer Name</label>
+                        <input id="customer-name" class="w-full border rounded-lg p-2" placeholder="Walk-in Customer" autocomplete="off">
+                    </div>
+                    <div class="mt-2"><label class="block text-sm font-medium">Phone Number</label>
+                        <input id="customer-phone" class="w-full border rounded-lg p-2" placeholder="Optional" autocomplete="off">
+                    </div>
+                    <div class="mt-2"><label class="block text-sm font-medium">Email (for receipt/payment)</label>
+                        <input id="customer-email" type="email" class="w-full border rounded-lg p-2" placeholder="customer@example.com" autocomplete="off">
+                    </div>
+                    <button id="checkout-btn" class="mt-4 w-full bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-lg font-bold transition shadow-md">
+                        ✅ Complete Sale
+                    </button>
                 </div>
-                <div class="mt-2"><label class="block text-sm font-medium">Email (for receipt/payment)</label>
-                    <input id="customer-email" type="email" class="w-full border rounded-lg p-2" placeholder="customer@example.com" autocomplete="off">
-                </div>
-                <button id="checkout-btn" class="mt-4 w-full bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-lg font-bold transition shadow-md">
-                    ✅ Complete Sale
+            </div>
+        </div>
+    </div>
+
+    <!-- Login Modal -->
+    <div id="auth-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-gray-800">🔐 Sign In to POS</h3>
+                <button id="close-modal-btn" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <div class="space-y-3">
+                <input id="login-email" type="email" placeholder="Email" autocomplete="off" class="w-full border rounded-lg p-2 text-sm">
+                <input id="login-password" type="password" placeholder="Password" autocomplete="off" class="w-full border rounded-lg p-2 text-sm">
+                <button id="modal-login-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white p-2.5 rounded-lg text-sm font-medium">Sign In</button>
+                <button id="demo-login-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white p-2.5 rounded-lg text-sm font-medium">
+                    <i class="fa-solid fa-bolt mr-1"></i> Demo Login
                 </button>
             </div>
         </div>
     </div>
-</div>
 
-<!-- Login Modal -->
-<div id="auth-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-    <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm">
-        <div class="flex justify-between items-center mb-4">
-            <h3 class="text-lg font-bold text-gray-800">🔐 Sign In to POS</h3>
-            <button id="close-modal-btn" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
-        </div>
-        <div class="space-y-3">
-            <!-- ─── FIX: autocomplete="off" on login modal fields ─── -->
-            <input id="login-email" type="email" placeholder="Email" class="w-full border rounded-lg p-2 text-sm" autocomplete="off">
-            <input id="login-password" type="password" placeholder="Password" class="w-full border rounded-lg p-2 text-sm" autocomplete="off">
-            <button id="modal-login-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white p-2.5 rounded-lg text-sm font-medium">Sign In</button>
-            <button id="demo-login-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white p-2.5 rounded-lg text-sm font-medium">
-                <i class="fa-solid fa-bolt mr-1"></i> Demo Login
-            </button>
-        </div>
-    </div>
-</div>
+    <script>
+        const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
+        let token = localStorage.getItem('access_token');
+        let products = [];
+        let allCustomers = [];
+        let searchTerm = '';
+        let activeTab = 1;
+        const tabState = {
+            1: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 },
+            2: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 }
+        };
 
-<script>
-    const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
-    let token = localStorage.getItem('access_token');
-    let products = [];
-    let allCustomers = [];
-    let searchTerm = '';
-    let activeTab = 1;
-    const tabState = {
-        1: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 },
-        2: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 }
-    };
+        const productContainer = document.getElementById('product-list');
+        const emptyMsgDiv = document.getElementById('product-list-empty');
+        const cartContainer = document.getElementById('cart-items');
+        const cartTotalSpan = document.getElementById('cart-total');
+        const paymentMethodSelect = document.getElementById('payment-method');
+        const customerNameInput = document.getElementById('customer-name');
+        const customerPhoneInput = document.getElementById('customer-phone');
+        const customerEmailInput = document.getElementById('customer-email');
+        const activeCustomerLabel = document.getElementById('active-customer-label');
+        const tabBadge = document.getElementById('tab-badge');
+        const tab1Btn = document.getElementById('tab1-btn');
+        const tab2Btn = document.getElementById('tab2-btn');
+        const checkoutBtn = document.getElementById('checkout-btn');
+        const searchInput = document.getElementById('product-search');
+        const customerSearchInput = document.getElementById('customer-search');
+        const suggestionsDiv = document.getElementById('customer-suggestions');
+        const customerInfoDiv = document.getElementById('customer-info');
+        const customerNameDisplay = document.getElementById('customer-name-display');
+        const customerPointsSpan = document.getElementById('customer-points');
+        const pointsRedeemSection = document.getElementById('points-redeem-section');
+        const redeemPointsInput = document.getElementById('redeem-points-input');
+        const applyPointsBtn = document.getElementById('apply-points-btn');
 
-    const productContainer = document.getElementById('product-list');
-    const emptyMsgDiv = document.getElementById('product-list-empty');
-    const cartContainer = document.getElementById('cart-items');
-    const cartTotalSpan = document.getElementById('cart-total');
-    const paymentMethodSelect = document.getElementById('payment-method');
-    const customerNameInput = document.getElementById('customer-name');
-    const customerPhoneInput = document.getElementById('customer-phone');
-    const customerEmailInput = document.getElementById('customer-email');
-    const activeCustomerLabel = document.getElementById('active-customer-label');
-    const tabBadge = document.getElementById('tab-badge');
-    const tab1Btn = document.getElementById('tab1-btn');
-    const tab2Btn = document.getElementById('tab2-btn');
-    const checkoutBtn = document.getElementById('checkout-btn');
-    const searchInput = document.getElementById('product-search');
-    const customerSearchInput = document.getElementById('customer-search');
-    const suggestionsDiv = document.getElementById('customer-suggestions');
-    const customerInfoDiv = document.getElementById('customer-info');
-    const customerNameDisplay = document.getElementById('customer-name-display');
-    const customerPointsSpan = document.getElementById('customer-points');
-    const pointsRedeemSection = document.getElementById('points-redeem-section');
-    const redeemPointsInput = document.getElementById('redeem-points-input');
-    const applyPointsBtn = document.getElementById('apply-points-btn');
-
-    function showToast(msg, type = 'success') {
-        const container = document.getElementById('toast-container');
-        const toast = document.createElement('div');
-        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} mb-2 text-sm flex items-center gap-2`;
-        toast.innerHTML = `<i class="fa-solid ${type === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation'}"></i> ${msg}`;
-        container.appendChild(toast);
-        setTimeout(() => toast.remove(), 3800);
-    }
-
-    async function apiCall(endpoint, method = 'GET', body = null, retry = true) {
-        const headers = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-        const selectedOrgId = localStorage.getItem('selected_org_id');
-        if (selectedOrgId) {
-            headers['X-Selected-Org-Id'] = selectedOrgId;
+        function showToast(msg, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} mb-2 text-sm flex items-center gap-2`;
+            toast.innerHTML = `<i class="fa-solid ${type === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation'}"></i> ${msg}`;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 3800);
         }
-        let res = await fetch(`${BACKEND}${endpoint}`, {
-            method,
-            headers,
-            body: body ? JSON.stringify(body) : undefined
-        });
-        if (res.status === 401 && retry) {
-            const refresh = localStorage.getItem('refresh_token');
-            if (refresh) {
-                try {
-                    const refreshRes = await fetch(`${BACKEND}/auth/refresh`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ refresh_token: refresh })
-                    });
-                    if (refreshRes.ok) {
-                        const { access_token, refresh_token } = await refreshRes.json();
-                        localStorage.setItem('access_token', access_token);
-                        localStorage.setItem('refresh_token', refresh_token);
-                        token = access_token;
-                        return apiCall(endpoint, method, body, false);
-                    }
-                } catch(e) {}
-            }
-            showLoginModal();
-            throw new Error('Session expired');
-        }
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({ detail: 'Request error' }));
-            throw new Error(err.detail || 'API error');
-        }
-        return res.json();
-    }
 
-    function showLoginModal() { document.getElementById('auth-modal').classList.remove('hidden'); }
-    function hideLoginModal() { document.getElementById('auth-modal').classList.add('hidden'); }
-
-    async function loadProducts() {
-        try {
-            const data = await apiCall('/inventory');
-            products = data;
-            renderProductGrid();
-        } catch (err) {
-            showToast('Failed to load products: ' + err.message, 'error');
-            products = [];
-            renderProductGrid();
-        }
-    }
-
-    async function loadCustomers() {
-        try {
-            const data = await apiCall('/organisations/me/users');
-            allCustomers = data.users || [];
-        } catch (err) {
-            console.warn('Failed to load customers:', err);
-            allCustomers = [];
-        }
-    }
-
-    function filterCustomers(searchText) {
-        if (!searchText.trim()) return [];
-        const term = searchText.trim().toLowerCase();
-        return allCustomers.filter(c => {
-            const name = `${c.first_name || ''} ${c.last_name || ''}`.toLowerCase();
-            const phone = (c.phone || '').toLowerCase();
-            const email = (c.email || '').toLowerCase();
-            return name.includes(term) || phone.includes(term) || email.includes(term);
-        });
-    }
-
-    function renderSuggestions() {
-        const searchVal = customerSearchInput.value;
-        const matches = filterCustomers(searchVal);
-        if (matches.length === 0 || !searchVal.trim()) {
-            suggestionsDiv.classList.add('hidden');
-            return;
-        }
-        suggestionsDiv.classList.remove('hidden');
-        suggestionsDiv.innerHTML = matches.map(c => {
-            const fullName = `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'No name';
-            return `
-                <div class="customer-suggestion px-3 py-2 border-b last:border-0 text-sm hover:bg-blue-50" data-user-id="${c.id}" data-name="${escapeAttr(fullName)}" data-phone="${escapeAttr(c.phone || '')}" data-email="${escapeAttr(c.email || '')}" data-points="${c.loyalty_points || 0}">
-                    <div class="font-medium">${escapeHtml(fullName)}</div>
-                    <div class="text-xs text-gray-500">${escapeHtml(c.phone || '')} · ${escapeHtml(c.email || '')}</div>
-                </div>
-            `;
-        }).join('');
-        document.querySelectorAll('.customer-suggestion').forEach(el => {
-            el.addEventListener('click', () => {
-                const userId = el.dataset.userId;
-                const name = el.dataset.name;
-                const phone = el.dataset.phone;
-                const email = el.dataset.email;
-                const points = parseInt(el.dataset.points, 10);
-                selectCustomer(userId, name, phone, email, points);
-                suggestionsDiv.classList.add('hidden');
-                customerSearchInput.value = name;
+        async function apiCall(endpoint, method = 'GET', body = null, retry = true) {
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+            const selectedOrgId = localStorage.getItem('selected_org_id');
+            if (selectedOrgId) headers['X-Selected-Org-Id'] = selectedOrgId;
+            let res = await fetch(`${BACKEND}${endpoint}`, {
+                method,
+                headers,
+                body: body ? JSON.stringify(body) : undefined
             });
-        });
-    }
-
-    function escapeAttr(str) {
-        if (!str) return '';
-        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    }
-
-    function selectCustomer(userId, name, phone, email, points) {
-        const state = tabState[activeTab];
-        state.loyaltyUserId = userId;
-        state.pointsBalance = points;
-        state.pointsRedeemed = 0;
-        state.customerName = name;
-        state.customerPhone = phone;
-        state.customerEmail = email;
-        customerNameInput.value = name;
-        customerPhoneInput.value = phone;
-        customerEmailInput.value = email;
-        customerNameDisplay.innerText = name;
-        customerPointsSpan.innerText = points;
-        customerInfoDiv.classList.remove('hidden');
-        if (points > 0) {
-            pointsRedeemSection.classList.remove('hidden');
-            redeemPointsInput.max = points;
-            redeemPointsInput.value = '';
-        } else {
-            pointsRedeemSection.classList.add('hidden');
-        }
-        showToast(`Customer selected: ${name} (${points} points)`, 'success');
-        renderActiveCart();
-    }
-
-    function getDisplaySku(product) {
-        if (product.sku) return product.sku;
-        if (product.sku_code) return product.sku_code;
-        return `ID:${product.id}`;
-    }
-
-    function filterProducts() {
-        if (!searchTerm.trim()) return products;
-        const term = searchTerm.trim().toLowerCase();
-        return products.filter(p => {
-            const skuRaw = getDisplaySku(p).toLowerCase();
-            const desc = (p.description || '').toLowerCase();
-            const idMatch = p.id.toString().includes(term);
-            return skuRaw.includes(term) || desc.includes(term) || idMatch;
-        });
-    }
-
-    function renderProductGrid() {
-        const filtered = filterProducts();
-        if (!productContainer) return;
-        if (filtered.length === 0) {
-            productContainer.innerHTML = '';
-            emptyMsgDiv.classList.remove('hidden');
-            return;
-        }
-        emptyMsgDiv.classList.add('hidden');
-        productContainer.innerHTML = '';
-        filtered.forEach(p => {
-            const skuDisplay = getDisplaySku(p);
-            const stock = p.current_qty ?? 0;
-            const price = p.price_naira ?? 0;
-            const descSafe = escapeHtml(p.description || 'Unnamed product');
-            const card = document.createElement('button');
-            card.className = 'product-card bg-gray-50 p-3 rounded-xl text-left hover:bg-blue-50 border border-gray-200 transition shadow-sm';
-            card.innerHTML = `
-                <div class="font-semibold text-gray-800">${descSafe}</div>
-                <div class="text-xs text-gray-500 font-mono mt-0.5">📟 ${escapeHtml(skuDisplay)}</div>
-                <div class="text-md font-bold text-blue-700 mt-1">₦${price.toLocaleString()}</div>
-                <div class="text-xs text-gray-500 mt-1">📦 Stock: ${stock}</div>
-            `;
-            card.onclick = () => addToCart(p.id, p.description || 'Product', price, stock, skuDisplay);
-            productContainer.appendChild(card);
-        });
-    }
-
-    function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, function(m) { if (m === '&') return '&amp;'; if (m === '<') return '&lt;'; if (m === '>') return '&gt;'; return m; }); }
-
-    function syncUIWithActiveTab() {
-        const state = tabState[activeTab];
-        renderActiveCart();
-        paymentMethodSelect.value = state.paymentMethod;
-        customerNameInput.value = state.customerName;
-        customerPhoneInput.value = state.customerPhone;
-        customerEmailInput.value = state.customerEmail;
-        activeCustomerLabel.innerText = activeTab === 1 ? 'Customer A' : 'Customer B';
-        tabBadge.innerText = activeTab === 1 ? 'Tab 1 active' : 'Tab 2 active';
-        if (activeTab === 1) {
-            tab1Btn.classList.add('tab-active');
-            tab1Btn.classList.remove('tab-inactive');
-            tab2Btn.classList.add('tab-inactive');
-            tab2Btn.classList.remove('tab-active');
-        } else {
-            tab2Btn.classList.add('tab-active');
-            tab2Btn.classList.remove('tab-inactive');
-            tab1Btn.classList.add('tab-inactive');
-            tab1Btn.classList.remove('tab-active');
-        }
-        if (state.loyaltyUserId && state.pointsBalance > 0) {
-            customerInfoDiv.classList.remove('hidden');
-            customerNameDisplay.innerText = state.customerName || 'Customer';
-            customerPointsSpan.innerText = state.pointsBalance;
-            pointsRedeemSection.classList.remove('hidden');
-            redeemPointsInput.max = state.pointsBalance;
-        } else {
-            customerInfoDiv.classList.add('hidden');
-            pointsRedeemSection.classList.add('hidden');
-        }
-    }
-
-    function renderActiveCart() {
-        const state = tabState[activeTab];
-        const cart = state.cart;
-        const pointsRedeemed = state.pointsRedeemed || 0;
-        if (!cartContainer) return;
-        let subtotal = 0;
-        let cartHtml = '';
-        cart.forEach((item, idx) => {
-            const itemTotal = item.price * item.qty;
-            subtotal += itemTotal;
-            cartHtml += `
-                <div class="flex justify-between items-center border-b pb-2 hover:bg-gray-50 px-1 rounded">
-                    <div class="flex-1">
-                        <div class="font-medium text-sm">${escapeHtml(item.name)}</div>
-                        <div class="text-xs text-gray-500">₦${item.price.toLocaleString()} x ${item.qty}</div>
-                    </div>
-                    <div class="font-semibold text-sm">₦${itemTotal.toLocaleString()}</div>
-                    <button onclick="removeCartItem(${idx})" class="ml-3 text-red-500 hover:text-red-700 text-sm w-7 h-7 rounded-full hover:bg-red-50"><i class="fa-regular fa-trash-can"></i></button>
-                </div>
-            `;
-        });
-        let finalTotal = subtotal;
-        if (pointsRedeemed > 0) {
-            const discount = pointsRedeemed;
-            if (discount > finalTotal) {
-                state.pointsRedeemed = Math.min(finalTotal, pointsRedeemed);
-                finalTotal = 0;
-            } else {
-                finalTotal = subtotal - discount;
-            }
-            cartHtml += `
-                <div class="flex justify-between items-center text-green-700 border-t pt-2 mt-1">
-                    <div class="text-sm font-medium">🎁 Points Discount (${state.pointsRedeemed} pts)</div>
-                    <div class="font-semibold">-₦${discount.toLocaleString()}</div>
-                </div>
-            `;
-        }
-        if (cart.length === 0) {
-            cartContainer.innerHTML = `<div class="text-center text-gray-400 py-6"><i class="fa-regular fa-receipt text-2xl"></i><p class="text-sm mt-1">Cart is empty</p></div>`;
-        } else {
-            cartContainer.innerHTML = cartHtml;
-        }
-        cartTotalSpan.innerText = `₦${finalTotal.toLocaleString()}`;
-    }
-
-    window.removeCartItem = function(index) {
-        const currentCart = tabState[activeTab].cart;
-        if (index >= 0 && index < currentCart.length) {
-            currentCart.splice(index, 1);
-            renderActiveCart();
-        }
-    };
-
-    window.addToCart = function(productId, productName, price, stock, skuLabel) {
-        const activeState = tabState[activeTab];
-        const activeCart = activeState.cart;
-        const existing = activeCart.find(i => i.id === productId);
-        const productRef = products.find(p => p.id === productId);
-        const availableStock = productRef ? (productRef.current_qty ?? 0) : stock;
-        
-        if (existing) {
-            if (existing.qty + 1 > availableStock) {
-                showToast(`⚠️ Only ${availableStock} left for "${productName}"`, 'error');
-                return;
-            }
-            existing.qty++;
-        } else {
-            if (1 > availableStock) {
-                showToast(`❌ "${productName}" out of stock`, 'error');
-                return;
-            }
-            activeCart.push({ id: productId, name: productName, price: price, qty: 1, sku: skuLabel });
-        }
-        renderActiveCart();
-        showToast(`➕ Added ${productName}`, 'success');
-    };
-
-    function bindFieldEvents() {
-        paymentMethodSelect.onchange = () => { tabState[activeTab].paymentMethod = paymentMethodSelect.value; };
-        customerNameInput.oninput = () => { tabState[activeTab].customerName = customerNameInput.value; };
-        customerPhoneInput.oninput = () => { tabState[activeTab].customerPhone = customerPhoneInput.value; };
-        customerEmailInput.oninput = () => { tabState[activeTab].customerEmail = customerEmailInput.value; };
-    }
-
-    async function applyPoints() {
-        const state = tabState[activeTab];
-        if (!state.loyaltyUserId) {
-            showToast('Please search and select a customer first', 'error');
-            return;
-        }
-        let pointsToRedeem = parseInt(redeemPointsInput.value, 10);
-        if (isNaN(pointsToRedeem) || pointsToRedeem <= 0) {
-            showToast('Enter a valid number of points', 'error');
-            return;
-        }
-        if (pointsToRedeem > state.pointsBalance) {
-            showToast(`You only have ${state.pointsBalance} points`, 'error');
-            return;
-        }
-        try {
-            await apiCall('/loyalty/redeem', 'POST', { points: pointsToRedeem });
-            state.pointsRedeemed = (state.pointsRedeemed || 0) + pointsToRedeem;
-            state.pointsBalance -= pointsToRedeem;
-            redeemPointsInput.value = '';
-            renderActiveCart();
-            showToast(`✅ ${pointsToRedeem} points redeemed – ₦${pointsToRedeem} off this order!`, 'success');
-            syncUIWithActiveTab();
-        } catch (err) {
-            showToast(`Redemption failed: ${err.message}`, 'error');
-        }
-    }
-
-    async function processCheckout() {
-        const state = tabState[activeTab];
-        const cart = state.cart;
-        if (cart.length === 0) {
-            showToast('🛒 Cart is empty. Add items first.', 'error');
-            return;
-        }
-        const paymentMethod = state.paymentMethod;
-        const customerName = state.customerName.trim() || null;
-        const customerPhone = state.customerPhone.trim() || null;
-        let customerEmail = state.customerEmail.trim() || null;
-        const pointsRedeemed = state.pointsRedeemed || 0;
-        if (paymentMethod !== 'cash' && !customerEmail) {
-            showToast('📧 Email is required for card/transfer payments', 'error');
-            return;
-        }
-        const itemsPayload = cart.map(i => ({ inventory_id: i.id, quantity: i.qty }));
-        const returnUrl = window.location.href.split('?')[0];
-        const callback_url = `${returnUrl}?payment=success`;
-        checkoutBtn.disabled = true;
-        checkoutBtn.innerText = 'Processing...';
-        try {
-            if (paymentMethod === 'cash') {
-                const result = await apiCall('/pos/terminal/checkout', 'POST', {
-                    items: itemsPayload,
-                    payment_method: 'cash',
-                    customer_name: customerName,
-                    customer_phone: customerPhone,
-                    customer_email: customerEmail,
-                    points_redeemed: pointsRedeemed
-                });
-                showToast(`✅ Sale complete! Receipt: ${result.receipt_number || 'OK'}`, 'success');
-                state.cart = [];
-                state.pointsRedeemed = 0;
-                if (state.loyaltyUserId) {
-                    await loadCustomers();
-                    const updated = allCustomers.find(c => c.id === state.loyaltyUserId);
-                    if (updated) state.pointsBalance = updated.loyalty_points || 0;
+            if (res.status === 401 && retry) {
+                const refresh = localStorage.getItem('refresh_token');
+                if (refresh) {
+                    try {
+                        const refreshRes = await fetch(`${BACKEND}/auth/refresh`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ refresh_token: refresh })
+                        });
+                        if (refreshRes.ok) {
+                            const { access_token, refresh_token } = await refreshRes.json();
+                            localStorage.setItem('access_token', access_token);
+                            localStorage.setItem('refresh_token', refresh_token);
+                            token = access_token;
+                            return apiCall(endpoint, method, body, false);
+                        }
+                    } catch(e) {}
                 }
-                syncUIWithActiveTab();
-                await loadProducts();
-            } else {
-                const result = await apiCall('/pos/checkout', 'POST', {
-                    items: itemsPayload,
-                    customer_name: customerName,
-                    customer_email: customerEmail,
-                    customer_phone: customerPhone,
-                    payment_method: paymentMethod,
-                    callback_url: callback_url,
-                    points_redeemed: pointsRedeemed
-                });
-                if (result.payment_url) {
-                    localStorage.setItem('pending_payment', 'true');
-                    localStorage.setItem('pending_payment_tab', activeTab.toString());
-                    localStorage.setItem('pending_points_redeemed', pointsRedeemed.toString());
-                    window.location.href = result.payment_url;
-                } else {
-                    throw new Error('Payment initiation failed');
-                }
+                showLoginModal();
+                throw new Error('Session expired');
             }
-        } catch (err) {
-            showToast(`❌ Checkout failed: ${err.message}`, 'error');
-            checkoutBtn.disabled = false;
-            checkoutBtn.innerText = '✅ Complete Sale';
-        }
-    }
-
-    async function checkPaymentReturn() {
-        const urlParams = new URLSearchParams(window.location.search);
-        const paymentSuccess = urlParams.get('payment') === 'success';
-        const wasPending = localStorage.getItem('pending_payment') === 'true';
-        if (paymentSuccess && wasPending) {
-            const pendingTab = parseInt(localStorage.getItem('pending_payment_tab') || '1', 10);
-            const pointsRedeemed = parseInt(localStorage.getItem('pending_points_redeemed') || '0', 10);
-            if (pendingTab === 1 || pendingTab === 2) {
-                tabState[pendingTab].cart = [];
-                tabState[pendingTab].pointsRedeemed = 0;
-                if (activeTab === pendingTab) renderActiveCart();
-                showToast(`🎉 Payment successful! Order confirmed.`, 'success');
-                await loadProducts();
-                await loadCustomers();
-                const state = tabState[pendingTab];
-                if (state.loyaltyUserId) {
-                    const updated = allCustomers.find(c => c.id === state.loyaltyUserId);
-                    if (updated) state.pointsBalance = updated.loyalty_points || 0;
-                    if (activeTab === pendingTab) syncUIWithActiveTab();
-                }
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: 'Request error' }));
+                throw new Error(err.detail || 'API error');
             }
-            localStorage.removeItem('pending_payment');
-            localStorage.removeItem('pending_payment_tab');
-            localStorage.removeItem('pending_points_redeemed');
-            const cleanUrl = window.location.href.split('?')[0];
-            window.history.replaceState({}, document.title, cleanUrl);
+            return res.json();
         }
-    }
 
-    function setActiveTab(tabId) {
-        if (tabId === activeTab) return;
-        tabState[activeTab].paymentMethod = paymentMethodSelect.value;
-        tabState[activeTab].customerName = customerNameInput.value;
-        tabState[activeTab].customerPhone = customerPhoneInput.value;
-        tabState[activeTab].customerEmail = customerEmailInput.value;
-        activeTab = tabId;
-        syncUIWithActiveTab();
-        renderProductGrid();
-        customerSearchInput.value = '';
-        suggestionsDiv.classList.add('hidden');
-    }
+        function showLoginModal() { document.getElementById('auth-modal').classList.remove('hidden'); }
+        function hideLoginModal() { document.getElementById('auth-modal').classList.add('hidden'); }
 
-    function initTabs() {
-        tab1Btn.onclick = () => setActiveTab(1);
-        tab2Btn.onclick = () => setActiveTab(2);
-    }
-
-    function initSearch() {
-        searchInput.addEventListener('input', (e) => { searchTerm = e.target.value; renderProductGrid(); });
-        customerSearchInput.addEventListener('input', () => renderSuggestions());
-        document.addEventListener('click', (e) => {
-            if (!customerSearchInput.contains(e.target) && !suggestionsDiv.contains(e.target)) {
-                suggestionsDiv.classList.add('hidden');
-            }
-        });
-    }
-
-    async function demoLogin() {
-        const btn = document.getElementById('demo-login-btn');
-        btn.disabled = true;
-        try {
-            const res = await fetch(`${BACKEND}/auth/login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' })
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.detail);
-            token = data.access_token;
-            localStorage.setItem('access_token', token);
-            localStorage.setItem('refresh_token', data.refresh_token);
-            const me = await apiCall('/auth/me');
-            localStorage.setItem('user_role', me.role || 'customer');
-            await loadProducts();
-            await loadCustomers();
-            hideLoginModal();
-            tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
-            tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
-            activeTab = 1;
-            syncUIWithActiveTab();
-            showToast('Demo login — Multi‑Tab & Tenant scope ready', 'success');
-            location.reload();
-        } catch (err) { showToast(err.message, 'error'); } finally { btn.disabled = false; }
-    }
-
-    async function handleLogin() {
-        const email = document.getElementById('login-email').value.trim();
-        const pwd = document.getElementById('login-password').value.trim();
-        if (!email || !pwd) { showToast('Enter email and password', 'error'); return; }
-        try {
-            const res = await fetch(`${BACKEND}/auth/login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password: pwd })
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.detail);
-            token = data.access_token;
-            localStorage.setItem('access_token', token);
-            localStorage.setItem('refresh_token', data.refresh_token);
-            const me = await apiCall('/auth/me');
-            localStorage.setItem('user_role', me.role || 'customer');
-            await loadProducts();
-            await loadCustomers();
-            hideLoginModal();
-            tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
-            tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
-            activeTab = 1;
-            syncUIWithActiveTab();
-            showToast('Login successful', 'success');
-            location.reload();
-        } catch (err) { showToast(err.message, 'error'); }
-    }
-
-    checkoutBtn.addEventListener('click', processCheckout);
-    applyPointsBtn.addEventListener('click', applyPoints);
-    document.getElementById('modal-login-btn')?.addEventListener('click', handleLogin);
-    document.getElementById('demo-login-btn')?.addEventListener('click', demoLogin);
-    document.getElementById('close-modal-btn')?.addEventListener('click', hideLoginModal);
-    
-    // ─── FORCE CLEAR SEARCH ON LOAD ───
-    (function clearSearchOnLoad() {
-        const searchField = document.getElementById('product-search');
-        if (searchField) {
-            searchField.value = '';
-            localStorage.removeItem('productSearchQuery'); // if any
-        }
-        const custSearch = document.getElementById('customer-search');
-        if (custSearch) custSearch.value = '';
-    })();
-
-    (async () => {
-        initTabs();
-        initSearch();
-        bindFieldEvents();
-        await checkPaymentReturn();
-        if (token) {
+        async function loadProducts() {
             try {
+                const data = await apiCall('/inventory');
+                products = data;
+                renderProductGrid();
+            } catch (err) {
+                showToast('Failed to load products: ' + err.message, 'error');
+                products = [];
+                renderProductGrid();
+            }
+        }
+
+        async function loadCustomers() {
+            try {
+                const data = await apiCall('/organisations/me/users');
+                allCustomers = data.users || [];
+            } catch (err) {
+                console.warn('Failed to load customers:', err);
+                allCustomers = [];
+            }
+        }
+
+        function filterCustomers(searchText) {
+            if (!searchText.trim()) return [];
+            const term = searchText.trim().toLowerCase();
+            return allCustomers.filter(c => {
+                const name = `${c.first_name || ''} ${c.last_name || ''}`.toLowerCase();
+                const phone = (c.phone || '').toLowerCase();
+                const email = (c.email || '').toLowerCase();
+                return name.includes(term) || phone.includes(term) || email.includes(term);
+            });
+        }
+
+        function renderSuggestions() {
+            const searchVal = customerSearchInput.value;
+            const matches = filterCustomers(searchVal);
+            if (matches.length === 0 || !searchVal.trim()) {
+                suggestionsDiv.classList.add('hidden');
+                return;
+            }
+            suggestionsDiv.classList.remove('hidden');
+            suggestionsDiv.innerHTML = matches.map(c => {
+                const fullName = `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'No name';
+                return `
+                    <div class="customer-suggestion px-3 py-2 border-b last:border-0 text-sm hover:bg-blue-50" data-user-id="${c.id}" data-name="${escapeAttr(fullName)}" data-phone="${escapeAttr(c.phone || '')}" data-email="${escapeAttr(c.email || '')}" data-points="${c.loyalty_points || 0}">
+                        <div class="font-medium">${escapeHtml(fullName)}</div>
+                        <div class="text-xs text-gray-500">${escapeHtml(c.phone || '')} · ${escapeHtml(c.email || '')}</div>
+                    </div>
+                `;
+            }).join('');
+            document.querySelectorAll('.customer-suggestion').forEach(el => {
+                el.addEventListener('click', () => {
+                    const userId = el.dataset.userId;
+                    const name = el.dataset.name;
+                    const phone = el.dataset.phone;
+                    const email = el.dataset.email;
+                    const points = parseInt(el.dataset.points, 10);
+                    selectCustomer(userId, name, phone, email, points);
+                    suggestionsDiv.classList.add('hidden');
+                    customerSearchInput.value = name;
+                });
+            });
+        }
+
+        function escapeAttr(str) {
+            if (!str) return '';
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function selectCustomer(userId, name, phone, email, points) {
+            const state = tabState[activeTab];
+            state.loyaltyUserId = userId;
+            state.pointsBalance = points;
+            state.pointsRedeemed = 0;
+            state.customerName = name;
+            state.customerPhone = phone;
+            state.customerEmail = email;
+            customerNameInput.value = name;
+            customerPhoneInput.value = phone;
+            customerEmailInput.value = email;
+            customerNameDisplay.innerText = name;
+            customerPointsSpan.innerText = points;
+            customerInfoDiv.classList.remove('hidden');
+            if (points > 0) {
+                pointsRedeemSection.classList.remove('hidden');
+                redeemPointsInput.max = points;
+                redeemPointsInput.value = '';
+            } else {
+                pointsRedeemSection.classList.add('hidden');
+            }
+            showToast(`Customer selected: ${name} (${points} points)`, 'success');
+            renderActiveCart();
+        }
+
+        function getDisplaySku(product) {
+            if (product.sku) return product.sku;
+            if (product.sku_code) return product.sku_code;
+            return `ID:${product.id}`;
+        }
+
+        function filterProducts() {
+            if (!searchTerm.trim()) return products;
+            const term = searchTerm.trim().toLowerCase();
+            return products.filter(p => {
+                const skuRaw = getDisplaySku(p).toLowerCase();
+                const desc = (p.description || '').toLowerCase();
+                const idMatch = p.id.toString().includes(term);
+                return skuRaw.includes(term) || desc.includes(term) || idMatch;
+            });
+        }
+
+        function renderProductGrid() {
+            const filtered = filterProducts();
+            if (!productContainer) return;
+            if (filtered.length === 0) {
+                productContainer.innerHTML = '';
+                emptyMsgDiv.classList.remove('hidden');
+                return;
+            }
+            emptyMsgDiv.classList.add('hidden');
+            productContainer.innerHTML = '';
+            filtered.forEach(p => {
+                const skuDisplay = getDisplaySku(p);
+                const stock = p.current_qty ?? 0;
+                const price = p.price_naira ?? 0;
+                const descSafe = escapeHtml(p.description || 'Unnamed product');
+                const card = document.createElement('button');
+                card.className = 'product-card bg-gray-50 p-3 rounded-xl text-left hover:bg-blue-50 border border-gray-200 transition shadow-sm';
+                card.innerHTML = `
+                    <div class="font-semibold text-gray-800">${descSafe}</div>
+                    <div class="text-xs text-gray-500 font-mono mt-0.5">📟 ${escapeHtml(skuDisplay)}</div>
+                    <div class="text-md font-bold text-blue-700 mt-1">₦${price.toLocaleString()}</div>
+                    <div class="text-xs text-gray-500 mt-1">📦 Stock: ${stock}</div>
+                `;
+                card.onclick = () => addToCart(p.id, p.description || 'Product', price, stock, skuDisplay);
+                productContainer.appendChild(card);
+            });
+        }
+
+        function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;'); }
+
+        function syncUIWithActiveTab() {
+            const state = tabState[activeTab];
+            renderActiveCart();
+            paymentMethodSelect.value = state.paymentMethod;
+            customerNameInput.value = state.customerName;
+            customerPhoneInput.value = state.customerPhone;
+            customerEmailInput.value = state.customerEmail;
+            activeCustomerLabel.innerText = activeTab === 1 ? 'Customer A' : 'Customer B';
+            tabBadge.innerText = activeTab === 1 ? 'Tab 1 active' : 'Tab 2 active';
+            if (activeTab === 1) {
+                tab1Btn.classList.add('tab-active');
+                tab1Btn.classList.remove('tab-inactive');
+                tab2Btn.classList.add('tab-inactive');
+                tab2Btn.classList.remove('tab-active');
+            } else {
+                tab2Btn.classList.add('tab-active');
+                tab2Btn.classList.remove('tab-inactive');
+                tab1Btn.classList.add('tab-inactive');
+                tab1Btn.classList.remove('tab-active');
+            }
+            if (state.loyaltyUserId && state.pointsBalance > 0) {
+                customerInfoDiv.classList.remove('hidden');
+                customerNameDisplay.innerText = state.customerName || 'Customer';
+                customerPointsSpan.innerText = state.pointsBalance;
+                pointsRedeemSection.classList.remove('hidden');
+                redeemPointsInput.max = state.pointsBalance;
+            } else {
+                customerInfoDiv.classList.add('hidden');
+                pointsRedeemSection.classList.add('hidden');
+            }
+        }
+
+        function renderActiveCart() {
+            const state = tabState[activeTab];
+            const cart = state.cart;
+            const pointsRedeemed = state.pointsRedeemed || 0;
+            if (!cartContainer) return;
+            let subtotal = 0;
+            let cartHtml = '';
+            cart.forEach((item, idx) => {
+                const itemTotal = item.price * item.qty;
+                subtotal += itemTotal;
+                cartHtml += `
+                    <div class="flex justify-between items-center border-b pb-2 hover:bg-gray-50 px-1 rounded">
+                        <div class="flex-1">
+                            <div class="font-medium text-sm">${escapeHtml(item.name)}</div>
+                            <div class="text-xs text-gray-500">₦${item.price.toLocaleString()} x ${item.qty}</div>
+                        </div>
+                        <div class="font-semibold text-sm">₦${itemTotal.toLocaleString()}</div>
+                        <button onclick="removeCartItem(${idx})" class="ml-3 text-red-500 hover:text-red-700 text-sm w-7 h-7 rounded-full hover:bg-red-50"><i class="fa-regular fa-trash-can"></i></button>
+                    </div>
+                `;
+            });
+            let finalTotal = subtotal;
+            if (pointsRedeemed > 0) {
+                const discount = pointsRedeemed;
+                if (discount > finalTotal) {
+                    state.pointsRedeemed = Math.min(finalTotal, pointsRedeemed);
+                    finalTotal = 0;
+                } else {
+                    finalTotal = subtotal - discount;
+                }
+                cartHtml += `
+                    <div class="flex justify-between items-center text-green-700 border-t pt-2 mt-1">
+                        <div class="text-sm font-medium">🎁 Points Discount (${state.pointsRedeemed} pts)</div>
+                        <div class="font-semibold">-₦${discount.toLocaleString()}</div>
+                    </div>
+                `;
+            }
+            if (cart.length === 0) {
+                cartContainer.innerHTML = `<div class="text-center text-gray-400 py-6"><i class="fa-regular fa-receipt text-2xl"></i><p class="text-sm mt-1">Cart is empty</p></div>`;
+            } else {
+                cartContainer.innerHTML = cartHtml;
+            }
+            cartTotalSpan.innerText = `₦${finalTotal.toLocaleString()}`;
+        }
+
+        window.removeCartItem = function(index) {
+            const currentCart = tabState[activeTab].cart;
+            if (index >= 0 && index < currentCart.length) {
+                currentCart.splice(index, 1);
+                renderActiveCart();
+            }
+        };
+
+        window.addToCart = function(productId, productName, price, stock, skuLabel) {
+            const activeState = tabState[activeTab];
+            const activeCart = activeState.cart;
+            const existing = activeCart.find(i => i.id === productId);
+            const productRef = products.find(p => p.id === productId);
+            const availableStock = productRef ? (productRef.current_qty ?? 0) : stock;
+            
+            if (existing) {
+                if (existing.qty + 1 > availableStock) {
+                    showToast(`⚠️ Only ${availableStock} left for "${productName}"`, 'error');
+                    return;
+                }
+                existing.qty++;
+            } else {
+                if (1 > availableStock) {
+                    showToast(`❌ "${productName}" out of stock`, 'error');
+                    return;
+                }
+                activeCart.push({ id: productId, name: productName, price: price, qty: 1, sku: skuLabel });
+            }
+            renderActiveCart();
+            showToast(`➕ Added ${productName}`, 'success');
+        };
+
+        function bindFieldEvents() {
+            paymentMethodSelect.onchange = () => { tabState[activeTab].paymentMethod = paymentMethodSelect.value; };
+            customerNameInput.oninput = () => { tabState[activeTab].customerName = customerNameInput.value; };
+            customerPhoneInput.oninput = () => { tabState[activeTab].customerPhone = customerPhoneInput.value; };
+            customerEmailInput.oninput = () => { tabState[activeTab].customerEmail = customerEmailInput.value; };
+        }
+
+        async function applyPoints() {
+            const state = tabState[activeTab];
+            if (!state.loyaltyUserId) {
+                showToast('Please search and select a customer first', 'error');
+                return;
+            }
+            let pointsToRedeem = parseInt(redeemPointsInput.value, 10);
+            if (isNaN(pointsToRedeem) || pointsToRedeem <= 0) {
+                showToast('Enter a valid number of points', 'error');
+                return;
+            }
+            if (pointsToRedeem > state.pointsBalance) {
+                showToast(`You only have ${state.pointsBalance} points`, 'error');
+                return;
+            }
+            try {
+                await apiCall('/loyalty/redeem', 'POST', { points: pointsToRedeem });
+                state.pointsRedeemed = (state.pointsRedeemed || 0) + pointsToRedeem;
+                state.pointsBalance -= pointsToRedeem;
+                redeemPointsInput.value = '';
+                renderActiveCart();
+                showToast(`✅ ${pointsToRedeem} points redeemed – ₦${pointsToRedeem} off this order!`, 'success');
+                syncUIWithActiveTab();
+            } catch (err) {
+                showToast(`Redemption failed: ${err.message}`, 'error');
+            }
+        }
+
+        async function processCheckout() {
+            const state = tabState[activeTab];
+            const cart = state.cart;
+            if (cart.length === 0) {
+                showToast('🛒 Cart is empty. Add items first.', 'error');
+                return;
+            }
+            const paymentMethod = state.paymentMethod;
+            const customerName = state.customerName.trim() || null;
+            const customerPhone = state.customerPhone.trim() || null;
+            let customerEmail = state.customerEmail.trim() || null;
+            const pointsRedeemed = state.pointsRedeemed || 0;
+            if (paymentMethod !== 'cash' && !customerEmail) {
+                showToast('📧 Email is required for card/transfer payments', 'error');
+                return;
+            }
+            const itemsPayload = cart.map(i => ({ inventory_id: i.id, quantity: i.qty }));
+            const returnUrl = window.location.href.split('?')[0];
+            const callback_url = `${returnUrl}?payment=success`;
+            checkoutBtn.disabled = true;
+            checkoutBtn.innerText = 'Processing...';
+            try {
+                if (paymentMethod === 'cash') {
+                    const result = await apiCall('/pos/terminal/checkout', 'POST', {
+                        items: itemsPayload,
+                        payment_method: 'cash',
+                        customer_name: customerName,
+                        customer_phone: customerPhone,
+                        customer_email: customerEmail,
+                        points_redeemed: pointsRedeemed
+                    });
+                    showToast(`✅ Sale complete! Receipt: ${result.receipt_number || 'OK'}`, 'success');
+                    state.cart = [];
+                    state.pointsRedeemed = 0;
+                    if (state.loyaltyUserId) {
+                        await loadCustomers();
+                        const updated = allCustomers.find(c => c.id === state.loyaltyUserId);
+                        if (updated) state.pointsBalance = updated.loyalty_points || 0;
+                    }
+                    syncUIWithActiveTab();
+                    await loadProducts();
+                } else {
+                    const result = await apiCall('/pos/checkout', 'POST', {
+                        items: itemsPayload,
+                        customer_name: customerName,
+                        customer_email: customerEmail,
+                        customer_phone: customerPhone,
+                        payment_method: paymentMethod,
+                        callback_url: callback_url,
+                        points_redeemed: pointsRedeemed
+                    });
+                    if (result.payment_url) {
+                        localStorage.setItem('pending_payment', 'true');
+                        localStorage.setItem('pending_payment_tab', activeTab.toString());
+                        localStorage.setItem('pending_points_redeemed', pointsRedeemed.toString());
+                        window.location.href = result.payment_url;
+                    } else {
+                        throw new Error('Payment initiation failed');
+                    }
+                }
+            } catch (err) {
+                showToast(`❌ Checkout failed: ${err.message}`, 'error');
+                checkoutBtn.disabled = false;
+                checkoutBtn.innerText = '✅ Complete Sale';
+            }
+        }
+
+        async function checkPaymentReturn() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const paymentSuccess = urlParams.get('payment') === 'success';
+            const wasPending = localStorage.getItem('pending_payment') === 'true';
+            if (paymentSuccess && wasPending) {
+                const pendingTab = parseInt(localStorage.getItem('pending_payment_tab') || '1', 10);
+                const pointsRedeemed = parseInt(localStorage.getItem('pending_points_redeemed') || '0', 10);
+                if (pendingTab === 1 || pendingTab === 2) {
+                    tabState[pendingTab].cart = [];
+                    tabState[pendingTab].pointsRedeemed = 0;
+                    if (activeTab === pendingTab) renderActiveCart();
+                    showToast(`🎉 Payment successful! Order confirmed.`, 'success');
+                    await loadProducts();
+                    await loadCustomers();
+                    const state = tabState[pendingTab];
+                    if (state.loyaltyUserId) {
+                        const updated = allCustomers.find(c => c.id === state.loyaltyUserId);
+                        if (updated) state.pointsBalance = updated.loyalty_points || 0;
+                        if (activeTab === pendingTab) syncUIWithActiveTab();
+                    }
+                }
+                localStorage.removeItem('pending_payment');
+                localStorage.removeItem('pending_payment_tab');
+                localStorage.removeItem('pending_points_redeemed');
+                const cleanUrl = window.location.href.split('?')[0];
+                window.history.replaceState({}, document.title, cleanUrl);
+            }
+        }
+
+        function setActiveTab(tabId) {
+            if (tabId === activeTab) return;
+            tabState[activeTab].paymentMethod = paymentMethodSelect.value;
+            tabState[activeTab].customerName = customerNameInput.value;
+            tabState[activeTab].customerPhone = customerPhoneInput.value;
+            tabState[activeTab].customerEmail = customerEmailInput.value;
+            activeTab = tabId;
+            syncUIWithActiveTab();
+            renderProductGrid();
+            customerSearchInput.value = '';
+            suggestionsDiv.classList.add('hidden');
+        }
+
+        function initTabs() {
+            tab1Btn.onclick = () => setActiveTab(1);
+            tab2Btn.onclick = () => setActiveTab(2);
+        }
+
+        function initSearch() {
+            searchInput.addEventListener('input', (e) => { searchTerm = e.target.value; renderProductGrid(); });
+            customerSearchInput.addEventListener('input', () => renderSuggestions());
+            document.addEventListener('click', (e) => {
+                if (!customerSearchInput.contains(e.target) && !suggestionsDiv.contains(e.target)) {
+                    suggestionsDiv.classList.add('hidden');
+                }
+            });
+        }
+
+        async function demoLogin() {
+            const btn = document.getElementById('demo-login-btn');
+            btn.disabled = true;
+            try {
+                const res = await fetch(`${BACKEND}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail);
+                token = data.access_token;
+                localStorage.setItem('access_token', token);
+                localStorage.setItem('refresh_token', data.refresh_token);
+                const me = await apiCall('/auth/me');
+                localStorage.setItem('user_role', me.role || 'customer');
                 await loadProducts();
                 await loadCustomers();
-                if (!tabState[1].cart.length && !tabState[2].cart.length) {
-                    tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
-                    tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
-                }
+                hideLoginModal();
+                tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
+                tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
                 activeTab = 1;
                 syncUIWithActiveTab();
-            } catch (e) { token = null; showLoginModal(); }
-        } else { showLoginModal(); }
-    })();
-</script>
+                showToast('Demo login — Multi‑Tab & Tenant scope ready', 'success');
+                location.reload();
+            } catch (err) { showToast(err.message, 'error'); } finally { btn.disabled = false; }
+        }
+
+        async function handleLogin() {
+            const email = document.getElementById('login-email').value.trim();
+            const pwd = document.getElementById('login-password').value.trim();
+            if (!email || !pwd) { showToast('Enter email and password', 'error'); return; }
+            try {
+                const res = await fetch(`${BACKEND}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password: pwd })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail);
+                token = data.access_token;
+                localStorage.setItem('access_token', token);
+                localStorage.setItem('refresh_token', data.refresh_token);
+                const me = await apiCall('/auth/me');
+                localStorage.setItem('user_role', me.role || 'customer');
+                await loadProducts();
+                await loadCustomers();
+                hideLoginModal();
+                tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
+                tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
+                activeTab = 1;
+                syncUIWithActiveTab();
+                showToast('Login successful', 'success');
+                location.reload();
+            } catch (err) { showToast(err.message, 'error'); }
+        }
+
+        checkoutBtn.addEventListener('click', processCheckout);
+        applyPointsBtn.addEventListener('click', applyPoints);
+        document.getElementById('modal-login-btn')?.addEventListener('click', handleLogin);
+        document.getElementById('demo-login-btn')?.addEventListener('click', demoLogin);
+        document.getElementById('close-modal-btn')?.addEventListener('click', hideLoginModal);
+        
+        // ─── CLEAR SEARCH ON PAGE LOAD ───
+        (function clearSearchOnLoad() {
+            const searchField = document.getElementById('product-search');
+            if (searchField) {
+                searchField.value = '';
+                localStorage.removeItem('productSearchQuery');
+            }
+        })();
+
+        (async () => {
+            initTabs();
+            initSearch();
+            bindFieldEvents();
+            await checkPaymentReturn();
+            if (token) {
+                try {
+                    await loadProducts();
+                    await loadCustomers();
+                    if (!tabState[1].cart.length && !tabState[2].cart.length) {
+                        tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
+                        tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
+                    }
+                    activeTab = 1;
+                    syncUIWithActiveTab();
+                } catch (e) { token = null; showLoginModal(); }
+            } else { showLoginModal(); }
+        })();
+    </script>
 </body>
 </html>
