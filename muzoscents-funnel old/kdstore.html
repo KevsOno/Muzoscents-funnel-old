@@ -54,34 +54,25 @@
         .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
         .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
         @keyframes dotPulse { 0%, 60%, 100% { transform: scale(0.8); opacity: 0.5; } 30% { transform: scale(1.2); opacity: 1; } }
-        /* ── HIDDEN DUMMY FIELD TO CONFUSE AUTOFILL ── */
-        .dummy-autofill {
-            position: absolute;
-            left: -9999px;
-            top: -9999px;
-            height: 0;
-            width: 0;
-            overflow: hidden;
-            opacity: 0;
-            pointer-events: none;
-        }
+        .dummy-autofill { position: absolute; left: -9999px; top: -9999px; height: 0; width: 0; overflow: hidden; opacity: 0; pointer-events: none; }
+        .page-btn { min-width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; border-radius: 9999px; font-weight: 500; transition: all 0.15s; }
+        .page-btn:hover { transform: scale(1.05); }
+        #pagination-container { margin-top: 1.5rem; margin-bottom: 2rem; }
     </style>
 </head>
 <body class="text-gray-800">
 
-    <!-- ─── HIDDEN DUMMY FIELDS TO CONFUSE AUTOFILL ─── -->
     <div class="dummy-autofill">
         <input type="text" id="dummy-email" name="email" value="">
         <input type="password" id="dummy-password" name="password" value="">
     </div>
 
-    <!-- Header / Navigation -->
     <header class="sticky top-0 z-30 bg-white/90 backdrop-blur-md shadow-sm border-b border-orange-100">
         <div class="container mx-auto px-4 py-3 flex justify-between items-center">
-          <div class="flex items-center gap-2 cursor-pointer" id="marketplace-logo">
-    <span class="text-3xl font-extrabold text-orange-500">Market</span>
-    <span class="text-xl font-semibold text-gray-700">Place</span>
-</div>
+            <div class="flex items-center gap-2 cursor-pointer" id="marketplace-logo">
+                <span class="text-3xl font-extrabold text-orange-500">Market</span>
+                <span class="text-xl font-semibold text-gray-700">Place</span>
+            </div>
             <div class="flex items-center gap-3">
                 <button id="cart-icon-btn" class="relative bg-orange-50 p-2 rounded-full hover:bg-orange-100 transition">
                     <i class="fa-solid fa-bag-shopping text-orange-600 text-xl"></i>
@@ -107,7 +98,7 @@
         </div>
     </header>
 
-    <!-- Hero Slider (5 slides) -->
+    <!-- Hero Slider -->
     <section class="hero-slider relative">
         <div class="slider-container" id="heroSlider">
             <div class="hero-slide gradient-slide">
@@ -140,7 +131,6 @@
         <div class="slider-dots" id="sliderDots"></div>
     </section>
 
-    <!-- Main Dynamic Panel -->
     <main id="dynamic-main" class="container mx-auto px-4 py-12">
         <div id="shop-view">
             <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
@@ -151,7 +141,6 @@
                     </select>
                     <div class="search-container w-full md:w-72">
                         <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
-                        <!-- ─── FIX: added autocomplete="off" and name="search" ─── -->
                         <input type="text" id="product-search" name="search" placeholder="Search products..." autocomplete="off" class="w-full pl-10 pr-8 py-2 border border-gray-300 rounded-full focus:ring-2 focus:ring-orange-400 outline-none">
                         <span id="search-clear" class="search-clear"><i class="fa-solid fa-times-circle"></i></span>
                     </div>
@@ -161,6 +150,7 @@
             <div id="products-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
                 <div class="col-span-full text-center py-12 text-gray-500"><i class="fa-solid fa-spinner fa-pulse"></i> Loading amazing deals...</div>
             </div>
+            <div id="pagination-container" class="mt-6 flex justify-center"></div>
         </div>
         <div id="tickets-view" class="hidden">
             <div class="flex items-center justify-between mb-6">
@@ -196,11 +186,11 @@
     <button id="chat-bubble" class="floating-chat fixed bottom-6 right-6 bg-orange-500 text-white p-4 rounded-full shadow-xl z-40"><i class="fa-regular fa-message text-2xl"></i></button>
     <div id="chat-modal" class="chat-modal"><div class="flex justify-between items-center p-3 border-b border-orange-200 bg-orange-50 rounded-t-2xl"><span class="font-bold"><i class="fa-regular fa-comment-dots text-orange-500"></i> Kevs AI Concierge</span><button id="close-chat-modal" class="text-gray-500">&times;</button></div><div id="chat-messages" class="chat-messages p-3 space-y-2"></div><div class="p-3 border-t border-gray-200 bg-white rounded-b-2xl"><div class="flex gap-2"><input id="chat-input" type="text" placeholder="Ask about products, orders..." class="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm" autocomplete="off"><button id="chat-send" class="bg-orange-500 text-white px-4 rounded-full"><i class="fa-regular fa-paper-plane"></i></button></div></div></div>
 
-    <!-- Login/Register Modal -->
+    <!-- Auth Modal -->
     <div id="auth-modal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[100]"><div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl"><div class="flex justify-between items-center mb-4"><h3 id="modal-title" class="text-xl font-bold">Sign In</h3><button id="close-auth-modal" class="text-2xl">&times;</button></div><div class="space-y-3"><input id="auth-email" type="email" placeholder="Email address" class="w-full border border-gray-300 rounded-lg p-2.5" autocomplete="off"><input id="auth-password" type="password" placeholder="Password" class="w-full border border-gray-300 rounded-lg p-2.5" autocomplete="off"><div id="reg-extra" class="hidden space-y-3 border-t pt-3"><input id="invite-code" placeholder="Invite code (optional)" class="w-full border border-gray-300 rounded-lg p-2" autocomplete="off"><div class="text-xs text-center">— OR create new org —</div><input id="org-name" placeholder="Organization name *" class="w-full border border-gray-300 rounded-lg p-2" autocomplete="off"><div class="grid grid-cols-2 gap-2"><input id="org-location" placeholder="City, Country *" class="border rounded p-2" autocomplete="off"><input id="org-niche" placeholder="Industry *" class="border rounded p-2" autocomplete="off"></div><input id="budget" type="number" placeholder="Budget (₦)" class="border p-2 rounded" autocomplete="off"><div class="grid grid-cols-2 gap-2"><input id="first-name" placeholder="First name *" class="border p-2 rounded" autocomplete="off"><input id="last-name" placeholder="Last name *" class="border p-2 rounded" autocomplete="off"></div><input id="phone-number" placeholder="Phone number *" class="border p-2 rounded" autocomplete="off"></div><button id="auth-submit" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2.5 rounded-lg">Sign In</button><button id="demo-access" class="w-full bg-emerald-500 text-white py-2.5 rounded-lg flex items-center justify-center gap-2"><i class="fa-solid fa-flask"></i> Demo Access</button><div class="text-center"><button id="toggle-auth-mode" class="text-sm text-orange-500 hover:underline">Don't have an account? Register</button></div></div></div></div>
 
     <script>
-        // ---------- API & GLOBALS ----------
+        // ========== CONFIG ==========
         const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
         let token = localStorage.getItem('access_token');
         let userProfile = null;
@@ -220,6 +210,42 @@
         let isRecalcInProgress = false;
         let lastCalculatedCartState = '';
 
+        // ========== PAGINATION ==========
+        let currentPage = 1;
+        const PAGE_SIZE = 36;
+
+        function renderPagination(totalItems, totalPages) {
+            const container = document.getElementById('pagination-container');
+            if (!container) return;
+            if (totalPages <= 1) { container.innerHTML = ''; return; }
+
+            let html = `<div class="flex justify-center items-center gap-2 mt-8 flex-wrap">`;
+            if (currentPage > 1) html += `<button class="page-btn px-3 py-1 bg-gray-200 rounded hover:bg-gray-300" data-page="${currentPage-1}">← Prev</button>`;
+
+            const startPage = Math.max(1, currentPage - 2);
+            const endPage = Math.min(totalPages, currentPage + 2);
+            for (let i = startPage; i <= endPage; i++) {
+                const active = i === currentPage ? 'bg-orange-500 text-white' : 'bg-gray-200 hover:bg-gray-300';
+                html += `<button class="page-btn px-3 py-1 rounded ${active}" data-page="${i}">${i}</button>`;
+            }
+
+            if (currentPage < totalPages) html += `<button class="page-btn px-3 py-1 bg-gray-200 rounded hover:bg-gray-300" data-page="${currentPage+1}">Next →</button>`;
+            html += `</div>`;
+            container.innerHTML = html;
+
+            container.querySelectorAll('.page-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const page = parseInt(this.dataset.page);
+                    if (!isNaN(page) && page !== currentPage) {
+                        currentPage = page;
+                        renderProducts();
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
+                });
+            });
+        }
+
+        // ========== UTILITIES ==========
         function setCartTotalLoading(loading) {
             const totalSpan = document.getElementById('cart-total');
             if (loading) {
@@ -395,23 +421,38 @@
                 allProducts = await apiCall('/inventory/public-list');
                 console.log(`📦 Loaded ${allProducts.length} products`);
                 extractCategoriesFromProducts();
+                currentPage = 1;
                 renderProducts();
             } catch(e) { 
                 console.error("Failed to load products:", e);
                 document.getElementById('products-grid').innerHTML = `<div class="col-span-full text-red-500">⚠️ ${e.message}</div>`; 
             }
         }
-        
-        // Secure DOM building (no JSON injection)
+
         function renderProducts() {
             let filtered = allProducts;
             if (searchQuery.trim()) filtered = filtered.filter(p => p.description.toLowerCase().includes(searchQuery.toLowerCase()));
             if (selectedCategory && selectedCategory !== '') filtered = filtered.filter(p => p.product_group === selectedCategory);
+
+            const totalItems = filtered.length;
+            const totalPages = Math.ceil(totalItems / PAGE_SIZE);
+            if (currentPage > totalPages) currentPage = totalPages || 1;
+
+            const start = (currentPage - 1) * PAGE_SIZE;
+            const end = start + PAGE_SIZE;
+            const pageItems = filtered.slice(start, end);
+
             const grid = document.getElementById('products-grid');
             if (!grid) return;
-            if (filtered.length === 0) { grid.innerHTML = `<div class="col-span-full text-center py-12 text-gray-500"><i class="fa-regular fa-face-frown"></i> No products match your filters.</div>`; return; }
+
+            if (pageItems.length === 0) {
+                grid.innerHTML = `<div class="col-span-full text-center py-12 text-gray-500"><i class="fa-regular fa-face-frown"></i> No products match your filters.</div>`;
+                renderPagination(totalItems, totalPages);
+                return;
+            }
+
             grid.innerHTML = '';
-            filtered.forEach(p => {
+            pageItems.forEach(p => {
                 const card = document.createElement('div');
                 card.className = "product-card bg-white rounded-2xl p-4 shadow-sm hover:shadow-lg transition flex flex-col";
                 const stockHtml = `<div class="h-28 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl flex items-center justify-center mb-3">${p.image_url ? `<img src="${p.image_url}" class="h-24 object-contain rounded">` : `<i class="fa-solid fa-box-open text-4xl text-orange-400"></i>`}</div><h3 class="font-bold text-gray-800 truncate">${escapeHtml(p.description)}</h3><div class="flex justify-between items-center mt-2"><span class="text-orange-600 font-bold text-xl">₦${p.price_naira.toLocaleString()}</span><span class="text-xs bg-gray-100 px-2 py-1 rounded-full">${p.current_qty} left</span></div><div class="flex gap-2 mt-3"><button class="view-details-btn flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-xl text-sm font-semibold"><i class="fa-regular fa-eye"></i> Details</button><button class="add-to-cart-btn flex-1 bg-orange-500 hover:bg-orange-600 text-white py-2 rounded-xl text-sm font-semibold"><i class="fa-solid fa-cart-plus"></i> Add</button></div>`;
@@ -423,6 +464,8 @@
                 card.onclick = (e) => { if (e.target.tagName !== 'BUTTON' && !e.target.closest('button')) showProductDetail(p); };
                 grid.appendChild(card);
             });
+
+            renderPagination(totalItems, totalPages);
         }
 
         function refreshCategories() {
@@ -434,12 +477,13 @@
                 showToast("Products not loaded yet", 'error');
             }
         }
-        
+
+        // ---------- SEARCH / FILTER ----------
         let searchDebounce;
         const searchInput = document.getElementById('product-search'), searchClear = document.getElementById('search-clear');
-        function handleSearch() { clearTimeout(searchDebounce); searchDebounce = setTimeout(() => { searchQuery = searchInput.value; renderProducts(); if(searchClear) searchClear.style.display = searchQuery ? 'block' : 'none'; }, 300); }
-        function clearSearch() { searchInput.value = ''; searchQuery = ''; renderProducts(); if(searchClear) searchClear.style.display = 'none'; searchInput.focus(); }
-        function handleCategoryChange() { selectedCategory = document.getElementById('category-select').value; renderProducts(); }
+        function handleSearch() { clearTimeout(searchDebounce); searchDebounce = setTimeout(() => { searchQuery = searchInput.value; currentPage = 1; renderProducts(); if(searchClear) searchClear.style.display = searchQuery ? 'block' : 'none'; }, 300); }
+        function clearSearch() { searchInput.value = ''; searchQuery = ''; currentPage = 1; renderProducts(); if(searchClear) searchClear.style.display = 'none'; searchInput.focus(); }
+        function handleCategoryChange() { selectedCategory = document.getElementById('category-select').value; currentPage = 1; renderProducts(); }
         if(searchInput) searchInput.addEventListener('input', handleSearch);
         if(searchClear) searchClear.addEventListener('click', clearSearch);
         const catSelect = document.getElementById('category-select');
@@ -614,7 +658,7 @@
             const searchField = document.getElementById('product-search');
             if (searchField) {
                 searchField.value = '';
-                localStorage.removeItem('productSearchQuery'); // if any
+                localStorage.removeItem('productSearchQuery');
             }
         })();
 
