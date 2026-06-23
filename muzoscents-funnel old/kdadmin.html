@@ -1003,23 +1003,30 @@
         async function loadInventory() {
             if (!selectedOrganisation) return;
             try {
-                // Always fetch all inventory (no location filter)
+                // Always fetch all inventory
                 const data = await apiCall('/inventory');
                 let allItems = data.items || data;
 
                 // If a location filter is active, filter client‑side
                 if (currentLocationFilter && currentLocationFilter !== 'default') {
                     allItems = allItems.filter(p => {
+                        let matched = false;
                         // Check location_stocks (array of { location_id, quantity })
                         if (p.location_stocks && p.location_stocks.length > 0) {
-                            return p.location_stocks.some(s => String(s.location_id) === String(currentLocationFilter));
+                            matched = p.location_stocks.some(s => {
+                                const locId = String(s.location_id);
+                                return locId === String(currentLocationFilter) && (s.quantity > 0 || s.quantity === undefined);
+                            });
                         }
-                        // Fallback: direct location_id on the product
-                        if (p.location_id) {
-                            return String(p.location_id) === String(currentLocationFilter);
+                        // Fallback to direct location_id
+                        if (!matched && p.location_id) {
+                            matched = String(p.location_id) === String(currentLocationFilter);
                         }
-                        return false;
+                        return matched;
                     });
+                    console.log(`🔍 Filtered ${allItems.length} products for location ${currentLocationFilter}`);
+                } else {
+                    console.log(`📊 Loaded ${allItems.length} products (all locations)`);
                 }
 
                 products = allItems;
@@ -1087,7 +1094,6 @@
                     }).join('');
                     stockHtml = `<div class="text-xs text-slate-400 mt-1 space-y-0.5">${stockItems}</div>`;
                 } else if (p.location_id) {
-                    // fallback: product has a direct location_id
                     const locName = locationNames[p.location_id] || `Location ${p.location_id}`;
                     stockHtml =
                         `<div class="text-xs text-slate-400 mt-1"><span class="loc-badge"><i class="fa-solid fa-location-dot"></i> <span class="loc-name">${escapeHtml(locName)}</span></span> <span class="font-mono">${p.current_qty || 0}</span></div>`;
