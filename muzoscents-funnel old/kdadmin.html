@@ -998,20 +998,23 @@
         }
 
         // ================================================================
-        // INVENTORY MANAGEMENT
+        // INVENTORY MANAGEMENT (FIXED: use /inventory/v2 without location param, then filter client-side)
         // ================================================================
         async function loadInventory() {
             if (!selectedOrganisation) return;
             try {
+                // Always fetch from /inventory/v2 to get location_stocks
                 const data = await apiCall('/inventory/v2');
                 let allItems = data.items || data || [];
                 console.log(`📊 Loaded ${allItems.length} products with location_stocks`);
 
                 if (currentLocationFilter && currentLocationFilter !== 'default') {
+                    // Filter by location_id (as string) in location_stocks
                     allItems = allItems.filter(p => {
                         if (p.location_stocks && p.location_stocks.length > 0) {
                             return p.location_stocks.some(s => String(s.location_id) === String(currentLocationFilter));
                         }
+                        // Fallback: if product has location_id directly
                         if (p.location_id) {
                             return String(p.location_id) === String(currentLocationFilter);
                         }
@@ -1026,9 +1029,11 @@
                 renderProducts(products);
             } catch (err) {
                 console.error('Error loading inventory:', err);
+                // Fallback: try /inventory if /inventory/v2 fails
                 try {
                     const fallbackData = await apiCall('/inventory');
                     let allItems = fallbackData.items || fallbackData || [];
+                    // If we have location filter, try to filter based on location_stocks if present
                     if (currentLocationFilter && currentLocationFilter !== 'default') {
                         const hasLocationStocks = allItems.some(p => p.location_stocks && p.location_stocks.length > 0);
                         if (hasLocationStocks) {
@@ -1042,6 +1047,7 @@
                                 return false;
                             });
                         } else {
+                            // No location info, show all (or empty? We'll show all to avoid empty)
                             console.warn('No location_stocks in fallback inventory, showing all products');
                         }
                     }
@@ -1054,6 +1060,7 @@
             }
         }
 
+        // ── helper: get location name by id ──
         function getLocationName(locId) {
             if (!locId) return null;
             const found = allLocations.find(l => l.id == locId);
@@ -1078,6 +1085,7 @@
                     hazardous: 'bg-red-600/30 text-red-300'
                 } [p.handling_category] || 'bg-slate-600/30';
 
+                // ── expiry badge ──
                 let expiryBadge = '';
                 if (p.expiry_date) {
                     const today = new Date();
@@ -1095,6 +1103,7 @@
                         `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] ${badgeClass}"><i class="fa-regular fa-calendar"></i> ${badgeText}</span>`;
                 }
 
+                // ── location stock display ──
                 let stockHtml = '';
                 const locationNames = {};
                 allLocations.forEach(loc => { locationNames[loc.id] = loc.name; });
@@ -1107,6 +1116,7 @@
                     }).join('');
                     stockHtml = `<div class="text-xs text-slate-400 mt-1 space-y-0.5">${stockItems}</div>`;
                 } else if (p.location_id) {
+                    // fallback: product has a direct location_id
                     const locName = locationNames[p.location_id] || `Location ${p.location_id}`;
                     stockHtml =
                         `<div class="text-xs text-slate-400 mt-1"><span class="loc-badge"><i class="fa-solid fa-location-dot"></i> <span class="loc-name">${escapeHtml(locName)}</span></span> <span class="font-mono">${p.current_qty || 0}</span></div>`;
@@ -1148,7 +1158,7 @@
         }
 
         // ================================================================
-        // PRODUCT CRUD
+        // PRODUCT CRUD (removed location_id)
         // ================================================================
         async function saveProduct(event) {
             event.preventDefault();
@@ -1197,6 +1207,7 @@
                 batch_number: batch_number || null,
                 manufacture_date: manufacture_date || null,
                 lot_number: lot_number || null
+                // location_id removed
             };
 
             try {
@@ -1236,6 +1247,7 @@
                 document.getElementById('expiry_date').value = product.expiry_date || '';
                 document.getElementById('supplier_name').value = product.supplier_name || '';
                 document.getElementById('supplier_invoice').value = product.supplier_invoice || '';
+                // No location assignment
                 document.getElementById('form-title').innerText = '✏️ Edit Product';
                 document.getElementById('cancel-edit').classList.remove('hidden');
                 document.querySelector('#product-form').scrollIntoView({ behavior: 'smooth' });
@@ -1595,7 +1607,7 @@
         }
 
         // ================================================================
-        // LOCATION FORM
+        // LOCATION FORM (in locations tab)
         // ================================================================
         document.getElementById('location-form')?.addEventListener('submit', async function(e) {
             e.preventDefault();
@@ -1629,7 +1641,7 @@
         });
 
         // ================================================================
-        // TRANSFER MODAL (FIXED: uses /stock-transfers/request)
+        // TRANSFER MODAL
         // ================================================================
         function showTransferModal() {
             if (!allLocations || allLocations.length < 2) { showToast('Need at least 2 locations for transfer',
@@ -1647,32 +1659,20 @@
             const toLoc = document.getElementById('transfer-to').value;
             const qty = parseInt(document.getElementById('transfer-qty').value);
             const reason = document.getElementById('transfer-reason').value;
-
-            if (!productId || !fromLoc || !toLoc || !qty || qty <= 0) {
-                showToast('Please fill all fields', 'error');
-                return;
-            }
-            if (fromLoc === toLoc) {
-                showToast('Source and destination cannot be the same', 'error');
-                return;
-            }
-
+            if (!productId || !fromLoc || !toLoc || !qty || qty <= 0) { showToast('Please fill all fields',
+                'error'); return; }
+            if (fromLoc === toLoc) { showToast('Source and destination cannot be the same', 'error'); return; }
             try {
-                const result = await apiCall('/stock-transfers/request', {
+                await apiCall('/inventory/v2/transfer', {
                     method: 'POST',
-                    body: JSON.stringify({
-                        from_location_id: parseInt(fromLoc),
-                        to_location_id: parseInt(toLoc),
-                        inventory_id: parseInt(productId),
-                        quantity: qty,
-                        request_notes: reason || null
-                    })
+                    body: JSON.stringify({ from_location_id: parseInt(fromLoc), to_location_id: parseInt(toLoc),
+                        inventory_id: parseInt(productId), quantity: qty, reason: reason || null })
                 });
-                showToast(`✅ Transfer request created! ID: ${result.transfer.id}`, 'success');
+                showToast('Stock transferred!', 'success');
                 document.getElementById('transfer-modal').classList.add('hidden');
                 loadInventory();
             } catch (err) {
-                showToast(`❌ Failed: ${err.message}`, 'error');
+                showToast(`Failed: ${err.message}`, 'error');
             }
         });
 
@@ -1683,7 +1683,7 @@
         document.getElementById('show-transfer-modal')?.addEventListener('click', showTransferModal);
 
         // ================================================================
-        // LOCATION MODAL (quick add)
+        // LOCATION MODAL (quick add from inventory tab)
         // ================================================================
         document.getElementById('show-location-modal')?.addEventListener('click', () => {
             document.getElementById('location-modal').classList.remove('hidden');
@@ -1805,6 +1805,7 @@
                 const quantity = p.current_stock || p.quantity || 0;
                 const cost = p.cost_price_naira || 0;
                 const supplier = escapeHtml(p.supplier_name || '');
+                // location name
                 const locName = p.location_name || getLocationName(p.location_id) || 'Main';
                 return `
                     <tr class="border-b border-slate-700 hover:bg-slate-800/50">
@@ -2040,6 +2041,7 @@
             const rect = searchInput.getBoundingClientRect();
             const top = rect.bottom + 6;
             const left = rect.left;
+            // clamp to viewport
             const w = Math.min(rect.width, 500);
             searchResultsFixed.style.top = top + 'px';
             searchResultsFixed.style.left = left + 'px';
@@ -2068,6 +2070,7 @@
                 if (e.key === 'Escape') closeSearchResults();
             });
 
+            // click outside -> close
             document.addEventListener('click', function(e) {
                 const target = e.target;
                 if (!target.closest('#search-input-wrapper') && !target.closest('#product-search-results-fixed')) {
@@ -2075,6 +2078,7 @@
                 }
             });
 
+            // overlay click closes
             searchOverlay.addEventListener('click', closeSearchResults);
         }
 
@@ -2116,6 +2120,7 @@
             searchOverlay.classList.add('active');
             positionSearchResults();
 
+            // click on result
             searchResultsFixed.querySelectorAll('.result-item').forEach(el => {
                 el.addEventListener('click', function() {
                     const id = this.dataset.id;
@@ -2129,6 +2134,7 @@
             });
         }
 
+        // reposition on scroll / resize
         window.addEventListener('scroll', function() {
             if (searchResultsFixed.classList.contains('active')) positionSearchResults();
         }, { passive: true });
@@ -2137,7 +2143,7 @@
         }, { passive: true });
 
         // ================================================================
-        // INIT — redirect if not authenticated
+        // INIT — FIXED: redirect if not authenticated
         // ================================================================
         document.getElementById('confirm-org-btn')?.addEventListener('click', async function() {
             if (!selectedOrganisation) return;
@@ -2223,22 +2229,26 @@
         document.getElementById('log-level-filter')?.addEventListener('change', loadSystemLogs);
 
         // ================================================================
-        // INIT (redirect if no token)
+        // INIT (FIXED: redirect immediately if not authenticated)
         // ================================================================
         async function init() {
+            // 1. If no token, redirect to sign‑in immediately
             if (!token) {
                 window.location.href = '/kdsiginin';
                 return;
             }
 
             try {
+                // 2. Verify session with /auth/me – throws if invalid
                 const me = await apiCall('/auth/me');
                 currentUser = me;
                 localStorage.setItem('user_role', me.role || 'admin');
                 document.getElementById('auth-check-placeholder').classList.add('hidden');
 
+                // 3. Check if we have a saved organisation
                 const savedOrgId = localStorage.getItem('selected_org_id');
                 if (savedOrgId) {
+                    // Fetch organisations and try to match saved one
                     userOrganisations = await fetchUserOrganisations();
                     const savedOrg = userOrganisations.find(o => o.id === savedOrgId || o.org_id === savedOrgId);
                     if (savedOrg) {
@@ -2248,6 +2258,7 @@
                         document.getElementById('current-org-banner').classList.remove('hidden');
                         document.getElementById('admin-panel').classList.remove('hidden');
 
+                        // Load all data
                         await loadLocations();
                         await loadInventory();
                         await loadDashboardMetrics();
@@ -2261,9 +2272,11 @@
                     }
                 }
 
+                // 4. No saved org or it no longer exists → show organisation selection
                 await initialiseOrganisationSelection();
 
             } catch (err) {
+                // Any error here means the session is invalid – redirect to login
                 console.error('Init error:', err);
                 localStorage.clear();
                 window.location.href = '/kdsiginin';
@@ -2275,12 +2288,14 @@
                 userOrganisations = await fetchUserOrganisations();
                 renderOrganisationSelection(userOrganisations);
             } catch (err) {
+                // If fetching organisations fails due to auth, redirect
                 console.error('Failed to load organisations:', err);
                 localStorage.clear();
                 window.location.href = '/kdsiginin';
             }
         }
 
+        // Start the app
         init();
     </script>
 </body>
