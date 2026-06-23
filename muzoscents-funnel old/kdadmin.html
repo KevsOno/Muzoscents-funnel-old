@@ -998,23 +998,65 @@
         }
 
         // ================================================================
-        // INVENTORY MANAGEMENT (FIXED: correct endpoint)
+        // INVENTORY MANAGEMENT (FIXED: use /inventory/v2 without location param, then filter client-side)
         // ================================================================
         async function loadInventory() {
             if (!selectedOrganisation) return;
             try {
-                let url = '/inventory';
+                // Always fetch from /inventory/v2 to get location_stocks
+                const data = await apiCall('/inventory/v2');
+                let allItems = data.items || data || [];
+                console.log(`📊 Loaded ${allItems.length} products with location_stocks`);
+
                 if (currentLocationFilter && currentLocationFilter !== 'default') {
-                    // ✅ CORRECT endpoint (as per backend)
-                    url = `/inventory/v2?location_id=${currentLocationFilter}`;
+                    // Filter by location_id (as string) in location_stocks
+                    allItems = allItems.filter(p => {
+                        if (p.location_stocks && p.location_stocks.length > 0) {
+                            return p.location_stocks.some(s => String(s.location_id) === String(currentLocationFilter));
+                        }
+                        // Fallback: if product has location_id directly
+                        if (p.location_id) {
+                            return String(p.location_id) === String(currentLocationFilter);
+                        }
+                        return false;
+                    });
+                    console.log(`🔍 Filtered ${allItems.length} products for location ${currentLocationFilter}`);
+                } else {
+                    console.log(`📊 Loaded ${allItems.length} products (all locations)`);
                 }
-                const data = await apiCall(url);
-                products = data.items || data;
+
+                products = allItems;
                 renderProducts(products);
             } catch (err) {
                 console.error('Error loading inventory:', err);
-                document.getElementById('products-grid').innerHTML =
-                    `<div class="col-span-full text-center py-8 text-red-400">❌ ${escapeHtml(err.message)}</div>`;
+                // Fallback: try /inventory if /inventory/v2 fails
+                try {
+                    const fallbackData = await apiCall('/inventory');
+                    let allItems = fallbackData.items || fallbackData || [];
+                    // If we have location filter, try to filter based on location_stocks if present
+                    if (currentLocationFilter && currentLocationFilter !== 'default') {
+                        const hasLocationStocks = allItems.some(p => p.location_stocks && p.location_stocks.length > 0);
+                        if (hasLocationStocks) {
+                            allItems = allItems.filter(p => {
+                                if (p.location_stocks && p.location_stocks.length > 0) {
+                                    return p.location_stocks.some(s => String(s.location_id) === String(currentLocationFilter));
+                                }
+                                if (p.location_id) {
+                                    return String(p.location_id) === String(currentLocationFilter);
+                                }
+                                return false;
+                            });
+                        } else {
+                            // No location info, show all (or empty? We'll show all to avoid empty)
+                            console.warn('No location_stocks in fallback inventory, showing all products');
+                        }
+                    }
+                    products = allItems;
+                    renderProducts(products);
+                } catch (fallbackErr) {
+                    document.getElementById('products-grid').innerHTML =
+                        `<div class="col-span-full text-center py-8 text-red-400">❌ ${escapeHtml(fallbackErr.message)}</div>`;
+                }
             }
         }
 
