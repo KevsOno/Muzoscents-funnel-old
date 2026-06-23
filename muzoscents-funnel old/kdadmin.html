@@ -998,7 +998,7 @@
         }
 
         // ================================================================
-        // INVENTORY MANAGEMENT (FIXED: client-side location filtering)
+        // INVENTORY MANAGEMENT (FIXED: client-side location filtering, ignore quantity)
         // ================================================================
         async function loadInventory() {
             if (!selectedOrganisation) return;
@@ -1011,12 +1011,9 @@
                 if (currentLocationFilter && currentLocationFilter !== 'default') {
                     allItems = allItems.filter(p => {
                         let matched = false;
-                        // Check location_stocks (array of { location_id, quantity })
+                        // Check location_stocks – include if location matches, regardless of quantity
                         if (p.location_stocks && p.location_stocks.length > 0) {
-                            matched = p.location_stocks.some(s => {
-                                const locId = String(s.location_id);
-                                return locId === String(currentLocationFilter) && (s.quantity > 0 || s.quantity === undefined);
-                            });
+                            matched = p.location_stocks.some(s => String(s.location_id) === String(currentLocationFilter));
                         }
                         // Fallback to direct location_id
                         if (!matched && p.location_id) {
