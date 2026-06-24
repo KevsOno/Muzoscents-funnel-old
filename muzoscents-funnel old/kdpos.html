@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Kevs POS Pro | Multi‑Tab · SKU Search · Scanner Ready</title>
+    <title>Kevs POS Pro | Cart‑First · SKU Search · Scanner Ready</title>
     <script src="https://cdn.tailwindcss.com">
     </script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -24,10 +24,31 @@
         }
         .product-card {
             transition: all 0.15s ease;
+            padding: 0.5rem;
         }
         .product-card:active {
-            transform: scale(0.98);
+            transform: scale(0.97);
         }
+        .product-card .name {
+            font-size: 0.8rem;
+            font-weight: 600;
+            line-height: 1.2;
+        }
+        .product-card .sku {
+            font-size: 0.65rem;
+            color: #6b7280;
+            font-family: monospace;
+        }
+        .product-card .price {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: #2563eb;
+        }
+        .product-card .stock {
+            font-size: 0.6rem;
+            color: #6b7280;
+        }
+
         ::-webkit-scrollbar {
             width: 6px;
             height: 6px;
@@ -52,9 +73,6 @@
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
-        }
-        .transition-smooth {
-            transition: all 0.2s ease;
         }
         .customer-suggestion {
             cursor: pointer;
@@ -92,6 +110,7 @@
             color: #6b7280;
             font-size: 0.9rem;
         }
+
         /* cart quantity controls */
         .qty-btn {
             width: 24px;
@@ -110,7 +129,7 @@
             background: #e5e7eb;
         }
         .qty-input {
-            width: 40px;
+            width: 36px;
             text-align: center;
             border: 1px solid #d1d5db;
             border-radius: 4px;
@@ -121,6 +140,18 @@
             outline: none;
             border-color: #3b82f6;
             box-shadow: 0 0 0 2px #93c5fd;
+        }
+        .cart-item-name {
+            font-size: 0.9rem;
+            font-weight: 500;
+            line-height: 1.3;
+        }
+        .cart-item-price {
+            font-size: 0.85rem;
+        }
+        .total-amount {
+            font-size: 1.5rem;
+            font-weight: 800;
         }
     </style>
 </head>
@@ -279,7 +310,7 @@
         <div class="bg-white rounded-xl shadow-md p-4 mb-4 flex flex-wrap justify-between items-center gap-3">
             <div>
                 <h1 class="text-2xl font-bold">💳 Kevs POS Terminal</h1>
-                <p class="text-xs text-gray-500">Multi‑Tab | SKU Search | Scanner Ready | Loyalty Points & Discount</p>
+                <p class="text-xs text-gray-500">Cart‑First | SKU Search | Scanner Ready | Loyalty Points & Discount</p>
             </div>
         </div>
 
@@ -293,30 +324,17 @@
             </button>
         </div>
 
+        <!-- MAIN LAYOUT: Cart takes priority (left side, 2/3 width) -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div class="lg:col-span-2 bg-white rounded-xl shadow-md p-4">
-                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
-                    <h2 class="text-xl font-semibold">📦 Product Catalog</h2>
-                    <div class="relative w-full sm:w-64">
-                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-                        <input type="text" id="product-search" name="search" placeholder="Search by SKU, name or ID (scan barcode)"
-                        autocomplete="off"
-                        class="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none">
-                        <div id="search-scanner-hint" class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-green-500 hidden"><i class="fa-solid fa-qrcode"></i></div>
-                    </div>
-                </div>
-                <div id="product-list" class="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[500px] overflow-y-auto relative"></div>
-                <div id="product-list-empty" class="hidden text-center py-8 text-gray-400 col-span-full">No products match your search</div>
-                <div id="loading-more" class="hidden text-center py-4 text-gray-500 text-sm"><i class="fa-solid fa-spinner fa-pulse"></i> Loading more products...</div>
-            </div>
-
-            <div class="bg-white rounded-xl shadow-md p-4 flex flex-col">
+            
+            <!-- ========== CART: LEFT (MAIN FOCUS) ========== -->
+            <div class="lg:col-span-2 lg:order-first bg-white rounded-xl shadow-md p-4 flex flex-col min-h-[600px]">
                 <div class="flex justify-between items-center border-b pb-2 mb-2">
                     <h2 class="text-xl font-semibold"><i class="fa-solid fa-cart-shopping"></i> <span id="active-customer-label">Customer A</span> Sale</h2>
                     <span class="text-xs bg-gray-100 px-2 py-1 rounded-full" id="tab-badge">Tab 1 active</span>
                 </div>
 
-                <!-- Customer Search -->
+                <!-- Customer Search (Compact) -->
                 <div class="bg-blue-50 p-3 rounded-lg mb-3 space-y-2">
                     <div class="relative">
                         <input type="text" id="customer-search" placeholder="Search by name, phone or email"
@@ -340,33 +358,59 @@
                     </div>
                 </div>
 
-                <div id="cart-items" class="space-y-2 max-h-80 overflow-y-auto flex-1 min-h-[180px]"></div>
+                <!-- Cart Items (Fills remaining space) -->
+                <div id="cart-items" class="space-y-2 overflow-y-auto flex-1 max-h-[50vh] lg:max-h-[60vh] min-h-[200px]"></div>
+                
+                <!-- Cart Summary & Checkout -->
                 <div class="border-t pt-3 mt-2">
-                    <div class="flex justify-between text-lg font-bold"><span>Total:</span><span id="cart-total">₦0</span></div>
-                    <div class="mt-3"><label class="block text-sm font-medium">Payment Method</label>
-                        <select id="payment-method" class="w-full border rounded-lg p-2 bg-white">
-                            <option value="cash">💵 Cash</option>
-                            <option value="card">💳 Card</option>
-                            <option value="transfer">🏦 Bank Transfer</option>
-                        </select>
+                    <div class="flex justify-between text-lg font-bold">
+                        <span>Total:</span>
+                        <span id="cart-total" class="total-amount">₦0</span>
                     </div>
-                    <div class="mt-3"><label class="block text-sm font-medium">Customer Name</label>
-                        <input id="customer-name" class="w-full border rounded-lg p-2" placeholder="Walk-in Customer"
-                        autocomplete="off">
+                    <div class="mt-3 grid grid-cols-2 gap-3">
+                        <div><label class="block text-sm font-medium">Payment Method</label>
+                            <select id="payment-method" class="w-full border rounded-lg p-2 bg-white">
+                                <option value="cash">💵 Cash</option>
+                                <option value="card">💳 Card</option>
+                                <option value="transfer">🏦 Bank Transfer</option>
+                            </select>
+                        </div>
+                        <div><label class="block text-sm font-medium">Customer Name</label>
+                            <input id="customer-name" class="w-full border rounded-lg p-2" placeholder="Walk-in Customer"
+                            autocomplete="off">
+                        </div>
+                        <div><label class="block text-sm font-medium">Phone Number</label>
+                            <input id="customer-phone" class="w-full border rounded-lg p-2" placeholder="Optional"
+                            autocomplete="off">
+                        </div>
+                        <div><label class="block text-sm font-medium">Email</label>
+                            <input id="customer-email" type="email" class="w-full border rounded-lg p-2" placeholder="customer@example.com"
+                            autocomplete="off">
+                        </div>
                     </div>
-                    <div class="mt-2"><label class="block text-sm font-medium">Phone Number</label>
-                        <input id="customer-phone" class="w-full border rounded-lg p-2" placeholder="Optional"
-                        autocomplete="off">
-                    </div>
-                    <div class="mt-2"><label class="block text-sm font-medium">Email (for receipt/payment)</label>
-                        <input id="customer-email" type="email" class="w-full border rounded-lg p-2" placeholder="customer@example.com"
-                        autocomplete="off">
-                    </div>
-                    <button id="checkout-btn" class="mt-4 w-full bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-lg font-bold transition shadow-md">
+                    <button id="checkout-btn" class="mt-4 w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-bold transition shadow-md text-lg">
                         ✅ Complete Sale
                     </button>
                 </div>
             </div>
+
+            <!-- ========== PRODUCT CATALOG: RIGHT (SECONDARY) ========== -->
+            <div class="lg:col-span-1 bg-white rounded-xl shadow-md p-4 flex flex-col">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
+                    <h2 class="text-lg font-semibold">📦 Products</h2>
+                    <div class="relative w-full">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                        <input type="text" id="product-search" name="search" placeholder="Search SKU or name..."
+                        autocomplete="off"
+                        class="w-full pl-9 pr-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none">
+                        <div id="search-scanner-hint" class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-green-500 hidden"><i class="fa-solid fa-qrcode"></i></div>
+                    </div>
+                </div>
+                <div id="product-list" class="grid grid-cols-2 gap-2 max-h-[70vh] overflow-y-auto flex-1"></div>
+                <div id="product-list-empty" class="hidden text-center py-8 text-gray-400 col-span-full">No products match your search</div>
+                <div id="loading-more" class="hidden text-center py-4 text-gray-500 text-sm"><i class="fa-solid fa-spinner fa-pulse"></i> Loading more...</div>
+            </div>
+
         </div>
     </div>
 
@@ -435,7 +479,7 @@
         const loadingMoreDiv = document.getElementById('loading-more');
         let observer = null;
 
-        // ─── SCANNER DETECTION (does NOT block normal typing) ───
+        // ─── SCANNER DETECTION ───
         let scanBuffer = '';
         let scanTimer = null;
         let lastKeyTime = 0;
@@ -455,7 +499,7 @@
             setTimeout(() => toast.remove(), 3800);
         }
 
-        // ─── API (with abort support) ───
+        // ─── API ───
         async function apiCall(endpoint, method = 'GET', body = null, retry = true, signal = null) {
             const headers = { 'Content-Type': 'application/json' };
             if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -496,7 +540,7 @@
 
         function hideLoginModal() { document.getElementById('auth-modal').classList.add('hidden'); }
 
-        // ─── LOAD PRODUCTS (with abort, min 2 chars) ───
+        // ─── LOAD PRODUCTS ───
         async function loadPOSProducts(reset = true) {
             const trimmed = posSearchTerm.trim();
             if (trimmed.length < 2) {
@@ -542,7 +586,7 @@
 
                 appendProductCards(newItems);
                 posPage++;
-                return products; // return for auto‑add logic
+                return products;
             } catch (err) {
                 if (err.name === 'AbortError') return;
                 showToast('Failed to load products: ' + err.message, 'error');
@@ -579,12 +623,12 @@
                 const descSafe = escapeHtml(p.description || 'Unnamed product');
                 const card = document.createElement('button');
                 card.className =
-                    'product-card bg-gray-50 p-3 rounded-xl text-left hover:bg-blue-50 border border-gray-200 transition shadow-sm';
+                    'product-card bg-gray-50 rounded-lg text-left hover:bg-blue-50 border border-gray-200 transition shadow-sm flex flex-col';
                 card.innerHTML = `
-                        <div class="font-semibold text-gray-800">${descSafe}</div>
-                        <div class="text-xs text-gray-500 font-mono mt-0.5">📟 ${escapeHtml(skuDisplay)}</div>
-                        <div class="text-md font-bold text-blue-700 mt-1">₦${price.toLocaleString()}</div>
-                        <div class="text-xs text-gray-500 mt-1">📦 Stock: ${stock}</div>
+                        <span class="name">${descSafe}</span>
+                        <span class="sku">📟 ${escapeHtml(skuDisplay)}</span>
+                        <span class="price">₦${price.toLocaleString()}</span>
+                        <span class="stock">📦 ${stock} left</span>
                     `;
                 card.onclick = () => addToCart(p.id, p.description || 'Product', price, stock, skuDisplay);
                 productContainer.appendChild(card);
@@ -612,7 +656,7 @@
             observer.observe(sentinel);
         }
 
-        // ─── SEARCH INPUT (debounced, min 2 chars) ───
+        // ─── SEARCH INPUT ───
         searchInput.addEventListener('input', function(e) {
             if (isScanning) return;
             clearTimeout(searchDebounceTimer);
@@ -636,7 +680,7 @@
             }, 500);
         });
 
-        // ─── KEYDOWN: scanner detection ───
+        // ─── KEYDOWN: SCANNER ───
         searchInput.addEventListener('keydown', function(e) {
             const now = Date.now();
             const timeDiff = lastKeyTime ? now - lastKeyTime : 0;
@@ -660,7 +704,6 @@
                             if (scanBuffer.length >= 2) {
                                 if (abortController) abortController.abort();
                                 await loadPOSProducts(true);
-                                // Auto‑add if exactly one match
                                 if (products.length === 1) {
                                     const p = products[0];
                                     addToCart(p.id, p.description || 'Product', p.price_naira || 0, p
@@ -683,7 +726,6 @@
                     }, 150);
                     return;
                 }
-                // normal typing – reset scanner
                 if (isScanning) {
                     isScanning = false;
                     scanBuffer = '';
@@ -808,7 +850,7 @@
             }
         }
 
-        // ─── CART QUANTITY CONTROLS ───
+        // ─── CART CONTROLS ───
         window.updateCartItemQty = function(index, newQty) {
             const state = tabState[activeTab];
             const cart = state.cart;
@@ -823,7 +865,6 @@
             const state = tabState[activeTab];
             const cart = state.cart;
             if (index < 0 || index >= cart.length) return;
-            // Check stock
             const item = cart[index];
             const productRef = products.find(p => p.id === item.id);
             const availableStock = productRef ? (productRef.current_qty ?? 0) : 9999;
@@ -843,7 +884,6 @@
                 cart[index].qty--;
                 renderActiveCart();
             } else {
-                // Remove if quantity becomes 0
                 cart.splice(index, 1);
                 renderActiveCart();
             }
@@ -893,12 +933,12 @@
                 const itemTotal = item.price * item.qty;
                 subtotal += itemTotal;
                 cartHtml += `
-                        <div class="flex justify-between items-center border-b pb-2 hover:bg-gray-50 px-1 rounded">
+                        <div class="flex items-center justify-between border-b pb-2 hover:bg-gray-50 px-1 rounded gap-2">
                             <div class="flex-1 min-w-0">
-                                <div class="font-medium text-sm truncate">${escapeHtml(item.name)}</div>
-                                <div class="text-xs text-gray-500">₦${item.price.toLocaleString()} × </div>
+                                <div class="cart-item-name truncate">${escapeHtml(item.name)}</div>
+                                <div class="cart-item-price text-gray-500">₦${item.price.toLocaleString()}</div>
                             </div>
-                            <div class="flex items-center gap-1">
+                            <div class="flex items-center gap-1 flex-shrink-0">
                                 <button onclick="decrementCartItem(${idx})" class="qty-btn">−</button>
                                 <input type="number" min="1" value="${item.qty}" 
                                        class="qty-input" 
@@ -906,8 +946,8 @@
                                        onfocus="this.select()">
                                 <button onclick="incrementCartItem(${idx})" class="qty-btn">+</button>
                             </div>
-                            <div class="font-semibold text-sm ml-2 w-16 text-right">₦${itemTotal.toLocaleString()}</div>
-                            <button onclick="removeCartItem(${idx})" class="ml-2 text-red-500 hover:text-red-700 text-sm w-6 h-6 rounded-full hover:bg-red-50 flex items-center justify-center">
+                            <div class="font-semibold text-sm ml-1 w-16 text-right flex-shrink-0">₦${itemTotal.toLocaleString()}</div>
+                            <button onclick="removeCartItem(${idx})" class="text-red-500 hover:text-red-700 text-sm w-6 h-6 rounded-full hover:bg-red-50 flex items-center justify-center flex-shrink-0">
                                 <i class="fa-regular fa-trash-can"></i>
                             </button>
                         </div>
@@ -1230,7 +1270,6 @@
                     }
                     activeTab = 1;
                     syncUIWithActiveTab();
-                    // Keep product list empty initially
                     productContainer.innerHTML = '';
                     emptyMsgDiv.classList.add('hidden');
                 } catch (e) { token = null;
