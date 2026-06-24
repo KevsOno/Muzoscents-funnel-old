@@ -259,6 +259,7 @@
                 localStorage.removeItem('refresh_token');
                 localStorage.removeItem('user_role');
                 localStorage.removeItem('user_profile_display');
+                localStorage.removeItem('selected_org_id'); // clear this too
                 window.location.href = LOGIN_URL;
             }
 
@@ -367,7 +368,7 @@
                         </div>
                     </div>
 
-                    <!-- ====== CUSTOMER SEARCH MOVED HERE ====== -->
+                    <!-- ====== CUSTOMER SEARCH (moved below total) ====== -->
                     <div class="bg-blue-50 p-3 rounded-lg mt-3 space-y-2">
                         <div class="relative">
                             <input type="text" id="customer-search" placeholder="Search customer by name, phone or email"
@@ -844,27 +845,28 @@
             renderActiveCart();
         }
 
-        // ─── LOAD CUSTOMERS (FIXED) ───
+        // ─── LOAD CUSTOMERS (with fallback and logging) ───
         async function loadCustomers() {
             try {
                 // Try to get all members of the organisation
-                const data = await apiCall('/organisations/me/members');
-                allCustomers = data.members || data.users || [];
+                const data = await apiCall('/organisations/me/users');
+                console.log('📦 Raw response from /organisations/me/users:', data);
+                allCustomers = data.users || [];
+                console.log(`👥 Loaded ${allCustomers.length} customers`);
                 if (allCustomers.length === 0) {
-                    // Fallback: maybe the endpoint is different
-                    console.warn('No members found, trying /organisations/me/users');
-                    const fallback = await apiCall('/organisations/me/users');
-                    allCustomers = fallback.users || [];
+                    console.warn('No customers found, trying fallback endpoints');
+                    // Fallback: try different endpoints
+                    try {
+                        const fallbackData = await apiCall('/organisations/me/members');
+                        allCustomers = fallbackData.members || fallbackData.users || [];
+                        console.log(`👥 Fallback loaded ${allCustomers.length} customers`);
+                    } catch (e) {
+                        console.warn('Fallback failed:', e);
+                    }
                 }
             } catch (err) {
-                console.warn('Failed to load customers:', err);
-                // Final fallback: try the old endpoint
-                try {
-                    const fallback = await apiCall('/organisations/me/users');
-                    allCustomers = fallback.users || [];
-                } catch (e) {
-                    allCustomers = [];
-                }
+                console.error('Failed to load customers:', err);
+                allCustomers = [];
             }
         }
 
@@ -1201,7 +1203,7 @@
             });
         }
 
-        // ─── LOGIN ───
+        // ─── LOGIN (with selected_org_id removal) ───
         async function demoLogin() {
             const btn = document.getElementById('demo-login-btn');
             btn.disabled = true;
@@ -1216,6 +1218,8 @@
                 token = data.access_token;
                 localStorage.setItem('access_token', token);
                 localStorage.setItem('refresh_token', data.refresh_token);
+                // 🔥 CRITICAL: Clear any stale selected_org_id to ensure all members are shown
+                localStorage.removeItem('selected_org_id');
                 const me = await apiCall('/auth/me');
                 localStorage.setItem('user_role', me.role || 'customer');
                 await loadCustomers();
@@ -1248,6 +1252,8 @@
                 token = data.access_token;
                 localStorage.setItem('access_token', token);
                 localStorage.setItem('refresh_token', data.refresh_token);
+                // 🔥 CRITICAL: Clear any stale selected_org_id
+                localStorage.removeItem('selected_org_id');
                 const me = await apiCall('/auth/me');
                 localStorage.setItem('user_role', me.role || 'customer');
                 await loadCustomers();
