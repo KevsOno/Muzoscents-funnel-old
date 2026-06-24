@@ -175,6 +175,29 @@
             font-size: 0.6rem;
             color: #3b82f6;
         }
+
+        /* pagination */
+        .pagination-btn {
+            background: #1e293b;
+            border: 1px solid #334155;
+            color: #cbd5e1;
+            padding: 0.4rem 0.8rem;
+            border-radius: 0.5rem;
+            font-size: 0.85rem;
+            transition: all 0.15s;
+        }
+        .pagination-btn:hover:not(:disabled) {
+            background: #334155;
+            border-color: #475569;
+        }
+        .pagination-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .pagination-info {
+            font-size: 0.9rem;
+            color: #94a3b8;
+        }
     </style>
 </head>
 <body class="text-slate-200">
@@ -419,6 +442,17 @@
                     </div>
                     <div id="products-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         <div class="col-span-full text-center py-8 text-slate-400"><i class="fa-solid fa-spinner fa-pulse mr-2"></i> Loading...</div>
+                    </div>
+                    <!-- Pagination controls -->
+                    <div id="pagination-container" class="flex items-center justify-between mt-6 pt-4 border-t border-slate-700">
+                        <div class="pagination-info">
+                            Showing <span id="page-start">0</span>–<span id="page-end">0</span> of <span id="total-items">0</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button id="prev-page" class="pagination-btn" disabled><i class="fa-solid fa-chevron-left"></i></button>
+                            <span id="page-numbers" class="text-sm text-slate-400"></span>
+                            <button id="next-page" class="pagination-btn" disabled><i class="fa-solid fa-chevron-right"></i></button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -696,6 +730,8 @@
         let userOrganisations = [];
         let currentPage = 1;
         const PAGE_SIZE = 20;
+        let totalItems = 0;
+        let totalPages = 1;
 
         // ================================================================
         // UTILITIES
@@ -935,6 +971,7 @@
 
                 filterSelect.onchange = () => {
                     currentLocationFilter = filterSelect.value;
+                    currentPage = 1; // reset to first page
                     loadInventory();
                 };
 
@@ -1009,56 +1046,71 @@
         }
 
         // ================================================================
-        // INVENTORY MANAGEMENT
+        // PAGINATION HELPERS
         // ================================================================
-        async function loadInventory() {
+        function renderPagination() {
+            const container = document.getElementById('pagination-container');
+            if (!container) return;
+
+            const start = (currentPage - 1) * PAGE_SIZE + 1;
+            const end = Math.min(currentPage * PAGE_SIZE, totalItems);
+            document.getElementById('page-start').innerText = totalItems > 0 ? start : 0;
+            document.getElementById('page-end').innerText = end;
+            document.getElementById('total-items').innerText = totalItems;
+
+            const prevBtn = document.getElementById('prev-page');
+            const nextBtn = document.getElementById('next-page');
+            const pageNumbersSpan = document.getElementById('page-numbers');
+
+            prevBtn.disabled = currentPage <= 1;
+            nextBtn.disabled = currentPage >= totalPages;
+
+            // show page numbers e.g., "Page 3 of 5"
+            pageNumbersSpan.innerText = totalPages > 0 ? `Page ${currentPage} of ${totalPages}` : '';
+        }
+
+        function goToPage(page) {
+            if (page < 1 || page > totalPages) return;
+            currentPage = page;
+            loadInventory();
+        }
+
+        // ================================================================
+        // INVENTORY MANAGEMENT (PAGINATED)
+        // ================================================================
+        async function loadInventory(page = currentPage, limit = PAGE_SIZE) {
             if (!selectedOrganisation) return;
+            const offset = (page - 1) * limit;
+            let url = `/inventory/v2?limit=${limit}&offset=${offset}`;
+            if (currentLocationFilter) {
+                url += `&location_id=${currentLocationFilter}`;
+            }
+
             try {
-                const data = await apiCall('/inventory/v2');
-                let allItems = data.items || data || [];
-                console.log(`📊 Loaded ${allItems.length} products with location_stocks`);
+                const data = await apiCall(url);
+                const items = data.items || [];
+                totalItems = data.total || 0;
+                totalPages = Math.ceil(totalItems / limit) || 1;
 
-                if (currentLocationFilter && currentLocationFilter !== 'default') {
-                    allItems = allItems.filter(p => {
-                        if (p.location_stocks && p.location_stocks.length > 0) {
-                            return p.location_stocks.some(s => String(s.location_id) === String(currentLocationFilter));
-                        }
-                        if (p.location_id) {
-                            return String(p.location_id) === String(currentLocationFilter);
-                        }
-                        return false;
-                    });
-                    console.log(`🔍 Filtered ${allItems.length} products for location ${currentLocationFilter}`);
-                } else {
-                    console.log(`📊 Loaded ${allItems.length} products (all locations)`);
-                }
+                // update currentPage if it's out of range (e.g., if total decreased)
+                if (currentPage > totalPages) currentPage = totalPages;
 
-                products = allItems;
+                products = items;
                 renderProducts(products);
+                renderPagination();
             } catch (err) {
                 console.error('Error loading inventory:', err);
                 try {
+                    // fallback to non-paginated if v2 fails (but we still try to keep pagination)
                     const fallbackData = await apiCall('/inventory');
                     let allItems = fallbackData.items || fallbackData || [];
-                    if (currentLocationFilter && currentLocationFilter !== 'default') {
-                        const hasLocationStocks = allItems.some(p => p.location_stocks && p.location_stocks.length > 0);
-                        if (hasLocationStocks) {
-                            allItems = allItems.filter(p => {
-                                if (p.location_stocks && p.location_stocks.length > 0) {
-                                    return p.location_stocks.some(s => String(s.location_id) === String(
-                                    currentLocationFilter));
-                                }
-                                if (p.location_id) {
-                                    return String(p.location_id) === String(currentLocationFilter);
-                                }
-                                return false;
-                            });
-                        } else {
-                            console.warn('No location_stocks in fallback inventory, showing all products');
-                        }
-                    }
+                    // we can't paginate fallback reliably, so just show all
                     products = allItems;
                     renderProducts(products);
+                    totalItems = allItems.length;
+                    totalPages = 1;
+                    currentPage = 1;
+                    renderPagination();
                 } catch (fallbackErr) {
                     document.getElementById('products-grid').innerHTML =
                         `<div class="col-span-full text-center py-8 text-red-400">❌ ${escapeHtml(fallbackErr.message)}</div>`;
@@ -1262,6 +1314,7 @@
             try {
                 await apiCall(`/inventory/${id}`, { method: 'DELETE' });
                 showToast('Product deleted.', 'success');
+                // refresh current page
                 loadInventory();
                 loadDashboardMetrics();
             } catch (err) {
@@ -2178,6 +2231,17 @@
         }, { passive: true });
 
         // ================================================================
+        // PAGINATION EVENT LISTENERS
+        // ================================================================
+        document.getElementById('prev-page')?.addEventListener('click', function() {
+            if (currentPage > 1) goToPage(currentPage - 1);
+        });
+
+        document.getElementById('next-page')?.addEventListener('click', function() {
+            if (currentPage < totalPages) goToPage(currentPage + 1);
+        });
+
+        // ================================================================
         // INIT — redirect if not authenticated
         // ================================================================
         document.getElementById('confirm-org-btn')?.addEventListener('click', async function() {
@@ -2191,6 +2255,7 @@
             showToast(`Loading ${selectedOrganisation.name}...`, 'info');
 
             await loadLocations();
+            currentPage = 1;
             await loadInventory();
             await loadDashboardMetrics();
             await loadAlerts();
@@ -2229,7 +2294,10 @@
 
         document.getElementById('product-form')?.addEventListener('submit', saveProduct);
         document.getElementById('cancel-edit')?.addEventListener('click', resetForm);
-        document.getElementById('refresh-inventory')?.addEventListener('click', loadInventory);
+        document.getElementById('refresh-inventory')?.addEventListener('click', function() {
+            currentPage = 1;
+            loadInventory();
+        });
 
         document.getElementById('bulk-upload-btn')?.addEventListener('click', async function() {
             const fileInput = document.getElementById('bulk-csv-file');
@@ -2290,6 +2358,7 @@
                         document.getElementById('admin-panel').classList.remove('hidden');
 
                         await loadLocations();
+                        currentPage = 1;
                         await loadInventory();
                         await loadDashboardMetrics();
                         await loadAlerts();
