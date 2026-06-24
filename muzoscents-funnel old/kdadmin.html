@@ -614,7 +614,7 @@
                 <div><label class="block text-sm mb-1">From Location</label><select id="transfer-from" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select></div>
                 <div><label class="block text-sm mb-1">To Location</label><select id="transfer-to" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select></div>
                 <div><label class="block text-sm mb-1">Quantity</label><input id="transfer-qty" type="number" min="1" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2" /></div>
-                <div><label class="block text-sm mb-1">Reason</label><input id="transfer-reason" placeholder="Optional" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2" /></div>
+                <div><label class="block text-sm mb-1">Request Notes</label><input id="transfer-reason" placeholder="Optional notes" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2" /></div>
                 <div class="flex gap-3 mt-4"><button id="transfer-submit" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg">Transfer</button><button id="transfer-cancel" class="bg-slate-600 hover:bg-slate-500 px-4 py-2 rounded-lg">Cancel</button></div>
             </div>
         </div>
@@ -1641,7 +1641,7 @@
         });
 
         // ================================================================
-        // TRANSFER MODAL
+        // TRANSFER MODAL - UPDATED ENDPOINT
         // ================================================================
         function showTransferModal() {
             if (!allLocations || allLocations.length < 2) { showToast('Need at least 2 locations for transfer',
@@ -1658,19 +1658,25 @@
             const fromLoc = document.getElementById('transfer-from').value;
             const toLoc = document.getElementById('transfer-to').value;
             const qty = parseInt(document.getElementById('transfer-qty').value);
-            const reason = document.getElementById('transfer-reason').value;
+            const request_notes = document.getElementById('transfer-reason').value;
             if (!productId || !fromLoc || !toLoc || !qty || qty <= 0) { showToast('Please fill all fields',
                 'error'); return; }
             if (fromLoc === toLoc) { showToast('Source and destination cannot be the same', 'error'); return; }
             try {
-                await apiCall('/inventory/v2/transfer', {
+                const response = await apiCall('/stock-transfers/request', {
                     method: 'POST',
-                    body: JSON.stringify({ from_location_id: parseInt(fromLoc), to_location_id: parseInt(toLoc),
-                        inventory_id: parseInt(productId), quantity: qty, reason: reason || null })
+                    body: JSON.stringify({
+                        from_location_id: parseInt(fromLoc),
+                        to_location_id: parseInt(toLoc),
+                        inventory_id: parseInt(productId),
+                        quantity: qty,
+                        request_notes: request_notes || null
+                    })
                 });
-                showToast('Stock transferred!', 'success');
+                showToast('Transfer request created!', 'success');
                 document.getElementById('transfer-modal').classList.add('hidden');
                 loadInventory();
+                loadTransferSuggestions();
             } catch (err) {
                 showToast(`Failed: ${err.message}`, 'error');
             }
