@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Kevs POS Pro | Multi‑Tab · SKU Search · Loyalty Points</title>
+    <title>Kevs POS Pro | Multi‑Tab · SKU Search · Scanner Ready</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
@@ -20,7 +20,6 @@
         .transition-smooth { transition: all 0.2s ease; }
         .customer-suggestion { cursor: pointer; transition: background 0.1s; }
         .customer-suggestion:hover { background-color: #e0f2fe; }
-        /* ── HIDDEN DUMMY FIELD ── */
         .dummy-autofill {
             position: absolute;
             left: -9999px;
@@ -31,10 +30,26 @@
             opacity: 0;
             pointer-events: none;
         }
-        /* ── READONLY fields will look normal ── */
         input[readonly] {
             background-color: white;
             cursor: text;
+        }
+        /* Scanner‑ready highlight */
+        #product-search.scanner-active {
+            border-color: #22c55e;
+            box-shadow: 0 0 0 3px #22c55e40;
+        }
+        /* Infinite scroll sentinel */
+        #scroll-sentinel {
+            height: 4px;
+            width: 100%;
+            background: transparent;
+        }
+        .loading-more {
+            text-align: center;
+            padding: 12px;
+            color: #6b7280;
+            font-size: 0.9rem;
         }
     </style>
 </head>
@@ -185,7 +200,7 @@
         <div class="bg-white rounded-xl shadow-md p-4 mb-4 flex flex-wrap justify-between items-center gap-3">
             <div>
                 <h1 class="text-2xl font-bold">💳 Kevs POS Terminal</h1>
-                <p class="text-xs text-gray-500">Multi‑Tab | SKU Search | Loyalty Points & Discount</p>
+                <p class="text-xs text-gray-500">Multi‑Tab | SKU Search | Scanner Ready | Loyalty Points & Discount</p>
             </div>
         </div>
 
@@ -205,15 +220,15 @@
                     <h2 class="text-xl font-semibold">📦 Product Catalog</h2>
                     <div class="relative w-full sm:w-64">
                         <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-                        <!-- 🔥 FIX: readonly + autocomplete="off" + remove readonly on focus -->
-                        <input type="text" id="product-search" name="search" placeholder="Search by SKU, name or ID" 
-                               autocomplete="off" readonly
-                               onfocus="this.removeAttribute('readonly')" 
+                        <input type="text" id="product-search" name="search" placeholder="Search by SKU, name or ID (scan barcode)" 
+                               autocomplete="off" 
                                class="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none">
+                        <div id="search-scanner-hint" class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-green-500 hidden"><i class="fa-solid fa-qrcode"></i></div>
                     </div>
                 </div>
-                <div id="product-list" class="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[500px] overflow-y-auto"></div>
+                <div id="product-list" class="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[500px] overflow-y-auto relative"></div>
                 <div id="product-list-empty" class="hidden text-center py-8 text-gray-400 col-span-full">No products match your search</div>
+                <div id="loading-more" class="hidden text-center py-4 text-gray-500 text-sm"><i class="fa-solid fa-spinner fa-pulse"></i> Loading more products...</div>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-4 flex flex-col">
@@ -226,8 +241,7 @@
                 <div class="bg-blue-50 p-3 rounded-lg mb-3 space-y-2">
                     <div class="relative">
                         <input type="text" id="customer-search" placeholder="Search by name, phone or email" 
-                               autocomplete="off" readonly
-                               onfocus="this.removeAttribute('readonly')"
+                               autocomplete="off"
                                class="w-full border rounded-lg p-2 text-sm pr-8">
                         <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
                         <div id="customer-suggestions" class="absolute z-10 left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto hidden"></div>
@@ -240,8 +254,7 @@
                         <label class="text-xs font-medium">Redeem points (1 pt = ₦1)</label>
                         <div class="flex gap-2 mt-1">
                             <input type="number" id="redeem-points-input" min="1" 
-                                   autocomplete="off" readonly
-                                   onfocus="this.removeAttribute('readonly')"
+                                   autocomplete="off"
                                    class="w-full border rounded-lg p-1 text-sm" placeholder="Points to use">
                             <button id="apply-points-btn" class="bg-emerald-600 text-white px-3 py-1 rounded-lg text-sm hover:bg-emerald-700">Apply</button>
                         </div>
@@ -260,18 +273,15 @@
                     </div>
                     <div class="mt-3"><label class="block text-sm font-medium">Customer Name</label>
                         <input id="customer-name" class="w-full border rounded-lg p-2" placeholder="Walk-in Customer" 
-                               autocomplete="off" readonly
-                               onfocus="this.removeAttribute('readonly')">
+                               autocomplete="off">
                     </div>
                     <div class="mt-2"><label class="block text-sm font-medium">Phone Number</label>
                         <input id="customer-phone" class="w-full border rounded-lg p-2" placeholder="Optional" 
-                               autocomplete="off" readonly
-                               onfocus="this.removeAttribute('readonly')">
+                               autocomplete="off">
                     </div>
                     <div class="mt-2"><label class="block text-sm font-medium">Email (for receipt/payment)</label>
                         <input id="customer-email" type="email" class="w-full border rounded-lg p-2" placeholder="customer@example.com" 
-                               autocomplete="off" readonly
-                               onfocus="this.removeAttribute('readonly')">
+                               autocomplete="off">
                     </div>
                     <button id="checkout-btn" class="mt-4 w-full bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-lg font-bold transition shadow-md">
                         ✅ Complete Sale
@@ -304,7 +314,12 @@
         let token = localStorage.getItem('access_token');
         let products = [];
         let allCustomers = [];
-        let searchTerm = '';
+        let posSearchTerm = '';
+        let posPage = 1;
+        const POS_PAGE_SIZE = 200;
+        let posTotalItems = 0;
+        let posIsLoading = false;
+        let posHasMore = true;
         let activeTab = 1;
         const tabState = {
             1: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 },
@@ -333,16 +348,83 @@
         const pointsRedeemSection = document.getElementById('points-redeem-section');
         const redeemPointsInput = document.getElementById('redeem-points-input');
         const applyPointsBtn = document.getElementById('apply-points-btn');
+        const scannerHint = document.getElementById('search-scanner-hint');
+        const loadingMoreDiv = document.getElementById('loading-more');
+        let observer = null;
 
+        // ─── SCANNER DETECTION ───
+        let scanTimer = null;
+        let scanBuffer = '';
+
+        function handleScannerInput(char) {
+            if (scanTimer) clearTimeout(scanTimer);
+            scanBuffer += char;
+            searchInput.classList.add('scanner-active');
+            scannerHint.classList.remove('hidden');
+            scanTimer = setTimeout(() => {
+                searchInput.classList.remove('scanner-active');
+                scannerHint.classList.add('hidden');
+                if (scanBuffer.trim().length > 0) {
+                    searchInput.value = scanBuffer;
+                    posSearchTerm = scanBuffer;
+                    // Reset pagination and load first page with this search
+                    loadPOSProducts(true);
+                    // Auto‑add if exactly one match after loading
+                    // We'll handle this in the callback of loadPOSProducts? We'll check after load.
+                    // For simplicity, we'll just trigger search and rely on user to click.
+                }
+                scanBuffer = '';
+                scanTimer = null;
+            }, 50);
+        }
+
+        // Modified: allow scanner input, but also support normal typing
+        searchInput.addEventListener('keydown', function(e) {
+            if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                e.preventDefault();
+                handleScannerInput(e.key);
+            } else if (e.key === 'Enter') {
+                if (scanBuffer.length > 0) {
+                    e.preventDefault();
+                    if (scanTimer) {
+                        clearTimeout(scanTimer);
+                        scanTimer = null;
+                    }
+                    searchInput.classList.remove('scanner-active');
+                    scannerHint.classList.add('hidden');
+                    searchInput.value = scanBuffer;
+                    posSearchTerm = scanBuffer;
+                    loadPOSProducts(true);
+                    scanBuffer = '';
+                } else {
+                    // Normal enter: just load search
+                    posSearchTerm = searchInput.value;
+                    loadPOSProducts(true);
+                }
+            }
+        });
+
+        // Also allow typing normally (when scanner not active)
+        searchInput.addEventListener('input', function(e) {
+            if (!scanTimer) {
+                posSearchTerm = this.value;
+                // Reset pagination and load first page
+                loadPOSProducts(true);
+            }
+        });
+
+        // ─── TOAST ───
         function showToast(msg, type = 'success') {
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
-            toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} mb-2 text-sm flex items-center gap-2`;
-            toast.innerHTML = `<i class="fa-solid ${type === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation'}"></i> ${msg}`;
+            toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : type === 'error' ? 'bg-red-600' : 'bg-blue-600'} mb-2 text-sm flex items-center gap-2`;
+            const icon = type === 'success' ? 'fa-circle-check' : type === 'error' ? 'fa-circle-exclamation' : 'fa-info-circle';
+            toast.innerHTML = `<i class="fa-solid ${icon}"></i> ${msg}`;
             container.appendChild(toast);
             setTimeout(() => toast.remove(), 3800);
         }
 
+        // ─── API ───
         async function apiCall(endpoint, method = 'GET', body = null, retry = true) {
             const headers = { 'Content-Type': 'application/json' };
             if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -384,28 +466,117 @@
         function showLoginModal() { document.getElementById('auth-modal').classList.remove('hidden'); }
         function hideLoginModal() { document.getElementById('auth-modal').classList.add('hidden'); }
 
-        async function loadProducts() {
+        // ─── LOAD PRODUCTS WITH SERVER PAGINATION ───
+        async function loadPOSProducts(reset = true) {
+            if (reset) {
+                posPage = 1;
+                posTotalItems = 0;
+                posHasMore = true;
+                products = [];
+                productContainer.innerHTML = '';
+                emptyMsgDiv.classList.add('hidden');
+                // Remove any existing sentinel
+                const oldSentinel = document.getElementById('scroll-sentinel');
+                if (oldSentinel) oldSentinel.remove();
+                if (observer) observer.disconnect();
+            }
+            if (posIsLoading || !posHasMore) return;
+            posIsLoading = true;
+            loadingMoreDiv.classList.remove('hidden');
+
+            const offset = (posPage - 1) * POS_PAGE_SIZE;
+            let url = `/inventory/pos?limit=${POS_PAGE_SIZE}&offset=${offset}`;
+            if (posSearchTerm.trim()) {
+                url += `&q=${encodeURIComponent(posSearchTerm.trim())}`;
+            }
+
             try {
-                const data = await apiCall('/inventory');
-                products = data;
-                renderProductGrid();
+                const data = await apiCall(url);
+                const newItems = data.items || [];
+                posTotalItems = data.total || 0;
+                posHasMore = (posPage * POS_PAGE_SIZE) < posTotalItems;
+
+                if (reset) {
+                    products = newItems;
+                } else {
+                    products = products.concat(newItems);
+                }
+
+                // Append cards
+                appendProductCards(newItems);
+                posPage++;
             } catch (err) {
                 showToast('Failed to load products: ' + err.message, 'error');
-                products = [];
-                renderProductGrid();
+            } finally {
+                posIsLoading = false;
+                loadingMoreDiv.classList.add('hidden');
+                // Reattach sentinel if we have more
+                if (posHasMore) {
+                    const sentinel = document.createElement('div');
+                    sentinel.id = 'scroll-sentinel';
+                    sentinel.className = 'h-4 w-full';
+                    productContainer.appendChild(sentinel);
+                    observeSentinel();
+                } else {
+                    // No more, show end message
+                    if (products.length > 0) {
+                        const endMsg = document.createElement('div');
+                        endMsg.className = 'col-span-full text-center py-4 text-gray-400 text-sm';
+                        endMsg.innerText = '— End of catalog —';
+                        productContainer.appendChild(endMsg);
+                    }
+                }
             }
         }
 
-        async function loadCustomers() {
-            try {
-                const data = await apiCall('/organisations/me/users');
-                allCustomers = data.users || [];
-            } catch (err) {
-                console.warn('Failed to load customers:', err);
-                allCustomers = [];
+        function appendProductCards(items) {
+            if (!items || items.length === 0) {
+                if (products.length === 0) {
+                    emptyMsgDiv.classList.remove('hidden');
+                }
+                return;
             }
+            emptyMsgDiv.classList.add('hidden');
+            items.forEach(p => {
+                const skuDisplay = getDisplaySku(p);
+                const stock = p.current_qty ?? 0;
+                const price = p.price_naira ?? 0;
+                const descSafe = escapeHtml(p.description || 'Unnamed product');
+                const card = document.createElement('button');
+                card.className = 'product-card bg-gray-50 p-3 rounded-xl text-left hover:bg-blue-50 border border-gray-200 transition shadow-sm';
+                card.innerHTML = `
+                    <div class="font-semibold text-gray-800">${descSafe}</div>
+                    <div class="text-xs text-gray-500 font-mono mt-0.5">📟 ${escapeHtml(skuDisplay)}</div>
+                    <div class="text-md font-bold text-blue-700 mt-1">₦${price.toLocaleString()}</div>
+                    <div class="text-xs text-gray-500 mt-1">📦 Stock: ${stock}</div>
+                `;
+                card.onclick = () => addToCart(p.id, p.description || 'Product', price, stock, skuDisplay);
+                productContainer.appendChild(card);
+            });
         }
 
+        function getDisplaySku(product) {
+            if (product.sku) return product.sku;
+            if (product.sku_code) return product.sku_code;
+            return `ID:${product.id}`;
+        }
+
+        function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;'); }
+
+        // ─── INFINITE SCROLL OBSERVER ───
+        function observeSentinel() {
+            if (observer) observer.disconnect();
+            const sentinel = document.getElementById('scroll-sentinel');
+            if (!sentinel) return;
+            observer = new IntersectionObserver((entries) => {
+                if (entries[0].isIntersecting && posHasMore && !posIsLoading) {
+                    loadPOSProducts(false);
+                }
+            }, { root: null, rootMargin: '0px 0px 100px 0px' });
+            observer.observe(sentinel);
+        }
+
+        // ─── CUSTOMER SEARCH ───
         function filterCustomers(searchText) {
             if (!searchText.trim()) return [];
             const term = searchText.trim().toLowerCase();
@@ -478,53 +649,18 @@
             renderActiveCart();
         }
 
-        function getDisplaySku(product) {
-            if (product.sku) return product.sku;
-            if (product.sku_code) return product.sku_code;
-            return `ID:${product.id}`;
-        }
-
-        function filterProducts() {
-            if (!searchTerm.trim()) return products;
-            const term = searchTerm.trim().toLowerCase();
-            return products.filter(p => {
-                const skuRaw = getDisplaySku(p).toLowerCase();
-                const desc = (p.description || '').toLowerCase();
-                const idMatch = p.id.toString().includes(term);
-                return skuRaw.includes(term) || desc.includes(term) || idMatch;
-            });
-        }
-
-        function renderProductGrid() {
-            const filtered = filterProducts();
-            if (!productContainer) return;
-            if (filtered.length === 0) {
-                productContainer.innerHTML = '';
-                emptyMsgDiv.classList.remove('hidden');
-                return;
+        // ─── LOAD CUSTOMERS ───
+        async function loadCustomers() {
+            try {
+                const data = await apiCall('/organisations/me/users');
+                allCustomers = data.users || [];
+            } catch (err) {
+                console.warn('Failed to load customers:', err);
+                allCustomers = [];
             }
-            emptyMsgDiv.classList.add('hidden');
-            productContainer.innerHTML = '';
-            filtered.forEach(p => {
-                const skuDisplay = getDisplaySku(p);
-                const stock = p.current_qty ?? 0;
-                const price = p.price_naira ?? 0;
-                const descSafe = escapeHtml(p.description || 'Unnamed product');
-                const card = document.createElement('button');
-                card.className = 'product-card bg-gray-50 p-3 rounded-xl text-left hover:bg-blue-50 border border-gray-200 transition shadow-sm';
-                card.innerHTML = `
-                    <div class="font-semibold text-gray-800">${descSafe}</div>
-                    <div class="text-xs text-gray-500 font-mono mt-0.5">📟 ${escapeHtml(skuDisplay)}</div>
-                    <div class="text-md font-bold text-blue-700 mt-1">₦${price.toLocaleString()}</div>
-                    <div class="text-xs text-gray-500 mt-1">📦 Stock: ${stock}</div>
-                `;
-                card.onclick = () => addToCart(p.id, p.description || 'Product', price, stock, skuDisplay);
-                productContainer.appendChild(card);
-            });
         }
 
-        function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;'); }
-
+        // ─── TAB & CART SYNC ───
         function syncUIWithActiveTab() {
             const state = tabState[activeTab];
             renderActiveCart();
@@ -636,12 +772,12 @@
 
         function bindFieldEvents() {
             paymentMethodSelect.onchange = () => { tabState[activeTab].paymentMethod = paymentMethodSelect.value; };
-            // For readonly fields, we must also update state on input after focus (readonly removed)
             customerNameInput.addEventListener('input', () => { tabState[activeTab].customerName = customerNameInput.value; });
             customerPhoneInput.addEventListener('input', () => { tabState[activeTab].customerPhone = customerPhoneInput.value; });
             customerEmailInput.addEventListener('input', () => { tabState[activeTab].customerEmail = customerEmailInput.value; });
         }
 
+        // ─── LOYALTY POINTS ───
         async function applyPoints() {
             const state = tabState[activeTab];
             if (!state.loyaltyUserId) {
@@ -670,6 +806,7 @@
             }
         }
 
+        // ─── CHECKOUT ───
         async function processCheckout() {
             const state = tabState[activeTab];
             const cart = state.cart;
@@ -710,7 +847,8 @@
                         if (updated) state.pointsBalance = updated.loyalty_points || 0;
                     }
                     syncUIWithActiveTab();
-                    await loadProducts();
+                    // Reload product list to update stock counts
+                    loadPOSProducts(true);
                 } else {
                     const result = await apiCall('/pos/checkout', 'POST', {
                         items: itemsPayload,
@@ -737,6 +875,7 @@
             }
         }
 
+        // ─── PAYMENT RETURN ───
         async function checkPaymentReturn() {
             const urlParams = new URLSearchParams(window.location.search);
             const paymentSuccess = urlParams.get('payment') === 'success';
@@ -749,7 +888,6 @@
                     tabState[pendingTab].pointsRedeemed = 0;
                     if (activeTab === pendingTab) renderActiveCart();
                     showToast(`🎉 Payment successful! Order confirmed.`, 'success');
-                    await loadProducts();
                     await loadCustomers();
                     const state = tabState[pendingTab];
                     if (state.loyaltyUserId) {
@@ -757,6 +895,8 @@
                         if (updated) state.pointsBalance = updated.loyalty_points || 0;
                         if (activeTab === pendingTab) syncUIWithActiveTab();
                     }
+                    // Reload product list to update stock counts
+                    loadPOSProducts(true);
                 }
                 localStorage.removeItem('pending_payment');
                 localStorage.removeItem('pending_payment_tab');
@@ -766,6 +906,7 @@
             }
         }
 
+        // ─── TABS ───
         function setActiveTab(tabId) {
             if (tabId === activeTab) return;
             tabState[activeTab].paymentMethod = paymentMethodSelect.value;
@@ -774,7 +915,7 @@
             tabState[activeTab].customerEmail = customerEmailInput.value;
             activeTab = tabId;
             syncUIWithActiveTab();
-            renderProductGrid();
+            // No need to reload products on tab switch
             customerSearchInput.value = '';
             suggestionsDiv.classList.add('hidden');
         }
@@ -784,14 +925,9 @@
             tab2Btn.onclick = () => setActiveTab(2);
         }
 
-        function initSearch() {
-            searchInput.addEventListener('input', (e) => { 
-                // If field is readonly, user can't type, but they will have focused and removed readonly.
-                // The readonly is removed on focus, so input event will work after that.
-                searchTerm = e.target.value; 
-                renderProductGrid(); 
-            });
-            customerSearchInput.addEventListener('input', () => renderSuggestions());
+        // ─── CUSTOMER SEARCH INPUT ───
+        function initCustomerSearch() {
+            customerSearchInput.addEventListener('input', renderSuggestions);
             document.addEventListener('click', (e) => {
                 if (!customerSearchInput.contains(e.target) && !suggestionsDiv.contains(e.target)) {
                     suggestionsDiv.classList.add('hidden');
@@ -799,6 +935,7 @@
             });
         }
 
+        // ─── LOGIN ───
         async function demoLogin() {
             const btn = document.getElementById('demo-login-btn');
             btn.disabled = true;
@@ -815,15 +952,15 @@
                 localStorage.setItem('refresh_token', data.refresh_token);
                 const me = await apiCall('/auth/me');
                 localStorage.setItem('user_role', me.role || 'customer');
-                await loadProducts();
                 await loadCustomers();
                 hideLoginModal();
                 tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
                 tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
                 activeTab = 1;
                 syncUIWithActiveTab();
+                // Load products with pagination
+                await loadPOSProducts(true);
                 showToast('Demo login — Multi‑Tab & Tenant scope ready', 'success');
-                location.reload();
             } catch (err) { showToast(err.message, 'error'); } finally { btn.disabled = false; }
         }
 
@@ -844,15 +981,14 @@
                 localStorage.setItem('refresh_token', data.refresh_token);
                 const me = await apiCall('/auth/me');
                 localStorage.setItem('user_role', me.role || 'customer');
-                await loadProducts();
                 await loadCustomers();
                 hideLoginModal();
                 tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
                 tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
                 activeTab = 1;
                 syncUIWithActiveTab();
+                await loadPOSProducts(true);
                 showToast('Login successful', 'success');
-                location.reload();
             } catch (err) { showToast(err.message, 'error'); }
         }
 
@@ -861,49 +997,15 @@
         document.getElementById('modal-login-btn')?.addEventListener('click', handleLogin);
         document.getElementById('demo-login-btn')?.addEventListener('click', demoLogin);
         document.getElementById('close-modal-btn')?.addEventListener('click', hideLoginModal);
-        
-        // ─── CLEAR SEARCH AND REMOVE READONLY ON LOAD ───
-        (function clearAndEnableSearch() {
-            const searchField = document.getElementById('product-search');
-            if (searchField) {
-                searchField.value = '';
-                // Remove readonly to allow typing after page load (but keep readonly until focus)
-                // We'll keep readonly initially; user will click to remove it.
-                // But some users may want to start typing immediately; we can remove readonly on load.
-                // However, keeping readonly ensures no autofill. We'll leave it and rely on onfocus.
-                // Alternatively, remove readonly after a timeout.
-                setTimeout(() => {
-                    // Remove readonly after 500ms so browser autofill can't fill it.
-                    searchField.removeAttribute('readonly');
-                }, 500);
-                localStorage.removeItem('productSearchQuery');
-            }
-            // Also for customer search
-            const custSearch = document.getElementById('customer-search');
-            if (custSearch) {
-                setTimeout(() => {
-                    custSearch.removeAttribute('readonly');
-                }, 500);
-            }
-            // And other fields
-            ['customer-name', 'customer-phone', 'customer-email', 'redeem-points-input'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) {
-                    setTimeout(() => {
-                        el.removeAttribute('readonly');
-                    }, 500);
-                }
-            });
-        })();
 
+        // ─── INIT ───
         (async () => {
             initTabs();
-            initSearch();
+            initCustomerSearch();
             bindFieldEvents();
             await checkPaymentReturn();
             if (token) {
                 try {
-                    await loadProducts();
                     await loadCustomers();
                     if (!tabState[1].cart.length && !tabState[2].cart.length) {
                         tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
@@ -911,6 +1013,7 @@
                     }
                     activeTab = 1;
                     syncUIWithActiveTab();
+                    await loadPOSProducts(true);
                 } catch (e) { token = null; showLoginModal(); }
             } else { showLoginModal(); }
         })();
