@@ -81,12 +81,10 @@
             background-color: white;
             cursor: text;
         }
-        /* Scanner‑ready highlight */
         #product-search.scanner-active {
             border-color: #22c55e;
             box-shadow: 0 0 0 3px #22c55e40;
         }
-        /* Infinite scroll sentinel */
         #scroll-sentinel {
             height: 4px;
             width: 100%;
@@ -376,6 +374,8 @@
         let posIsLoading = false;
         let posHasMore = true;
         let activeTab = 1;
+        let abortController = null; // for cancelling requests
+
         const tabState = {
             1: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '',
             loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 },
@@ -409,23 +409,39 @@
         const loadingMoreDiv = document.getElementById('loading-more');
         let observer = null;
 
-        // ─── FIXED SCANNER DETECTION (does NOT block normal typing) ───
+        // ─── SCANNER DETECTION (does NOT block normal typing) ───
         let scanBuffer = '';
         let scanTimer = null;
         let lastKeyTime = 0;
         let isScanning = false;
         let searchDebounceTimer = null;
 
-        // 1. Normal typing → debounced search
+        // 1. Normal typing → debounced search (min 2 chars)
         searchInput.addEventListener('input', function(e) {
-            // Ignore if scanner is active (it sets value programmatically)
-            if (isScanning) return;
+            if (isScanning) return; // ignore programmatic changes from scanner
             clearTimeout(searchDebounceTimer);
             const val = this.value.trim();
             searchDebounceTimer = setTimeout(() => {
                 posSearchTerm = val;
-                loadPOSProducts(true);
-            }, 350);
+                // Only load if term length >= 2 or empty (to reset list)
+                if (val.length === 0) {
+                    // Clear the product list and stop loading
+                    products = [];
+                    productContainer.innerHTML = '';
+                    emptyMsgDiv.classList.add('hidden');
+                    // Also reset pagination
+                    posPage = 1;
+                    posHasMore = true;
+                    posTotalItems = 0;
+                    // Cancel any ongoing request
+                    if (abortController) abortController.abort();
+                    return;
+                }
+                if (val.length >= 2) {
+                    if (abortController) abortController.abort();
+                    loadPOSProducts(true);
+                }
+            }, 500);
         });
 
         // 2. Keydown: detect scanner but do NOT block normal keys
@@ -434,9 +450,7 @@
             const timeDiff = lastKeyTime ? now - lastKeyTime : 0;
             lastKeyTime = now;
 
-            // Single character key
             if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                // Fast consecutive keys (< 60ms) → scanner
                 if (timeDiff < 60 && timeDiff > 0) {
                     e.preventDefault(); // only block for scanner
                     if (!isScanning) {
@@ -448,12 +462,18 @@
                     scanBuffer += e.key;
                     clearTimeout(scanTimer);
                     scanTimer = setTimeout(() => {
-                        // Scanner paused – process full barcode
                         if (scanBuffer.length > 0) {
                             searchInput.value = scanBuffer;
                             posSearchTerm = scanBuffer;
-                            loadPOSProducts(true);
-                            // Auto‑add if exactly one match (handled in load)
+                            if (scanBuffer.length >= 2) {
+                                if (abortController) abortController.abort();
+                                loadPOSProducts(true);
+                            } else {
+                                // Clear if too short
+                                products = [];
+                                productContainer.innerHTML = '';
+                                emptyMsgDiv.classList.add('hidden');
+                            }
                         }
                         isScanning = false;
                         scanBuffer = '';
@@ -462,8 +482,7 @@
                     }, 150);
                     return;
                 }
-                // Normal typing: let the key through (do NOT prevent default)
-                // Reset scanner state if it was active
+                // Normal typing: let the key through; reset scanner if needed
                 if (isScanning) {
                     isScanning = false;
                     scanBuffer = '';
@@ -473,7 +492,6 @@
                 }
                 // Do NOT prevent default – character will be typed normally
             } else {
-                // Non‑character key – reset scanner if active
                 if (isScanning) {
                     isScanning = false;
                     scanBuffer = '';
@@ -484,9 +502,15 @@
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     const val = searchInput.value.trim();
-                    if (val) {
+                    if (val.length >= 2) {
                         posSearchTerm = val;
+                        if (abortController) abortController.abort();
                         loadPOSProducts(true);
+                    } else {
+                        // Clear
+                        products = [];
+                        productContainer.innerHTML = '';
+                        emptyMsgDiv.classList.add('hidden');
                     }
                 }
             }
@@ -505,17 +529,15 @@
             setTimeout(() => toast.remove(), 3800);
         }
 
-        // ─── API ───
-        async function apiCall(endpoint, method = 'GET', body = null, retry = true) {
+        // ─── API (with abort support) ───
+        async function apiCall(endpoint, method = 'GET', body = null, retry = true, signal = null) {
             const headers = { 'Content-Type': 'application/json' };
             if (token) headers['Authorization'] = `Bearer ${token}`;
             const selectedOrgId = localStorage.getItem('selected_org_id');
             if (selectedOrgId) headers['X-Selected-Org-Id'] = selectedOrgId;
-            let res = await fetch(`${BACKEND}${endpoint}`, {
-                method,
-                headers,
-                body: body ? JSON.stringify(body) : undefined
-            });
+            const options = { method, headers, signal };
+            if (body) options.body = JSON.stringify(body);
+            let res = await fetch(`${BACKEND}${endpoint}`, options);
             if (res.status === 401 && retry) {
                 const refresh = localStorage.getItem('refresh_token');
                 if (refresh) {
@@ -530,7 +552,7 @@
                             localStorage.setItem('access_token', access_token);
                             localStorage.setItem('refresh_token', refresh_token);
                             token = access_token;
-                            return apiCall(endpoint, method, body, false);
+                            return apiCall(endpoint, method, body, false, signal);
                         }
                     } catch (e) {}
                 }
@@ -550,6 +572,22 @@
 
         // ─── LOAD PRODUCTS WITH SERVER PAGINATION ───
         async function loadPOSProducts(reset = true) {
+            const trimmed = posSearchTerm.trim();
+            // Do not load if search term is empty or less than 2 chars
+            if (trimmed.length < 2) {
+                // Clear the list
+                products = [];
+                productContainer.innerHTML = '';
+                emptyMsgDiv.classList.add('hidden');
+                posPage = 1;
+                posHasMore = true;
+                posTotalItems = 0;
+                if (observer) observer.disconnect();
+                // Cancel any pending request
+                if (abortController) abortController.abort();
+                return;
+            }
+
             if (reset) {
                 posPage = 1;
                 posTotalItems = 0;
@@ -560,6 +598,9 @@
                 const oldSentinel = document.getElementById('scroll-sentinel');
                 if (oldSentinel) oldSentinel.remove();
                 if (observer) observer.disconnect();
+                // Cancel any pending request
+                if (abortController) abortController.abort();
+                abortController = new AbortController();
             }
             if (posIsLoading || !posHasMore) return;
             posIsLoading = true;
@@ -567,12 +608,11 @@
 
             const offset = (posPage - 1) * POS_PAGE_SIZE;
             let url = `/inventory/pos?limit=${POS_PAGE_SIZE}&offset=${offset}`;
-            if (posSearchTerm.trim()) {
-                url += `&q=${encodeURIComponent(posSearchTerm.trim())}`;
-            }
+            // Already ensured trimmed length >= 2
+            url += `&q=${encodeURIComponent(trimmed)}`;
 
             try {
-                const data = await apiCall(url);
+                const data = await apiCall(url, 'GET', null, true, abortController.signal);
                 const newItems = data.items || [];
                 posTotalItems = data.total || 0;
                 posHasMore = (posPage * POS_PAGE_SIZE) < posTotalItems;
@@ -586,6 +626,10 @@
                 appendProductCards(newItems);
                 posPage++;
             } catch (err) {
+                if (err.name === 'AbortError') {
+                    // Request was cancelled, ignore
+                    return;
+                }
                 showToast('Failed to load products: ' + err.message, 'error');
             } finally {
                 posIsLoading = false;
@@ -928,7 +972,14 @@
                         if (updated) state.pointsBalance = updated.loyalty_points || 0;
                     }
                     syncUIWithActiveTab();
-                    loadPOSProducts(true);
+                    // Reload product list to update stock counts – but only if search term >=2
+                    const trimmed = posSearchTerm.trim();
+                    if (trimmed.length >= 2) loadPOSProducts(true);
+                    else {
+                        products = [];
+                        productContainer.innerHTML = '';
+                        emptyMsgDiv.classList.add('hidden');
+                    }
                 } else {
                     const result = await apiCall('/pos/checkout', 'POST', {
                         items: itemsPayload,
@@ -975,7 +1026,14 @@
                         if (updated) state.pointsBalance = updated.loyalty_points || 0;
                         if (activeTab === pendingTab) syncUIWithActiveTab();
                     }
-                    loadPOSProducts(true);
+                    // Reload product list only if search term >=2
+                    const trimmed = posSearchTerm.trim();
+                    if (trimmed.length >= 2) loadPOSProducts(true);
+                    else {
+                        products = [];
+                        productContainer.innerHTML = '';
+                        emptyMsgDiv.classList.add('hidden');
+                    }
                 }
                 localStorage.removeItem('pending_payment');
                 localStorage.removeItem('pending_payment_tab');
@@ -1038,7 +1096,11 @@
                     loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
                 activeTab = 1;
                 syncUIWithActiveTab();
-                await loadPOSProducts(true);
+                // Do NOT preload products – wait for user search
+                // Ensure product list is empty
+                products = [];
+                productContainer.innerHTML = '';
+                emptyMsgDiv.classList.add('hidden');
                 showToast('Demo login — Multi‑Tab & Tenant scope ready', 'success');
             } catch (err) { showToast(err.message, 'error'); } finally { btn.disabled = false; }
         }
@@ -1068,7 +1130,10 @@
                     loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
                 activeTab = 1;
                 syncUIWithActiveTab();
-                await loadPOSProducts(true);
+                // Do NOT preload products
+                products = [];
+                productContainer.innerHTML = '';
+                emptyMsgDiv.classList.add('hidden');
                 showToast('Login successful', 'success');
             } catch (err) { showToast(err.message, 'error'); }
         }
@@ -1096,7 +1161,9 @@
                     }
                     activeTab = 1;
                     syncUIWithActiveTab();
-                    await loadPOSProducts(true);
+                    // No initial product load – keep empty
+                    productContainer.innerHTML = '';
+                    emptyMsgDiv.classList.add('hidden');
                 } catch (e) { token = null;
                     showLoginModal(); }
             } else { showLoginModal(); }
