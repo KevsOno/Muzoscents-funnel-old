@@ -844,13 +844,27 @@
             renderActiveCart();
         }
 
+        // ─── LOAD CUSTOMERS (FIXED) ───
         async function loadCustomers() {
             try {
-                const data = await apiCall('/organisations/me/users');
-                allCustomers = data.users || [];
+                // Try to get all members of the organisation
+                const data = await apiCall('/organisations/me/members');
+                allCustomers = data.members || data.users || [];
+                if (allCustomers.length === 0) {
+                    // Fallback: maybe the endpoint is different
+                    console.warn('No members found, trying /organisations/me/users');
+                    const fallback = await apiCall('/organisations/me/users');
+                    allCustomers = fallback.users || [];
+                }
             } catch (err) {
                 console.warn('Failed to load customers:', err);
-                allCustomers = [];
+                // Final fallback: try the old endpoint
+                try {
+                    const fallback = await apiCall('/organisations/me/users');
+                    allCustomers = fallback.users || [];
+                } catch (e) {
+                    allCustomers = [];
+                }
             }
         }
 
