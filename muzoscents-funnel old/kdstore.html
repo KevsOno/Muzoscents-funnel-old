@@ -58,6 +58,7 @@
         .page-btn { min-width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; border-radius: 9999px; font-weight: 500; transition: all 0.15s; }
         .page-btn:hover { transform: scale(1.05); }
         #pagination-container { margin-top: 1.5rem; margin-bottom: 2rem; }
+        .pagination-info { font-size: 0.9rem; color: #6b7280; margin-bottom: 0.5rem; }
     </style>
 </head>
 <body class="text-gray-800">
@@ -199,7 +200,9 @@
         let deliveryOption = 'pickup';
         let deliveryAddress = '';
         let deliveryFee = 0, handlingFee = 0;
-        let allProducts = [];
+        let allProducts = [];           // only current page
+        let totalItems = 0;
+        let totalPages = 1;
         let searchQuery = '';
         let selectedCategory = '';
         let categories = [];
@@ -212,14 +215,25 @@
 
         // ========== PAGINATION ==========
         let currentPage = 1;
-        const PAGE_SIZE = 36;
+        const PAGE_SIZE = 101;   // items per page
 
-        function renderPagination(totalItems, totalPages) {
+        function renderPagination() {
             const container = document.getElementById('pagination-container');
             if (!container) return;
-            if (totalPages <= 1) { container.innerHTML = ''; return; }
 
-            let html = `<div class="flex justify-center items-center gap-2 mt-8 flex-wrap">`;
+            const start = (currentPage - 1) * PAGE_SIZE + 1;
+            const end = Math.min(currentPage * PAGE_SIZE, totalItems);
+            let infoHtml = '';
+            if (totalItems > 0) {
+                infoHtml = `<div class="pagination-info text-center text-sm text-gray-500 mb-2">Showing ${start}–${end} of ${totalItems}</div>`;
+            }
+
+            if (totalPages <= 1) {
+                container.innerHTML = infoHtml + '';
+                return;
+            }
+
+            let html = infoHtml + `<div class="flex justify-center items-center gap-2 flex-wrap">`;
             if (currentPage > 1) html += `<button class="page-btn px-3 py-1 bg-gray-200 rounded hover:bg-gray-300" data-page="${currentPage-1}">← Prev</button>`;
 
             const startPage = Math.max(1, currentPage - 2);
@@ -238,7 +252,7 @@
                     const page = parseInt(this.dataset.page);
                     if (!isNaN(page) && page !== currentPage) {
                         currentPage = page;
-                        renderProducts();
+                        loadProducts();
                         window.scrollTo({ top: 0, behavior: 'smooth' });
                     }
                 });
@@ -358,101 +372,81 @@
             showToast(`${product.name} added to cart!`, 'success'); 
         }
 
-        // ---------- CATEGORY EXTRACTION ----------
+        // ---------- CATEGORY LOADING (public-categories endpoint) ----------
+        async function loadCategories() {
+            try {
+                const data = await apiCall('/inventory/public-categories');
+                if (data.categories && data.categories.length) {
+                    categories = data.categories;
+                    console.log("✅ Categories loaded:", categories);
+                    updateCategoryDropdown();
+                    return;
+                }
+            } catch(e) {
+                console.log("Category endpoint failed, using product data (but we only have page). Will fallback to empty list.");
+            }
+            // Fallback: try to extract from current page (not ideal but better than nothing)
+            if (allProducts && allProducts.length) {
+                const groups = allProducts.map(p => p.product_group).filter(g => g && g.trim());
+                const unique = [...new Set(groups)];
+                if (unique.length) {
+                    categories = unique.sort();
+                    updateCategoryDropdown();
+                    return;
+                }
+            }
+            categories = [];
+            updateCategoryDropdown();
+        }
+
         function updateCategoryDropdown() {
             const select = document.getElementById('category-select');
             if (!select) return;
             let options = '<option value="">All Categories</option>';
             if (categories && categories.length) {
                 options += categories.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
-                console.log("✅ Category dropdown updated with", categories.length, "categories");
             } else {
-                console.warn("⚠️ No categories to display");
                 options += '<option disabled>— No categories found —</option>';
             }
             select.innerHTML = options;
         }
-        
-        function extractCategoriesFromProducts() {
-            if (!allProducts.length) {
-                console.warn("No products loaded yet");
-                return false;
-            }
-            console.log("🔍 Sample product:", allProducts[0]);
-            const groups = allProducts.map(p => p.product_group).filter(g => g && typeof g === 'string' && g.trim() !== '');
-            const unique = [...new Set(groups)];
-            console.log(`📦 Extracted ${unique.length} unique product_group values:`, unique);
-            if (unique.length) {
-                categories = unique.sort();
-                updateCategoryDropdown();
-                return true;
-            } else {
-                const altGroups = allProducts.map(p => p.category || p.group || p.type).filter(g => g && g.trim());
-                const altUnique = [...new Set(altGroups)];
-                if (altUnique.length) {
-                    console.log("🔄 Using fallback fields (category/group/type):", altUnique);
-                    categories = altUnique.sort();
-                    updateCategoryDropdown();
-                    return true;
-                }
-                console.error("❌ No product_group values found in any product. Check your API response.");
-                categories = [];
-                updateCategoryDropdown();
-                return false;
-            }
-        }
-        
-        async function loadCategories() {
+
+        // ---------- PRODUCT LOADING (SERVER-SIDE PAGINATION) ----------
+        async function loadProducts(page = currentPage, limit = PAGE_SIZE) {
+            const offset = (page - 1) * limit;
+            let url = `/inventory/public-list?limit=${limit}&offset=${offset}`;
+            if (searchQuery.trim()) url += `&q=${encodeURIComponent(searchQuery.trim())}`;
+            if (selectedCategory && selectedCategory !== '') url += `&category=${encodeURIComponent(selectedCategory)}`;
+
             try {
-                const data = await apiCall('/inventory/categories');
-                if (data.categories && data.categories.length) {
-                    categories = data.categories;
-                    console.log("✅ Categories loaded from API:", categories);
-                    updateCategoryDropdown();
-                    return;
-                }
-            } catch(e) {
-                console.log("No /inventory/categories endpoint, will use product data");
-            }
-        }
-        
-        async function loadProducts() {
-            try {
-                allProducts = await apiCall('/inventory/public-list');
-                console.log(`📦 Loaded ${allProducts.length} products`);
-                extractCategoriesFromProducts();
-                currentPage = 1;
+                const data = await apiCall(url);
+                const items = data.items || [];
+                totalItems = data.total || 0;
+                totalPages = Math.ceil(totalItems / limit) || 1;
+                currentPage = page;
+
+                allProducts = items;   // only current page
                 renderProducts();
-            } catch(e) { 
+                renderPagination();
+            } catch (e) {
                 console.error("Failed to load products:", e);
-                document.getElementById('products-grid').innerHTML = `<div class="col-span-full text-red-500">⚠️ ${e.message}</div>`; 
+                document.getElementById('products-grid').innerHTML = `<div class="col-span-full text-red-500">⚠️ ${e.message}</div>`;
             }
         }
 
         function renderProducts() {
-            let filtered = allProducts;
-            if (searchQuery.trim()) filtered = filtered.filter(p => p.description.toLowerCase().includes(searchQuery.toLowerCase()));
-            if (selectedCategory && selectedCategory !== '') filtered = filtered.filter(p => p.product_group === selectedCategory);
-
-            const totalItems = filtered.length;
-            const totalPages = Math.ceil(totalItems / PAGE_SIZE);
-            if (currentPage > totalPages) currentPage = totalPages || 1;
-
-            const start = (currentPage - 1) * PAGE_SIZE;
-            const end = start + PAGE_SIZE;
-            const pageItems = filtered.slice(start, end);
-
             const grid = document.getElementById('products-grid');
             if (!grid) return;
 
-            if (pageItems.length === 0) {
+            const items = allProducts;   // already filtered by backend
+
+            if (items.length === 0) {
                 grid.innerHTML = `<div class="col-span-full text-center py-12 text-gray-500"><i class="fa-regular fa-face-frown"></i> No products match your filters.</div>`;
-                renderPagination(totalItems, totalPages);
                 return;
             }
 
             grid.innerHTML = '';
-            pageItems.forEach(p => {
+            items.forEach(p => {
                 const card = document.createElement('div');
                 card.className = "product-card bg-white rounded-2xl p-4 shadow-sm hover:shadow-lg transition flex flex-col";
                 const stockHtml = `<div class="h-28 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl flex items-center justify-center mb-3">${p.image_url ? `<img src="${p.image_url}" class="h-24 object-contain rounded">` : `<i class="fa-solid fa-box-open text-4xl text-orange-400"></i>`}</div><h3 class="font-bold text-gray-800 truncate">${escapeHtml(p.description)}</h3><div class="flex justify-between items-center mt-2"><span class="text-orange-600 font-bold text-xl">₦${p.price_naira.toLocaleString()}</span><span class="text-xs bg-gray-100 px-2 py-1 rounded-full">${p.current_qty} left</span></div><div class="flex gap-2 mt-3"><button class="view-details-btn flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-xl text-sm font-semibold"><i class="fa-regular fa-eye"></i> Details</button><button class="add-to-cart-btn flex-1 bg-orange-500 hover:bg-orange-600 text-white py-2 rounded-xl text-sm font-semibold"><i class="fa-solid fa-cart-plus"></i> Add</button></div>`;
@@ -464,32 +458,47 @@
                 card.onclick = (e) => { if (e.target.tagName !== 'BUTTON' && !e.target.closest('button')) showProductDetail(p); };
                 grid.appendChild(card);
             });
-
-            renderPagination(totalItems, totalPages);
         }
 
-        function refreshCategories() {
-            if (allProducts.length) {
-                const success = extractCategoriesFromProducts();
-                if (success) showToast(`Loaded ${categories.length} categories`, 'success');
-                else showToast("No categories found in products", 'error');
-            } else {
-                showToast("Products not loaded yet", 'error');
-            }
-        }
-
-        // ---------- SEARCH / FILTER ----------
+        // ---------- SEARCH / FILTER (reset page and reload) ----------
         let searchDebounce;
         const searchInput = document.getElementById('product-search'), searchClear = document.getElementById('search-clear');
-        function handleSearch() { clearTimeout(searchDebounce); searchDebounce = setTimeout(() => { searchQuery = searchInput.value; currentPage = 1; renderProducts(); if(searchClear) searchClear.style.display = searchQuery ? 'block' : 'none'; }, 300); }
-        function clearSearch() { searchInput.value = ''; searchQuery = ''; currentPage = 1; renderProducts(); if(searchClear) searchClear.style.display = 'none'; searchInput.focus(); }
-        function handleCategoryChange() { selectedCategory = document.getElementById('category-select').value; currentPage = 1; renderProducts(); }
+        function handleSearch() { 
+            clearTimeout(searchDebounce); 
+            searchDebounce = setTimeout(() => { 
+                searchQuery = searchInput.value; 
+                currentPage = 1; 
+                loadProducts(); 
+                if(searchClear) searchClear.style.display = searchQuery ? 'block' : 'none'; 
+            }, 300); 
+        }
+        function clearSearch() { 
+            searchInput.value = ''; 
+            searchQuery = ''; 
+            currentPage = 1; 
+            loadProducts(); 
+            if(searchClear) searchClear.style.display = 'none'; 
+            searchInput.focus(); 
+        }
+        function handleCategoryChange() { 
+            selectedCategory = document.getElementById('category-select').value; 
+            currentPage = 1; 
+            loadProducts(); 
+        }
+
         if(searchInput) searchInput.addEventListener('input', handleSearch);
         if(searchClear) searchClear.addEventListener('click', clearSearch);
         const catSelect = document.getElementById('category-select');
         if(catSelect) catSelect.addEventListener('change', handleCategoryChange);
+
+        // Refresh categories from server
+        async function refreshCategories() {
+            await loadCategories();
+            showToast(`Categories reloaded (${categories.length})`, 'success');
+        }
         document.getElementById('refresh-categories-btn')?.addEventListener('click', refreshCategories);
 
+        // ---------- PRODUCT DETAIL (unchanged) ----------
         function showProductDetail(p) {
             currentProductForModal = p;
             const modal = document.getElementById('product-detail-modal'), content = document.getElementById('product-detail-content');
