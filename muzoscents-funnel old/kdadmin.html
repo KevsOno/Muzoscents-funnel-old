@@ -738,6 +738,17 @@
         }
 
         // ================================================================
+        // DEBOUNCE HELPER
+        // ================================================================
+        function debounce(fn, delay = 300) {
+            let timer;
+            return function(...args) {
+                clearTimeout(timer);
+                timer = setTimeout(() => fn.apply(this, args), delay);
+            };
+        }
+
+        // ================================================================
         // API CALLS
         // ================================================================
         async function refreshToken() {
@@ -998,23 +1009,20 @@
         }
 
         // ================================================================
-        // INVENTORY MANAGEMENT (FIXED: use /inventory/v2 without location param, then filter client-side)
+        // INVENTORY MANAGEMENT
         // ================================================================
         async function loadInventory() {
             if (!selectedOrganisation) return;
             try {
-                // Always fetch from /inventory/v2 to get location_stocks
                 const data = await apiCall('/inventory/v2');
                 let allItems = data.items || data || [];
                 console.log(`📊 Loaded ${allItems.length} products with location_stocks`);
 
                 if (currentLocationFilter && currentLocationFilter !== 'default') {
-                    // Filter by location_id (as string) in location_stocks
                     allItems = allItems.filter(p => {
                         if (p.location_stocks && p.location_stocks.length > 0) {
                             return p.location_stocks.some(s => String(s.location_id) === String(currentLocationFilter));
                         }
-                        // Fallback: if product has location_id directly
                         if (p.location_id) {
                             return String(p.location_id) === String(currentLocationFilter);
                         }
@@ -1029,17 +1037,16 @@
                 renderProducts(products);
             } catch (err) {
                 console.error('Error loading inventory:', err);
-                // Fallback: try /inventory if /inventory/v2 fails
                 try {
                     const fallbackData = await apiCall('/inventory');
                     let allItems = fallbackData.items || fallbackData || [];
-                    // If we have location filter, try to filter based on location_stocks if present
                     if (currentLocationFilter && currentLocationFilter !== 'default') {
                         const hasLocationStocks = allItems.some(p => p.location_stocks && p.location_stocks.length > 0);
                         if (hasLocationStocks) {
                             allItems = allItems.filter(p => {
                                 if (p.location_stocks && p.location_stocks.length > 0) {
-                                    return p.location_stocks.some(s => String(s.location_id) === String(currentLocationFilter));
+                                    return p.location_stocks.some(s => String(s.location_id) === String(
+                                    currentLocationFilter));
                                 }
                                 if (p.location_id) {
                                     return String(p.location_id) === String(currentLocationFilter);
@@ -1047,7 +1054,6 @@
                                 return false;
                             });
                         } else {
-                            // No location info, show all (or empty? We'll show all to avoid empty)
                             console.warn('No location_stocks in fallback inventory, showing all products');
                         }
                     }
@@ -1085,7 +1091,6 @@
                     hazardous: 'bg-red-600/30 text-red-300'
                 } [p.handling_category] || 'bg-slate-600/30';
 
-                // ── expiry badge ──
                 let expiryBadge = '';
                 if (p.expiry_date) {
                     const today = new Date();
@@ -1103,7 +1108,6 @@
                         `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] ${badgeClass}"><i class="fa-regular fa-calendar"></i> ${badgeText}</span>`;
                 }
 
-                // ── location stock display ──
                 let stockHtml = '';
                 const locationNames = {};
                 allLocations.forEach(loc => { locationNames[loc.id] = loc.name; });
@@ -1116,7 +1120,6 @@
                     }).join('');
                     stockHtml = `<div class="text-xs text-slate-400 mt-1 space-y-0.5">${stockItems}</div>`;
                 } else if (p.location_id) {
-                    // fallback: product has a direct location_id
                     const locName = locationNames[p.location_id] || `Location ${p.location_id}`;
                     stockHtml =
                         `<div class="text-xs text-slate-400 mt-1"><span class="loc-badge"><i class="fa-solid fa-location-dot"></i> <span class="loc-name">${escapeHtml(locName)}</span></span> <span class="font-mono">${p.current_qty || 0}</span></div>`;
@@ -1207,7 +1210,6 @@
                 batch_number: batch_number || null,
                 manufacture_date: manufacture_date || null,
                 lot_number: lot_number || null
-                // location_id removed
             };
 
             try {
@@ -1247,7 +1249,6 @@
                 document.getElementById('expiry_date').value = product.expiry_date || '';
                 document.getElementById('supplier_name').value = product.supplier_name || '';
                 document.getElementById('supplier_invoice').value = product.supplier_invoice || '';
-                // No location assignment
                 document.getElementById('form-title').innerText = '✏️ Edit Product';
                 document.getElementById('cancel-edit').classList.remove('hidden');
                 document.querySelector('#product-form').scrollIntoView({ behavior: 'smooth' });
@@ -1811,7 +1812,6 @@
                 const quantity = p.current_stock || p.quantity || 0;
                 const cost = p.cost_price_naira || 0;
                 const supplier = escapeHtml(p.supplier_name || '');
-                // location name
                 const locName = p.location_name || getLocationName(p.location_id) || 'Main';
                 return `
                     <tr class="border-b border-slate-700 hover:bg-slate-800/50">
@@ -2036,7 +2036,7 @@
         })();
 
         // ================================================================
-        // FIXED SEARCH — overlay + fixed positioning
+        // FIXED SEARCH — SERVER-SIDE WITH DEBOUNCE
         // ================================================================
         const searchInput = document.getElementById('product-search-input');
         const searchOverlay = document.getElementById('product-search-overlay');
@@ -2047,7 +2047,6 @@
             const rect = searchInput.getBoundingClientRect();
             const top = rect.bottom + 6;
             const left = rect.left;
-            // clamp to viewport
             const w = Math.min(rect.width, 500);
             searchResultsFixed.style.top = top + 'px';
             searchResultsFixed.style.left = left + 'px';
@@ -2060,23 +2059,105 @@
             searchResultsFixed.innerHTML = '';
         }
 
+        // ── Server-side search ──
+        async function performServerSearch(query) {
+            if (!query || query.length < 2) {
+                closeSearchResults();
+                return;
+            }
+
+            const locationFilter = document.getElementById('location-filter').value;
+            let url = `/inventory/search?q=${encodeURIComponent(query)}&limit=15&offset=0`;
+            if (locationFilter) {
+                url += `&location_id=${locationFilter}`;
+            }
+
+            try {
+                const data = await apiCall(url);
+                const results = data.items || [];
+                renderSearchResults(results, query);
+            } catch (err) {
+                console.error('Search error:', err);
+                const container = document.getElementById('product-search-results-fixed');
+                container.innerHTML = `<div class="no-results">Search failed. Please try again.</div>`;
+                container.classList.add('active');
+                document.getElementById('product-search-overlay').classList.add('active');
+                positionSearchResults();
+            }
+        }
+
+        function renderSearchResults(results, query) {
+            const container = document.getElementById('product-search-results-fixed');
+            if (!results || results.length === 0) {
+                container.innerHTML = `<div class="no-results">No products found for “${escapeHtml(query)}”</div>`;
+                container.classList.add('active');
+                document.getElementById('product-search-overlay').classList.add('active');
+                positionSearchResults();
+                return;
+            }
+
+            let html = '';
+            results.slice(0, 15).forEach(p => {
+                const locName = p.location_stocks && p.location_stocks.length > 0 ?
+                    getLocationName(p.location_stocks[0].location_id) :
+                    getLocationName(p.location_id);
+                const locDisplay = locName ? `<span class="text-xs text-slate-500">📍 ${escapeHtml(locName)}</span>` :
+                    '';
+                html += `
+                    <div class="result-item" data-id="${p.id}">
+                        <div>
+                            <div class="result-name">${escapeHtml(p.description)}</div>
+                            <div class="result-meta">${escapeHtml(p.item_code || p.id)} ${locDisplay}</div>
+                        </div>
+                        <div class="result-stock">${p.current_qty || 0} in stock</div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+            container.classList.add('active');
+            document.getElementById('product-search-overlay').classList.add('active');
+            positionSearchResults();
+
+            container.querySelectorAll('.result-item').forEach(el => {
+                el.addEventListener('click', function() {
+                    const id = this.dataset.id;
+                    editProduct(id);
+                    document.getElementById('product-search-input').value = '';
+                    closeSearchResults();
+                });
+            });
+        }
+
+        // ── Wire up with debounce ──
         if (searchInput) {
-            searchInput.addEventListener('focus', function() {
+            // Remove any old listeners by cloning (simple approach)
+            const newSearchInput = searchInput.cloneNode(true);
+            searchInput.parentNode.replaceChild(newSearchInput, searchInput);
+
+            const freshInput = document.getElementById('product-search-input');
+            const debouncedSearch = debounce(function(e) {
                 const query = this.value.trim();
-                if (query.length >= 2) performSearch(query);
+                if (query.length >= 2) {
+                    performServerSearch(query);
+                } else {
+                    closeSearchResults();
+                }
+            }, 300);
+
+            freshInput.addEventListener('input', debouncedSearch);
+            freshInput.addEventListener('focus', function() {
+                const query = this.value.trim();
+                if (query.length >= 2) {
+                    performServerSearch(query);
+                }
             });
 
-            searchInput.addEventListener('input', function(e) {
-                const query = this.value.trim();
-                if (query.length < 2) { closeSearchResults(); return; }
-                performSearch(query);
-            });
-
-            searchInput.addEventListener('keydown', function(e) {
+            freshInput.addEventListener('keydown', function(e) {
                 if (e.key === 'Escape') closeSearchResults();
             });
 
-            // click outside -> close
+            // Click outside closes
             document.addEventListener('click', function(e) {
                 const target = e.target;
                 if (!target.closest('#search-input-wrapper') && !target.closest('#product-search-results-fixed')) {
@@ -2084,60 +2165,8 @@
                 }
             });
 
-            // overlay click closes
+            // Overlay click closes
             searchOverlay.addEventListener('click', closeSearchResults);
-        }
-
-        function performSearch(query) {
-            if (!query || query.length < 2) { closeSearchResults(); return; }
-
-            const matches = products.filter(p => {
-                const desc = (p.description || '').toLowerCase();
-                const sku = (p.item_code || p.id || '').toLowerCase();
-                const group = (p.product_group || '').toLowerCase();
-                return desc.includes(query) || sku.includes(query) || group.includes(query);
-            });
-
-            let html = '';
-            if (matches.length === 0) {
-                html = `<div class="no-results">No products found for “${escapeHtml(query)}”</div>`;
-            } else {
-                const sliced = matches.slice(0, 12);
-                sliced.forEach(p => {
-                    const locName = p.location_stocks && p.location_stocks.length > 0 ?
-                        getLocationName(p.location_stocks[0].location_id) :
-                        getLocationName(p.location_id);
-                    const locDisplay = locName ? `<span class="text-xs text-slate-500">📍 ${escapeHtml(locName)}</span>` :
-                        '';
-                    html += `
-                        <div class="result-item" data-id="${p.id}">
-                            <div>
-                                <div class="result-name">${escapeHtml(p.description)}</div>
-                                <div class="result-meta">${escapeHtml(p.item_code || p.id)} ${locDisplay}</div>
-                            </div>
-                            <div class="result-stock">${p.current_qty || 0} in stock</div>
-                        </div>
-                    `;
-                });
-            }
-
-            searchResultsFixed.innerHTML = html;
-            searchResultsFixed.classList.add('active');
-            searchOverlay.classList.add('active');
-            positionSearchResults();
-
-            // click on result
-            searchResultsFixed.querySelectorAll('.result-item').forEach(el => {
-                el.addEventListener('click', function() {
-                    const id = this.dataset.id;
-                    const product = products.find(p => p.id == id);
-                    if (product) {
-                        editProduct(id);
-                        searchInput.value = '';
-                        closeSearchResults();
-                    }
-                });
-            });
         }
 
         // reposition on scroll / resize
@@ -2149,7 +2178,7 @@
         }, { passive: true });
 
         // ================================================================
-        // INIT — FIXED: redirect if not authenticated
+        // INIT — redirect if not authenticated
         // ================================================================
         document.getElementById('confirm-org-btn')?.addEventListener('click', async function() {
             if (!selectedOrganisation) return;
@@ -2235,26 +2264,22 @@
         document.getElementById('log-level-filter')?.addEventListener('change', loadSystemLogs);
 
         // ================================================================
-        // INIT (FIXED: redirect immediately if not authenticated)
+        // INIT
         // ================================================================
         async function init() {
-            // 1. If no token, redirect to sign‑in immediately
             if (!token) {
                 window.location.href = '/kdsiginin';
                 return;
             }
 
             try {
-                // 2. Verify session with /auth/me – throws if invalid
                 const me = await apiCall('/auth/me');
                 currentUser = me;
                 localStorage.setItem('user_role', me.role || 'admin');
                 document.getElementById('auth-check-placeholder').classList.add('hidden');
 
-                // 3. Check if we have a saved organisation
                 const savedOrgId = localStorage.getItem('selected_org_id');
                 if (savedOrgId) {
-                    // Fetch organisations and try to match saved one
                     userOrganisations = await fetchUserOrganisations();
                     const savedOrg = userOrganisations.find(o => o.id === savedOrgId || o.org_id === savedOrgId);
                     if (savedOrg) {
@@ -2264,7 +2289,6 @@
                         document.getElementById('current-org-banner').classList.remove('hidden');
                         document.getElementById('admin-panel').classList.remove('hidden');
 
-                        // Load all data
                         await loadLocations();
                         await loadInventory();
                         await loadDashboardMetrics();
@@ -2278,11 +2302,9 @@
                     }
                 }
 
-                // 4. No saved org or it no longer exists → show organisation selection
                 await initialiseOrganisationSelection();
 
             } catch (err) {
-                // Any error here means the session is invalid – redirect to login
                 console.error('Init error:', err);
                 localStorage.clear();
                 window.location.href = '/kdsiginin';
@@ -2294,14 +2316,12 @@
                 userOrganisations = await fetchUserOrganisations();
                 renderOrganisationSelection(userOrganisations);
             } catch (err) {
-                // If fetching organisations fails due to auth, redirect
                 console.error('Failed to load organisations:', err);
                 localStorage.clear();
                 window.location.href = '/kdsiginin';
             }
         }
 
-        // Start the app
         init();
     </script>
 </body>
