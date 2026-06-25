@@ -1280,34 +1280,40 @@
             }
         }
 
+        // ── Edit product by ID (uses products array) ──
         window.editProduct = async function(id) {
             try {
                 const product = products.find(p => p.id == id);
                 if (!product) throw new Error('Product not found');
-                document.getElementById('edit-id').value = product.id;
-                document.getElementById('item_code').value = product.item_code || '';
-                document.getElementById('description').value = product.description;
-                document.getElementById('product_group').value = product.product_group || '';
-                document.getElementById('price_naira').value = product.price_naira;
-                document.getElementById('current_qty').value = product.current_qty;
-                document.getElementById('image_url').value = product.image_url || '';
-                document.getElementById('weight_kg').value = product.weight_kg ?? 0;
-                document.getElementById('size_factor').value = product.size_factor ?? 1.0;
-                document.getElementById('handling_category').value = product.handling_category || 'standard';
-                document.getElementById('cost_price_naira').value = product.cost_price_naira ?? 0;
-                document.getElementById('batch_number').value = product.batch_number || '';
-                document.getElementById('lot_number').value = product.lot_number || '';
-                document.getElementById('manufacture_date').value = product.manufacture_date || '';
-                document.getElementById('expiry_date').value = product.expiry_date || '';
-                document.getElementById('supplier_name').value = product.supplier_name || '';
-                document.getElementById('supplier_invoice').value = product.supplier_invoice || '';
-                document.getElementById('form-title').innerText = '✏️ Edit Product';
-                document.getElementById('cancel-edit').classList.remove('hidden');
-                document.querySelector('#product-form').scrollIntoView({ behavior: 'smooth' });
+                editProductData(product);
             } catch (err) {
                 showToast(`Failed: ${err.message}`, 'error');
             }
         };
+
+        // ── Edit product using product object (for search results) ──
+        function editProductData(product) {
+            document.getElementById('edit-id').value = product.id;
+            document.getElementById('item_code').value = product.item_code || '';
+            document.getElementById('description').value = product.description;
+            document.getElementById('product_group').value = product.product_group || '';
+            document.getElementById('price_naira').value = product.price_naira;
+            document.getElementById('current_qty').value = product.current_qty;
+            document.getElementById('image_url').value = product.image_url || '';
+            document.getElementById('weight_kg').value = product.weight_kg ?? 0;
+            document.getElementById('size_factor').value = product.size_factor ?? 1.0;
+            document.getElementById('handling_category').value = product.handling_category || 'standard';
+            document.getElementById('cost_price_naira').value = product.cost_price_naira ?? 0;
+            document.getElementById('batch_number').value = product.batch_number || '';
+            document.getElementById('lot_number').value = product.lot_number || '';
+            document.getElementById('manufacture_date').value = product.manufacture_date || '';
+            document.getElementById('expiry_date').value = product.expiry_date || '';
+            document.getElementById('supplier_name').value = product.supplier_name || '';
+            document.getElementById('supplier_invoice').value = product.supplier_invoice || '';
+            document.getElementById('form-title').innerText = '✏️ Edit Product';
+            document.getElementById('cancel-edit').classList.remove('hidden');
+            document.querySelector('#product-form').scrollIntoView({ behavior: 'smooth' });
+        }
 
         window.deleteProduct = async function(id) {
             if (!confirm('Delete this product? This cannot be undone.')) return;
@@ -2139,6 +2145,7 @@
             }
         }
 
+        // ── Updated renderSearchResults to use editProductData ──
         function renderSearchResults(results, query) {
             const container = document.getElementById('product-search-results-fixed');
             if (!results || results.length === 0) {
@@ -2149,37 +2156,34 @@
                 return;
             }
 
-            let html = '';
+            container.innerHTML = ''; // clear container
             results.slice(0, 15).forEach(p => {
+                const item = document.createElement('div');
+                item.className = 'result-item';
                 const locName = p.location_stocks && p.location_stocks.length > 0 ?
                     getLocationName(p.location_stocks[0].location_id) :
                     getLocationName(p.location_id);
                 const locDisplay = locName ? `<span class="text-xs text-slate-500">📍 ${escapeHtml(locName)}</span>` :
                     '';
-                html += `
-                    <div class="result-item" data-id="${p.id}">
-                        <div>
-                            <div class="result-name">${escapeHtml(p.description)}</div>
-                            <div class="result-meta">${escapeHtml(p.item_code || p.id)} ${locDisplay}</div>
-                        </div>
-                        <div class="result-stock">${p.current_qty || 0} in stock</div>
+                item.innerHTML = `
+                    <div>
+                        <div class="result-name">${escapeHtml(p.description)}</div>
+                        <div class="result-meta">${escapeHtml(p.item_code || p.id)} ${locDisplay}</div>
                     </div>
+                    <div class="result-stock">${p.current_qty || 0} in stock</div>
                 `;
-            });
-
-            container.innerHTML = html;
-            container.classList.add('active');
-            document.getElementById('product-search-overlay').classList.add('active');
-            positionSearchResults();
-
-            container.querySelectorAll('.result-item').forEach(el => {
-                el.addEventListener('click', function() {
-                    const id = this.dataset.id;
-                    editProduct(id);
+                // Use the product object directly
+                item.addEventListener('click', function() {
+                    editProductData(p);
                     document.getElementById('product-search-input').value = '';
                     closeSearchResults();
                 });
+                container.appendChild(item);
             });
+
+            container.classList.add('active');
+            document.getElementById('product-search-overlay').classList.add('active');
+            positionSearchResults();
         }
 
         // ── Wire up with debounce ──
