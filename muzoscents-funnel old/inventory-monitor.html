@@ -175,6 +175,29 @@
             font-size: 0.6rem;
             color: #3b82f6;
         }
+
+        /* pagination */
+        .pagination-btn {
+            background: #1e293b;
+            border: 1px solid #334155;
+            color: #cbd5e1;
+            padding: 0.4rem 0.8rem;
+            border-radius: 0.5rem;
+            font-size: 0.85rem;
+            transition: all 0.15s;
+        }
+        .pagination-btn:hover:not(:disabled) {
+            background: #334155;
+            border-color: #475569;
+        }
+        .pagination-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .pagination-info {
+            font-size: 0.9rem;
+            color: #94a3b8;
+        }
     </style>
 </head>
 <body class="text-slate-200">
@@ -328,11 +351,11 @@
                         </div>
                         <div>
                             <label class="block text-xs text-slate-400 mb-1">Selling Price (₦) * >0</label>
-                            <input id="price_naira" type="number" step="1" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
+                            <input id="price_naira" type="number" step="0.01" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
                         </div>
                         <div>
                             <label class="block text-xs text-slate-400 mb-1">Cost Price (₦) ≥0</label>
-                            <input id="cost_price_naira" type="number" step="1" value="0" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
+                            <input id="cost_price_naira" type="number" step="0.01" value="0" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
                         </div>
                         <div>
                             <label class="block text-xs text-slate-400 mb-1">Initial Stock Quantity * ≥0</label>
@@ -420,6 +443,17 @@
                     <div id="products-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         <div class="col-span-full text-center py-8 text-slate-400"><i class="fa-solid fa-spinner fa-pulse mr-2"></i> Loading...</div>
                     </div>
+                    <!-- Pagination controls -->
+                    <div id="pagination-container" class="flex items-center justify-between mt-6 pt-4 border-t border-slate-700">
+                        <div class="pagination-info">
+                            Showing <span id="page-start">0</span>–<span id="page-end">0</span> of <span id="total-items">0</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button id="prev-page" class="pagination-btn" disabled><i class="fa-solid fa-chevron-left"></i></button>
+                            <span id="page-numbers" class="text-sm text-slate-400"></span>
+                            <button id="next-page" class="pagination-btn" disabled><i class="fa-solid fa-chevron-right"></i></button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -433,7 +467,7 @@
                         <div class="flex gap-2">
                             <button id="refresh-expiry-btn" class="bg-slate-700 hover:bg-slate-600 text-sm px-3 py-1.5 rounded-lg"><i class="fa-solid fa-rotate-right mr-1"></i> Refresh</button>
                             <button id="show-add-batch-modal" class="bg-emerald-600 hover:bg-emerald-700 text-sm px-4 py-2 rounded-lg"><i class="fa-solid fa-plus mr-1"></i> Add Batch</button>
-                            <button id="show-fefo-modal" class="bg-indigo-600 hover:bg-indigo-700 text-sm px-4 py-2 rounded-lg"><i class="fa-solid fa-chart-line mr-1"></i> FEFO</button>
+                            <button id="show-fefo-modal" class="bg-indigo-600 hover:bg-indigo-700 text-sm px-4 py-2 rounded-lg"><i class="fa-solid fa-chart-line mr-1"></i> FEFO Recommendations</button>
                         </div>
                     </div>
                     <!-- summary cards -->
@@ -614,7 +648,7 @@
                 <div><label class="block text-sm mb-1">From Location</label><select id="transfer-from" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select></div>
                 <div><label class="block text-sm mb-1">To Location</label><select id="transfer-to" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select></div>
                 <div><label class="block text-sm mb-1">Quantity</label><input id="transfer-qty" type="number" min="1" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2" /></div>
-                <div><label class="block text-sm mb-1">Reason</label><input id="transfer-reason" placeholder="Optional" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2" /></div>
+                <div><label class="block text-sm mb-1">Request Notes</label><input id="transfer-reason" placeholder="Optional notes" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2" /></div>
                 <div class="flex gap-3 mt-4"><button id="transfer-submit" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg">Transfer</button><button id="transfer-cancel" class="bg-slate-600 hover:bg-slate-500 px-4 py-2 rounded-lg">Cancel</button></div>
             </div>
         </div>
@@ -695,7 +729,9 @@
         let selectedOrganisation = null;
         let userOrganisations = [];
         let currentPage = 1;
-        const PAGE_SIZE = 20;
+        const PAGE_SIZE = 120;
+        let totalItems = 0;
+        let totalPages = 1;
 
         // ================================================================
         // UTILITIES
@@ -735,6 +771,17 @@
             if (days <= 180) return '🟠';
             if (days <= 270) return '🟡';
             return '🟢';
+        }
+
+        // ================================================================
+        // DEBOUNCE HELPER
+        // ================================================================
+        function debounce(fn, delay = 300) {
+            let timer;
+            return function(...args) {
+                clearTimeout(timer);
+                timer = setTimeout(() => fn.apply(this, args), delay);
+            };
         }
 
         // ================================================================
@@ -924,6 +971,7 @@
 
                 filterSelect.onchange = () => {
                     currentLocationFilter = filterSelect.value;
+                    currentPage = 1; // reset to first page
                     loadInventory();
                 };
 
@@ -998,22 +1046,75 @@
         }
 
         // ================================================================
-        // INVENTORY MANAGEMENT
+        // PAGINATION HELPERS
         // ================================================================
-        async function loadInventory() {
+        function renderPagination() {
+            const container = document.getElementById('pagination-container');
+            if (!container) return;
+
+            const start = (currentPage - 1) * PAGE_SIZE + 1;
+            const end = Math.min(currentPage * PAGE_SIZE, totalItems);
+            document.getElementById('page-start').innerText = totalItems > 0 ? start : 0;
+            document.getElementById('page-end').innerText = end;
+            document.getElementById('total-items').innerText = totalItems;
+
+            const prevBtn = document.getElementById('prev-page');
+            const nextBtn = document.getElementById('next-page');
+            const pageNumbersSpan = document.getElementById('page-numbers');
+
+            prevBtn.disabled = currentPage <= 1;
+            nextBtn.disabled = currentPage >= totalPages;
+
+            // show page numbers e.g., "Page 3 of 5"
+            pageNumbersSpan.innerText = totalPages > 0 ? `Page ${currentPage} of ${totalPages}` : '';
+        }
+
+        function goToPage(page) {
+            if (page < 1 || page > totalPages) return;
+            currentPage = page;
+            loadInventory();
+        }
+
+        // ================================================================
+        // INVENTORY MANAGEMENT (PAGINATED)
+        // ================================================================
+        async function loadInventory(page = currentPage, limit = PAGE_SIZE) {
             if (!selectedOrganisation) return;
+            const offset = (page - 1) * limit;
+            let url = `/inventory/v2?limit=${limit}&offset=${offset}`;
+            if (currentLocationFilter) {
+                url += `&location_id=${currentLocationFilter}`;
+            }
+
             try {
-                let url = '/inventory';
-                if (currentLocationFilter && currentLocationFilter !== 'default') {
-                    url = `/v2/inventory?location_id=${currentLocationFilter}`;
-                }
                 const data = await apiCall(url);
-                products = data.items || data;
+                const items = data.items || [];
+                totalItems = data.total || 0;
+                totalPages = Math.ceil(totalItems / limit) || 1;
+
+                // update currentPage if it's out of range (e.g., if total decreased)
+                if (currentPage > totalPages) currentPage = totalPages;
+
+                products = items;
                 renderProducts(products);
+                renderPagination();
             } catch (err) {
                 console.error('Error loading inventory:', err);
-                document.getElementById('products-grid').innerHTML =
-                    `<div class="col-span-full text-center py-8 text-red-400">❌ ${escapeHtml(err.message)}</div>`;
+                try {
+                    // fallback to non-paginated if v2 fails (but we still try to keep pagination)
+                    const fallbackData = await apiCall('/inventory');
+                    let allItems = fallbackData.items || fallbackData || [];
+                    // we can't paginate fallback reliably, so just show all
+                    products = allItems;
+                    renderProducts(products);
+                    totalItems = allItems.length;
+                    totalPages = 1;
+                    currentPage = 1;
+                    renderPagination();
+                } catch (fallbackErr) {
+                    document.getElementById('products-grid').innerHTML =
+                        `<div class="col-span-full text-center py-8 text-red-400">❌ ${escapeHtml(fallbackErr.message)}</div>`;
+                }
             }
         }
 
@@ -1042,7 +1143,6 @@
                     hazardous: 'bg-red-600/30 text-red-300'
                 } [p.handling_category] || 'bg-slate-600/30';
 
-                // ── expiry badge ──
                 let expiryBadge = '';
                 if (p.expiry_date) {
                     const today = new Date();
@@ -1060,7 +1160,6 @@
                         `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] ${badgeClass}"><i class="fa-regular fa-calendar"></i> ${badgeText}</span>`;
                 }
 
-                // ── location stock display ──
                 let stockHtml = '';
                 const locationNames = {};
                 allLocations.forEach(loc => { locationNames[loc.id] = loc.name; });
@@ -1073,7 +1172,6 @@
                     }).join('');
                     stockHtml = `<div class="text-xs text-slate-400 mt-1 space-y-0.5">${stockItems}</div>`;
                 } else if (p.location_id) {
-                    // fallback: product has a direct location_id
                     const locName = locationNames[p.location_id] || `Location ${p.location_id}`;
                     stockHtml =
                         `<div class="text-xs text-slate-400 mt-1"><span class="loc-badge"><i class="fa-solid fa-location-dot"></i> <span class="loc-name">${escapeHtml(locName)}</span></span> <span class="font-mono">${p.current_qty || 0}</span></div>`;
@@ -1149,9 +1247,6 @@
                 }
             }
 
-            // Batch generation is now handled by the backend.
-            // If expiry_date is present and batch_number is empty,
-            // the backend will generate a sequential 'autogenXXX' number.
             const payload = {
                 item_code,
                 description,
@@ -1167,7 +1262,6 @@
                 batch_number: batch_number || null,
                 manufacture_date: manufacture_date || null,
                 lot_number: lot_number || null
-                // location_id removed
             };
 
             try {
@@ -1186,41 +1280,47 @@
             }
         }
 
+        // ── Edit product by ID (uses products array) ──
         window.editProduct = async function(id) {
             try {
                 const product = products.find(p => p.id == id);
                 if (!product) throw new Error('Product not found');
-                document.getElementById('edit-id').value = product.id;
-                document.getElementById('item_code').value = product.item_code || '';
-                document.getElementById('description').value = product.description;
-                document.getElementById('product_group').value = product.product_group || '';
-                document.getElementById('price_naira').value = product.price_naira;
-                document.getElementById('current_qty').value = product.current_qty;
-                document.getElementById('image_url').value = product.image_url || '';
-                document.getElementById('weight_kg').value = product.weight_kg ?? 0;
-                document.getElementById('size_factor').value = product.size_factor ?? 1.0;
-                document.getElementById('handling_category').value = product.handling_category || 'standard';
-                document.getElementById('cost_price_naira').value = product.cost_price_naira ?? 0;
-                document.getElementById('batch_number').value = product.batch_number || '';
-                document.getElementById('lot_number').value = product.lot_number || '';
-                document.getElementById('manufacture_date').value = product.manufacture_date || '';
-                document.getElementById('expiry_date').value = product.expiry_date || '';
-                document.getElementById('supplier_name').value = product.supplier_name || '';
-                document.getElementById('supplier_invoice').value = product.supplier_invoice || '';
-                // No location assignment
-                document.getElementById('form-title').innerText = '✏️ Edit Product';
-                document.getElementById('cancel-edit').classList.remove('hidden');
-                document.querySelector('#product-form').scrollIntoView({ behavior: 'smooth' });
+                editProductData(product);
             } catch (err) {
                 showToast(`Failed: ${err.message}`, 'error');
             }
         };
+
+        // ── Edit product using product object (for search results) ──
+        function editProductData(product) {
+            document.getElementById('edit-id').value = product.id;
+            document.getElementById('item_code').value = product.item_code || '';
+            document.getElementById('description').value = product.description;
+            document.getElementById('product_group').value = product.product_group || '';
+            document.getElementById('price_naira').value = product.price_naira;
+            document.getElementById('current_qty').value = product.current_qty;
+            document.getElementById('image_url').value = product.image_url || '';
+            document.getElementById('weight_kg').value = product.weight_kg ?? 0;
+            document.getElementById('size_factor').value = product.size_factor ?? 1.0;
+            document.getElementById('handling_category').value = product.handling_category || 'standard';
+            document.getElementById('cost_price_naira').value = product.cost_price_naira ?? 0;
+            document.getElementById('batch_number').value = product.batch_number || '';
+            document.getElementById('lot_number').value = product.lot_number || '';
+            document.getElementById('manufacture_date').value = product.manufacture_date || '';
+            document.getElementById('expiry_date').value = product.expiry_date || '';
+            document.getElementById('supplier_name').value = product.supplier_name || '';
+            document.getElementById('supplier_invoice').value = product.supplier_invoice || '';
+            document.getElementById('form-title').innerText = '✏️ Edit Product';
+            document.getElementById('cancel-edit').classList.remove('hidden');
+            document.querySelector('#product-form').scrollIntoView({ behavior: 'smooth' });
+        }
 
         window.deleteProduct = async function(id) {
             if (!confirm('Delete this product? This cannot be undone.')) return;
             try {
                 await apiCall(`/inventory/${id}`, { method: 'DELETE' });
                 showToast('Product deleted.', 'success');
+                // refresh current page
                 loadInventory();
                 loadDashboardMetrics();
             } catch (err) {
@@ -1601,7 +1701,7 @@
         });
 
         // ================================================================
-        // TRANSFER MODAL
+        // TRANSFER MODAL - UPDATED ENDPOINT
         // ================================================================
         function showTransferModal() {
             if (!allLocations || allLocations.length < 2) { showToast('Need at least 2 locations for transfer',
@@ -1618,19 +1718,25 @@
             const fromLoc = document.getElementById('transfer-from').value;
             const toLoc = document.getElementById('transfer-to').value;
             const qty = parseInt(document.getElementById('transfer-qty').value);
-            const reason = document.getElementById('transfer-reason').value;
+            const request_notes = document.getElementById('transfer-reason').value;
             if (!productId || !fromLoc || !toLoc || !qty || qty <= 0) { showToast('Please fill all fields',
                 'error'); return; }
             if (fromLoc === toLoc) { showToast('Source and destination cannot be the same', 'error'); return; }
             try {
-                await apiCall('/v2/inventory/transfer', {
+                const response = await apiCall('/stock-transfers/request', {
                     method: 'POST',
-                    body: JSON.stringify({ from_location_id: parseInt(fromLoc), to_location_id: parseInt(toLoc),
-                        inventory_id: parseInt(productId), quantity: qty, reason: reason || null })
+                    body: JSON.stringify({
+                        from_location_id: parseInt(fromLoc),
+                        to_location_id: parseInt(toLoc),
+                        inventory_id: parseInt(productId),
+                        quantity: qty,
+                        request_notes: request_notes || null
+                    })
                 });
-                showToast('Stock transferred!', 'success');
+                showToast('Transfer request created!', 'success');
                 document.getElementById('transfer-modal').classList.add('hidden');
                 loadInventory();
+                loadTransferSuggestions();
             } catch (err) {
                 showToast(`Failed: ${err.message}`, 'error');
             }
@@ -1765,7 +1871,6 @@
                 const quantity = p.current_stock || p.quantity || 0;
                 const cost = p.cost_price_naira || 0;
                 const supplier = escapeHtml(p.supplier_name || '');
-                // location name
                 const locName = p.location_name || getLocationName(p.location_id) || 'Main';
                 return `
                     <tr class="border-b border-slate-700 hover:bg-slate-800/50">
@@ -1990,7 +2095,7 @@
         })();
 
         // ================================================================
-        // FIXED SEARCH — overlay + fixed positioning
+        // FIXED SEARCH — SERVER-SIDE WITH DEBOUNCE
         // ================================================================
         const searchInput = document.getElementById('product-search-input');
         const searchOverlay = document.getElementById('product-search-overlay');
@@ -2001,7 +2106,6 @@
             const rect = searchInput.getBoundingClientRect();
             const top = rect.bottom + 6;
             const left = rect.left;
-            // clamp to viewport
             const w = Math.min(rect.width, 500);
             searchResultsFixed.style.top = top + 'px';
             searchResultsFixed.style.left = left + 'px';
@@ -2014,23 +2118,103 @@
             searchResultsFixed.innerHTML = '';
         }
 
+        // ── Server-side search ──
+        async function performServerSearch(query) {
+            if (!query || query.length < 2) {
+                closeSearchResults();
+                return;
+            }
+
+            const locationFilter = document.getElementById('location-filter').value;
+            let url = `/inventory/search?q=${encodeURIComponent(query)}&limit=15&offset=0`;
+            if (locationFilter) {
+                url += `&location_id=${locationFilter}`;
+            }
+
+            try {
+                const data = await apiCall(url);
+                const results = data.items || [];
+                renderSearchResults(results, query);
+            } catch (err) {
+                console.error('Search error:', err);
+                const container = document.getElementById('product-search-results-fixed');
+                container.innerHTML = `<div class="no-results">Search failed. Please try again.</div>`;
+                container.classList.add('active');
+                document.getElementById('product-search-overlay').classList.add('active');
+                positionSearchResults();
+            }
+        }
+
+        // ── Updated renderSearchResults to use editProductData ──
+        function renderSearchResults(results, query) {
+            const container = document.getElementById('product-search-results-fixed');
+            if (!results || results.length === 0) {
+                container.innerHTML = `<div class="no-results">No products found for “${escapeHtml(query)}”</div>`;
+                container.classList.add('active');
+                document.getElementById('product-search-overlay').classList.add('active');
+                positionSearchResults();
+                return;
+            }
+
+            container.innerHTML = ''; // clear container
+            results.slice(0, 15).forEach(p => {
+                const item = document.createElement('div');
+                item.className = 'result-item';
+                const locName = p.location_stocks && p.location_stocks.length > 0 ?
+                    getLocationName(p.location_stocks[0].location_id) :
+                    getLocationName(p.location_id);
+                const locDisplay = locName ? `<span class="text-xs text-slate-500">📍 ${escapeHtml(locName)}</span>` :
+                    '';
+                item.innerHTML = `
+                    <div>
+                        <div class="result-name">${escapeHtml(p.description)}</div>
+                        <div class="result-meta">${escapeHtml(p.item_code || p.id)} ${locDisplay}</div>
+                    </div>
+                    <div class="result-stock">${p.current_qty || 0} in stock</div>
+                `;
+                // Use the product object directly
+                item.addEventListener('click', function() {
+                    editProductData(p);
+                    document.getElementById('product-search-input').value = '';
+                    closeSearchResults();
+                });
+                container.appendChild(item);
+            });
+
+            container.classList.add('active');
+            document.getElementById('product-search-overlay').classList.add('active');
+            positionSearchResults();
+        }
+
+        // ── Wire up with debounce ──
         if (searchInput) {
-            searchInput.addEventListener('focus', function() {
+            // Remove any old listeners by cloning (simple approach)
+            const newSearchInput = searchInput.cloneNode(true);
+            searchInput.parentNode.replaceChild(newSearchInput, searchInput);
+
+            const freshInput = document.getElementById('product-search-input');
+            const debouncedSearch = debounce(function(e) {
                 const query = this.value.trim();
-                if (query.length >= 2) performSearch(query);
+                if (query.length >= 2) {
+                    performServerSearch(query);
+                } else {
+                    closeSearchResults();
+                }
+            }, 300);
+
+            freshInput.addEventListener('input', debouncedSearch);
+            freshInput.addEventListener('focus', function() {
+                const query = this.value.trim();
+                if (query.length >= 2) {
+                    performServerSearch(query);
+                }
             });
 
-            searchInput.addEventListener('input', function(e) {
-                const query = this.value.trim();
-                if (query.length < 2) { closeSearchResults(); return; }
-                performSearch(query);
-            });
-
-            searchInput.addEventListener('keydown', function(e) {
+            freshInput.addEventListener('keydown', function(e) {
                 if (e.key === 'Escape') closeSearchResults();
             });
 
-            // click outside -> close
+            // Click outside closes
             document.addEventListener('click', function(e) {
                 const target = e.target;
                 if (!target.closest('#search-input-wrapper') && !target.closest('#product-search-results-fixed')) {
@@ -2038,60 +2222,8 @@
                 }
             });
 
-            // overlay click closes
+            // Overlay click closes
             searchOverlay.addEventListener('click', closeSearchResults);
-        }
-
-        function performSearch(query) {
-            if (!query || query.length < 2) { closeSearchResults(); return; }
-
-            const matches = products.filter(p => {
-                const desc = (p.description || '').toLowerCase();
-                const sku = (p.item_code || p.id || '').toLowerCase();
-                const group = (p.product_group || '').toLowerCase();
-                return desc.includes(query) || sku.includes(query) || group.includes(query);
-            });
-
-            let html = '';
-            if (matches.length === 0) {
-                html = `<div class="no-results">No products found for “${escapeHtml(query)}”</div>`;
-            } else {
-                const sliced = matches.slice(0, 12);
-                sliced.forEach(p => {
-                    const locName = p.location_stocks && p.location_stocks.length > 0 ?
-                        getLocationName(p.location_stocks[0].location_id) :
-                        getLocationName(p.location_id);
-                    const locDisplay = locName ? `<span class="text-xs text-slate-500">📍 ${escapeHtml(locName)}</span>` :
-                        '';
-                    html += `
-                        <div class="result-item" data-id="${p.id}">
-                            <div>
-                                <div class="result-name">${escapeHtml(p.description)}</div>
-                                <div class="result-meta">${escapeHtml(p.item_code || p.id)} ${locDisplay}</div>
-                            </div>
-                            <div class="result-stock">${p.current_qty || 0} in stock</div>
-                        </div>
-                    `;
-                });
-            }
-
-            searchResultsFixed.innerHTML = html;
-            searchResultsFixed.classList.add('active');
-            searchOverlay.classList.add('active');
-            positionSearchResults();
-
-            // click on result
-            searchResultsFixed.querySelectorAll('.result-item').forEach(el => {
-                el.addEventListener('click', function() {
-                    const id = this.dataset.id;
-                    const product = products.find(p => p.id == id);
-                    if (product) {
-                        editProduct(id);
-                        searchInput.value = '';
-                        closeSearchResults();
-                    }
-                });
-            });
         }
 
         // reposition on scroll / resize
@@ -2103,7 +2235,18 @@
         }, { passive: true });
 
         // ================================================================
-        // INIT — FIXED: redirect if not authenticated
+        // PAGINATION EVENT LISTENERS
+        // ================================================================
+        document.getElementById('prev-page')?.addEventListener('click', function() {
+            if (currentPage > 1) goToPage(currentPage - 1);
+        });
+
+        document.getElementById('next-page')?.addEventListener('click', function() {
+            if (currentPage < totalPages) goToPage(currentPage + 1);
+        });
+
+        // ================================================================
+        // INIT — redirect if not authenticated
         // ================================================================
         document.getElementById('confirm-org-btn')?.addEventListener('click', async function() {
             if (!selectedOrganisation) return;
@@ -2116,6 +2259,7 @@
             showToast(`Loading ${selectedOrganisation.name}...`, 'info');
 
             await loadLocations();
+            currentPage = 1;
             await loadInventory();
             await loadDashboardMetrics();
             await loadAlerts();
@@ -2154,7 +2298,10 @@
 
         document.getElementById('product-form')?.addEventListener('submit', saveProduct);
         document.getElementById('cancel-edit')?.addEventListener('click', resetForm);
-        document.getElementById('refresh-inventory')?.addEventListener('click', loadInventory);
+        document.getElementById('refresh-inventory')?.addEventListener('click', function() {
+            currentPage = 1;
+            loadInventory();
+        });
 
         document.getElementById('bulk-upload-btn')?.addEventListener('click', async function() {
             const fileInput = document.getElementById('bulk-csv-file');
@@ -2189,26 +2336,22 @@
         document.getElementById('log-level-filter')?.addEventListener('change', loadSystemLogs);
 
         // ================================================================
-        // INIT (FIXED: redirect immediately if not authenticated)
+        // INIT
         // ================================================================
         async function init() {
-            // 1. If no token, redirect to sign‑in immediately
             if (!token) {
                 window.location.href = '/kdsiginin';
                 return;
             }
 
             try {
-                // 2. Verify session with /auth/me – throws if invalid
                 const me = await apiCall('/auth/me');
                 currentUser = me;
                 localStorage.setItem('user_role', me.role || 'admin');
                 document.getElementById('auth-check-placeholder').classList.add('hidden');
 
-                // 3. Check if we have a saved organisation
                 const savedOrgId = localStorage.getItem('selected_org_id');
                 if (savedOrgId) {
-                    // Fetch organisations and try to match saved one
                     userOrganisations = await fetchUserOrganisations();
                     const savedOrg = userOrganisations.find(o => o.id === savedOrgId || o.org_id === savedOrgId);
                     if (savedOrg) {
@@ -2218,8 +2361,8 @@
                         document.getElementById('current-org-banner').classList.remove('hidden');
                         document.getElementById('admin-panel').classList.remove('hidden');
 
-                        // Load all data
                         await loadLocations();
+                        currentPage = 1;
                         await loadInventory();
                         await loadDashboardMetrics();
                         await loadAlerts();
@@ -2232,11 +2375,9 @@
                     }
                 }
 
-                // 4. No saved org or it no longer exists → show organisation selection
                 await initialiseOrganisationSelection();
 
             } catch (err) {
-                // Any error here means the session is invalid – redirect to login
                 console.error('Init error:', err);
                 localStorage.clear();
                 window.location.href = '/kdsiginin';
@@ -2248,14 +2389,12 @@
                 userOrganisations = await fetchUserOrganisations();
                 renderOrganisationSelection(userOrganisations);
             } catch (err) {
-                // If fetching organisations fails due to auth, redirect
                 console.error('Failed to load organisations:', err);
                 localStorage.clear();
                 window.location.href = '/kdsiginin';
             }
         }
 
-        // Start the app
         init();
     </script>
 </body>
