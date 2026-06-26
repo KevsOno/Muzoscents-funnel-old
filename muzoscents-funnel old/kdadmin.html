@@ -1368,47 +1368,51 @@
         }
 
         function renderAlerts(alerts) {
-            const container = document.getElementById('alerts-container');
-            if (!alerts || alerts.length === 0) {
-                container.innerHTML = '<div class="text-center py-8 text-slate-400">✅ No alerts found</div>';
-                return;
-            }
-            container.innerHTML = alerts.map(alert => {
-                const isResolved = alert.is_resolved || alert.action_taken || alert.status === 'Resolved';
-                const urgencyIcon = alert.alert_type?.includes('CRITICAL') ? '🔴' :
-                    alert.alert_type?.includes('WARNING') ? '🟠' :
-                    alert.alert_type?.includes('MEDIUM') ? '🟡' : '🟢';
-                return `
-                    <div class="border-b border-slate-700 py-3 px-2 hover:bg-slate-800/50 transition rounded-lg" id="alert-${alert.id}">
-                        <div class="flex flex-wrap justify-between items-start gap-2">
-                            <div class="flex-1 min-w-0">
-                                <div class="flex items-center gap-2">
-                                    <span>${urgencyIcon}</span>
-                                    <span class="font-medium">${alert.alert_type || 'Alert'}</span>
-                                    ${alert.batch ? `<span class="text-xs text-slate-400 font-mono">Batch: ${alert.batch}</span>` : ''}
-                                </div>
-                                <div class="text-sm text-slate-400">${alert.details || 'No details'}</div>
-                                ${alert.created_at ? `<div class="text-xs text-slate-500">${new Date(alert.created_at).toLocaleString()}</div>` : ''}
-                            </div>
-                            <div class="flex flex-col items-end gap-1 flex-shrink-0">
-                                ${isResolved ? 
-                                    `<span class="text-xs bg-green-600/20 text-green-400 px-2 py-0.5 rounded-full">✅ Resolved</span>` :
-                                    `<span class="text-xs bg-red-600/20 text-red-400 px-2 py-0.5 rounded-full">⚠️ Active</span>`
-                                }
-                                ${!isResolved ? `
-                                    <div class="flex gap-1 mt-1">
-                                        <button onclick="resolveAlert(${alert.id}, 'CONSUME', 1)" class="text-xs bg-green-600/20 hover:bg-green-600/40 px-2 py-0.5 rounded">Consume</button>
-                                        <button onclick="resolveAlert(${alert.id}, 'DISPOSE', 1)" class="text-xs bg-red-600/20 hover:bg-red-600/40 px-2 py-0.5 rounded">Dispose</button>
-                                        <button onclick="resolveAlert(${alert.id}, 'ACKNOWLEDGE', 0)" class="text-xs bg-slate-600/20 hover:bg-slate-600/40 px-2 py-0.5 rounded">Acknowledge</button>
-                                    </div>
-                                ` : ''}
-                            </div>
+    const container = document.getElementById('alerts-container');
+    if (!alerts || alerts.length === 0) {
+        container.innerHTML = '<div class="text-center py-8 text-slate-400">✅ No alerts found</div>';
+        return;
+    }
+    container.innerHTML = alerts.map(alert => {
+        const isResolved = alert.is_resolved || alert.action_taken || alert.status === 'Resolved';
+        const urgencyIcon = alert.alert_type?.includes('CRITICAL') ? '🔴' :
+                            alert.alert_type?.includes('WARNING') ? '🟠' :
+                            alert.alert_type?.includes('MEDIUM') ? '🟡' : '🟢';
+        // Product info (fallback if missing)
+        const productDisplay = alert.product_name ? 
+            `<div class="text-sm font-medium text-white">${escapeHtml(alert.product_name)} ${alert.product_sku ? `(${escapeHtml(alert.product_sku)})` : ''}</div>` :
+            '';
+        return `
+            <div class="border-b border-slate-700 py-3 px-2 hover:bg-slate-800/50 transition rounded-lg" id="alert-${alert.id}">
+                <div class="flex flex-wrap justify-between items-start gap-2">
+                    <div class="flex-1 min-w-0">
+                        ${productDisplay}   <!-- new line -->
+                        <div class="flex items-center gap-2">
+                            <span>${urgencyIcon}</span>
+                            <span class="font-medium">${alert.alert_type || 'Alert'}</span>
+                            ${alert.batch ? `<span class="text-xs text-slate-400 font-mono">Batch: ${alert.batch}</span>` : ''}
                         </div>
+                        <div class="text-sm text-slate-400">${alert.details || 'No details'}</div>
+                        ${alert.created_at ? `<div class="text-xs text-slate-500">${new Date(alert.created_at).toLocaleString()}</div>` : ''}
                     </div>
-                `;
-            }).join('');
-        }
-
+                    <div class="flex flex-col items-end gap-1 flex-shrink-0">
+                        ${isResolved ? 
+                            `<span class="text-xs bg-green-600/20 text-green-400 px-2 py-0.5 rounded-full">✅ Resolved</span>` :
+                            `<span class="text-xs bg-red-600/20 text-red-400 px-2 py-0.5 rounded-full">⚠️ Active</span>`
+                        }
+                        ${!isResolved ? `
+                            <div class="flex gap-1 mt-1">
+                                <button onclick="resolveAlert(${alert.id}, 'CONSUME', 1)" class="text-xs bg-green-600/20 hover:bg-green-600/40 px-2 py-0.5 rounded">Consume</button>
+                                <button onclick="resolveAlert(${alert.id}, 'DISPOSE', 1)" class="text-xs bg-red-600/20 hover:bg-red-600/40 px-2 py-0.5 rounded">Dispose</button>
+                                <button onclick="resolveAlert(${alert.id}, 'ACKNOWLEDGE', 0)" class="text-xs bg-slate-600/20 hover:bg-slate-600/40 px-2 py-0.5 rounded">Acknowledge</button>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
         window.resolveAlert = async function(alertId, actionType, quantity) {
             try {
                 const result = await apiCall(`/alerts/${alertId}/resolve`, {
