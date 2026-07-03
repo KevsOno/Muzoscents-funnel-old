@@ -73,9 +73,12 @@
                         `;
                 });
                 let userName = 'User';
+                let orgName = 'Loading...';
                 try {
                     const profileStr = localStorage.getItem('user_profile_display');
                     if (profileStr) userName = profileStr;
+                    const orgStr = localStorage.getItem('org_name');
+                    if (orgStr) orgName = orgStr;
                 } catch (e) {}
                 return `
                         <div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40">
@@ -88,6 +91,9 @@
                                     </div>
                                     <div class="hidden md:flex items-center gap-1 flex-wrap">${linksHtml}</div>
                                     <div class="flex items-center gap-3">
+                                        <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full hidden sm:inline-block">
+                                            <i class="fa-regular fa-building mr-1"></i> <span id="nav-org-name">${escapeHtml(orgName)}</span>
+                                        </span>
                                         <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full hidden sm:inline-block">
                                             <i class="fa-regular fa-user mr-1"></i> <span id="nav-user-name">${escapeHtml(userName)}</span>
                                         </span>
@@ -122,6 +128,7 @@
                 localStorage.removeItem('refresh_token');
                 localStorage.removeItem('user_role');
                 localStorage.removeItem('user_profile_display');
+                localStorage.removeItem('org_name');
                 localStorage.removeItem('selected_org_id');
                 window.location.href = LOGIN_URL;
             }
@@ -146,6 +153,17 @@
                             if (nameSpan) nameSpan.innerText = name;
                         }
                     }
+                    // Fetch organisation name
+                    const orgRes = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/org', {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    if (orgRes.ok) {
+                        const orgData = await orgRes.json();
+                        const orgName = orgData.org_name || 'Unknown Org';
+                        localStorage.setItem('org_name', orgName);
+                        const orgSpan = document.getElementById('nav-org-name');
+                        if (orgSpan) orgSpan.innerText = orgName;
+                    }
                 } catch (e) {}
             }
 
@@ -168,9 +186,11 @@
     </script>
     <!-- ========== END GLOBAL NAVIGATION ========== -->
 
+    <!-- Toast container -->
     <div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
 
     <div class="max-w-7xl mx-auto">
+        <!-- Header -->
         <div class="bg-white rounded-xl shadow-md p-4 mb-4 flex flex-wrap justify-between items-center gap-3">
             <div>
                 <h1 class="text-2xl font-bold">💳 Kevs POS Terminal</h1>
@@ -306,7 +326,7 @@
 
     <script>
         // ================================================================
-        //  OFFLINE‑READY POS – FULL IMPLEMENTATION (WITH FIXED SYNC BUTTON)
+        //  OFFLINE‑READY POS – FULL IMPLEMENTATION (WITH ORG NAME)
         // ================================================================
 
         const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
@@ -1028,7 +1048,7 @@
             return Math.max(0, subtotal - pointsRedeemed);
         }
 
-        // ---------- Sync Manager (FIXED: uses innerHTML) ----------
+        // ---------- Sync Manager ----------
         async function syncPendingOrders() {
             if (!isOnline || syncInProgress) return;
             syncInProgress = true;
@@ -1185,6 +1205,14 @@
                 const me = await apiCall('/auth/me');
                 localStorage.setItem('user_id', me.user_id);
                 localStorage.setItem('user_role', me.role || 'customer');
+                // Fetch org name
+                const orgRes = await fetch(`${BACKEND}/auth/org`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (orgRes.ok) {
+                    const orgData = await orgRes.json();
+                    localStorage.setItem('org_name', orgData.org_name || 'Unknown Org');
+                }
                 await loadCustomers();
                 hideLoginModal();
                 tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
@@ -1195,6 +1223,9 @@
                 productContainer.innerHTML = '';
                 emptyMsgDiv.classList.add('hidden');
                 showToast('Demo login — Offline‑ready POS', 'success');
+                // Update nav after login
+                const navOrg = document.getElementById('nav-org-name');
+                if (navOrg) navOrg.innerText = localStorage.getItem('org_name') || 'Unknown Org';
             } catch (err) { showToast(err.message, 'error'); } finally { btn.disabled = false; }
         }
 
@@ -1217,6 +1248,14 @@
                 const me = await apiCall('/auth/me');
                 localStorage.setItem('user_id', me.user_id);
                 localStorage.setItem('user_role', me.role || 'customer');
+                // Fetch org name
+                const orgRes = await fetch(`${BACKEND}/auth/org`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (orgRes.ok) {
+                    const orgData = await orgRes.json();
+                    localStorage.setItem('org_name', orgData.org_name || 'Unknown Org');
+                }
                 await loadCustomers();
                 hideLoginModal();
                 tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
@@ -1227,6 +1266,9 @@
                 productContainer.innerHTML = '';
                 emptyMsgDiv.classList.add('hidden');
                 showToast('Login successful', 'success');
+                // Update nav
+                const navOrg = document.getElementById('nav-org-name');
+                if (navOrg) navOrg.innerText = localStorage.getItem('org_name') || 'Unknown Org';
             } catch (err) { showToast(err.message, 'error'); }
         }
 
