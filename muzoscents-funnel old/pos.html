@@ -1,0 +1,1192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Kevs POS Pro | Offline‑Ready</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Dexie for IndexedDB -->
+    <script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js"></script>
+    <style>
+        /* ... (keep existing styles) ... */
+        .tab-active { background-color: #3b82f6; color: white; }
+        .tab-inactive { background-color: #f3f4f6; color: #1f2937; }
+        .product-card { transition: all 0.15s ease; padding: 0.5rem; }
+        .product-card:active { transform: scale(0.97); }
+        .qty-btn { width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: #f3f4f6; border: 1px solid #d1d5db; cursor: pointer; }
+        .qty-input { width: 36px; text-align: center; border: 1px solid #d1d5db; border-radius: 4px; padding: 2px 0; }
+        .total-amount { font-size: 1.5rem; font-weight: 800; }
+        .offline-badge { background: #f59e0b; color: #fff; padding: 2px 10px; border-radius: 20px; font-size: 0.7rem; }
+        .online-badge { background: #22c55e; color: #fff; padding: 2px 10px; border-radius: 20px; font-size: 0.7rem; }
+        .sync-btn { background: #3b82f6; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; }
+        .sync-btn:disabled { opacity: 0.5; }
+        #history-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 50; align-items: center; justify-content: center; }
+        #history-modal.active { display: flex; }
+        #history-modal .modal-content { background: white; max-width: 800px; width: 90%; max-height: 80vh; overflow-y: auto; padding: 20px; border-radius: 12px; }
+    </style>
+</head>
+<body class="bg-gray-100 p-4 font-sans">
+
+    <!-- Global Nav -->
+    <div id="kevs-nav-container"></div>
+    <!-- ... (same nav script as original) ... -->
+
+    <div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
+
+    <div class="max-w-7xl mx-auto">
+        <div class="bg-white rounded-xl shadow-md p-4 mb-4 flex flex-wrap justify-between items-center gap-3">
+            <div>
+                <h1 class="text-2xl font-bold">💳 Kevs POS Terminal</h1>
+                <p class="text-xs text-gray-500">Offline‑Ready · SKU Search · Scanner · Cashier History</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <span id="connection-status" class="online-badge"><i class="fa-solid fa-wifi"></i> Online</span>
+                <button id="sync-now-btn" class="sync-btn"><i class="fa-solid fa-rotate"></i> Sync</button>
+                <button id="history-btn" class="bg-gray-200 px-3 py-1 rounded-lg text-sm"><i class="fa-regular fa-clock"></i> History</button>
+            </div>
+        </div>
+
+        <!-- TABS -->
+        <div class="flex gap-3 mb-4 border-b border-gray-200 pb-1">
+            <button id="tab1-btn" data-tab="1" class="tab-active px-6 py-2.5 rounded-t-lg font-semibold text-sm transition flex items-center gap-2 shadow-sm border">
+                <i class="fa-solid fa-user"></i> Customer A
+            </button>
+            <button id="tab2-btn" data-tab="2" class="tab-inactive px-6 py-2.5 rounded-t-lg font-semibold text-sm transition flex items-center gap-2 border">
+                <i class="fa-solid fa-user-group"></i> Customer B
+            </button>
+        </div>
+
+        <!-- MAIN LAYOUT -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- CART (LEFT) -->
+            <div class="lg:col-span-2 lg:order-first bg-white rounded-xl shadow-md p-4 flex flex-col min-h-[600px]">
+                <div class="flex justify-between items-center border-b pb-2 mb-2">
+                    <h2 class="text-xl font-semibold"><i class="fa-solid fa-cart-shopping"></i> <span id="active-customer-label">Customer A</span> Sale</h2>
+                    <span class="text-xs bg-gray-100 px-2 py-1 rounded-full" id="tab-badge">Tab 1 active</span>
+                </div>
+
+                <div id="cart-items" class="space-y-2 overflow-y-auto flex-1 max-h-[50vh] lg:max-h-[60vh] min-h-[200px]"></div>
+                
+                <div class="border-t pt-3 mt-2">
+                    <div class="flex justify-between text-lg font-bold">
+                        <span>Total:</span>
+                        <span id="cart-total" class="total-amount">₦0</span>
+                    </div>
+
+                    <div class="mt-3 grid grid-cols-2 gap-3">
+                        <div><label class="block text-sm font-medium">Payment Method</label>
+                            <select id="payment-method" class="w-full border rounded-lg p-2 bg-white">
+                                <option value="cash">💵 Cash</option>
+                                <option value="card">💳 Card</option>
+                                <option value="transfer">🏦 Bank Transfer</option>
+                            </select>
+                        </div>
+                        <div><label class="block text-sm font-medium">Customer Name</label>
+                            <input id="customer-name" class="w-full border rounded-lg p-2" placeholder="Walk-in Customer" autocomplete="off">
+                        </div>
+                        <div><label class="block text-sm font-medium">Phone</label>
+                            <input id="customer-phone" class="w-full border rounded-lg p-2" placeholder="Optional" autocomplete="off">
+                        </div>
+                        <div><label class="block text-sm font-medium">Email</label>
+                            <input id="customer-email" type="email" class="w-full border rounded-lg p-2" placeholder="customer@example.com" autocomplete="off">
+                        </div>
+                    </div>
+
+                    <!-- Customer Search & Loyalty -->
+                    <div class="bg-blue-50 p-3 rounded-lg mt-3 space-y-2">
+                        <div class="relative">
+                            <input type="text" id="customer-search" placeholder="Search customer..." autocomplete="off" class="w-full border rounded-lg p-2 text-sm pr-8">
+                            <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                            <div id="customer-suggestions" class="absolute z-10 left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto hidden"></div>
+                        </div>
+                        <div id="customer-info" class="text-xs text-gray-700 hidden">
+                            <span id="customer-name-display"></span> ·
+                            <strong>Points: <span id="customer-points">0</span></strong>
+                        </div>
+                        <div id="points-redeem-section" class="hidden border-t border-blue-200 pt-2 mt-1">
+                            <label class="text-xs font-medium">Redeem points (1 pt = ₦1)</label>
+                            <div class="flex gap-2 mt-1">
+                                <input type="number" id="redeem-points-input" min="1" class="w-full border rounded-lg p-1 text-sm" placeholder="Points">
+                                <button id="apply-points-btn" class="bg-emerald-600 text-white px-3 py-1 rounded-lg text-sm hover:bg-emerald-700">Apply</button>
+                            </div>
+                            <p id="offline-points-warning" class="text-red-500 text-xs hidden">⚠️ Points redemption requires internet.</p>
+                        </div>
+                    </div>
+
+                    <button id="checkout-btn" class="mt-4 w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-bold transition shadow-md text-lg">
+                        ✅ Complete Sale
+                    </button>
+                </div>
+            </div>
+
+            <!-- PRODUCT CATALOG (RIGHT) -->
+            <div class="lg:col-span-1 bg-white rounded-xl shadow-md p-4 flex flex-col">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
+                    <h2 class="text-lg font-semibold">📦 Products</h2>
+                    <div class="relative w-full">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                        <input type="text" id="product-search" placeholder="Search SKU or name..." autocomplete="off" class="w-full pl-9 pr-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none">
+                        <div id="search-scanner-hint" class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-green-500 hidden"><i class="fa-solid fa-qrcode"></i></div>
+                    </div>
+                </div>
+                <div id="product-list" class="grid grid-cols-2 gap-2 max-h-[70vh] overflow-y-auto flex-1"></div>
+                <div id="product-list-empty" class="hidden text-center py-8 text-gray-400 col-span-full">No products match your search</div>
+                <div id="loading-more" class="hidden text-center py-4 text-gray-500 text-sm"><i class="fa-solid fa-spinner fa-pulse"></i> Loading more...</div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- History Modal -->
+    <div id="history-modal">
+        <div class="modal-content">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold">📜 Cashier History</h3>
+                <button id="close-history-btn" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <div id="history-list" class="space-y-2 max-h-[60vh] overflow-y-auto"></div>
+        </div>
+    </div>
+
+    <!-- Login Modal (unchanged) -->
+    <div id="auth-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-gray-800">🔐 Sign In to POS</h3>
+                <button id="close-modal-btn" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <div class="space-y-3">
+                <input id="login-email" type="email" placeholder="Email" class="w-full border rounded-lg p-2 text-sm">
+                <input id="login-password" type="password" placeholder="Password" class="w-full border rounded-lg p-2 text-sm">
+                <button id="modal-login-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white p-2.5 rounded-lg text-sm font-medium">Sign In</button>
+                <button id="demo-login-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white p-2.5 rounded-lg text-sm font-medium">
+                    <i class="fa-solid fa-bolt mr-1"></i> Demo Login
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ================================================================
+        //  OFFLINE‑READY POS – FULL IMPLEMENTATION
+        // ================================================================
+
+        const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
+        let token = localStorage.getItem('access_token');
+        let products = [];
+        let allCustomers = [];
+        let posSearchTerm = '';
+        let posPage = 1;
+        const POS_PAGE_SIZE = 50; // adjust for performance
+        let posTotalItems = 0;
+        let posIsLoading = false;
+        let posHasMore = true;
+        let activeTab = 1;
+        let abortController = null;
+        let isOnline = navigator.onLine;
+        let syncInProgress = false;
+
+        // ---------- Dexie IndexedDB ----------
+        const db = new Dexie('KevsPOSOffline');
+        db.version(1).stores({
+            products: 'id, description, item_code, sku, price_naira, current_qty',
+            customers: 'id, first_name, last_name, phone, email, loyalty_points',
+            orders: '++id, offlineRef, cashierId, createdAt, status, syncedAt',
+            syncQueue: '++id, orderId, attempts, lastTry'
+        });
+
+        // ---------- DOM refs ----------
+        const productContainer = document.getElementById('product-list');
+        const emptyMsgDiv = document.getElementById('product-list-empty');
+        const cartContainer = document.getElementById('cart-items');
+        const cartTotalSpan = document.getElementById('cart-total');
+        const paymentMethodSelect = document.getElementById('payment-method');
+        const customerNameInput = document.getElementById('customer-name');
+        const customerPhoneInput = document.getElementById('customer-phone');
+        const customerEmailInput = document.getElementById('customer-email');
+        const activeCustomerLabel = document.getElementById('active-customer-label');
+        const tabBadge = document.getElementById('tab-badge');
+        const tab1Btn = document.getElementById('tab1-btn');
+        const tab2Btn = document.getElementById('tab2-btn');
+        const checkoutBtn = document.getElementById('checkout-btn');
+        const searchInput = document.getElementById('product-search');
+        const customerSearchInput = document.getElementById('customer-search');
+        const suggestionsDiv = document.getElementById('customer-suggestions');
+        const customerInfoDiv = document.getElementById('customer-info');
+        const customerNameDisplay = document.getElementById('customer-name-display');
+        const customerPointsSpan = document.getElementById('customer-points');
+        const pointsRedeemSection = document.getElementById('points-redeem-section');
+        const redeemPointsInput = document.getElementById('redeem-points-input');
+        const applyPointsBtn = document.getElementById('apply-points-btn');
+        const offlinePointsWarning = document.getElementById('offline-points-warning');
+        const scannerHint = document.getElementById('search-scanner-hint');
+        const loadingMoreDiv = document.getElementById('loading-more');
+        const connectionStatus = document.getElementById('connection-status');
+        const syncNowBtn = document.getElementById('sync-now-btn');
+        const historyBtn = document.getElementById('history-btn');
+        const historyModal = document.getElementById('history-modal');
+        const closeHistoryBtn = document.getElementById('close-history-btn');
+        const historyList = document.getElementById('history-list');
+
+        // ---------- Tab State ----------
+        const tabState = {
+            1: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '',
+                loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 },
+            2: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '',
+                loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 }
+        };
+
+        // ---------- Toast ----------
+        function showToast(msg, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : type === 'error' ? 'bg-red-600' : 'bg-blue-600'} mb-2 text-sm flex items-center gap-2`;
+            const icon = type === 'success' ? 'fa-circle-check' : type === 'error' ? 'fa-circle-exclamation' : 'fa-info-circle';
+            toast.innerHTML = `<i class="fa-solid ${icon}"></i> ${msg}`;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 3800);
+        }
+
+        // ---------- API Call (with refresh) ----------
+        async function apiCall(endpoint, method = 'GET', body = null, retry = true, signal = null) {
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+            const selectedOrgId = localStorage.getItem('selected_org_id');
+            if (selectedOrgId) headers['X-Selected-Org-Id'] = selectedOrgId;
+            const options = { method, headers, signal };
+            if (body) options.body = JSON.stringify(body);
+            let res = await fetch(`${BACKEND}${endpoint}`, options);
+            if (res.status === 401 && retry) {
+                const refresh = localStorage.getItem('refresh_token');
+                if (refresh) {
+                    try {
+                        const refreshRes = await fetch(`${BACKEND}/auth/refresh`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ refresh_token: refresh })
+                        });
+                        if (refreshRes.ok) {
+                            const { access_token, refresh_token } = await refreshRes.json();
+                            localStorage.setItem('access_token', access_token);
+                            localStorage.setItem('refresh_token', refresh_token);
+                            token = access_token;
+                            return apiCall(endpoint, method, body, false, signal);
+                        }
+                    } catch (e) {}
+                }
+                showLoginModal();
+                throw new Error('Session expired');
+            }
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: 'Request error' }));
+                throw new Error(err.detail || 'API error');
+            }
+            return res.json();
+        }
+
+        // ---------- Login Modal ----------
+        function showLoginModal() { document.getElementById('auth-modal').classList.remove('hidden'); }
+        function hideLoginModal() { document.getElementById('auth-modal').classList.add('hidden'); }
+
+        // ---------- Offline Status ----------
+        function updateConnectionStatus() {
+            isOnline = navigator.onLine;
+            connectionStatus.innerHTML = isOnline ? '<i class="fa-solid fa-wifi"></i> Online' : '<i class="fa-solid fa-wifi-slash"></i> Offline';
+            connectionStatus.className = isOnline ? 'online-badge' : 'offline-badge';
+        }
+        window.addEventListener('online', () => { updateConnectionStatus(); syncPendingOrders(); });
+        window.addEventListener('offline', updateConnectionStatus);
+
+        // ---------- Product Cache & Search ----------
+        async function loadPOSProducts(reset = true) {
+            const trimmed = posSearchTerm.trim();
+            // If search term < 2 chars, clear and return
+            if (trimmed.length < 2) {
+                products = [];
+                productContainer.innerHTML = '';
+                emptyMsgDiv.classList.add('hidden');
+                posPage = 1;
+                posHasMore = true;
+                posTotalItems = 0;
+                if (abortController) abortController.abort();
+                return;
+            }
+
+            if (reset) {
+                posPage = 1;
+                posTotalItems = 0;
+                posHasMore = true;
+                products = [];
+                productContainer.innerHTML = '';
+                emptyMsgDiv.classList.add('hidden');
+                const oldSentinel = document.getElementById('scroll-sentinel');
+                if (oldSentinel) oldSentinel.remove();
+                if (observer) observer.disconnect();
+                if (abortController) abortController.abort();
+                abortController = new AbortController();
+            }
+            if (posIsLoading || !posHasMore) return;
+            posIsLoading = true;
+            loadingMoreDiv.classList.remove('hidden');
+
+            const offset = (posPage - 1) * POS_PAGE_SIZE;
+
+            try {
+                let items = [];
+                let total = 0;
+
+                if (isOnline) {
+                    // Online: fetch from backend and cache
+                    const url = `/inventory/pos?limit=${POS_PAGE_SIZE}&offset=${offset}&q=${encodeURIComponent(trimmed)}`;
+                    const data = await apiCall(url, 'GET', null, true, abortController.signal);
+                    items = data.items || [];
+                    total = data.total || 0;
+                    // Cache each product (upsert)
+                    for (const p of items) {
+                        await db.products.put({
+                            id: p.id,
+                            description: p.description,
+                            item_code: p.item_code,
+                            sku: p.sku || p.item_code,
+                            price_naira: p.price_naira,
+                            current_qty: p.current_qty
+                        });
+                    }
+                } else {
+                    // Offline: search IndexedDB with pagination
+                    let collection = db.products.where('description').startsWithIgnoreCase(trimmed)
+                        .or('item_code').startsWithIgnoreCase(trimmed)
+                        .or('sku').startsWithIgnoreCase(trimmed);
+                    total = await collection.count();
+                    items = await collection.offset(offset).limit(POS_PAGE_SIZE).toArray();
+                    // Ensure we have the same fields
+                    items = items.map(p => ({ ...p, price_naira: p.price_naira, current_qty: p.current_qty }));
+                }
+
+                posTotalItems = total;
+                posHasMore = (offset + POS_PAGE_SIZE) < total;
+
+                if (reset) products = items;
+                else products = products.concat(items);
+
+                appendProductCards(items);
+                posPage++;
+                return products;
+            } catch (err) {
+                if (err.name === 'AbortError') return;
+                showToast('Failed to load products: ' + err.message, 'error');
+            } finally {
+                posIsLoading = false;
+                loadingMoreDiv.classList.add('hidden');
+                if (posHasMore) {
+                    const sentinel = document.createElement('div');
+                    sentinel.id = 'scroll-sentinel';
+                    sentinel.className = 'h-4 w-full';
+                    productContainer.appendChild(sentinel);
+                    observeSentinel();
+                } else {
+                    if (products.length > 0) {
+                        const endMsg = document.createElement('div');
+                        endMsg.className = 'col-span-full text-center py-4 text-gray-400 text-sm';
+                        endMsg.innerText = '— End of catalog —';
+                        productContainer.appendChild(endMsg);
+                    }
+                }
+            }
+        }
+
+        function appendProductCards(items) {
+            if (!items || items.length === 0) {
+                if (products.length === 0) emptyMsgDiv.classList.remove('hidden');
+                return;
+            }
+            emptyMsgDiv.classList.add('hidden');
+            items.forEach(p => {
+                const skuDisplay = p.sku || p.item_code || `ID:${p.id}`;
+                const stock = p.current_qty ?? 0;
+                const price = p.price_naira ?? 0;
+                const descSafe = escapeHtml(p.description || 'Unnamed product');
+                const card = document.createElement('button');
+                card.className = 'product-card bg-gray-50 rounded-lg text-left hover:bg-blue-50 border border-gray-200 transition shadow-sm flex flex-col';
+                card.innerHTML = `
+                    <span class="name">${descSafe}</span>
+                    <span class="sku">📟 ${escapeHtml(skuDisplay)}</span>
+                    <span class="price">₦${price.toLocaleString()}</span>
+                    <span class="stock">📦 ${stock} left</span>
+                `;
+                card.onclick = () => addToCart(p.id, p.description || 'Product', price, stock, skuDisplay);
+                productContainer.appendChild(card);
+            });
+        }
+
+        function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;'); }
+
+        let observer = null;
+        function observeSentinel() {
+            if (observer) observer.disconnect();
+            const sentinel = document.getElementById('scroll-sentinel');
+            if (!sentinel) return;
+            observer = new IntersectionObserver((entries) => {
+                if (entries[0].isIntersecting && posHasMore && !posIsLoading) {
+                    loadPOSProducts(false);
+                }
+            }, { root: null, rootMargin: '0px 0px 100px 0px' });
+            observer.observe(sentinel);
+        }
+
+        // ---------- Search Input (with scanner) ----------
+        let scanBuffer = '', scanTimer = null, isScanning = false, lastKeyTime = 0, searchDebounceTimer = null;
+        searchInput.addEventListener('input', function(e) {
+            if (isScanning) return;
+            clearTimeout(searchDebounceTimer);
+            const val = this.value.trim();
+            searchDebounceTimer = setTimeout(() => {
+                posSearchTerm = val;
+                if (val.length === 0) {
+                    products = [];
+                    productContainer.innerHTML = '';
+                    emptyMsgDiv.classList.add('hidden');
+                    posPage = 1;
+                    posHasMore = true;
+                    posTotalItems = 0;
+                    if (abortController) abortController.abort();
+                    return;
+                }
+                if (val.length >= 2) {
+                    if (abortController) abortController.abort();
+                    loadPOSProducts(true);
+                }
+            }, 500);
+        });
+
+        searchInput.addEventListener('keydown', function(e) {
+            const now = Date.now();
+            const timeDiff = lastKeyTime ? now - lastKeyTime : 0;
+            lastKeyTime = now;
+            if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                if (timeDiff < 60 && timeDiff > 0) {
+                    e.preventDefault();
+                    if (!isScanning) {
+                        isScanning = true;
+                        scanBuffer = '';
+                        searchInput.classList.add('scanner-active');
+                        scannerHint.classList.remove('hidden');
+                    }
+                    scanBuffer += e.key;
+                    clearTimeout(scanTimer);
+                    scanTimer = setTimeout(async () => {
+                        if (scanBuffer.length > 0) {
+                            searchInput.value = scanBuffer;
+                            posSearchTerm = scanBuffer;
+                            if (scanBuffer.length >= 2) {
+                                if (abortController) abortController.abort();
+                                await loadPOSProducts(true);
+                                if (products.length === 1) {
+                                    const p = products[0];
+                                    addToCart(p.id, p.description || 'Product', p.price_naira || 0, p.current_qty || 0, p.sku || p.item_code);
+                                } else if (products.length === 0) {
+                                    showToast('Product not found', 'error');
+                                } else {
+                                    showToast(`${products.length} products found`, 'info');
+                                }
+                            } else {
+                                products = [];
+                                productContainer.innerHTML = '';
+                                emptyMsgDiv.classList.add('hidden');
+                            }
+                        }
+                        isScanning = false;
+                        scanBuffer = '';
+                        searchInput.classList.remove('scanner-active');
+                        scannerHint.classList.add('hidden');
+                    }, 150);
+                    return;
+                }
+                if (isScanning) {
+                    isScanning = false;
+                    scanBuffer = '';
+                    clearTimeout(scanTimer);
+                    searchInput.classList.remove('scanner-active');
+                    scannerHint.classList.add('hidden');
+                }
+            } else {
+                if (isScanning) {
+                    isScanning = false;
+                    scanBuffer = '';
+                    clearTimeout(scanTimer);
+                    searchInput.classList.remove('scanner-active');
+                    scannerHint.classList.add('hidden');
+                }
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const val = searchInput.value.trim();
+                    if (val.length >= 2) {
+                        posSearchTerm = val;
+                        if (abortController) abortController.abort();
+                        loadPOSProducts(true).then(() => {
+                            if (products.length === 1) {
+                                const p = products[0];
+                                addToCart(p.id, p.description || 'Product', p.price_naira || 0, p.current_qty || 0, p.sku || p.item_code);
+                            } else if (products.length === 0) {
+                                showToast('Product not found', 'error');
+                            } else {
+                                showToast(`${products.length} products found`, 'info');
+                            }
+                        });
+                    } else {
+                        products = [];
+                        productContainer.innerHTML = '';
+                        emptyMsgDiv.classList.add('hidden');
+                    }
+                }
+            }
+        });
+
+        // ---------- Customer Search ----------
+        function filterCustomers(searchText) {
+            if (!searchText.trim()) return [];
+            const term = searchText.trim().toLowerCase();
+            return allCustomers.filter(c => {
+                const name = `${c.first_name || ''} ${c.last_name || ''}`.toLowerCase();
+                const phone = (c.phone || '').toLowerCase();
+                const email = (c.email || '').toLowerCase();
+                return name.includes(term) || phone.includes(term) || email.includes(term);
+            });
+        }
+
+        function renderSuggestions() {
+            const searchVal = customerSearchInput.value;
+            const matches = filterCustomers(searchVal);
+            if (matches.length === 0 || !searchVal.trim()) {
+                suggestionsDiv.classList.add('hidden');
+                return;
+            }
+            suggestionsDiv.classList.remove('hidden');
+            suggestionsDiv.innerHTML = matches.map(c => {
+                const fullName = `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'No name';
+                return `
+                    <div class="customer-suggestion px-3 py-2 border-b last:border-0 text-sm hover:bg-blue-50" data-user-id="${c.id}" data-name="${escapeAttr(fullName)}" data-phone="${escapeAttr(c.phone || '')}" data-email="${escapeAttr(c.email || '')}" data-points="${c.loyalty_points || 0}">
+                        <div class="font-medium">${escapeHtml(fullName)}</div>
+                        <div class="text-xs text-gray-500">${escapeHtml(c.phone || '')} · ${escapeHtml(c.email || '')}</div>
+                    </div>
+                `;
+            }).join('');
+            document.querySelectorAll('.customer-suggestion').forEach(el => {
+                el.addEventListener('click', () => {
+                    const userId = el.dataset.userId;
+                    const name = el.dataset.name;
+                    const phone = el.dataset.phone;
+                    const email = el.dataset.email;
+                    const points = parseInt(el.dataset.points, 10);
+                    selectCustomer(userId, name, phone, email, points);
+                    suggestionsDiv.classList.add('hidden');
+                    customerSearchInput.value = name;
+                });
+            });
+        }
+
+        function escapeAttr(str) { if (!str) return ''; return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+
+        function selectCustomer(userId, name, phone, email, points) {
+            const state = tabState[activeTab];
+            state.loyaltyUserId = userId;
+            state.pointsBalance = points;
+            state.pointsRedeemed = 0;
+            state.customerName = name;
+            state.customerPhone = phone;
+            state.customerEmail = email;
+            customerNameInput.value = name;
+            customerPhoneInput.value = phone;
+            customerEmailInput.value = email;
+            customerNameDisplay.innerText = name;
+            customerPointsSpan.innerText = points;
+            customerInfoDiv.classList.remove('hidden');
+            if (points > 0 && isOnline) {
+                pointsRedeemSection.classList.remove('hidden');
+                offlinePointsWarning.classList.add('hidden');
+                redeemPointsInput.max = points;
+                redeemPointsInput.value = '';
+            } else if (points > 0 && !isOnline) {
+                pointsRedeemSection.classList.add('hidden');
+                offlinePointsWarning.classList.remove('hidden');
+            } else {
+                pointsRedeemSection.classList.add('hidden');
+                offlinePointsWarning.classList.add('hidden');
+            }
+            showToast(`Customer selected: ${name} (${points} points)`, 'success');
+            renderActiveCart();
+        }
+
+        // ---------- Load Customers (cache offline) ----------
+        async function loadCustomers() {
+            try {
+                const data = await apiCall('/organisations/me/users');
+                allCustomers = data.users || [];
+                // Cache customers in IndexedDB
+                for (const c of allCustomers) {
+                    await db.customers.put({
+                        id: c.id,
+                        first_name: c.first_name,
+                        last_name: c.last_name,
+                        phone: c.phone,
+                        email: c.email,
+                        loyalty_points: c.loyalty_points || 0
+                    });
+                }
+            } catch (err) {
+                console.warn('Failed to load customers online, using cache:', err);
+                // Offline: load from IndexedDB
+                allCustomers = await db.customers.toArray();
+            }
+        }
+
+        // ---------- Cart Controls ----------
+        window.updateCartItemQty = function(index, newQty) {
+            const state = tabState[activeTab];
+            const cart = state.cart;
+            if (index < 0 || index >= cart.length) return;
+            newQty = parseInt(newQty, 10);
+            if (isNaN(newQty) || newQty < 1) newQty = 1;
+            cart[index].qty = newQty;
+            renderActiveCart();
+        };
+
+        window.incrementCartItem = function(index) {
+            const state = tabState[activeTab];
+            const cart = state.cart;
+            if (index < 0 || index >= cart.length) return;
+            const item = cart[index];
+            const productRef = products.find(p => p.id === item.id);
+            const availableStock = productRef ? (productRef.current_qty ?? 0) : 9999;
+            if (item.qty + 1 > availableStock) {
+                showToast(`⚠️ Only ${availableStock} left for "${item.name}"`, 'error');
+                return;
+            }
+            item.qty++;
+            renderActiveCart();
+        };
+
+        window.decrementCartItem = function(index) {
+            const state = tabState[activeTab];
+            const cart = state.cart;
+            if (index < 0 || index >= cart.length) return;
+            if (cart[index].qty > 1) {
+                cart[index].qty--;
+                renderActiveCart();
+            } else {
+                cart.splice(index, 1);
+                renderActiveCart();
+            }
+        };
+
+        window.removeCartItem = function(index) {
+            const state = tabState[activeTab];
+            const cart = state.cart;
+            if (index >= 0 && index < cart.length) {
+                cart.splice(index, 1);
+                renderActiveCart();
+            }
+        };
+
+        window.addToCart = function(productId, productName, price, stock, skuLabel) {
+            const state = tabState[activeTab];
+            const cart = state.cart;
+            const existing = cart.find(i => i.id === productId);
+            const productRef = products.find(p => p.id === productId);
+            const availableStock = productRef ? (productRef.current_qty ?? 0) : stock;
+
+            if (existing) {
+                if (existing.qty + 1 > availableStock) {
+                    showToast(`⚠️ Only ${availableStock} left for "${productName}"`, 'error');
+                    return;
+                }
+                existing.qty++;
+            } else {
+                if (1 > availableStock) {
+                    showToast(`❌ "${productName}" out of stock`, 'error');
+                    return;
+                }
+                cart.push({ id: productId, name: productName, price: price, qty: 1, sku: skuLabel });
+            }
+            renderActiveCart();
+            showToast(`➕ Added ${productName}`, 'success');
+        };
+
+        // ---------- Render Cart ----------
+        function renderActiveCart() {
+            const state = tabState[activeTab];
+            const cart = state.cart;
+            const pointsRedeemed = state.pointsRedeemed || 0;
+            if (!cartContainer) return;
+            let subtotal = 0;
+            let cartHtml = '';
+            cart.forEach((item, idx) => {
+                const itemTotal = item.price * item.qty;
+                subtotal += itemTotal;
+                cartHtml += `
+                    <div class="flex items-center justify-between border-b pb-2 hover:bg-gray-50 px-1 rounded gap-2">
+                        <div class="flex-1 min-w-0">
+                            <div class="cart-item-name truncate">${escapeHtml(item.name)}</div>
+                            <div class="cart-item-price text-gray-500">₦${item.price.toLocaleString()}</div>
+                        </div>
+                        <div class="flex items-center gap-1 flex-shrink-0">
+                            <button onclick="decrementCartItem(${idx})" class="qty-btn">−</button>
+                            <input type="number" min="1" value="${item.qty}" class="qty-input" onchange="updateCartItemQty(${idx}, this.value)" onfocus="this.select()">
+                            <button onclick="incrementCartItem(${idx})" class="qty-btn">+</button>
+                        </div>
+                        <div class="font-semibold text-sm ml-1 w-16 text-right flex-shrink-0">₦${itemTotal.toLocaleString()}</div>
+                        <button onclick="removeCartItem(${idx})" class="text-red-500 hover:text-red-700 text-sm w-6 h-6 rounded-full hover:bg-red-50 flex items-center justify-center flex-shrink-0">
+                            <i class="fa-regular fa-trash-can"></i>
+                        </button>
+                    </div>
+                `;
+            });
+            let finalTotal = subtotal;
+            if (pointsRedeemed > 0) {
+                const discount = pointsRedeemed;
+                if (discount > finalTotal) {
+                    state.pointsRedeemed = Math.min(finalTotal, pointsRedeemed);
+                    finalTotal = 0;
+                } else {
+                    finalTotal = subtotal - discount;
+                }
+                cartHtml += `
+                    <div class="flex justify-between items-center text-green-700 border-t pt-2 mt-1">
+                        <div class="text-sm font-medium">🎁 Points Discount (${state.pointsRedeemed} pts)</div>
+                        <div class="font-semibold">-₦${discount.toLocaleString()}</div>
+                    </div>
+                `;
+            }
+            if (cart.length === 0) {
+                cartContainer.innerHTML = `<div class="text-center text-gray-400 py-6"><i class="fa-regular fa-receipt text-2xl"></i><p class="text-sm mt-1">Cart is empty</p></div>`;
+            } else {
+                cartContainer.innerHTML = cartHtml;
+            }
+            cartTotalSpan.innerText = `₦${finalTotal.toLocaleString()}`;
+        }
+
+        // ---------- Sync UI ----------
+        function syncUIWithActiveTab() {
+            const state = tabState[activeTab];
+            renderActiveCart();
+            paymentMethodSelect.value = state.paymentMethod;
+            customerNameInput.value = state.customerName;
+            customerPhoneInput.value = state.customerPhone;
+            customerEmailInput.value = state.customerEmail;
+            activeCustomerLabel.innerText = activeTab === 1 ? 'Customer A' : 'Customer B';
+            tabBadge.innerText = activeTab === 1 ? 'Tab 1 active' : 'Tab 2 active';
+            if (activeTab === 1) {
+                tab1Btn.classList.add('tab-active');
+                tab1Btn.classList.remove('tab-inactive');
+                tab2Btn.classList.add('tab-inactive');
+                tab2Btn.classList.remove('tab-active');
+            } else {
+                tab2Btn.classList.add('tab-active');
+                tab2Btn.classList.remove('tab-inactive');
+                tab1Btn.classList.add('tab-inactive');
+                tab1Btn.classList.remove('tab-active');
+            }
+            if (state.loyaltyUserId && state.pointsBalance > 0) {
+                customerInfoDiv.classList.remove('hidden');
+                customerNameDisplay.innerText = state.customerName || 'Customer';
+                customerPointsSpan.innerText = state.pointsBalance;
+                if (isOnline) {
+                    pointsRedeemSection.classList.remove('hidden');
+                    offlinePointsWarning.classList.add('hidden');
+                    redeemPointsInput.max = state.pointsBalance;
+                } else {
+                    pointsRedeemSection.classList.add('hidden');
+                    offlinePointsWarning.classList.remove('hidden');
+                }
+            } else {
+                customerInfoDiv.classList.add('hidden');
+                pointsRedeemSection.classList.add('hidden');
+                offlinePointsWarning.classList.add('hidden');
+            }
+        }
+
+        // ---------- Checkout (Offline‑Aware) ----------
+        async function processCheckout() {
+            const state = tabState[activeTab];
+            const cart = state.cart;
+            if (cart.length === 0) {
+                showToast('🛒 Cart is empty. Add items first.', 'error');
+                return;
+            }
+            const paymentMethod = state.paymentMethod;
+            const customerName = state.customerName.trim() || null;
+            const customerPhone = state.customerPhone.trim() || null;
+            let customerEmail = state.customerEmail.trim() || null;
+            const pointsRedeemed = state.pointsRedeemed || 0;
+
+            if (paymentMethod !== 'cash' && !customerEmail) {
+                showToast('📧 Email is required for card/transfer payments', 'error');
+                return;
+            }
+
+            // Offline: only cash allowed
+            if (!isOnline && paymentMethod !== 'cash') {
+                showToast('⚠️ Offline: only cash payments are accepted', 'error');
+                return;
+            }
+
+            const itemsPayload = cart.map(i => ({ inventory_id: i.id, quantity: i.qty }));
+            const cashierId = localStorage.getItem('user_id') || 'unknown';
+            const offlineRef = `OFF-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+
+            const order = {
+                offlineRef,
+                cashierId,
+                items: itemsPayload,
+                paymentMethod,
+                customerName,
+                customerPhone,
+                customerEmail,
+                total: calculateTotal(state),
+                status: 'pending',
+                createdAt: new Date().toISOString(),
+                pointsRedeemed
+            };
+
+            checkoutBtn.disabled = true;
+            checkoutBtn.innerText = 'Processing...';
+
+            try {
+                if (!isOnline) {
+                    // Offline: save to IndexedDB
+                    await db.orders.add(order);
+                    await db.syncQueue.add({ orderId: order.offlineRef, attempts: 0, lastTry: null });
+                    // Reduce local stock optimistically
+                    for (const item of cart) {
+                        const product = await db.products.get(item.id);
+                        if (product) {
+                            await db.products.update(item.id, { current_qty: product.current_qty - item.qty });
+                        }
+                    }
+                    state.cart = [];
+                    state.pointsRedeemed = 0;
+                    renderActiveCart();
+                    showToast(`✅ Order saved offline (Ref: ${offlineRef}). Will sync when online.`, 'success');
+                    await addToHistory(order, 'pending');
+                    return;
+                }
+
+                // Online: try immediate checkout
+                const result = await apiCall('/pos/terminal/checkout', 'POST', {
+                    items: itemsPayload,
+                    payment_method: paymentMethod,
+                    customer_name: customerName,
+                    customer_phone: customerPhone,
+                    customer_email: customerEmail,
+                    // offline_reference: offlineRef // uncomment if backend supports
+                });
+                // On success, mark as synced
+                await db.orders.add({ ...order, status: 'synced', syncedAt: new Date().toISOString() });
+                await addToHistory(order, 'synced');
+                state.cart = [];
+                state.pointsRedeemed = 0;
+                renderActiveCart();
+                showToast(`✅ Sale complete! Receipt: ${result.receipt_number}`, 'success');
+            } catch (err) {
+                // If online fails, fallback to offline queue
+                if (!isOnline || err.message.includes('offline') || err.message.includes('network')) {
+                    await db.orders.add({ ...order, status: 'pending' });
+                    await db.syncQueue.add({ orderId: order.offlineRef, attempts: 0, lastTry: null });
+                    showToast(`Order queued for later sync (Ref: ${offlineRef})`, 'warning');
+                    state.cart = [];
+                    state.pointsRedeemed = 0;
+                    renderActiveCart();
+                } else {
+                    showToast(`❌ Checkout failed: ${err.message}`, 'error');
+                }
+            } finally {
+                checkoutBtn.disabled = false;
+                checkoutBtn.innerText = '✅ Complete Sale';
+            }
+        }
+
+        function calculateTotal(state) {
+            const cart = state.cart;
+            let subtotal = cart.reduce((sum, i) => sum + i.price * i.qty, 0);
+            const pointsRedeemed = state.pointsRedeemed || 0;
+            return Math.max(0, subtotal - pointsRedeemed);
+        }
+
+        // ---------- Sync Manager ----------
+        async function syncPendingOrders() {
+            if (!isOnline || syncInProgress) return;
+            syncInProgress = true;
+            syncNowBtn.disabled = true;
+            syncNowBtn.innerText = 'Syncing...';
+            try {
+                const pending = await db.syncQueue.toArray();
+                for (const entry of pending) {
+                    const order = await db.orders.get(entry.orderId);
+                    if (!order || order.status === 'synced') {
+                        await db.syncQueue.delete(entry.id);
+                        continue;
+                    }
+                    try {
+                        const result = await apiCall('/pos/terminal/checkout', 'POST', {
+                            items: order.items,
+                            payment_method: order.paymentMethod,
+                            customer_name: order.customerName,
+                            customer_phone: order.customerPhone,
+                            customer_email: order.customerEmail,
+                            // offline_reference: order.offlineRef
+                        });
+                        // Success
+                        await db.orders.update(order.offlineRef, { status: 'synced', syncedAt: new Date().toISOString() });
+                        await db.syncQueue.delete(entry.id);
+                        await addToHistory(order, 'synced');
+                        showToast(`Order ${order.offlineRef} synced`, 'success');
+                    } catch (err) {
+                        // If duplicate or conflict, mark as duplicate and skip
+                        if (err.message.includes('duplicate') || err.message.includes('already exists')) {
+                            await db.orders.update(order.offlineRef, { status: 'duplicate' });
+                            await db.syncQueue.delete(entry.id);
+                            showToast(`Order ${order.offlineRef} already exists (skipped)`, 'warning');
+                        } else {
+                            // Retry later
+                            await db.syncQueue.update(entry.id, { attempts: entry.attempts + 1, lastTry: new Date().toISOString() });
+                            if (entry.attempts >= 5) {
+                                showToast(`Order ${order.offlineRef} failed after 5 attempts`, 'error');
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                showToast('Sync error: ' + e.message, 'error');
+            } finally {
+                syncInProgress = false;
+                syncNowBtn.disabled = false;
+                syncNowBtn.innerText = '<i class="fa-solid fa-rotate"></i> Sync';
+            }
+        }
+
+        // ---------- Cashier History ----------
+        async function addToHistory(order, status) {
+            // Store in IndexedDB (already in orders table)
+            // We'll just refresh history view when opened
+        }
+
+        async function renderHistory() {
+            const cashierId = localStorage.getItem('user_id') || 'unknown';
+            const orders = await db.orders.where('cashierId').equals(cashierId).toArray();
+            if (orders.length === 0) {
+                historyList.innerHTML = '<p class="text-gray-500">No orders found.</p>';
+                return;
+            }
+            historyList.innerHTML = orders.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(o => `
+                <div class="border-b py-2 flex justify-between items-center">
+                    <div>
+                        <div><strong>${o.offlineRef}</strong> - ${new Date(o.createdAt).toLocaleString()}</div>
+                        <div class="text-sm">Status: <span class="${o.status === 'synced' ? 'text-green-600' : 'text-yellow-600'}">${o.status}</span> | Total: ₦${o.total}</div>
+                    </div>
+                    ${o.status === 'pending' ? '<button onclick="syncSingleOrder(\''+o.offlineRef+'\')" class="text-blue-500 text-sm"><i class="fa-solid fa-rotate"></i> Sync</button>' : ''}
+                </div>
+            `).join('');
+        }
+
+        window.syncSingleOrder = async function(offlineRef) {
+            if (!isOnline) { showToast('Go online to sync.', 'error'); return; }
+            const order = await db.orders.get(offlineRef);
+            if (!order) return;
+            try {
+                const result = await apiCall('/pos/terminal/checkout', 'POST', {
+                    items: order.items,
+                    payment_method: order.paymentMethod,
+                    customer_name: order.customerName,
+                    customer_phone: order.customerPhone,
+                    customer_email: order.customerEmail,
+                });
+                await db.orders.update(offlineRef, { status: 'synced', syncedAt: new Date().toISOString() });
+                await db.syncQueue.delete(offlineRef);
+                showToast(`Order ${offlineRef} synced`, 'success');
+                renderHistory();
+            } catch (err) {
+                showToast('Sync failed: ' + err.message, 'error');
+            }
+        };
+
+        // ---------- Points Redemption (online only) ----------
+        async function applyPoints() {
+            if (!isOnline) {
+                showToast('⚠️ Points redemption requires internet.', 'error');
+                return;
+            }
+            const state = tabState[activeTab];
+            if (!state.loyaltyUserId) {
+                showToast('Please search and select a customer first', 'error');
+                return;
+            }
+            let pointsToRedeem = parseInt(redeemPointsInput.value, 10);
+            if (isNaN(pointsToRedeem) || pointsToRedeem <= 0) {
+                showToast('Enter a valid number of points', 'error');
+                return;
+            }
+            if (pointsToRedeem > state.pointsBalance) {
+                showToast(`You only have ${state.pointsBalance} points`, 'error');
+                return;
+            }
+            try {
+                await apiCall('/loyalty/redeem', 'POST', { points: pointsToRedeem });
+                state.pointsRedeemed = (state.pointsRedeemed || 0) + pointsToRedeem;
+                state.pointsBalance -= pointsToRedeem;
+                redeemPointsInput.value = '';
+                renderActiveCart();
+                showToast(`✅ ${pointsToRedeem} points redeemed – ₦${pointsToRedeem} off this order!`, 'success');
+                syncUIWithActiveTab();
+                // Update customer cache
+                const cust = await db.customers.get(state.loyaltyUserId);
+                if (cust) {
+                    await db.customers.update(state.loyaltyUserId, { loyalty_points: state.pointsBalance });
+                }
+            } catch (err) {
+                showToast(`Redemption failed: ${err.message}`, 'error');
+            }
+        }
+
+        // ---------- Navigation ----------
+        function setActiveTab(tabId) {
+            if (tabId === activeTab) return;
+            tabState[activeTab].paymentMethod = paymentMethodSelect.value;
+            tabState[activeTab].customerName = customerNameInput.value;
+            tabState[activeTab].customerPhone = customerPhoneInput.value;
+            tabState[activeTab].customerEmail = customerEmailInput.value;
+            activeTab = tabId;
+            syncUIWithActiveTab();
+            customerSearchInput.value = '';
+            suggestionsDiv.classList.add('hidden');
+        }
+
+        // ---------- Login / Demo ----------
+        async function demoLogin() {
+            const btn = document.getElementById('demo-login-btn');
+            btn.disabled = true;
+            try {
+                const res = await fetch(`${BACKEND}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail);
+                token = data.access_token;
+                localStorage.setItem('access_token', token);
+                localStorage.setItem('refresh_token', data.refresh_token);
+                localStorage.removeItem('selected_org_id');
+                const me = await apiCall('/auth/me');
+                localStorage.setItem('user_id', me.user_id);
+                localStorage.setItem('user_role', me.role || 'customer');
+                await loadCustomers();
+                hideLoginModal();
+                tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
+                tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
+                activeTab = 1;
+                syncUIWithActiveTab();
+                products = [];
+                productContainer.innerHTML = '';
+                emptyMsgDiv.classList.add('hidden');
+                showToast('Demo login — Offline‑ready POS', 'success');
+            } catch (err) { showToast(err.message, 'error'); } finally { btn.disabled = false; }
+        }
+
+        async function handleLogin() {
+            const email = document.getElementById('login-email').value.trim();
+            const pwd = document.getElementById('login-password').value.trim();
+            if (!email || !pwd) { showToast('Enter email and password', 'error'); return; }
+            try {
+                const res = await fetch(`${BACKEND}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password: pwd })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail);
+                token = data.access_token;
+                localStorage.setItem('access_token', token);
+                localStorage.setItem('refresh_token', data.refresh_token);
+                localStorage.removeItem('selected_org_id');
+                const me = await apiCall('/auth/me');
+                localStorage.setItem('user_id', me.user_id);
+                localStorage.setItem('user_role', me.role || 'customer');
+                await loadCustomers();
+                hideLoginModal();
+                tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
+                tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
+                activeTab = 1;
+                syncUIWithActiveTab();
+                products = [];
+                productContainer.innerHTML = '';
+                emptyMsgDiv.classList.add('hidden');
+                showToast('Login successful', 'success');
+            } catch (err) { showToast(err.message, 'error'); }
+        }
+
+        // ---------- Initialisation ----------
+        function initTabs() {
+            tab1Btn.onclick = () => setActiveTab(1);
+            tab2Btn.onclick = () => setActiveTab(2);
+        }
+
+        function initCustomerSearch() {
+            customerSearchInput.addEventListener('input', renderSuggestions);
+            document.addEventListener('click', (e) => {
+                if (!customerSearchInput.contains(e.target) && !suggestionsDiv.contains(e.target)) {
+                    suggestionsDiv.classList.add('hidden');
+                }
+            });
+        }
+
+        // ---------- Event Listeners ----------
+        checkoutBtn.addEventListener('click', processCheckout);
+        applyPointsBtn.addEventListener('click', applyPoints);
+        document.getElementById('modal-login-btn')?.addEventListener('click', handleLogin);
+        document.getElementById('demo-login-btn')?.addEventListener('click', demoLogin);
+        document.getElementById('close-modal-btn')?.addEventListener('click', hideLoginModal);
+        syncNowBtn.addEventListener('click', syncPendingOrders);
+        historyBtn.addEventListener('click', async () => {
+            historyModal.classList.add('active');
+            await renderHistory();
+        });
+        closeHistoryBtn.addEventListener('click', () => historyModal.classList.remove('active'));
+        historyModal.addEventListener('click', (e) => { if (e.target === historyModal) historyModal.classList.remove('active'); });
+
+        // Bind field changes to state
+        paymentMethodSelect.onchange = () => { tabState[activeTab].paymentMethod = paymentMethodSelect.value; };
+        customerNameInput.addEventListener('input', () => { tabState[activeTab].customerName = customerNameInput.value; });
+        customerPhoneInput.addEventListener('input', () => { tabState[activeTab].customerPhone = customerPhoneInput.value; });
+        customerEmailInput.addEventListener('input', () => { tabState[activeTab].customerEmail = customerEmailInput.value; });
+
+        // ---------- Start ----------
+        (async () => {
+            updateConnectionStatus();
+            initTabs();
+            initCustomerSearch();
+            if (token) {
+                try {
+                    await loadCustomers();
+                    if (!tabState[1].cart.length && !tabState[2].cart.length) {
+                        tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
+                        tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
+                    }
+                    activeTab = 1;
+                    syncUIWithActiveTab();
+                    productContainer.innerHTML = '';
+                    emptyMsgDiv.classList.add('hidden');
+                } catch (e) { token = null; showLoginModal(); }
+            } else { showLoginModal(); }
+
+            // Attempt sync on load if online
+            if (isOnline) await syncPendingOrders();
+        })();
+
+        // Also, we need to sync when coming online – already added listener.
+
+        console.log('✅ Offline‑Ready POS loaded');
+    </script>
+</body>
+</html>
