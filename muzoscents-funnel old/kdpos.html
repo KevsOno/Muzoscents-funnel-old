@@ -3,12 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Kevs POS Pro | Offline‑Ready + Print</title>
+    <title>Kevs POS Pro | Offline‑Ready + Audit</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js"></script>
     <style>
-        /* --- existing styles --- */
         .tab-active { background-color: #3b82f6; color: white; }
         .tab-inactive { background-color: #f3f4f6; color: #1f2937; }
         .product-card { transition: all 0.15s ease; padding: 0.5rem; }
@@ -20,11 +19,16 @@
         .online-badge { background: #22c55e; color: #fff; padding: 2px 10px; border-radius: 20px; font-size: 0.7rem; }
         .sync-btn { background: #3b82f6; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; border: none; cursor: pointer; }
         .sync-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        #history-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 50; align-items: center; justify-content: center; }
-        #history-modal.active { display: flex; }
-        #history-modal .modal-content { background: white; max-width: 800px; width: 90%; max-height: 80vh; overflow-y: auto; padding: 20px; border-radius: 12px; }
+        #history-modal, #sync-dashboard-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 50; align-items: center; justify-content: center; }
+        #history-modal.active, #sync-dashboard-modal.active { display: flex; }
+        #history-modal .modal-content, #sync-dashboard-modal .modal-content { background: white; max-width: 800px; width: 90%; max-height: 80vh; overflow-y: auto; padding: 20px; border-radius: 12px; }
+        .dashboard-stat { display: flex; justify-content: space-between; border-bottom: 1px solid #e5e7eb; padding: 8px 0; }
+        .dashboard-stat .label { font-weight: 500; }
+        .dashboard-stat .value { font-weight: 700; }
+        .pending { color: #f59e0b; }
+        .synced { color: #22c55e; }
+        .failed { color: #ef4444; }
 
-        /* --- print styles --- */
         @media print {
             body * { visibility: hidden; }
             #receipt-print-area, #receipt-print-area * { visibility: visible; }
@@ -50,10 +54,9 @@
 </head>
 <body class="bg-gray-100 p-4 font-sans">
 
-    <!-- GLOBAL NAVIGATION (full script as before) -->
+    <!-- GLOBAL NAVIGATION -->
     <div id="kevs-nav-container"></div>
     <script>
-        // ... (same nav script from previous answer – included for completeness) ...
         (function() {
             const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
             const LOGIN_URL = '/kdsiginin';
@@ -217,15 +220,17 @@
 
     <!-- Main POS -->
     <div class="max-w-7xl mx-auto">
-        <!-- Header -->
         <div class="bg-white rounded-xl shadow-md p-4 mb-4 flex flex-wrap justify-between items-center gap-3">
             <div>
                 <h1 class="text-2xl font-bold">💳 Kevs POS Terminal</h1>
-                <p class="text-xs text-gray-500">Offline‑Ready · SKU Search · Scanner · Cashier History</p>
+                <p class="text-xs text-gray-500">Offline‑Ready · SKU Search · Scanner · Cashier History · Audit</p>
             </div>
             <div class="flex items-center gap-2">
                 <span id="connection-status" class="online-badge"><i class="fa-solid fa-wifi"></i> Online</span>
                 <button id="sync-now-btn" class="sync-btn"><i class="fa-solid fa-rotate"></i> Sync</button>
+                <button id="dashboard-btn" class="bg-gray-200 px-3 py-1 rounded-lg text-sm">
+                    <i class="fa-solid fa-chart-simple"></i> Dashboard
+                </button>
                 <button id="history-btn" class="bg-gray-200 px-3 py-1 rounded-lg text-sm"><i class="fa-regular fa-clock"></i> History</button>
             </div>
         </div>
@@ -242,7 +247,6 @@
 
         <!-- MAIN LAYOUT -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            
             <!-- CART (LEFT) -->
             <div class="lg:col-span-2 lg:order-first bg-white rounded-xl shadow-md p-4 flex flex-col min-h-[600px]">
                 <div class="flex justify-between items-center border-b pb-2 mb-2">
@@ -318,7 +322,6 @@
                 <div id="product-list-empty" class="hidden text-center py-8 text-gray-400 col-span-full">No products match your search</div>
                 <div id="loading-more" class="hidden text-center py-4 text-gray-500 text-sm"><i class="fa-solid fa-spinner fa-pulse"></i> Loading more...</div>
             </div>
-
         </div>
     </div>
 
@@ -330,6 +333,20 @@
                 <button id="close-history-btn" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
             </div>
             <div id="history-list" class="space-y-2 max-h-[60vh] overflow-y-auto"></div>
+        </div>
+    </div>
+
+    <!-- Sync Dashboard Modal -->
+    <div id="sync-dashboard-modal">
+        <div class="modal-content max-w-md">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold">📊 Sync Dashboard</h3>
+                <button id="close-dashboard-btn" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <div id="dashboard-content" class="space-y-2"></div>
+            <button id="refresh-dashboard-btn" class="mt-4 w-full bg-blue-600 text-white py-2 rounded-lg text-sm hover:bg-blue-700">
+                <i class="fa-solid fa-rotate"></i> Refresh
+            </button>
         </div>
     </div>
 
@@ -353,7 +370,7 @@
 
     <script>
         // ================================================================
-        //  OFFLINE‑READY POS – WITH RECEIPT PRINTING
+        //  OFFLINE‑READY POS – WITH FULL AUDIT TRAIL
         // ================================================================
 
         const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
@@ -371,13 +388,25 @@
         let isOnline = navigator.onLine;
         let syncInProgress = false;
 
-        // ---------- Dexie IndexedDB ----------
+        // ---------- UUID generator ----------
+        function generateUUID() {
+            if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+                return crypto.randomUUID();
+            }
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        // ---------- Dexie IndexedDB (upgraded to version 2) ----------
         const db = new Dexie('KevsPOSOffline');
-        db.version(1).stores({
+        db.version(2).stores({
             products: 'id, description, item_code, sku, price_naira, current_qty',
             customers: 'id, first_name, last_name, phone, email, loyalty_points',
-            orders: '++id, offlineRef, cashierId, createdAt, status, syncedAt',
-            syncQueue: '++id, orderId, attempts, lastTry'
+            orders: '++id, offlineRef, cashierId, createdAt, status, syncedAt, receiptData',
+            syncQueue: '++id, orderId, attempts, lastTry',
+            auditQueue: '++id, eventType, createdAt, retryCount'
         });
 
         // ---------- DOM refs ----------
@@ -412,6 +441,11 @@
         const historyModal = document.getElementById('history-modal');
         const closeHistoryBtn = document.getElementById('close-history-btn');
         const historyList = document.getElementById('history-list');
+        const dashboardBtn = document.getElementById('dashboard-btn');
+        const dashboardModal = document.getElementById('sync-dashboard-modal');
+        const closeDashboardBtn = document.getElementById('close-dashboard-btn');
+        const refreshDashboardBtn = document.getElementById('refresh-dashboard-btn');
+        const dashboardContent = document.getElementById('dashboard-content');
 
         // ---------- Tab State ----------
         const tabState = {
@@ -478,10 +512,14 @@
             connectionStatus.innerHTML = isOnline ? '<i class="fa-solid fa-wifi"></i> Online' : '<i class="fa-solid fa-wifi-slash"></i> Offline';
             connectionStatus.className = isOnline ? 'online-badge' : 'offline-badge';
         }
-        window.addEventListener('online', () => { updateConnectionStatus(); syncPendingOrders(); });
+        window.addEventListener('online', () => {
+            updateConnectionStatus();
+            syncPendingOrders();
+            flushAuditQueue();
+        });
         window.addEventListener('offline', updateConnectionStatus);
 
-        // ---------- Product Cache & Search (unchanged) ----------
+        // ---------- Product Cache & Search ----------
         async function loadPOSProducts(reset = true) {
             const trimmed = posSearchTerm.trim();
             if (trimmed.length < 2) {
@@ -527,7 +565,10 @@
                             item_code: p.item_code,
                             sku: p.sku || p.item_code,
                             price_naira: p.price_naira,
-                            current_qty: p.current_qty
+                            current_qty: p.current_qty,
+                            cost_price_naira: p.cost_price_naira || 0,
+                            handling_category: p.handling_category || 'standard',
+                            weight_kg: p.weight_kg || 0
                         });
                     }
                 } else {
@@ -976,63 +1017,93 @@
             }
         }
 
-        // ---------- Print Receipt ----------
-        function printReceipt(orderData, customerPoints) {
+        // ---------- Print Receipt (uses receiptData) ----------
+        function printReceipt(receiptData) {
             const printArea = document.getElementById('receipt-print-area');
             const orgName = localStorage.getItem('org_name') || 'Kevs Digital';
-            const cashierName = localStorage.getItem('user_profile_display') || 'Cashier';
             const now = new Date();
             const dateStr = now.toLocaleString();
 
             let itemsHtml = '';
-            let subtotal = 0;
-            orderData.items.forEach(item => {
-                const itemTotal = item.quantity * item.unit_price;
-                subtotal += itemTotal;
+            receiptData.items.forEach(item => {
                 itemsHtml += `
                     <div class="receipt-item">
                         <span>${escapeHtml(item.name)} x ${item.quantity}</span>
-                        <span>₦${itemTotal.toFixed(2)}</span>
+                        <span>₦${item.subtotal.toFixed(2)}</span>
                     </div>
                 `;
             });
 
-            const discount = orderData.pointsRedeemed || 0;
-            const total = orderData.total || subtotal;
-
             const receiptHtml = `
                 <div class="receipt-header">${orgName}</div>
-                <div style="text-align:center;font-size:10px;">Receipt #${orderData.receiptNumber || orderData.offlineRef}</div>
-                <div style="text-align:center;font-size:10px;">Cashier: ${cashierName}</div>
+                <div style="text-align:center;font-size:10px;">Receipt #${receiptData.receiptNumber}</div>
+                <div style="text-align:center;font-size:10px;">Cashier: ${escapeHtml(receiptData.cashierName || 'Cashier')}</div>
                 <div style="text-align:center;font-size:10px;">${dateStr}</div>
                 <div class="receipt-divider"></div>
                 ${itemsHtml}
                 <div class="receipt-divider"></div>
-                <div class="receipt-item"><span>Subtotal</span><span>₦${subtotal.toFixed(2)}</span></div>
-                ${discount > 0 ? `<div class="receipt-item"><span>Points Discount</span><span>-₦${discount.toFixed(2)}</span></div>` : ''}
-                <div class="receipt-item receipt-total"><span>TOTAL</span><span>₦${total.toFixed(2)}</span></div>
+                <div class="receipt-item"><span>Subtotal</span><span>₦${receiptData.subtotal.toFixed(2)}</span></div>
+                ${receiptData.discount > 0 ? `<div class="receipt-item"><span>Discount</span><span>-₦${receiptData.discount.toFixed(2)}</span></div>` : ''}
+                ${receiptData.tax > 0 ? `<div class="receipt-item"><span>Tax</span><span>₦${receiptData.tax.toFixed(2)}</span></div>` : ''}
+                <div class="receipt-item receipt-total"><span>TOTAL</span><span>₦${receiptData.grandTotal.toFixed(2)}</span></div>
                 <div class="receipt-divider"></div>
-                <div style="text-align:center;font-size:10px;">Payment: ${orderData.paymentMethod || 'cash'}</div>
-                ${orderData.customerName ? `<div style="text-align:center;font-size:10px;">Customer: ${escapeHtml(orderData.customerName)}</div>` : ''}
-                <div style="text-align:center;font-size:10px;font-weight:bold;">Loyalty Points: ${customerPoints}</div>
+                <div style="text-align:center;font-size:10px;">Payment: ${receiptData.payment.method}</div>
+                ${receiptData.customer.name ? `<div style="text-align:center;font-size:10px;">Customer: ${escapeHtml(receiptData.customer.name)}</div>` : ''}
+                ${receiptData.customer.pointsAfter !== undefined ? `<div style="text-align:center;font-size:10px;font-weight:bold;">Loyalty Points: ${receiptData.customer.pointsAfter}</div>` : ''}
                 <div class="receipt-divider"></div>
                 <div class="receipt-footer">Thank you for shopping with us!</div>
             `;
 
             printArea.innerHTML = receiptHtml;
             printArea.style.display = 'block';
-
-            // Trigger print
             window.print();
-
-            // Hide after print (or after a short delay)
             setTimeout(() => {
                 printArea.style.display = 'none';
                 printArea.innerHTML = '';
             }, 1000);
         }
 
-        // ---------- Checkout (Offline‑Aware) with Print ----------
+        // ---------- Audit Event Emitter ----------
+        async function emitAuditEvent(eventType, payload, localCreatedAt = null) {
+            const event = {
+                event_type: eventType,
+                event_version: 1,
+                payload: payload,
+                local_created_at: localCreatedAt || new Date().toISOString(),
+                retryCount: 0
+            };
+
+            if (navigator.onLine) {
+                try {
+                    await apiCall('/api/audit/event', 'POST', event);
+                    return;
+                } catch (e) {
+                    // fall through to queue
+                }
+            }
+            // Offline or failed – store in queue
+            await db.auditQueue.add(event);
+        }
+
+        async function flushAuditQueue() {
+            if (!navigator.onLine) return;
+            const pending = await db.auditQueue.toArray();
+            if (pending.length === 0) return;
+            const events = pending.map(e => ({
+                event_type: e.event_type,
+                event_version: e.event_version,
+                payload: e.payload,
+                local_created_at: e.local_created_at
+            }));
+            try {
+                await apiCall('/api/audit/events', 'POST', { events });
+                await db.auditQueue.clear();
+            } catch (err) {
+                console.warn('Audit batch sync failed', err);
+            }
+        }
+
+        // ---------- Checkout with expanded receipt & audit ----------
         async function processCheckout() {
             const state = tabState[activeTab];
             const cart = state.cart;
@@ -1058,40 +1129,77 @@
 
             const itemsPayload = cart.map(i => ({ inventory_id: i.id, quantity: i.qty }));
             const cashierId = localStorage.getItem('user_id') || 'unknown';
-            const offlineRef = `OFF-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+            const cashierName = localStorage.getItem('user_profile_display') || 'Cashier';
+            const orgName = localStorage.getItem('org_name') || 'Kevs Digital';
+            const offlineRef = generateUUID();
 
-            // Build order data for receipt
-            const orderData = {
-                items: cart.map(i => ({ name: i.name, quantity: i.qty, unit_price: i.price })),
-                total: calculateTotal(state),
-                pointsRedeemed: pointsRedeemed,
-                paymentMethod: paymentMethod,
-                customerName: customerName,
-                receiptNumber: null, // will be set later if online
-                offlineRef: offlineRef,
+            // Build receipt data
+            const subtotal = cart.reduce((sum, i) => sum + i.price * i.qty, 0);
+            const discount = pointsRedeemed;
+            const tax = 0;
+            const grandTotal = Math.max(0, subtotal - discount + tax);
+
+            const itemDetails = cart.map(item => {
+                const product = products.find(p => p.id === item.id) || {};
+                return {
+                    productId: item.id,
+                    name: item.name,
+                    sku: item.sku || product.sku || '',
+                    quantity: item.qty,
+                    unitPrice: item.price,
+                    subtotal: item.price * item.qty,
+                    costPrice: product.cost_price_naira || 0,
+                    handlingCategory: product.handling_category || 'standard',
+                    weightKg: product.weight_kg || 0
+                };
+            });
+
+            const receiptData = {
+                receiptNumber: offlineRef,
+                customer: {
+                    name: customerName || '',
+                    phone: customerPhone || '',
+                    email: customerEmail || '',
+                    loyaltyId: state.loyaltyUserId || null,
+                    pointsBefore: state.pointsBalance || 0,
+                    pointsAfter: state.pointsBalance || 0,
+                    pointsRedeemed: pointsRedeemed
+                },
+                items: itemDetails,
+                subtotal: subtotal,
+                discount: discount,
+                tax: tax,
+                grandTotal: grandTotal,
+                payment: {
+                    method: paymentMethod,
+                    reference: null
+                },
+                cashierId: cashierId,
+                cashierName: cashierName,
+                location: orgName,
+                metadata: {
+                    softwareVersion: '1.0.0',
+                    deviceId: 'web-' + (navigator.userAgent || 'unknown'),
+                    printed: false
+                }
+            };
+
+            const order = {
+                offlineRef,
+                cashierId,
+                createdAt: new Date().toISOString(),
+                status: 'pending',
+                syncedAt: null,
+                receiptData: receiptData
             };
 
             checkoutBtn.disabled = true;
             checkoutBtn.innerText = 'Processing...';
 
-            let finalCustomerPoints = state.pointsBalance || 0;
-
             try {
                 if (!isOnline) {
-                    // Offline: save and print
-                    await db.orders.add({
-                        offlineRef,
-                        cashierId,
-                        items: itemsPayload,
-                        paymentMethod,
-                        customerName,
-                        customerPhone,
-                        customerEmail,
-                        total: orderData.total,
-                        status: 'pending',
-                        createdAt: new Date().toISOString(),
-                        pointsRedeemed
-                    });
+                    // Offline: save order locally
+                    await db.orders.add(order);
                     await db.syncQueue.add({ orderId: offlineRef, attempts: 0, lastTry: null });
                     // Reduce local stock
                     for (const item of cart) {
@@ -1104,11 +1212,19 @@
                     state.pointsRedeemed = 0;
                     renderActiveCart();
                     showToast(`✅ Order saved offline (Ref: ${offlineRef}). Will sync when online.`, 'success');
-                    // Use cached customer points for receipt
-                    finalCustomerPoints = state.pointsBalance || 0;
-                    // Print receipt
-                    orderData.receiptNumber = offlineRef;
-                    printReceipt(orderData, finalCustomerPoints);
+                    receiptData.receiptNumber = offlineRef;
+                    receiptData.customer.pointsAfter = state.pointsBalance || 0;
+                    printReceipt(receiptData);
+                    // Audit event
+                    await emitAuditEvent('sale.created', {
+                        sale_id: offlineRef,
+                        receipt_number: offlineRef,
+                        total: order.receiptData.grandTotal,
+                        payment_method: paymentMethod,
+                        customer_id: state.loyaltyUserId || null,
+                        items_count: cart.length,
+                        offline: true
+                    });
                     return;
                 }
 
@@ -1119,74 +1235,69 @@
                     customer_name: customerName,
                     customer_phone: customerPhone,
                     customer_email: customerEmail,
-                    // offline_reference: offlineRef // uncomment when backend supports
+                    // offline_reference: offlineRef,
+                    receipt_data: receiptData
                 });
-                // Save to local orders (synced)
-                await db.orders.add({
-                    offlineRef,
-                    cashierId,
-                    items: itemsPayload,
-                    paymentMethod,
-                    customerName,
-                    customerPhone,
-                    customerEmail,
-                    total: orderData.total,
-                    status: 'synced',
-                    createdAt: new Date().toISOString(),
-                    pointsRedeemed,
-                    syncedAt: new Date().toISOString()
-                });
-                // Fetch updated loyalty balance
+                // Save synced order
+                order.status = 'synced';
+                order.syncedAt = new Date().toISOString();
+                order.receiptData.receiptNumber = result.receipt_number || offlineRef;
+                order.receiptData.payment.reference = result.payment_reference || null;
+                // Update loyalty points if available
                 if (state.loyaltyUserId) {
                     try {
                         const balanceRes = await apiCall('/loyalty/balance');
-                        finalCustomerPoints = balanceRes.points || 0;
-                        // Update cache
-                        state.pointsBalance = finalCustomerPoints;
-                        await db.customers.update(state.loyaltyUserId, { loyalty_points: finalCustomerPoints });
-                        // Also update the displayed points in UI
-                        customerPointsSpan.innerText = finalCustomerPoints;
+                        const finalPoints = balanceRes.points || 0;
+                        state.pointsBalance = finalPoints;
+                        await db.customers.update(state.loyaltyUserId, { loyalty_points: finalPoints });
+                        customerPointsSpan.innerText = finalPoints;
+                        order.receiptData.customer.pointsAfter = finalPoints;
                     } catch (e) {
-                        // Fallback to cached points
-                        finalCustomerPoints = state.pointsBalance || 0;
+                        order.receiptData.customer.pointsAfter = state.pointsBalance || 0;
                     }
                 } else {
-                    finalCustomerPoints = 0;
+                    order.receiptData.customer.pointsAfter = 0;
                 }
-
+                await db.orders.add(order);
                 state.cart = [];
                 state.pointsRedeemed = 0;
                 renderActiveCart();
                 showToast(`✅ Sale complete! Receipt: ${result.receipt_number}`, 'success');
-                // Print receipt
-                orderData.receiptNumber = result.receipt_number || offlineRef;
-                printReceipt(orderData, finalCustomerPoints);
+                printReceipt(order.receiptData);
+                // Audit event
+                await emitAuditEvent('sale.created', {
+                    sale_id: result.sale_id || offlineRef,
+                    receipt_number: result.receipt_number || offlineRef,
+                    total: order.receiptData.grandTotal,
+                    payment_method: paymentMethod,
+                    customer_id: state.loyaltyUserId || null,
+                    items_count: cart.length,
+                    online: true
+                });
 
             } catch (err) {
                 if (!isOnline || err.message.includes('offline') || err.message.includes('network')) {
                     // Fallback to offline
-                    await db.orders.add({
-                        offlineRef,
-                        cashierId,
-                        items: itemsPayload,
-                        paymentMethod,
-                        customerName,
-                        customerPhone,
-                        customerEmail,
-                        total: orderData.total,
-                        status: 'pending',
-                        createdAt: new Date().toISOString(),
-                        pointsRedeemed
-                    });
+                    await db.orders.add(order);
                     await db.syncQueue.add({ orderId: offlineRef, attempts: 0, lastTry: null });
                     showToast(`Order queued for later sync (Ref: ${offlineRef})`, 'warning');
                     state.cart = [];
                     state.pointsRedeemed = 0;
                     renderActiveCart();
-                    // Print with offline reference and cached points
-                    finalCustomerPoints = state.pointsBalance || 0;
-                    orderData.receiptNumber = offlineRef;
-                    printReceipt(orderData, finalCustomerPoints);
+                    receiptData.receiptNumber = offlineRef;
+                    receiptData.customer.pointsAfter = state.pointsBalance || 0;
+                    printReceipt(receiptData);
+                    // Audit event
+                    await emitAuditEvent('sale.created', {
+                        sale_id: offlineRef,
+                        receipt_number: offlineRef,
+                        total: order.receiptData.grandTotal,
+                        payment_method: paymentMethod,
+                        customer_id: state.loyaltyUserId || null,
+                        items_count: cart.length,
+                        offline: true,
+                        fallback: true
+                    });
                 } else {
                     showToast(`❌ Checkout failed: ${err.message}`, 'error');
                 }
@@ -1196,14 +1307,7 @@
             }
         }
 
-        function calculateTotal(state) {
-            const cart = state.cart;
-            let subtotal = cart.reduce((sum, i) => sum + i.price * i.qty, 0);
-            const pointsRedeemed = state.pointsRedeemed || 0;
-            return Math.max(0, subtotal - pointsRedeemed);
-        }
-
-        // ---------- Sync Manager ----------
+        // ---------- Sync Manager (sends full receiptData) ----------
         async function syncPendingOrders() {
             if (!isOnline || syncInProgress) return;
             syncInProgress = true;
@@ -1218,13 +1322,19 @@
                         continue;
                     }
                     try {
-                        const result = await apiCall('/pos/terminal/checkout', 'POST', {
-                            items: order.items,
-                            payment_method: order.paymentMethod,
-                            customer_name: order.customerName,
-                            customer_phone: order.customerPhone,
-                            customer_email: order.customerEmail,
-                        });
+                        const payload = {
+                            items: order.receiptData.items.map(item => ({
+                                inventory_id: item.productId,
+                                quantity: item.quantity
+                            })),
+                            payment_method: order.receiptData.payment.method,
+                            customer_name: order.receiptData.customer.name,
+                            customer_phone: order.receiptData.customer.phone,
+                            customer_email: order.receiptData.customer.email,
+                            receipt_data: order.receiptData
+                            // offline_reference: order.offlineRef
+                        };
+                        const result = await apiCall('/pos/terminal/checkout', 'POST', payload);
                         await db.orders.update(order.offlineRef, { status: 'synced', syncedAt: new Date().toISOString() });
                         await db.syncQueue.delete(entry.id);
                         showToast(`Order ${order.offlineRef} synced`, 'success');
@@ -1241,6 +1351,15 @@
                         }
                     }
                 }
+                localStorage.setItem('last_sync_time', new Date().toLocaleString());
+                // Audit sync completed
+                await emitAuditEvent('sync.completed', {
+                    synced_count: pending.length,
+                    timestamp: new Date().toISOString()
+                });
+                // Flush any queued audit events
+                await flushAuditQueue();
+                if (dashboardModal.classList.contains('active')) updateDashboard();
             } catch (e) {
                 showToast('Sync error: ' + e.message, 'error');
             } finally {
@@ -1248,6 +1367,44 @@
                 syncNowBtn.disabled = false;
                 syncNowBtn.innerHTML = '<i class="fa-solid fa-rotate"></i> Sync';
             }
+        }
+
+        // ---------- Dashboard ----------
+        async function updateDashboard() {
+            const pending = await db.syncQueue.toArray();
+            const allOrders = await db.orders.toArray();
+            const now = new Date();
+            const today = now.toDateString();
+
+            const syncedToday = allOrders.filter(o => o.status === 'synced' && new Date(o.syncedAt || o.createdAt).toDateString() === today);
+            const failed = allOrders.filter(o => o.status === 'duplicate');
+            const lastSync = localStorage.getItem('last_sync_time') || 'Never';
+
+            dashboardContent.innerHTML = `
+                <div class="dashboard-stat">
+                    <span class="label"><i class="fa-regular fa-clock text-yellow-500"></i> Pending Orders</span>
+                    <span class="value pending">${pending.length}</span>
+                </div>
+                <div class="dashboard-stat">
+                    <span class="label"><i class="fa-regular fa-circle-check text-green-500"></i> Synced Today</span>
+                    <span class="value synced">${syncedToday.length}</span>
+                </div>
+                <div class="dashboard-stat">
+                    <span class="label"><i class="fa-regular fa-circle-xmark text-red-500"></i> Failed Orders</span>
+                    <span class="value failed">${failed.length}</span>
+                </div>
+                <div class="dashboard-stat">
+                    <span class="label"><i class="fa-regular fa-clock"></i> Last Sync</span>
+                    <span class="value">${lastSync}</span>
+                </div>
+                <div class="dashboard-stat">
+                    <span class="label"><i class="fa-regular fa-hard-drive"></i> Total Orders (local)</span>
+                    <span class="value">${allOrders.length}</span>
+                </div>
+                <div class="mt-2 text-xs text-gray-500">
+                    ${isOnline ? '🟢 Online' : '🔴 Offline'} · ${syncInProgress ? '⏳ Syncing...' : '✅ Idle'}
+                </div>
+            `;
         }
 
         // ---------- Cashier History ----------
@@ -1262,7 +1419,8 @@
                 <div class="border-b py-2 flex justify-between items-center">
                     <div>
                         <div><strong>${o.offlineRef}</strong> - ${new Date(o.createdAt).toLocaleString()}</div>
-                        <div class="text-sm">Status: <span class="${o.status === 'synced' ? 'text-green-600' : 'text-yellow-600'}">${o.status}</span> | Total: ₦${o.total}</div>
+                        <div class="text-sm">Status: <span class="${o.status === 'synced' ? 'text-green-600' : 'text-yellow-600'}">${o.status}</span> | Total: ₦${o.receiptData?.grandTotal || 0}</div>
+                        <div class="text-xs text-gray-500">Items: ${o.receiptData?.items?.length || 0}</div>
                     </div>
                     ${o.status === 'pending' ? '<button onclick="syncSingleOrder(\''+o.offlineRef+'\')" class="text-blue-500 text-sm"><i class="fa-solid fa-rotate"></i> Sync</button>' : ''}
                 </div>
@@ -1274,13 +1432,18 @@
             const order = await db.orders.get(offlineRef);
             if (!order) return;
             try {
-                const result = await apiCall('/pos/terminal/checkout', 'POST', {
-                    items: order.items,
-                    payment_method: order.paymentMethod,
-                    customer_name: order.customerName,
-                    customer_phone: order.customerPhone,
-                    customer_email: order.customerEmail,
-                });
+                const payload = {
+                    items: order.receiptData.items.map(item => ({
+                        inventory_id: item.productId,
+                        quantity: item.quantity
+                    })),
+                    payment_method: order.receiptData.payment.method,
+                    customer_name: order.receiptData.customer.name,
+                    customer_phone: order.receiptData.customer.phone,
+                    customer_email: order.receiptData.customer.email,
+                    receipt_data: order.receiptData
+                };
+                const result = await apiCall('/pos/terminal/checkout', 'POST', payload);
                 await db.orders.update(offlineRef, { status: 'synced', syncedAt: new Date().toISOString() });
                 await db.syncQueue.delete(offlineRef);
                 showToast(`Order ${offlineRef} synced`, 'success');
@@ -1290,7 +1453,7 @@
             }
         };
 
-        // ---------- Points Redemption (online only) ----------
+        // ---------- Points Redemption with audit ----------
         async function applyPoints() {
             if (!isOnline) {
                 showToast('⚠️ Points redemption requires internet.', 'error');
@@ -1322,12 +1485,18 @@
                 if (cust) {
                     await db.customers.update(state.loyaltyUserId, { loyalty_points: state.pointsBalance });
                 }
+                // Audit event
+                await emitAuditEvent('points.redeemed', {
+                    user_id: state.loyaltyUserId,
+                    points: pointsToRedeem,
+                    balance_after: state.pointsBalance
+                });
             } catch (err) {
                 showToast(`Redemption failed: ${err.message}`, 'error');
             }
         }
 
-        // ---------- Navigation ----------
+        // ---------- Tab navigation ----------
         function setActiveTab(tabId) {
             if (tabId === activeTab) return;
             tabState[activeTab].paymentMethod = paymentMethodSelect.value;
@@ -1340,7 +1509,7 @@
             suggestionsDiv.classList.add('hidden');
         }
 
-        // ---------- Login / Demo ----------
+        // ---------- Login / Demo with audit ----------
         async function demoLogin() {
             const btn = document.getElementById('demo-login-btn');
             btn.disabled = true;
@@ -1378,6 +1547,11 @@
                 showToast('Demo login — Offline‑ready POS', 'success');
                 const navOrg = document.getElementById('nav-org-name');
                 if (navOrg) navOrg.innerText = localStorage.getItem('org_name') || 'Unknown Org';
+                // Audit event
+                await emitAuditEvent('user.login', {
+                    email: 'demo@kevsdigital.com',
+                    method: 'demo'
+                });
             } catch (err) { showToast(err.message, 'error'); } finally { btn.disabled = false; }
         }
 
@@ -1419,10 +1593,15 @@
                 showToast('Login successful', 'success');
                 const navOrg = document.getElementById('nav-org-name');
                 if (navOrg) navOrg.innerText = localStorage.getItem('org_name') || 'Unknown Org';
+                // Audit event
+                await emitAuditEvent('user.login', {
+                    email: email,
+                    method: 'password'
+                });
             } catch (err) { showToast(err.message, 'error'); }
         }
 
-        // ---------- Initialisation ----------
+        // ---------- Init ----------
         function initTabs() {
             tab1Btn.onclick = () => setActiveTab(1);
             tab2Btn.onclick = () => setActiveTab(2);
@@ -1437,7 +1616,7 @@
             });
         }
 
-        // ---------- Event Listeners ----------
+        // ---------- Event listeners ----------
         checkoutBtn.addEventListener('click', processCheckout);
         applyPointsBtn.addEventListener('click', applyPoints);
         document.getElementById('modal-login-btn')?.addEventListener('click', handleLogin);
@@ -1450,6 +1629,16 @@
         });
         closeHistoryBtn.addEventListener('click', () => historyModal.classList.remove('active'));
         historyModal.addEventListener('click', (e) => { if (e.target === historyModal) historyModal.classList.remove('active'); });
+
+        dashboardBtn.addEventListener('click', async () => {
+            dashboardModal.classList.add('active');
+            await updateDashboard();
+        });
+        closeDashboardBtn.addEventListener('click', () => dashboardModal.classList.remove('active'));
+        dashboardModal.addEventListener('click', (e) => {
+            if (e.target === dashboardModal) dashboardModal.classList.remove('active');
+        });
+        refreshDashboardBtn.addEventListener('click', updateDashboard);
 
         paymentMethodSelect.onchange = () => { tabState[activeTab].paymentMethod = paymentMethodSelect.value; };
         customerNameInput.addEventListener('input', () => { tabState[activeTab].customerName = customerNameInput.value; });
@@ -1475,10 +1664,13 @@
                 } catch (e) { token = null; showLoginModal(); }
             } else { showLoginModal(); }
 
-            if (isOnline) await syncPendingOrders();
+            if (isOnline) {
+                await syncPendingOrders();
+                await flushAuditQueue();
+            }
         })();
 
-        console.log('✅ Offline‑Ready POS with Receipt Printing loaded');
+        console.log('✅ Offline‑Ready POS with full audit trail loaded');
     </script>
 </body>
 </html>
