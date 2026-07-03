@@ -370,7 +370,7 @@
 
     <script>
         // ================================================================
-        //  OFFLINE‑READY POS – WITH FULL AUDIT TRAIL
+        //  OFFLINE‑READY POS – WITH FULL AUDIT TRAIL & IDEMPOTENCY KEY
         // ================================================================
 
         const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
@@ -1103,7 +1103,7 @@
             }
         }
 
-        // ---------- Checkout with expanded receipt & audit ----------
+        // ---------- Checkout with expanded receipt & audit + idempotency ----------
         async function processCheckout() {
             const state = tabState[activeTab];
             const cart = state.cart;
@@ -1228,14 +1228,14 @@
                     return;
                 }
 
-                // Online: call API
+                // Online: call API with idempotency key
                 const result = await apiCall('/pos/terminal/checkout', 'POST', {
                     items: itemsPayload,
                     payment_method: paymentMethod,
                     customer_name: customerName,
                     customer_phone: customerPhone,
                     customer_email: customerEmail,
-                    // offline_reference: offlineRef,
+                    offline_reference: offlineRef,   // 🔑 idempotency key uncommented
                     receipt_data: receiptData
                 });
                 // Save synced order
@@ -1307,7 +1307,7 @@
             }
         }
 
-        // ---------- Sync Manager (sends full receiptData) ----------
+        // ---------- Sync Manager (sends full receiptData + idempotency) ----------
         async function syncPendingOrders() {
             if (!isOnline || syncInProgress) return;
             syncInProgress = true;
@@ -1331,15 +1331,16 @@
                             customer_name: order.receiptData.customer.name,
                             customer_phone: order.receiptData.customer.phone,
                             customer_email: order.receiptData.customer.email,
-                            receipt_data: order.receiptData
-                            // offline_reference: order.offlineRef
+                            receipt_data: order.receiptData,
+                            offline_reference: order.offlineRef   // 🔑 idempotency key uncommented
                         };
                         const result = await apiCall('/pos/terminal/checkout', 'POST', payload);
                         await db.orders.update(order.offlineRef, { status: 'synced', syncedAt: new Date().toISOString() });
                         await db.syncQueue.delete(entry.id);
                         showToast(`Order ${order.offlineRef} synced`, 'success');
                     } catch (err) {
-                        if (err.message.includes('duplicate') || err.message.includes('already exists')) {
+                        // If duplicate (409 or unique violation), mark as duplicate and stop retrying
+                        if (err.message.includes('duplicate') || err.message.includes('already exists') || err.status === 409) {
                             await db.orders.update(order.offlineRef, { status: 'duplicate' });
                             await db.syncQueue.delete(entry.id);
                             showToast(`Order ${order.offlineRef} already exists (skipped)`, 'warning');
@@ -1407,7 +1408,7 @@
             `;
         }
 
-        // ---------- Cashier History ----------
+        // ---------- Cashier History (with data-attribute fix for sync button) ----------
         async function renderHistory() {
             const cashierId = localStorage.getItem('user_id') || 'unknown';
             const orders = await db.orders.where('cashierId').equals(cashierId).toArray();
@@ -1418,14 +1419,25 @@
             historyList.innerHTML = orders.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(o => `
                 <div class="border-b py-2 flex justify-between items-center">
                     <div>
-                        <div><strong>${o.offlineRef}</strong> - ${new Date(o.createdAt).toLocaleString()}</div>
+                        <div><strong>${escapeHtml(o.offlineRef)}</strong> - ${new Date(o.createdAt).toLocaleString()}</div>
                         <div class="text-sm">Status: <span class="${o.status === 'synced' ? 'text-green-600' : 'text-yellow-600'}">${o.status}</span> | Total: ₦${o.receiptData?.grandTotal || 0}</div>
                         <div class="text-xs text-gray-500">Items: ${o.receiptData?.items?.length || 0}</div>
                     </div>
-                    ${o.status === 'pending' ? '<button onclick="syncSingleOrder(\''+o.offlineRef+'\')" class="text-blue-500 text-sm"><i class="fa-solid fa-rotate"></i> Sync</button>' : ''}
+                    ${o.status === 'pending' ? `<button data-order-ref="${escapeAttr(o.offlineRef)}" class="sync-order-btn text-blue-500 text-sm"><i class="fa-solid fa-rotate"></i> Sync</button>` : ''}
                 </div>
             `).join('');
         }
+
+        // Delegated event listener for sync buttons (data-attribute fix)
+        document.addEventListener('click', function(e) {
+            const btn = e.target.closest('.sync-order-btn');
+            if (btn) {
+                const ref = btn.dataset.orderRef;
+                if (ref) {
+                    syncSingleOrder(ref);
+                }
+            }
+        });
 
         window.syncSingleOrder = async function(offlineRef) {
             if (!isOnline) { showToast('Go online to sync.', 'error'); return; }
@@ -1441,7 +1453,8 @@
                     customer_name: order.receiptData.customer.name,
                     customer_phone: order.receiptData.customer.phone,
                     customer_email: order.receiptData.customer.email,
-                    receipt_data: order.receiptData
+                    receipt_data: order.receiptData,
+                    offline_reference: offlineRef   // idempotency key
                 };
                 const result = await apiCall('/pos/terminal/checkout', 'POST', payload);
                 await db.orders.update(offlineRef, { status: 'synced', syncedAt: new Date().toISOString() });
@@ -1449,7 +1462,14 @@
                 showToast(`Order ${offlineRef} synced`, 'success');
                 renderHistory();
             } catch (err) {
-                showToast('Sync failed: ' + err.message, 'error');
+                if (err.message.includes('duplicate') || err.message.includes('already exists') || err.status === 409) {
+                    await db.orders.update(offlineRef, { status: 'duplicate' });
+                    await db.syncQueue.delete(offlineRef);
+                    showToast(`Order ${offlineRef} already exists (skipped)`, 'warning');
+                    renderHistory();
+                } else {
+                    showToast('Sync failed: ' + err.message, 'error');
+                }
             }
         };
 
@@ -1670,7 +1690,7 @@
             }
         })();
 
-        console.log('✅ Offline‑Ready POS with full audit trail loaded');
+        console.log('✅ Offline‑Ready POS with idempotency key and safe sync buttons loaded');
     </script>
 </body>
 </html>
