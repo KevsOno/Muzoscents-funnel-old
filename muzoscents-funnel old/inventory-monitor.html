@@ -1,88 +1,94 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Kevs POS Pro | Offline‑Ready + Print</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js"></script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Kevs BI – Support & Loyalty</title>
+    <script src="https://cdn.tailwindcss.com">
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
     <style>
-        /* --- existing styles --- */
-        .tab-active { background-color: #3b82f6; color: white; }
-        .tab-inactive { background-color: #f3f4f6; color: #1f2937; }
-        .product-card { transition: all 0.15s ease; padding: 0.5rem; }
-        .product-card:active { transform: scale(0.97); }
-        .qty-btn { width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: #f3f4f6; border: 1px solid #d1d5db; cursor: pointer; }
-        .qty-input { width: 36px; text-align: center; border: 1px solid #d1d5db; border-radius: 4px; padding: 2px 0; }
-        .total-amount { font-size: 1.5rem; font-weight: 800; }
-        .offline-badge { background: #f59e0b; color: #fff; padding: 2px 10px; border-radius: 20px; font-size: 0.7rem; }
-        .online-badge { background: #22c55e; color: #fff; padding: 2px 10px; border-radius: 20px; font-size: 0.7rem; }
-        .sync-btn { background: #3b82f6; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; border: none; cursor: pointer; }
-        .sync-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        #history-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 50; align-items: center; justify-content: center; }
-        #history-modal.active { display: flex; }
-        #history-modal .modal-content { background: white; max-width: 800px; width: 90%; max-height: 80vh; overflow-y: auto; padding: 20px; border-radius: 12px; }
-
-        /* --- print styles --- */
-        @media print {
-            body * { visibility: hidden; }
-            #receipt-print-area, #receipt-print-area * { visibility: visible; }
-            #receipt-print-area {
-                position: fixed;
-                left: 0;
-                top: 0;
-                width: 100%;
-                background: white;
-                padding: 20px;
-                font-size: 12px;
-                font-family: monospace;
-                color: black;
+        body {
+            background-color: #F1F5F9;
+            font-family: system-ui, sans-serif;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #CBD5E1;
+            border-radius: 10px;
+        }
+        .ticket-active {
+            background-color: #F1F5F9;
+            border-left: 4px solid #3b82f6;
+        }
+        .tab-active {
+            background-color: #3b82f6;
+            color: white;
+            border-bottom: 2px solid #3b82f6;
+        }
+        .tab-inactive {
+            background-color: #e2e8f0;
+            color: #1f2937;
+        }
+        @media (max-width: 768px) {
+            .ticket-sidebar,
+            .customer-sidebar {
+                width: 100% !important;
+                border-right: none !important;
+                border-left: none !important;
             }
-            .receipt-header { text-align: center; font-weight: bold; font-size: 16px; margin-bottom: 8px; }
-            .receipt-divider { border-top: 1px dashed #333; margin: 8px 0; }
-            .receipt-item { display: flex; justify-content: space-between; }
-            .receipt-total { font-weight: bold; font-size: 14px; }
-            .receipt-footer { text-align: center; margin-top: 8px; font-size: 10px; }
-            .no-print { display: none !important; }
+            .conversation-area {
+                width: 100% !important;
+            }
+        }
+        button:active {
+            transform: scale(0.97);
+            transition: transform 0.05s ease;
+        }
+        .btn-loading {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none !important;
         }
     </style>
 </head>
-<body class="bg-gray-100 p-4 font-sans">
+<body class="h-screen flex flex-col overflow-hidden">
 
-    <!-- GLOBAL NAVIGATION (full script as before) -->
+    <!-- ========== GLOBAL NAVIGATION (Kevs bOS) ========== -->
     <div id="kevs-nav-container"></div>
     <script>
-        // ... (same nav script from previous answer – included for completeness) ...
         (function() {
             const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
             const LOGIN_URL = '/kdsiginin';
             const navItems = [
-                { path: '/kdbi', name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy',
-                    roles: ['owner', 'admin', 'sales_rep', 'finance'] },
-                { path: '/kdpos', name: 'POS', icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & loyalty',
-                    roles: ['owner', 'admin', 'sales_rep'] },
-                { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast',
-                    title: 'Order shipping, tracking & dispatch', roles: ['owner', 'admin', 'logistics'] },
-                { path: '/kdsupport', name: 'Support', icon: 'fa-headset', title: 'Ticket management & customer context',
-                    roles: ['owner', 'admin', 'support'] },
-                { path: '/kddashboard', name: 'Exec', icon: 'fa-chart-simple', title: 'Executive revenue & profit overview',
-                    roles: ['owner', 'admin', 'finance'] },
-                { path: '/kdadmin', name: 'Inventory', icon: 'fa-boxes', title: 'Manage products, stock, bulk CSV upload',
-                    roles: ['owner', 'admin', 'inventory_manager'] },
-                { path: '/kdteam', name: 'Team', icon: 'fa-users', title: 'Invite & manage team members',
-                    roles: ['owner', 'admin'] },
-                { path: '/kdknowledge', name: 'Knowledge', icon: 'fa-database',
-                    title: 'Manage AI knowledge base documents', roles: ['owner', 'admin'] }
+                { path: '/kdbi', name: 'Dashboard', icon: 'fa-chart-line', roles: ['owner', 'admin', 'sales_rep',
+                        'finance'
+                    ] },
+                { path: '/kdpos', name: 'POS', icon: 'fa-cash-register', roles: ['owner', 'admin', 'sales_rep'] },
+                { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', roles: ['owner', 'admin',
+                        'logistics'
+                    ] },
+                { path: '/kdsupport', name: 'Support', icon: 'fa-headset', roles: ['owner', 'admin', 'support',
+                        'loyalty_manager'
+                    ] },
+                { path: '/kddashboard', name: 'Exec', icon: 'fa-chart-simple', roles: ['owner', 'admin', 'finance'] },
+                { path: '/kdadmin', name: 'Inventory', icon: 'fa-boxes', roles: ['owner', 'admin',
+                        'inventory_manager'
+                    ] },
+                { path: '/kdteam', name: 'Team', icon: 'fa-users', roles: ['owner', 'admin'] },
+                { path: '/kdknowledge', name: 'Knowledge', icon: 'fa-database', roles: ['owner', 'admin'] }
             ];
 
             function getUserRole() {
                 try { return localStorage.getItem('user_role') || 'customer'; } catch (e) { return 'customer'; }
             }
 
-            function canAccess(requiredRoles) {
-                return requiredRoles.includes(getUserRole());
-            }
+            function canAccess(roles) { return roles.includes(getUserRole()); }
 
             function buildNavbar() {
                 const currentPath = window.location.pathname;
@@ -91,70 +97,22 @@
                     if (!canAccess(item.roles)) return;
                     const isActive = currentPath === item.path;
                     const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
-                    linksHtml += `
-                            <a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}" title="${item.title}">
-                                <i class="fa-solid ${item.icon} w-4"></i> ${item.name}
-                            </a>
-                        `;
+                    linksHtml +=
+                        `<a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeClass}" title="${item.title}"><i class="fa-solid ${item.icon} w-4"></i> ${item.name}</a>`;
                 });
-                let userName = 'User';
-                let orgName = 'Loading...';
-                try {
-                    const profileStr = localStorage.getItem('user_profile_display');
-                    if (profileStr) userName = profileStr;
-                    const orgStr = localStorage.getItem('org_name');
-                    if (orgStr) orgName = orgStr;
-                } catch (e) {}
-                return `
-                        <div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40">
-                            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                                <div class="flex flex-wrap items-center justify-between py-3 gap-3">
-                                    <div class="flex items-center gap-2">
-                                        <i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i>
-                                        <span class="text-xl font-bold tracking-tight">${APP_NAME}</span>
-                                        <span class="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span>
-                                    </div>
-                                    <div class="hidden md:flex items-center gap-1 flex-wrap">${linksHtml}</div>
-                                    <div class="flex items-center gap-3">
-                                        <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full hidden sm:inline-block">
-                                            <i class="fa-regular fa-building mr-1"></i> <span id="nav-org-name">${escapeHtml(orgName)}</span>
-                                        </span>
-                                        <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full hidden sm:inline-block">
-                                            <i class="fa-regular fa-user mr-1"></i> <span id="nav-user-name">${escapeHtml(userName)}</span>
-                                        </span>
-                                        <button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition flex items-center gap-1">
-                                            <i class="fa-solid fa-sign-out-alt"></i> <span class="hidden sm:inline">Logout</span>
-                                        </button>
-                                    </div>
-                                </div>
-                                <div class="md:hidden flex overflow-x-auto pb-2 gap-1 snap-x">${linksHtml}</div>
-                            </div>
-                        </div>
-                    `;
+                let userName = localStorage.getItem('user_profile_display') || 'User';
+                return `<div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40"><div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-3"><div class="flex items-center gap-2"><i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i><span class="text-xl font-bold">${APP_NAME}</span><span class="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span></div><div class="hidden md:flex gap-2">${linksHtml}</div><div class="flex items-center gap-3"><span class="text-xs bg-white/10 px-3 py-1.5 rounded-full"><i class="fa-regular fa-user mr-1"></i> ${escapeHtml(userName)}</span><button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 px-3 py-1.5 rounded-lg text-sm"><i class="fa-solid fa-sign-out-alt"></i> Logout</button></div></div><div class="md:hidden flex overflow-x-auto pb-2 gap-1 px-2">${linksHtml}</div></div>`;
             }
 
-            function escapeHtml(str) {
-                if (!str) return '';
-                return str.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' } [m]));
-            }
+            function escapeHtml(str) { return String(str).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;',
+                    '>': '&gt;' } [m])); }
 
             async function globalLogout() {
                 const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
                 const token = localStorage.getItem('access_token');
-                if (token) {
-                    try {
-                        await fetch(`${BACKEND}/auth/logout`, {
-                            method: 'POST',
-                            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-                        });
-                    } catch (e) {}
-                }
-                localStorage.removeItem('access_token');
-                localStorage.removeItem('refresh_token');
-                localStorage.removeItem('user_role');
-                localStorage.removeItem('user_profile_display');
-                localStorage.removeItem('org_name');
-                localStorage.removeItem('selected_org_id');
+                if (token) await fetch(`${BACKEND}/auth/logout`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } })
+                    .catch(() => {});
+                localStorage.clear();
                 window.location.href = LOGIN_URL;
             }
 
@@ -162,14 +120,12 @@
                 const token = localStorage.getItem('access_token');
                 if (!token) return;
                 try {
-                    const res = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/me', {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
+                    const res = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/me', { headers: { 'Authorization': `Bearer ${token}` } });
                     if (res.ok) {
                         const me = await res.json();
                         const contextRes = await fetch(
-                            `https://kevsono-kevs-digital-bos.hf.space/support/customer-context?target_user_id=${me.user_id}`,
-                        { headers: { 'Authorization': `Bearer ${token}` } });
+                            `https://kevsono-kevs-digital-bos.hf.space/support/customer-context?target_user_id=${me.user_id}`, { headers: { 'Authorization': `Bearer ${token}` } }
+                        );
                         if (contextRes.ok) {
                             const context = await contextRes.json();
                             const name = context.profile?.first_name || 'User';
@@ -178,16 +134,6 @@
                             if (nameSpan) nameSpan.innerText = name;
                         }
                     }
-                    const orgRes = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/org', {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    if (orgRes.ok) {
-                        const orgData = await orgRes.json();
-                        const orgName = orgData.org_name || 'Unknown Org';
-                        localStorage.setItem('org_name', orgName);
-                        const orgSpan = document.getElementById('nav-org-name');
-                        if (orgSpan) orgSpan.innerText = orgName;
-                    }
                 } catch (e) {}
             }
 
@@ -195,1290 +141,626 @@
                 const container = document.getElementById('kevs-nav-container');
                 if (container) {
                     container.innerHTML = buildNavbar();
-                    const logoutBtn = document.getElementById('global-logout-btn');
-                    if (logoutBtn) logoutBtn.addEventListener('click', globalLogout);
+                    document.getElementById('global-logout-btn')?.addEventListener('click', globalLogout);
                     updateUserDisplay();
                 }
             }
-
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', initNavigation);
-            } else {
-                initNavigation();
-            }
+            document.addEventListener('DOMContentLoaded', initNavigation);
         })();
     </script>
+    <!-- ========== END GLOBAL NAVIGATION ========== -->
 
-    <!-- Toast container -->
-    <div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
+    <div id="toast-container" class="fixed top-6 right-4 z-50 space-y-2 w-80"></div>
 
-    <!-- Hidden receipt print area -->
-    <div id="receipt-print-area" style="display:none;"></div>
+    <!-- Tab Bar -->
+    <div class="bg-white border-b px-4 md:px-6 pt-2 flex gap-2 md:gap-4 overflow-x-auto">
+        <button id="support-tab-btn" class="tab-active px-3 md:px-4 py-2 font-semibold rounded-t-lg transition whitespace-nowrap">🎫 Support Tickets</button>
+        <button id="loyalty-tab-btn" class="tab-inactive px-3 md:px-4 py-2 font-semibold rounded-t-lg transition whitespace-nowrap">⭐ Loyalty &amp; CRM</button>
+    </div>
 
-    <!-- Main POS -->
-    <div class="max-w-7xl mx-auto">
-        <!-- Header -->
-        <div class="bg-white rounded-xl shadow-md p-4 mb-4 flex flex-wrap justify-between items-center gap-3">
-            <div>
-                <h1 class="text-2xl font-bold">💳 Kevs POS Terminal</h1>
-                <p class="text-xs text-gray-500">Offline‑Ready · SKU Search · Scanner · Cashier History</p>
-            </div>
-            <div class="flex items-center gap-2">
-                <span id="connection-status" class="online-badge"><i class="fa-solid fa-wifi"></i> Online</span>
-                <button id="sync-now-btn" class="sync-btn"><i class="fa-solid fa-rotate"></i> Sync</button>
-                <button id="history-btn" class="bg-gray-200 px-3 py-1 rounded-lg text-sm"><i class="fa-regular fa-clock"></i> History</button>
-            </div>
-        </div>
-
-        <!-- TABS -->
-        <div class="flex gap-3 mb-4 border-b border-gray-200 pb-1">
-            <button id="tab1-btn" data-tab="1" class="tab-active px-6 py-2.5 rounded-t-lg font-semibold text-sm transition flex items-center gap-2 shadow-sm border">
-                <i class="fa-solid fa-user"></i> Customer A
-            </button>
-            <button id="tab2-btn" data-tab="2" class="tab-inactive px-6 py-2.5 rounded-t-lg font-semibold text-sm transition flex items-center gap-2 border">
-                <i class="fa-solid fa-user-group"></i> Customer B
-            </button>
-        </div>
-
-        <!-- MAIN LAYOUT -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            
-            <!-- CART (LEFT) -->
-            <div class="lg:col-span-2 lg:order-first bg-white rounded-xl shadow-md p-4 flex flex-col min-h-[600px]">
-                <div class="flex justify-between items-center border-b pb-2 mb-2">
-                    <h2 class="text-xl font-semibold"><i class="fa-solid fa-cart-shopping"></i> <span id="active-customer-label">Customer A</span> Sale</h2>
-                    <span class="text-xs bg-gray-100 px-2 py-1 rounded-full" id="tab-badge">Tab 1 active</span>
-                </div>
-
-                <div id="cart-items" class="space-y-2 overflow-y-auto flex-1 max-h-[50vh] lg:max-h-[60vh] min-h-[200px]"></div>
-                
-                <div class="border-t pt-3 mt-2">
-                    <div class="flex justify-between text-lg font-bold">
-                        <span>Total:</span>
-                        <span id="cart-total" class="total-amount">₦0</span>
-                    </div>
-
-                    <div class="mt-3 grid grid-cols-2 gap-3">
-                        <div><label class="block text-sm font-medium">Payment Method</label>
-                            <select id="payment-method" class="w-full border rounded-lg p-2 bg-white">
-                                <option value="cash">💵 Cash</option>
-                                <option value="card">💳 Card</option>
-                                <option value="transfer">🏦 Bank Transfer</option>
-                            </select>
-                        </div>
-                        <div><label class="block text-sm font-medium">Customer Name</label>
-                            <input id="customer-name" class="w-full border rounded-lg p-2" placeholder="Walk-in Customer" autocomplete="off">
-                        </div>
-                        <div><label class="block text-sm font-medium">Phone</label>
-                            <input id="customer-phone" class="w-full border rounded-lg p-2" placeholder="Optional" autocomplete="off">
-                        </div>
-                        <div><label class="block text-sm font-medium">Email</label>
-                            <input id="customer-email" type="email" class="w-full border rounded-lg p-2" placeholder="customer@example.com" autocomplete="off">
-                        </div>
-                    </div>
-
-                    <!-- Customer Search & Loyalty -->
-                    <div class="bg-blue-50 p-3 rounded-lg mt-3 space-y-2">
-                        <div class="relative">
-                            <input type="text" id="customer-search" placeholder="Search customer..." autocomplete="off" class="w-full border rounded-lg p-2 text-sm pr-8">
-                            <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-                            <div id="customer-suggestions" class="absolute z-10 left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto hidden"></div>
-                        </div>
-                        <div id="customer-info" class="text-xs text-gray-700 hidden">
-                            <span id="customer-name-display"></span> ·
-                            <strong>Points: <span id="customer-points">0</span></strong>
-                        </div>
-                        <div id="points-redeem-section" class="hidden border-t border-blue-200 pt-2 mt-1">
-                            <label class="text-xs font-medium">Redeem points (1 pt = ₦1)</label>
-                            <div class="flex gap-2 mt-1">
-                                <input type="number" id="redeem-points-input" min="1" class="w-full border rounded-lg p-1 text-sm" placeholder="Points">
-                                <button id="apply-points-btn" class="bg-emerald-600 text-white px-3 py-1 rounded-lg text-sm hover:bg-emerald-700">Apply</button>
-                            </div>
-                            <p id="offline-points-warning" class="text-red-500 text-xs hidden">⚠️ Points redemption requires internet.</p>
-                        </div>
-                    </div>
-
-                    <button id="checkout-btn" class="mt-4 w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-bold transition shadow-md text-lg">
-                        ✅ Complete Sale
+    <!-- ================= SUPPORT TAB - MOBILE STACKED ================= -->
+    <div id="support-tab" class="flex-1 flex flex-col md:flex-row overflow-hidden pt-2">
+        <!-- Left column: ticket list -->
+        <section class="ticket-sidebar w-full md:w-80 bg-white border-r border-slate-200 flex flex-col shrink-0 overflow-hidden md:overflow-y-auto">
+            <div class="p-4 border-b bg-slate-50">
+                <div class="flex gap-2 mb-2">
+                    <select id="queue-status-filter" class="flex-1 border rounded-lg p-1.5 text-xs">
+                        <option value="open">🟢 Open Tickets</option>
+                        <option value="pending">🟡 Escalated</option>
+                        <option value="resolved">⚫ Resolved</option>
+                    </select>
+                    <button id="new-ticket-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-lg text-xs flex items-center gap-1">
+                        <i class="fas fa-plus"></i> New
                     </button>
                 </div>
             </div>
+            <div id="ticket-feed" class="flex-1 overflow-y-auto divide-y divide-slate-100"><div class="p-8 text-center text-xs">Loading tickets...</div></div>
+        </section>
 
-            <!-- PRODUCT CATALOG (RIGHT) -->
-            <div class="lg:col-span-1 bg-white rounded-xl shadow-md p-4 flex flex-col">
-                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
-                    <h2 class="text-lg font-semibold">📦 Products</h2>
-                    <div class="relative w-full">
-                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-                        <input type="text" id="product-search" placeholder="Search SKU or name..." autocomplete="off" class="w-full pl-9 pr-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none">
-                        <div id="search-scanner-hint" class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-green-500 hidden"><i class="fa-solid fa-qrcode"></i></div>
+        <!-- Middle: conversation area -->
+        <section class="conversation-area flex-1 bg-slate-50 flex flex-col overflow-hidden relative">
+            <div id="no-ticket-selected" class="absolute inset-0 bg-slate-50 z-10 flex items-center justify-center p-6 text-center"><div><i class="fa-solid fa-inbox text-3xl text-slate-300 mb-2"></i><p class="text-sm">Select a ticket</p></div></div>
+            <div class="bg-white border-b px-4 md:px-6 py-3 shrink-0"><h2 id="active-ticket-subject" class="font-semibold text-sm md:text-base">-</h2><p id="active-ticket-meta" class="text-xs text-slate-400">-</p></div>
+            <div id="message-flow-area" class="flex-1 p-4 md:p-6 overflow-y-auto space-y-4"></div>
+            <div class="bg-white border-t p-3 md:p-4 shrink-0">
+                <form id="agent-reply-form" class="flex gap-2">
+                    <input id="agent-response-input" placeholder="Type reply..." class="flex-1 border rounded-xl px-4 py-2 text-sm" required />
+                    <button type="submit" class="bg-[#1E3A5F] text-white px-4 py-2 rounded-xl text-sm">Send</button>
+                </form>
+            </div>
+        </section>
+
+        <!-- Right column: customer info & actions -->
+        <section class="customer-sidebar w-full md:w-80 bg-white border-l border-slate-200 flex flex-col shrink-0 overflow-y-auto p-5 space-y-6">
+            <div>
+                <h3 class="text-xs font-bold uppercase text-slate-500">Customer Information</h3>
+                <div id="customer-info-card" class="mt-2 text-xs bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
+                    <div><i class="fa-regular fa-user mr-1"></i> <strong>Name:</strong> <span id="cust-name">-</span></div>
+                    <div><i class="fa-regular fa-envelope mr-1"></i> <strong>Email:</strong> <span id="cust-email">-</span></div>
+                    <div><i class="fa-regular fa-phone mr-1"></i> <strong>Phone:</strong> <span id="cust-phone">-</span></div>
+                    <div><i class="fa-regular fa-address-card mr-1"></i> <strong>Address:</strong> <span id="cust-address">-</span></div>
+                    <div class="border-t pt-2 mt-1">
+                        <div><i class="fa-solid fa-coins mr-1"></i> <strong>Loyalty Points:</strong> <span id="cust-points">0</span></div>
+                        <div><i class="fa-solid fa-medal mr-1"></i> <strong>Tier:</strong> <span id="cust-tier">-</span></div>
+                    </div>
+                    <div class="border-t pt-2 mt-1">
+                        <div><strong>📦 Total Orders:</strong> <span id="cust-total-orders">-</span></div>
+                        <div><strong>💰 Total Spent:</strong> <span id="cust-total-spent">₦0</span></div>
+                        <div><strong>🕒 Last Order:</strong> <span id="cust-last-order">-</span></div>
+                    </div>
+                    <div class="pt-2">
+                        <a id="cust-orders-link" href="#" target="_blank" class="text-blue-600 text-xs underline">🔍 View all customer orders</a>
                     </div>
                 </div>
-                <div id="product-list" class="grid grid-cols-2 gap-2 max-h-[70vh] overflow-y-auto flex-1"></div>
-                <div id="product-list-empty" class="hidden text-center py-8 text-gray-400 col-span-full">No products match your search</div>
-                <div id="loading-more" class="hidden text-center py-4 text-gray-500 text-sm"><i class="fa-solid fa-spinner fa-pulse"></i> Loading more...</div>
+            </div>
+            <div>
+                <h3 class="text-xs font-bold uppercase text-slate-500">Loyalty History</h3>
+                <div id="loyalty-display" class="text-xs mt-2 bg-slate-50 p-3 rounded-lg border border-slate-200">-</div>
+            </div>
+            <textarea id="ticket-resolution-notes" rows="3" placeholder="Resolution notes" class="border rounded-lg p-2 text-xs"></textarea>
+            <button id="resolve-ticket-btn" class="bg-emerald-600 text-white py-2 rounded-lg text-xs">✅ Resolve Ticket</button>
+            <button id="escalate-ticket-btn" class="bg-amber-600 hover:bg-amber-700 text-white py-2 rounded-lg text-xs mt-2">⚠️ Escalate Ticket</button>
+        </section>
+    </div>
+
+    <!-- ================= LOYALTY & CRM TAB ================= -->
+    <div id="loyalty-tab" class="hidden flex-1 overflow-auto p-4 md:p-6">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Register Customer Card -->
+            <div class="bg-white rounded-xl shadow p-5">
+                <h2 class="text-xl font-bold mb-4"><i class="fas fa-user-plus text-green-600 mr-2"></i>Register Customer</h2>
+                <form id="register-customer-form" class="space-y-3">
+                    <div class="grid grid-cols-2 gap-2">
+                        <input type="text" id="reg-firstname" placeholder="First name *" class="border rounded p-2" required />
+                        <input type="text" id="reg-lastname" placeholder="Last name *" class="border rounded p-2" required />
+                    </div>
+                    <input type="email" id="reg-email" placeholder="Email *" class="w-full border rounded p-2" required />
+                    <input type="tel" id="reg-phone" placeholder="Phone *" class="w-full border rounded p-2" required />
+                    <input type="date" id="reg-dob" placeholder="Date of Birth" class="w-full border rounded p-2" />
+                    <input type="text" id="reg-address" placeholder="Address" class="w-full border rounded p-2" />
+                    <select id="reg-tier" class="w-full border rounded p-2">
+                        <option value="bronze">Bronze</option>
+                        <option value="silver">Silver</option>
+                        <option value="gold">Gold</option>
+                        <option value="platinum">Platinum</option>
+                    </select>
+                    <input type="number" id="reg-points" placeholder="Initial points" value="0" class="w-full border rounded p-2" />
+                    <button type="submit" id="register-submit-btn" class="w-full bg-blue-600 text-white py-2 rounded-lg transition active:scale-95 flex items-center justify-center gap-2">
+                        <span>Register &amp; Send Welcome Email</span>
+                    </button>
+                </form>
+                <p class="text-xs text-gray-500 mt-3">A temporary password will be emailed to the customer.</p>
             </div>
 
+            <!-- Customer Directory with Date Range Filter -->
+            <div class="bg-white rounded-xl shadow p-5 col-span-2">
+                <div class="flex flex-col gap-3 mb-3">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                        <h2 class="text-xl font-bold"><i class="fas fa-users mr-2"></i>Customer Directory</h2>
+                        <div class="flex gap-2">
+                            <button id="export-csv-btn" class="bg-emerald-600 text-white px-3 py-1 rounded text-sm"><i class="fas fa-file-csv"></i> Export</button>
+                            <button id="refresh-customers-btn" class="bg-blue-600 text-white px-3 py-1 rounded text-sm"><i class="fas fa-sync-alt"></i> Refresh</button>
+                        </div>
+                    </div>
+                    <!-- Date Range Filter -->
+                    <div class="flex flex-wrap items-end gap-2 bg-gray-50 p-2 rounded-lg">
+                        <div>
+                            <label class="text-xs font-medium">From Date</label>
+                            <input type="date" id="filter-date-from" class="border rounded p-1 text-sm" />
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium">To Date</label>
+                            <input type="date" id="filter-date-to" class="border rounded p-1 text-sm" />
+                        </div>
+                        <button id="apply-date-filter" class="bg-blue-500 text-white px-3 py-1 rounded text-sm">Apply</button>
+                        <button id="clear-date-filter" class="bg-gray-400 text-white px-3 py-1 rounded text-sm">Clear</button>
+                    </div>
+                    <!-- Search input -->
+                    <input type="text" id="customer-search" placeholder="Search by name, email or phone..." class="border rounded p-1 text-sm w-full" />
+                </div>
+                <div class="overflow-x-auto max-h-96">
+                    <table class="min-w-full text-sm">
+                        <thead class="bg-gray-100">
+                            <tr><th class="p-2 text-left">Name</th><th class="p-2 text-left">Email</th><th class="p-2 text-left">Phone</th><th class="p-2 text-left">Points</th><th class="p-2 text-left">Tier</th><th class="p-2 text-left">Created</th><th class="p-2 text-center">Action</th></tr>
+                        </thead>
+                        <tbody id="customer-table-body"><tr><td colspan="7" class="text-center p-4">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Compact Points Adjustment Form -->
+        <div class="mt-6">
+            <div class="bg-white rounded-xl shadow p-4 max-w-md">
+                <h2 class="text-lg font-bold mb-2"><i class="fas fa-gift mr-2 text-purple-600"></i>Adjust Points</h2>
+                <form id="points-adjust-form" class="space-y-2">
+                    <input type="hidden" id="adjust-user-id" />
+                    <div class="grid grid-cols-2 gap-2">
+                        <div><label class="block text-xs">Customer</label><input type="text" id="adjust-customer-name" readonly class="w-full bg-gray-100 border rounded p-1 text-sm" /></div>
+                        <div><label class="block text-xs">Current Points</label><input type="number" id="adjust-current-points" readonly class="w-full bg-gray-100 border rounded p-1 text-sm" /></div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div><label class="block text-xs">Add / Deduct</label><input type="number" id="adjust-points-delta" placeholder="e.g., +50 or -20" class="w-full border rounded p-1 text-sm" /></div>
+                        <div><label class="block text-xs">Reason</label><input type="text" id="adjust-reason" placeholder="Birthday, purchase..." class="w-full border rounded p-1 text-sm" /></div>
+                    </div>
+                    <button type="submit" class="w-full bg-purple-600 text-white py-1 rounded-lg text-sm">Update Points</button>
+                </form>
+            </div>
         </div>
     </div>
 
-    <!-- History Modal -->
-    <div id="history-modal">
-        <div class="modal-content">
+    <!-- New Ticket Modal -->
+    <div id="new-ticket-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6">
             <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-bold">📜 Cashier History</h3>
-                <button id="close-history-btn" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+                <h3 class="text-xl font-bold text-gray-800">➕ Create New Ticket</h3>
+                <button id="close-new-ticket-modal" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
             </div>
-            <div id="history-list" class="space-y-2 max-h-[60vh] overflow-y-auto"></div>
+            <form id="new-ticket-form" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium">Customer (email or name)</label>
+                    <input type="text" id="new-ticket-customer" placeholder="Search by email or name..." class="w-full border rounded-lg p-2" autocomplete="off" />
+                    <div id="customer-search-results" class="hidden absolute z-50 bg-white border rounded-lg mt-1 max-h-40 overflow-y-auto w-full"></div>
+                </div>
+                <div><label class="block text-sm font-medium">Subject *</label><input type="text" id="new-ticket-subject" required class="w-full border rounded-lg p-2" /></div>
+                <div><label class="block text-sm font-medium">Description *</label><textarea id="new-ticket-description" rows="3" required class="w-full border rounded-lg p-2"></textarea></div>
+                <div><label class="block text-sm font-medium">Priority</label><select id="new-ticket-priority" class="w-full border rounded-lg p-2"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option><option value="urgent">Urgent</option></select></div>
+                <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg">Create Ticket</button>
+            </form>
         </div>
     </div>
 
-    <!-- Login Modal -->
-    <div id="auth-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-bold text-gray-800">🔐 Sign In to POS</h3>
-                <button id="close-modal-btn" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
-            </div>
-            <div class="space-y-3">
-                <input id="login-email" type="email" placeholder="Email" class="w-full border rounded-lg p-2 text-sm">
-                <input id="login-password" type="password" placeholder="Password" class="w-full border rounded-lg p-2 text-sm">
-                <button id="modal-login-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white p-2.5 rounded-lg text-sm font-medium">Sign In</button>
-                <button id="demo-login-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white p-2.5 rounded-lg text-sm font-medium">
-                    <i class="fa-solid fa-bolt mr-1"></i> Demo Login
-                </button>
-            </div>
-        </div>
+    <!-- Escalate Modal -->
+    <div id="escalate-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6"><div class="flex justify-between items-center mb-4"><h3 class="text-xl font-bold text-gray-800">🚨 Escalate Ticket</h3><button id="close-escalate-modal" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button></div><div class="space-y-4"><div><label class="block text-sm font-medium">Department</label><select id="escalate-dept" class="w-full border rounded-lg p-2 mt-1"><option value="Technical Support">🛠️ Technical Support</option><option value="Billing">💰 Billing</option><option value="Logistics">📦 Logistics</option><option value="Sales">📈 Sales</option><option value="Management">🏢 Management</option></select></div><div><label class="block text-sm font-medium">Method</label><select id="escalate-method" class="w-full border rounded-lg p-2 mt-1"><option value="email">✉️ Email</option><option value="whatsapp">📱 WhatsApp</option></select></div><div><label class="block text-sm font-medium">Note</label><textarea id="escalate-note" rows="3" class="w-full border rounded-lg p-2"></textarea></div><button id="confirm-escalate-btn" class="w-full bg-amber-600 text-white py-2 rounded-lg font-semibold">Send Escalation</button></div></div>
     </div>
 
     <script>
-        // ================================================================
-        //  OFFLINE‑READY POS – WITH RECEIPT PRINTING
-        // ================================================================
-
-        const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
+        const BACKEND_URL = 'https://kevsono-kevs-digital-bos.hf.space';
         let token = localStorage.getItem('access_token');
-        let products = [];
-        let allCustomers = [];
-        let posSearchTerm = '';
-        let posPage = 1;
-        const POS_PAGE_SIZE = 50;
-        let posTotalItems = 0;
-        let posIsLoading = false;
-        let posHasMore = true;
-        let activeTab = 1;
-        let abortController = null;
-        let isOnline = navigator.onLine;
-        let syncInProgress = false;
+        let activeTicketId = null;
+        let customers = [];
+        let filteredCustomers = [];
 
-        // ---------- Dexie IndexedDB ----------
-        const db = new Dexie('KevsPOSOffline');
-        db.version(1).stores({
-            products: 'id, description, item_code, sku, price_naira, current_qty',
-            customers: 'id, first_name, last_name, phone, email, loyalty_points',
-            orders: '++id, offlineRef, cashierId, createdAt, status, syncedAt',
-            syncQueue: '++id, orderId, attempts, lastTry'
-        });
-
-        // ---------- DOM refs ----------
-        const productContainer = document.getElementById('product-list');
-        const emptyMsgDiv = document.getElementById('product-list-empty');
-        const cartContainer = document.getElementById('cart-items');
-        const cartTotalSpan = document.getElementById('cart-total');
-        const paymentMethodSelect = document.getElementById('payment-method');
-        const customerNameInput = document.getElementById('customer-name');
-        const customerPhoneInput = document.getElementById('customer-phone');
-        const customerEmailInput = document.getElementById('customer-email');
-        const activeCustomerLabel = document.getElementById('active-customer-label');
-        const tabBadge = document.getElementById('tab-badge');
-        const tab1Btn = document.getElementById('tab1-btn');
-        const tab2Btn = document.getElementById('tab2-btn');
-        const checkoutBtn = document.getElementById('checkout-btn');
-        const searchInput = document.getElementById('product-search');
-        const customerSearchInput = document.getElementById('customer-search');
-        const suggestionsDiv = document.getElementById('customer-suggestions');
-        const customerInfoDiv = document.getElementById('customer-info');
-        const customerNameDisplay = document.getElementById('customer-name-display');
-        const customerPointsSpan = document.getElementById('customer-points');
-        const pointsRedeemSection = document.getElementById('points-redeem-section');
-        const redeemPointsInput = document.getElementById('redeem-points-input');
-        const applyPointsBtn = document.getElementById('apply-points-btn');
-        const offlinePointsWarning = document.getElementById('offline-points-warning');
-        const scannerHint = document.getElementById('search-scanner-hint');
-        const loadingMoreDiv = document.getElementById('loading-more');
-        const connectionStatus = document.getElementById('connection-status');
-        const syncNowBtn = document.getElementById('sync-now-btn');
-        const historyBtn = document.getElementById('history-btn');
-        const historyModal = document.getElementById('history-modal');
-        const closeHistoryBtn = document.getElementById('close-history-btn');
-        const historyList = document.getElementById('history-list');
-
-        // ---------- Tab State ----------
-        const tabState = {
-            1: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '',
-                loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 },
-            2: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '',
-                loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 }
-        };
-
-        // ---------- Toast ----------
         function showToast(msg, type = 'success') {
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
-            toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : type === 'error' ? 'bg-red-600' : 'bg-blue-600'} mb-2 text-sm flex items-center gap-2`;
-            const icon = type === 'success' ? 'fa-circle-check' : type === 'error' ? 'fa-circle-exclamation' : 'fa-info-circle';
-            toast.innerHTML = `<i class="fa-solid ${icon}"></i> ${msg}`;
+            toast.className =
+                `px-4 py-2 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} mb-2 text-sm`;
+            toast.innerText = msg;
             container.appendChild(toast);
-            setTimeout(() => toast.remove(), 3800);
+            setTimeout(() => toast.remove(), 3500);
         }
 
-        // ---------- API Call ----------
-        async function apiCall(endpoint, method = 'GET', body = null, retry = true, signal = null) {
+        async function refreshToken() {
+            const refresh = localStorage.getItem('refresh_token');
+            if (!refresh) return false;
+            try {
+                const res = await fetch(`${BACKEND_URL}/auth/refresh`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh_token: refresh })
+                });
+                if (res.ok) {
+                    const { access_token, refresh_token } = await res.json();
+                    localStorage.setItem('access_token', access_token);
+                    localStorage.setItem('refresh_token', refresh_token);
+                    token = access_token;
+                    return true;
+                }
+            } catch (e) {}
+            return false;
+        }
+
+        async function req(endpoint, method = 'GET', body = null, retry = true) {
             const headers = { 'Content-Type': 'application/json' };
             if (token) headers['Authorization'] = `Bearer ${token}`;
-            const selectedOrgId = localStorage.getItem('selected_org_id');
-            if (selectedOrgId) headers['X-Selected-Org-Id'] = selectedOrgId;
-            const options = { method, headers, signal };
-            if (body) options.body = JSON.stringify(body);
-            let res = await fetch(`${BACKEND}${endpoint}`, options);
-            if (res.status === 401 && retry) {
-                const refresh = localStorage.getItem('refresh_token');
-                if (refresh) {
-                    try {
-                        const refreshRes = await fetch(`${BACKEND}/auth/refresh`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ refresh_token: refresh })
-                        });
-                        if (refreshRes.ok) {
-                            const { access_token, refresh_token } = await refreshRes.json();
-                            localStorage.setItem('access_token', access_token);
-                            localStorage.setItem('refresh_token', refresh_token);
-                            token = access_token;
-                            return apiCall(endpoint, method, body, false, signal);
-                        }
-                    } catch (e) {}
-                }
-                showLoginModal();
-                throw new Error('Session expired');
-            }
-            if (!res.ok) {
-                const err = await res.json().catch(() => ({ detail: 'Request error' }));
-                throw new Error(err.detail || 'API error');
-            }
-            return res.json();
-        }
-
-        function showLoginModal() { document.getElementById('auth-modal').classList.remove('hidden'); }
-        function hideLoginModal() { document.getElementById('auth-modal').classList.add('hidden'); }
-
-        // ---------- Offline Status ----------
-        function updateConnectionStatus() {
-            isOnline = navigator.onLine;
-            connectionStatus.innerHTML = isOnline ? '<i class="fa-solid fa-wifi"></i> Online' : '<i class="fa-solid fa-wifi-slash"></i> Offline';
-            connectionStatus.className = isOnline ? 'online-badge' : 'offline-badge';
-        }
-        window.addEventListener('online', () => { updateConnectionStatus(); syncPendingOrders(); });
-        window.addEventListener('offline', updateConnectionStatus);
-
-        // ---------- Product Cache & Search (unchanged) ----------
-        async function loadPOSProducts(reset = true) {
-            const trimmed = posSearchTerm.trim();
-            if (trimmed.length < 2) {
-                products = [];
-                productContainer.innerHTML = '';
-                emptyMsgDiv.classList.add('hidden');
-                posPage = 1;
-                posHasMore = true;
-                posTotalItems = 0;
-                if (abortController) abortController.abort();
-                return;
-            }
-            if (reset) {
-                posPage = 1;
-                posTotalItems = 0;
-                posHasMore = true;
-                products = [];
-                productContainer.innerHTML = '';
-                emptyMsgDiv.classList.add('hidden');
-                const oldSentinel = document.getElementById('scroll-sentinel');
-                if (oldSentinel) oldSentinel.remove();
-                if (observer) observer.disconnect();
-                if (abortController) abortController.abort();
-                abortController = new AbortController();
-            }
-            if (posIsLoading || !posHasMore) return;
-            posIsLoading = true;
-            loadingMoreDiv.classList.remove('hidden');
-
-            const offset = (posPage - 1) * POS_PAGE_SIZE;
+            let res;
             try {
-                let items = [];
-                let total = 0;
-                if (isOnline) {
-                    const url = `/inventory/pos?limit=${POS_PAGE_SIZE}&offset=${offset}&q=${encodeURIComponent(trimmed)}`;
-                    const data = await apiCall(url, 'GET', null, true, abortController.signal);
-                    items = data.items || [];
-                    total = data.total || 0;
-                    for (const p of items) {
-                        await db.products.put({
-                            id: p.id,
-                            description: p.description,
-                            item_code: p.item_code,
-                            sku: p.sku || p.item_code,
-                            price_naira: p.price_naira,
-                            current_qty: p.current_qty
-                        });
-                    }
-                } else {
-                    let collection = db.products.where('description').startsWithIgnoreCase(trimmed)
-                        .or('item_code').startsWithIgnoreCase(trimmed)
-                        .or('sku').startsWithIgnoreCase(trimmed);
-                    total = await collection.count();
-                    items = await collection.offset(offset).limit(POS_PAGE_SIZE).toArray();
-                    items = items.map(p => ({ ...p, price_naira: p.price_naira, current_qty: p.current_qty }));
+                res = await fetch(`${BACKEND_URL}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) :
+                        undefined });
+                let data;
+                try { data = await res.json(); } catch (e) { data = { raw: await res.text() }; }
+                if (res.status === 401 && retry) {
+                    const ok = await refreshToken();
+                    if (ok) return req(endpoint, method, body, false);
+                    throw new Error('Session expired');
                 }
-                posTotalItems = total;
-                posHasMore = (offset + POS_PAGE_SIZE) < total;
-                if (reset) products = items;
-                else products = products.concat(items);
-                appendProductCards(items);
-                posPage++;
-                return products;
+                if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`);
+                return data;
             } catch (err) {
-                if (err.name === 'AbortError') return;
-                showToast('Failed to load products: ' + err.message, 'error');
-            } finally {
-                posIsLoading = false;
-                loadingMoreDiv.classList.add('hidden');
-                if (posHasMore) {
-                    const sentinel = document.createElement('div');
-                    sentinel.id = 'scroll-sentinel';
-                    sentinel.className = 'h-4 w-full';
-                    productContainer.appendChild(sentinel);
-                    observeSentinel();
-                } else {
-                    if (products.length > 0) {
-                        const endMsg = document.createElement('div');
-                        endMsg.className = 'col-span-full text-center py-4 text-gray-400 text-sm';
-                        endMsg.innerText = '— End of catalog —';
-                        productContainer.appendChild(endMsg);
-                    }
-                }
+                throw err;
             }
         }
 
-        function appendProductCards(items) {
-            if (!items || items.length === 0) {
-                if (products.length === 0) emptyMsgDiv.classList.remove('hidden');
-                return;
-            }
-            emptyMsgDiv.classList.add('hidden');
-            items.forEach(p => {
-                const skuDisplay = p.sku || p.item_code || `ID:${p.id}`;
-                const stock = p.current_qty ?? 0;
-                const price = p.price_naira ?? 0;
-                const descSafe = escapeHtml(p.description || 'Unnamed product');
-                const card = document.createElement('button');
-                card.className = 'product-card bg-gray-50 rounded-lg text-left hover:bg-blue-50 border border-gray-200 transition shadow-sm flex flex-col';
-                card.innerHTML = `
-                    <span class="name">${descSafe}</span>
-                    <span class="sku">📟 ${escapeHtml(skuDisplay)}</span>
-                    <span class="price">₦${price.toLocaleString()}</span>
-                    <span class="stock">📦 ${stock} left</span>
-                `;
-                card.onclick = () => addToCart(p.id, p.description || 'Product', price, stock, skuDisplay);
-                productContainer.appendChild(card);
-            });
-        }
-
-        function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;'); }
-
-        let observer = null;
-        function observeSentinel() {
-            if (observer) observer.disconnect();
-            const sentinel = document.getElementById('scroll-sentinel');
-            if (!sentinel) return;
-            observer = new IntersectionObserver((entries) => {
-                if (entries[0].isIntersecting && posHasMore && !posIsLoading) {
-                    loadPOSProducts(false);
-                }
-            }, { root: null, rootMargin: '0px 0px 100px 0px' });
-            observer.observe(sentinel);
-        }
-
-        // ---------- Search Input (with scanner) ----------
-        let scanBuffer = '', scanTimer = null, isScanning = false, lastKeyTime = 0, searchDebounceTimer = null;
-        searchInput.addEventListener('input', function(e) {
-            if (isScanning) return;
-            clearTimeout(searchDebounceTimer);
-            const val = this.value.trim();
-            searchDebounceTimer = setTimeout(() => {
-                posSearchTerm = val;
-                if (val.length === 0) {
-                    products = [];
-                    productContainer.innerHTML = '';
-                    emptyMsgDiv.classList.add('hidden');
-                    posPage = 1;
-                    posHasMore = true;
-                    posTotalItems = 0;
-                    if (abortController) abortController.abort();
-                    return;
-                }
-                if (val.length >= 2) {
-                    if (abortController) abortController.abort();
-                    loadPOSProducts(true);
-                }
-            }, 500);
-        });
-
-        searchInput.addEventListener('keydown', function(e) {
-            const now = Date.now();
-            const timeDiff = lastKeyTime ? now - lastKeyTime : 0;
-            lastKeyTime = now;
-            if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                if (timeDiff < 60 && timeDiff > 0) {
-                    e.preventDefault();
-                    if (!isScanning) {
-                        isScanning = true;
-                        scanBuffer = '';
-                        searchInput.classList.add('scanner-active');
-                        scannerHint.classList.remove('hidden');
-                    }
-                    scanBuffer += e.key;
-                    clearTimeout(scanTimer);
-                    scanTimer = setTimeout(async () => {
-                        if (scanBuffer.length > 0) {
-                            searchInput.value = scanBuffer;
-                            posSearchTerm = scanBuffer;
-                            if (scanBuffer.length >= 2) {
-                                if (abortController) abortController.abort();
-                                await loadPOSProducts(true);
-                                if (products.length === 1) {
-                                    const p = products[0];
-                                    addToCart(p.id, p.description || 'Product', p.price_naira || 0, p.current_qty || 0, p.sku || p.item_code);
-                                } else if (products.length === 0) {
-                                    showToast('Product not found', 'error');
-                                } else {
-                                    showToast(`${products.length} products found`, 'info');
-                                }
-                            } else {
-                                products = [];
-                                productContainer.innerHTML = '';
-                                emptyMsgDiv.classList.add('hidden');
-                            }
-                        }
-                        isScanning = false;
-                        scanBuffer = '';
-                        searchInput.classList.remove('scanner-active');
-                        scannerHint.classList.add('hidden');
-                    }, 150);
-                    return;
-                }
-                if (isScanning) {
-                    isScanning = false;
-                    scanBuffer = '';
-                    clearTimeout(scanTimer);
-                    searchInput.classList.remove('scanner-active');
-                    scannerHint.classList.add('hidden');
-                }
-            } else {
-                if (isScanning) {
-                    isScanning = false;
-                    scanBuffer = '';
-                    clearTimeout(scanTimer);
-                    searchInput.classList.remove('scanner-active');
-                    scannerHint.classList.add('hidden');
-                }
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const val = searchInput.value.trim();
-                    if (val.length >= 2) {
-                        posSearchTerm = val;
-                        if (abortController) abortController.abort();
-                        loadPOSProducts(true).then(() => {
-                            if (products.length === 1) {
-                                const p = products[0];
-                                addToCart(p.id, p.description || 'Product', p.price_naira || 0, p.current_qty || 0, p.sku || p.item_code);
-                            } else if (products.length === 0) {
-                                showToast('Product not found', 'error');
-                            } else {
-                                showToast(`${products.length} products found`, 'info');
-                            }
-                        });
-                    } else {
-                        products = [];
-                        productContainer.innerHTML = '';
-                        emptyMsgDiv.classList.add('hidden');
-                    }
-                }
-            }
-        });
-
-        // ---------- Customer Search ----------
-        function filterCustomers(searchText) {
-            if (!searchText.trim()) return [];
-            const term = searchText.trim().toLowerCase();
-            return allCustomers.filter(c => {
-                const name = `${c.first_name || ''} ${c.last_name || ''}`.toLowerCase();
-                const phone = (c.phone || '').toLowerCase();
-                const email = (c.email || '').toLowerCase();
-                return name.includes(term) || phone.includes(term) || email.includes(term);
-            });
-        }
-
-        function renderSuggestions() {
-            const searchVal = customerSearchInput.value;
-            const matches = filterCustomers(searchVal);
-            if (matches.length === 0 || !searchVal.trim()) {
-                suggestionsDiv.classList.add('hidden');
-                return;
-            }
-            suggestionsDiv.classList.remove('hidden');
-            suggestionsDiv.innerHTML = matches.map(c => {
-                const fullName = `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'No name';
-                return `
-                    <div class="customer-suggestion px-3 py-2 border-b last:border-0 text-sm hover:bg-blue-50" data-user-id="${c.id}" data-name="${escapeAttr(fullName)}" data-phone="${escapeAttr(c.phone || '')}" data-email="${escapeAttr(c.email || '')}" data-points="${c.loyalty_points || 0}">
-                        <div class="font-medium">${escapeHtml(fullName)}</div>
-                        <div class="text-xs text-gray-500">${escapeHtml(c.phone || '')} · ${escapeHtml(c.email || '')}</div>
-                    </div>
-                `;
-            }).join('');
-            document.querySelectorAll('.customer-suggestion').forEach(el => {
-                el.addEventListener('click', () => {
-                    const userId = el.dataset.userId;
-                    const name = el.dataset.name;
-                    const phone = el.dataset.phone;
-                    const email = el.dataset.email;
-                    const points = parseInt(el.dataset.points, 10);
-                    selectCustomer(userId, name, phone, email, points);
-                    suggestionsDiv.classList.add('hidden');
-                    customerSearchInput.value = name;
+        // ---------- SUPPORT TICKETS ----------
+        async function loadTickets() {
+            const status = document.getElementById('queue-status-filter').value;
+            try {
+                const data = await req(`/support/tickets?status=${status}`);
+                const feed = document.getElementById('ticket-feed');
+                feed.innerHTML = '';
+                if (!data.tickets || data.tickets.length === 0) { feed.innerHTML =
+                    '<div class="p-8 text-center text-xs">No tickets</div>'; return; }
+                data.tickets.forEach(t => {
+                    const div = document.createElement('div');
+                    div.className = `p-4 cursor-pointer hover:bg-slate-50 ${activeTicketId === t.id ? 'ticket-active' : ''}`;
+                    div.onclick = () => selectTicket(t.id);
+                    div.innerHTML =
+                        `<div class="font-semibold text-sm">${escapeHtml(t.subject)}</div><div class="text-xs text-slate-500">${t.status} | ${new Date(t.created_at).toLocaleString()}</div>`;
+                    feed.appendChild(div);
                 });
-            });
+            } catch (err) { document.getElementById('ticket-feed').innerHTML =
+                    `<div class="p-8 text-center text-red-500">Error: ${err.message}</div>`; }
         }
 
-        function escapeAttr(str) { if (!str) return ''; return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+        async function selectTicket(ticketId) {
+            activeTicketId = ticketId;
+            document.getElementById('no-ticket-selected').classList.add('hidden');
+            try {
+                const data = await req(`/support/tickets/${ticketId}`);
+                document.getElementById('active-ticket-subject').innerText = data.ticket.subject;
+                document.getElementById('active-ticket-meta').innerText = `ID: ${data.ticket.id}`;
+                const container = document.getElementById('message-flow-area');
+                container.innerHTML = '';
+                (data.messages || []).forEach(m => {
+                    const msgDiv = document.createElement('div');
+                    msgDiv.className = `p-2 rounded-lg ${m.sender_type === 'agent' ? 'bg-blue-100 text-right' : 'bg-gray-100'}`;
+                    msgDiv.innerText = `${m.sender_type}: ${m.message}`;
+                    container.appendChild(msgDiv);
+                });
+                await loadCustomerFullContext(data.ticket.user_id);
+                loadTickets();
+            } catch (err) { showToast('Failed to load ticket', 'error'); }
+        }
 
-        function selectCustomer(userId, name, phone, email, points) {
-            const state = tabState[activeTab];
-            state.loyaltyUserId = userId;
-            state.pointsBalance = points;
-            state.pointsRedeemed = 0;
-            state.customerName = name;
-            state.customerPhone = phone;
-            state.customerEmail = email;
-            customerNameInput.value = name;
-            customerPhoneInput.value = phone;
-            customerEmailInput.value = email;
-            customerNameDisplay.innerText = name;
-            customerPointsSpan.innerText = points;
-            customerInfoDiv.classList.remove('hidden');
-            if (points > 0 && isOnline) {
-                pointsRedeemSection.classList.remove('hidden');
-                offlinePointsWarning.classList.add('hidden');
-                redeemPointsInput.max = points;
-                redeemPointsInput.value = '';
-            } else if (points > 0 && !isOnline) {
-                pointsRedeemSection.classList.add('hidden');
-                offlinePointsWarning.classList.remove('hidden');
-            } else {
-                pointsRedeemSection.classList.add('hidden');
-                offlinePointsWarning.classList.add('hidden');
+        async function loadCustomerFullContext(userId) {
+            try {
+                const context = await req(`/support/customer-context?target_user_id=${userId}`);
+                const profile = context.profile || {};
+                const loyalty = context.loyalty || { current_points: 0, tier: 'bronze' };
+                let orderSummary = { total_orders: 0, total_spent: 0, last_order_date: null };
+                try { const summary = await req(`/sales/customer-summary?user_id=${userId}`);
+                    orderSummary = summary; } catch (e) {}
+                document.getElementById('cust-name').innerText = `${profile.first_name || ''} ${profile.last_name || ''}`
+                    .trim() || 'Guest';
+                document.getElementById('cust-email').innerText = profile.email || '-';
+                document.getElementById('cust-phone').innerText = profile.phone || '-';
+                document.getElementById('cust-address').innerText = profile.address || '-';
+                document.getElementById('cust-points').innerText = loyalty.current_points;
+                document.getElementById('cust-tier').innerText = loyalty.tier || 'bronze';
+                document.getElementById('cust-total-orders').innerText = orderSummary.total_orders ?? '-';
+                document.getElementById('cust-total-spent').innerHTML = `₦${(orderSummary.total_spent || 0).toLocaleString()}`;
+                document.getElementById('cust-last-order').innerText = orderSummary.last_order_date ? new Date(orderSummary
+                    .last_order_date).toLocaleDateString() : '-';
+                const ordersLink = document.getElementById('cust-orders-link');
+                if (ordersLink) ordersLink.href = `/kdfulfillment?customer_id=${userId}`;
+                document.getElementById('loyalty-display').innerHTML =
+                    `<div><strong>Points:</strong> ${loyalty.current_points}</div><div><strong>Tier:</strong> ${loyalty.tier}</div><div><strong>Member since:</strong> ${profile.created_at ? new Date(profile.created_at).toLocaleDateString() : '-'}</div>`;
+            } catch (err) { console.error(err); }
+        }
+
+        async function createTicket(customerId, subject, description, priority) {
+            return await req('/support/tickets', 'POST', { user_id: customerId || null, subject, description,
+                priority: priority || 'medium' });
+        }
+        async function searchCustomers(query) {
+            if (query.length < 2) return [];
+            try { const users = await req('/organisations/me/users'); return (users.users || []).filter(u => u.email
+                    .toLowerCase().includes(query.toLowerCase()) || `${u.first_name} ${u.last_name}`.toLowerCase()
+                    .includes(query.toLowerCase())); } catch (e) { return []; }
+        }
+
+        // New ticket modal logic
+        const newTicketModal = document.getElementById('new-ticket-modal');
+        const newTicketBtn = document.getElementById('new-ticket-btn');
+        const closeNewTicketModal = document.getElementById('close-new-ticket-modal');
+        const newTicketForm = document.getElementById('new-ticket-form');
+        const customerSearchInput = document.getElementById('new-ticket-customer');
+        const customerSearchResults = document.getElementById('customer-search-results');
+        let selectedCustomerId = null;
+        newTicketBtn?.addEventListener('click', () => { newTicketModal.classList.remove('hidden');
+            customerSearchInput.value = '';
+            selectedCustomerId = null;
+            document.getElementById('new-ticket-subject').value = '';
+            document.getElementById('new-ticket-description').value = '';
+            document.getElementById('new-ticket-priority').value = 'medium'; });
+        closeNewTicketModal?.addEventListener('click', () => newTicketModal.classList.add('hidden'));
+        window.addEventListener('click', (e) => { if (e.target === newTicketModal) newTicketModal.classList.add('hidden'); });
+        customerSearchInput?.addEventListener('input', async (e) => {
+            const query = e.target.value.trim();
+            if (query.length < 2) { customerSearchResults.classList.add('hidden'); return; }
+            const results = await searchCustomers(query);
+            if (results.length === 0) customerSearchResults.innerHTML =
+                '<div class="p-2 text-gray-500">No customers found</div>';
+            else {
+                customerSearchResults.innerHTML = results.map(c =>
+                    `<div class="p-2 hover:bg-gray-100 cursor-pointer" data-id="${c.id}" data-name="${c.first_name} ${c.last_name} (${c.email})">${escapeHtml(c.first_name)} ${escapeHtml(c.last_name)} - ${escapeHtml(c.email)}</div>`
+                    ).join('');
+                customerSearchResults.querySelectorAll('div[data-id]').forEach(div => { div.addEventListener('click',
+                        () => { customerSearchInput.value = div.getAttribute('data-name');
+                            selectedCustomerId = div.getAttribute('data-id');
+                            customerSearchResults.classList.add('hidden'); }); });
             }
-            showToast(`Customer selected: ${name} (${points} points)`, 'success');
-            renderActiveCart();
-        }
+            customerSearchResults.classList.remove('hidden');
+        });
+        document.addEventListener('click', (e) => { if (!customerSearchInput?.contains(e.target) && !customerSearchResults
+                ?.contains(e.target)) customerSearchResults?.classList.add('hidden'); });
+        newTicketForm?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const subject = document.getElementById('new-ticket-subject').value.trim();
+            const description = document.getElementById('new-ticket-description').value.trim();
+            const priority = document.getElementById('new-ticket-priority').value;
+            if (!subject || !description) { showToast('Subject and description are required', 'error'); return; }
+            try { await createTicket(selectedCustomerId, subject, description, priority);
+                showToast('Ticket created successfully', 'success');
+                newTicketModal.classList.add('hidden');
+                loadTickets(); } catch (err) { showToast('Failed to create ticket: ' + err.message, 'error'); }
+        });
+        document.getElementById('agent-reply-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!activeTicketId) return;
+            const msg = document.getElementById('agent-response-input').value.trim();
+            if (!msg) return;
+            try { await req(`/support/tickets/${activeTicketId}/message`, 'POST', { message: msg });
+                await selectTicket(activeTicketId);
+                document.getElementById('agent-response-input').value = ''; } catch (err) { showToast(
+                    'Failed to send', 'error'); }
+        });
+        document.getElementById('resolve-ticket-btn')?.addEventListener('click', async () => {
+            if (!activeTicketId) return;
+            const notes = document.getElementById('ticket-resolution-notes').value;
+            try { await req(`/support/tickets/${activeTicketId}/resolve`, 'POST', { resolution_notes: notes });
+                showToast('Ticket resolved');
+                activeTicketId = null;
+                document.getElementById('no-ticket-selected').classList.remove('hidden');
+                loadTickets(); } catch (err) { showToast('Resolve failed', 'error'); }
+        });
+        document.getElementById('queue-status-filter')?.addEventListener('change', loadTickets);
 
-        // ---------- Load Customers ----------
+        // Escalation
+        const escalateBtn = document.getElementById('escalate-ticket-btn');
+        const escalateModal = document.getElementById('escalate-modal');
+        const closeEscalateModal = document.getElementById('close-escalate-modal');
+        const confirmEscalateBtn = document.getElementById('confirm-escalate-btn');
+
+        function openEscalateModal() { if (!activeTicketId) { showToast('No ticket selected', 'error'); return; }
+            escalateModal.classList.remove('hidden'); }
+
+        function closeEscalateModalFn() { escalateModal.classList.add('hidden'); }
+        async function confirmEscalation() {
+            if (!activeTicketId) return;
+            const department = document.getElementById('escalate-dept').value;
+            const method = document.getElementById('escalate-method').value;
+            const note = document.getElementById('escalate-note').value;
+            try { await req(`/support/tickets/${activeTicketId}/escalate`, 'POST', { department, method, note });
+                showToast('Escalation sent', 'success');
+                closeEscalateModalFn(); } catch (err) { showToast('Escalation failed', 'error'); }
+        }
+        escalateBtn?.addEventListener('click', openEscalateModal);
+        closeEscalateModal?.addEventListener('click', closeEscalateModalFn);
+        confirmEscalateBtn?.addEventListener('click', confirmEscalation);
+        window.addEventListener('click', (e) => { if (e.target === escalateModal) closeEscalateModalFn(); });
+
+        // ---------- LOYALTY & CRM ----------
         async function loadCustomers() {
             try {
-                const data = await apiCall('/organisations/me/users');
-                allCustomers = data.users || [];
-                for (const c of allCustomers) {
-                    await db.customers.put({
-                        id: c.id,
-                        first_name: c.first_name,
-                        last_name: c.last_name,
-                        phone: c.phone,
-                        email: c.email,
-                        loyalty_points: c.loyalty_points || 0
-                    });
-                }
+                const data = await req('/organisations/me/users');
+                const users = data.users || [];
+                console.log('Loaded customers:', users.length);
+                customers = users.map(u => ({
+                    id: u.id,
+                    first_name: u.first_name || '',
+                    last_name: u.last_name || '',
+                    email: u.email || '',
+                    phone: u.phone || '',
+                    current_points: u.loyalty_points || 0,
+                    tier: u.loyalty_tier || 'bronze',
+                    date_of_birth: u.date_of_birth || null,
+                    address: u.address || '',
+                    created_at: u.created_at || new Date().toISOString()
+                }));
+                window.allCustomers = [...customers];
+                applyFiltersAndRender();
             } catch (err) {
-                console.warn('Failed to load customers online, using cache:', err);
-                allCustomers = await db.customers.toArray();
+                console.error('Load customers error:', err);
+                document.getElementById('customer-table-body').innerHTML =
+                    '<tr><td colspan="7" class="text-center p-4 text-red-500">Error loading customers</td></tr>';
             }
         }
 
-        // ---------- Cart Controls ----------
-        window.updateCartItemQty = function(index, newQty) {
-            const state = tabState[activeTab];
-            const cart = state.cart;
-            if (index < 0 || index >= cart.length) return;
-            newQty = parseInt(newQty, 10);
-            if (isNaN(newQty) || newQty < 1) newQty = 1;
-            cart[index].qty = newQty;
-            renderActiveCart();
+        function applyFiltersAndRender() {
+            const searchTerm = document.getElementById('customer-search')?.value.toLowerCase() || '';
+            const fromDate = document.getElementById('filter-date-from')?.value;
+            const toDate = document.getElementById('filter-date-to')?.value;
+            let filtered = [...(window.allCustomers || customers)];
+            if (searchTerm) {
+                filtered = filtered.filter(c => {
+                    const fullName = `${c.first_name} ${c.last_name}`.toLowerCase();
+                    return fullName.includes(searchTerm) || c.email.toLowerCase().includes(searchTerm) || c.phone
+                        .includes(searchTerm);
+                });
+            }
+            if (fromDate || toDate) {
+                filtered = filtered.filter(c => {
+                    if (!c.created_at) return !fromDate && !toDate;
+                    const createdDate = new Date(c.created_at).toISOString().slice(0, 10);
+                    if (fromDate && createdDate < fromDate) return false;
+                    if (toDate && createdDate > toDate) return false;
+                    return true;
+                });
+            }
+            filteredCustomers = filtered;
+            renderCustomerTable();
+        }
+
+        function renderCustomerTable() {
+            const tbody = document.getElementById('customer-table-body');
+            if (!filteredCustomers || filteredCustomers.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center p-4">No customers found</td></tr>';
+                return;
+            }
+            tbody.innerHTML = filteredCustomers.map(c => `
+                    <tr class="border-b hover:bg-gray-50">
+                        <td class="p-2">${escapeHtml(c.first_name)} ${escapeHtml(c.last_name)}</td>
+                        <td class="p-2">${escapeHtml(c.email)}</td>
+                        <td class="p-2">${escapeHtml(c.phone)}</td>
+                        <td class="p-2 font-bold">${c.current_points}</td>
+                        <td class="p-2 capitalize">${c.tier}</td>
+                        <td class="p-2">${c.created_at ? new Date(c.created_at).toLocaleDateString() : '-'}</td>
+                        <td class="p-2 text-center"><button onclick="openPointsAdjust('${c.id}', '${escapeHtml(c.first_name)} ${escapeHtml(c.last_name)}', ${c.current_points})" class="bg-indigo-100 text-indigo-700 px-2 py-1 rounded text-xs">Adjust</button></td>
+                    </tr>
+                `).join('');
+        }
+
+        window.openPointsAdjust = function(userId, name, currentPoints) {
+            document.getElementById('adjust-user-id').value = userId;
+            document.getElementById('adjust-customer-name').value = name;
+            document.getElementById('adjust-current-points').value = currentPoints;
+            document.getElementById('adjust-points-delta').value = '';
+            document.getElementById('adjust-reason').value = '';
         };
 
-        window.incrementCartItem = function(index) {
-            const state = tabState[activeTab];
-            const cart = state.cart;
-            if (index < 0 || index >= cart.length) return;
-            const item = cart[index];
-            const productRef = products.find(p => p.id === item.id);
-            const availableStock = productRef ? (productRef.current_qty ?? 0) : 9999;
-            if (item.qty + 1 > availableStock) {
-                showToast(`⚠️ Only ${availableStock} left for "${item.name}"`, 'error');
-                return;
-            }
-            item.qty++;
-            renderActiveCart();
-        };
-
-        window.decrementCartItem = function(index) {
-            const state = tabState[activeTab];
-            const cart = state.cart;
-            if (index < 0 || index >= cart.length) return;
-            if (cart[index].qty > 1) {
-                cart[index].qty--;
-                renderActiveCart();
-            } else {
-                cart.splice(index, 1);
-                renderActiveCart();
-            }
-        };
-
-        window.removeCartItem = function(index) {
-            const state = tabState[activeTab];
-            const cart = state.cart;
-            if (index >= 0 && index < cart.length) {
-                cart.splice(index, 1);
-                renderActiveCart();
-            }
-        };
-
-        window.addToCart = function(productId, productName, price, stock, skuLabel) {
-            const state = tabState[activeTab];
-            const cart = state.cart;
-            const existing = cart.find(i => i.id === productId);
-            const productRef = products.find(p => p.id === productId);
-            const availableStock = productRef ? (productRef.current_qty ?? 0) : stock;
-
-            if (existing) {
-                if (existing.qty + 1 > availableStock) {
-                    showToast(`⚠️ Only ${availableStock} left for "${productName}"`, 'error');
-                    return;
-                }
-                existing.qty++;
-            } else {
-                if (1 > availableStock) {
-                    showToast(`❌ "${productName}" out of stock`, 'error');
-                    return;
-                }
-                cart.push({ id: productId, name: productName, price: price, qty: 1, sku: skuLabel });
-            }
-            renderActiveCart();
-            showToast(`➕ Added ${productName}`, 'success');
-        };
-
-        // ---------- Render Cart ----------
-        function renderActiveCart() {
-            const state = tabState[activeTab];
-            const cart = state.cart;
-            const pointsRedeemed = state.pointsRedeemed || 0;
-            if (!cartContainer) return;
-            let subtotal = 0;
-            let cartHtml = '';
-            cart.forEach((item, idx) => {
-                const itemTotal = item.price * item.qty;
-                subtotal += itemTotal;
-                cartHtml += `
-                    <div class="flex items-center justify-between border-b pb-2 hover:bg-gray-50 px-1 rounded gap-2">
-                        <div class="flex-1 min-w-0">
-                            <div class="cart-item-name truncate">${escapeHtml(item.name)}</div>
-                            <div class="cart-item-price text-gray-500">₦${item.price.toLocaleString()}</div>
-                        </div>
-                        <div class="flex items-center gap-1 flex-shrink-0">
-                            <button onclick="decrementCartItem(${idx})" class="qty-btn">−</button>
-                            <input type="number" min="1" value="${item.qty}" class="qty-input" onchange="updateCartItemQty(${idx}, this.value)" onfocus="this.select()">
-                            <button onclick="incrementCartItem(${idx})" class="qty-btn">+</button>
-                        </div>
-                        <div class="font-semibold text-sm ml-1 w-16 text-right flex-shrink-0">₦${itemTotal.toLocaleString()}</div>
-                        <button onclick="removeCartItem(${idx})" class="text-red-500 hover:text-red-700 text-sm w-6 h-6 rounded-full hover:bg-red-50 flex items-center justify-center flex-shrink-0">
-                            <i class="fa-regular fa-trash-can"></i>
-                        </button>
-                    </div>
-                `;
-            });
-            let finalTotal = subtotal;
-            if (pointsRedeemed > 0) {
-                const discount = pointsRedeemed;
-                if (discount > finalTotal) {
-                    state.pointsRedeemed = Math.min(finalTotal, pointsRedeemed);
-                    finalTotal = 0;
-                } else {
-                    finalTotal = subtotal - discount;
-                }
-                cartHtml += `
-                    <div class="flex justify-between items-center text-green-700 border-t pt-2 mt-1">
-                        <div class="text-sm font-medium">🎁 Points Discount (${state.pointsRedeemed} pts)</div>
-                        <div class="font-semibold">-₦${discount.toLocaleString()}</div>
-                    </div>
-                `;
-            }
-            if (cart.length === 0) {
-                cartContainer.innerHTML = `<div class="text-center text-gray-400 py-6"><i class="fa-regular fa-receipt text-2xl"></i><p class="text-sm mt-1">Cart is empty</p></div>`;
-            } else {
-                cartContainer.innerHTML = cartHtml;
-            }
-            cartTotalSpan.innerText = `₦${finalTotal.toLocaleString()}`;
-        }
-
-        // ---------- Sync UI ----------
-        function syncUIWithActiveTab() {
-            const state = tabState[activeTab];
-            renderActiveCart();
-            paymentMethodSelect.value = state.paymentMethod;
-            customerNameInput.value = state.customerName;
-            customerPhoneInput.value = state.customerPhone;
-            customerEmailInput.value = state.customerEmail;
-            activeCustomerLabel.innerText = activeTab === 1 ? 'Customer A' : 'Customer B';
-            tabBadge.innerText = activeTab === 1 ? 'Tab 1 active' : 'Tab 2 active';
-            if (activeTab === 1) {
-                tab1Btn.classList.add('tab-active');
-                tab1Btn.classList.remove('tab-inactive');
-                tab2Btn.classList.add('tab-inactive');
-                tab2Btn.classList.remove('tab-active');
-            } else {
-                tab2Btn.classList.add('tab-active');
-                tab2Btn.classList.remove('tab-inactive');
-                tab1Btn.classList.add('tab-inactive');
-                tab1Btn.classList.remove('tab-active');
-            }
-            if (state.loyaltyUserId && state.pointsBalance > 0) {
-                customerInfoDiv.classList.remove('hidden');
-                customerNameDisplay.innerText = state.customerName || 'Customer';
-                customerPointsSpan.innerText = state.pointsBalance;
-                if (isOnline) {
-                    pointsRedeemSection.classList.remove('hidden');
-                    offlinePointsWarning.classList.add('hidden');
-                    redeemPointsInput.max = state.pointsBalance;
-                } else {
-                    pointsRedeemSection.classList.add('hidden');
-                    offlinePointsWarning.classList.remove('hidden');
-                }
-            } else {
-                customerInfoDiv.classList.add('hidden');
-                pointsRedeemSection.classList.add('hidden');
-                offlinePointsWarning.classList.add('hidden');
-            }
-        }
-
-        // ---------- Print Receipt ----------
-        function printReceipt(orderData, customerPoints) {
-            const printArea = document.getElementById('receipt-print-area');
-            const orgName = localStorage.getItem('org_name') || 'Kevs Digital';
-            const cashierName = localStorage.getItem('user_profile_display') || 'Cashier';
-            const now = new Date();
-            const dateStr = now.toLocaleString();
-
-            let itemsHtml = '';
-            let subtotal = 0;
-            orderData.items.forEach(item => {
-                const itemTotal = item.quantity * item.unit_price;
-                subtotal += itemTotal;
-                itemsHtml += `
-                    <div class="receipt-item">
-                        <span>${escapeHtml(item.name)} x ${item.quantity}</span>
-                        <span>₦${itemTotal.toFixed(2)}</span>
-                    </div>
-                `;
-            });
-
-            const discount = orderData.pointsRedeemed || 0;
-            const total = orderData.total || subtotal;
-
-            const receiptHtml = `
-                <div class="receipt-header">${orgName}</div>
-                <div style="text-align:center;font-size:10px;">Receipt #${orderData.receiptNumber || orderData.offlineRef}</div>
-                <div style="text-align:center;font-size:10px;">Cashier: ${cashierName}</div>
-                <div style="text-align:center;font-size:10px;">${dateStr}</div>
-                <div class="receipt-divider"></div>
-                ${itemsHtml}
-                <div class="receipt-divider"></div>
-                <div class="receipt-item"><span>Subtotal</span><span>₦${subtotal.toFixed(2)}</span></div>
-                ${discount > 0 ? `<div class="receipt-item"><span>Points Discount</span><span>-₦${discount.toFixed(2)}</span></div>` : ''}
-                <div class="receipt-item receipt-total"><span>TOTAL</span><span>₦${total.toFixed(2)}</span></div>
-                <div class="receipt-divider"></div>
-                <div style="text-align:center;font-size:10px;">Payment: ${orderData.paymentMethod || 'cash'}</div>
-                ${orderData.customerName ? `<div style="text-align:center;font-size:10px;">Customer: ${escapeHtml(orderData.customerName)}</div>` : ''}
-                <div style="text-align:center;font-size:10px;font-weight:bold;">Loyalty Points: ${customerPoints}</div>
-                <div class="receipt-divider"></div>
-                <div class="receipt-footer">Thank you for shopping with us!</div>
-            `;
-
-            printArea.innerHTML = receiptHtml;
-            printArea.style.display = 'block';
-
-            // Trigger print
-            window.print();
-
-            // Hide after print (or after a short delay)
-            setTimeout(() => {
-                printArea.style.display = 'none';
-                printArea.innerHTML = '';
-            }, 1000);
-        }
-
-        // ---------- Checkout (Offline‑Aware) with Print ----------
-        async function processCheckout() {
-            const state = tabState[activeTab];
-            const cart = state.cart;
-            if (cart.length === 0) {
-                showToast('🛒 Cart is empty. Add items first.', 'error');
-                return;
-            }
-            const paymentMethod = state.paymentMethod;
-            const customerName = state.customerName.trim() || null;
-            const customerPhone = state.customerPhone.trim() || null;
-            let customerEmail = state.customerEmail.trim() || null;
-            const pointsRedeemed = state.pointsRedeemed || 0;
-
-            if (paymentMethod !== 'cash' && !customerEmail) {
-                showToast('📧 Email is required for card/transfer payments', 'error');
-                return;
-            }
-
-            if (!isOnline && paymentMethod !== 'cash') {
-                showToast('⚠️ Offline: only cash payments are accepted', 'error');
-                return;
-            }
-
-            const itemsPayload = cart.map(i => ({ inventory_id: i.id, quantity: i.qty }));
-            const cashierId = localStorage.getItem('user_id') || 'unknown';
-            const offlineRef = `OFF-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
-
-            // Build order data for receipt
-            const orderData = {
-                items: cart.map(i => ({ name: i.name, quantity: i.qty, unit_price: i.price })),
-                total: calculateTotal(state),
-                pointsRedeemed: pointsRedeemed,
-                paymentMethod: paymentMethod,
-                customerName: customerName,
-                receiptNumber: null, // will be set later if online
-                offlineRef: offlineRef,
-            };
-
-            checkoutBtn.disabled = true;
-            checkoutBtn.innerText = 'Processing...';
-
-            let finalCustomerPoints = state.pointsBalance || 0;
-
+        document.getElementById('points-adjust-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const userId = document.getElementById('adjust-user-id').value;
+            const delta = parseInt(document.getElementById('adjust-points-delta').value);
+            if (isNaN(delta)) { showToast('Enter a valid number', 'error'); return; }
+            const reason = document.getElementById('adjust-reason').value;
             try {
-                if (!isOnline) {
-                    // Offline: save and print
-                    await db.orders.add({
-                        offlineRef,
-                        cashierId,
-                        items: itemsPayload,
-                        paymentMethod,
-                        customerName,
-                        customerPhone,
-                        customerEmail,
-                        total: orderData.total,
-                        status: 'pending',
-                        createdAt: new Date().toISOString(),
-                        pointsRedeemed
-                    });
-                    await db.syncQueue.add({ orderId: offlineRef, attempts: 0, lastTry: null });
-                    // Reduce local stock
-                    for (const item of cart) {
-                        const product = await db.products.get(item.id);
-                        if (product) {
-                            await db.products.update(item.id, { current_qty: product.current_qty - item.qty });
-                        }
-                    }
-                    state.cart = [];
-                    state.pointsRedeemed = 0;
-                    renderActiveCart();
-                    showToast(`✅ Order saved offline (Ref: ${offlineRef}). Will sync when online.`, 'success');
-                    // Use cached customer points for receipt
-                    finalCustomerPoints = state.pointsBalance || 0;
-                    // Print receipt
-                    orderData.receiptNumber = offlineRef;
-                    printReceipt(orderData, finalCustomerPoints);
-                    return;
-                }
-
-                // Online: call API
-                const result = await apiCall('/pos/terminal/checkout', 'POST', {
-                    items: itemsPayload,
-                    payment_method: paymentMethod,
-                    customer_name: customerName,
-                    customer_phone: customerPhone,
-                    customer_email: customerEmail,
-                    // offline_reference: offlineRef // uncomment when backend supports
-                });
-                // Save to local orders (synced)
-                await db.orders.add({
-                    offlineRef,
-                    cashierId,
-                    items: itemsPayload,
-                    paymentMethod,
-                    customerName,
-                    customerPhone,
-                    customerEmail,
-                    total: orderData.total,
-                    status: 'synced',
-                    createdAt: new Date().toISOString(),
-                    pointsRedeemed,
-                    syncedAt: new Date().toISOString()
-                });
-                // Fetch updated loyalty balance
-                if (state.loyaltyUserId) {
-                    try {
-                        const balanceRes = await apiCall('/loyalty/balance');
-                        finalCustomerPoints = balanceRes.points || 0;
-                        // Update cache
-                        state.pointsBalance = finalCustomerPoints;
-                        await db.customers.update(state.loyaltyUserId, { loyalty_points: finalCustomerPoints });
-                        // Also update the displayed points in UI
-                        customerPointsSpan.innerText = finalCustomerPoints;
-                    } catch (e) {
-                        // Fallback to cached points
-                        finalCustomerPoints = state.pointsBalance || 0;
-                    }
-                } else {
-                    finalCustomerPoints = 0;
-                }
-
-                state.cart = [];
-                state.pointsRedeemed = 0;
-                renderActiveCart();
-                showToast(`✅ Sale complete! Receipt: ${result.receipt_number}`, 'success');
-                // Print receipt
-                orderData.receiptNumber = result.receipt_number || offlineRef;
-                printReceipt(orderData, finalCustomerPoints);
-
-            } catch (err) {
-                if (!isOnline || err.message.includes('offline') || err.message.includes('network')) {
-                    // Fallback to offline
-                    await db.orders.add({
-                        offlineRef,
-                        cashierId,
-                        items: itemsPayload,
-                        paymentMethod,
-                        customerName,
-                        customerPhone,
-                        customerEmail,
-                        total: orderData.total,
-                        status: 'pending',
-                        createdAt: new Date().toISOString(),
-                        pointsRedeemed
-                    });
-                    await db.syncQueue.add({ orderId: offlineRef, attempts: 0, lastTry: null });
-                    showToast(`Order queued for later sync (Ref: ${offlineRef})`, 'warning');
-                    state.cart = [];
-                    state.pointsRedeemed = 0;
-                    renderActiveCart();
-                    // Print with offline reference and cached points
-                    finalCustomerPoints = state.pointsBalance || 0;
-                    orderData.receiptNumber = offlineRef;
-                    printReceipt(orderData, finalCustomerPoints);
-                } else {
-                    showToast(`❌ Checkout failed: ${err.message}`, 'error');
-                }
-            } finally {
-                checkoutBtn.disabled = false;
-                checkoutBtn.innerText = '✅ Complete Sale';
-            }
-        }
-
-        function calculateTotal(state) {
-            const cart = state.cart;
-            let subtotal = cart.reduce((sum, i) => sum + i.price * i.qty, 0);
-            const pointsRedeemed = state.pointsRedeemed || 0;
-            return Math.max(0, subtotal - pointsRedeemed);
-        }
-
-        // ---------- Sync Manager ----------
-        async function syncPendingOrders() {
-            if (!isOnline || syncInProgress) return;
-            syncInProgress = true;
-            syncNowBtn.disabled = true;
-            syncNowBtn.innerHTML = '<i class="fa-solid fa-spinner fa-pulse"></i> Syncing...';
-            try {
-                const pending = await db.syncQueue.toArray();
-                for (const entry of pending) {
-                    const order = await db.orders.get(entry.orderId);
-                    if (!order || order.status === 'synced') {
-                        await db.syncQueue.delete(entry.id);
-                        continue;
-                    }
-                    try {
-                        const result = await apiCall('/pos/terminal/checkout', 'POST', {
-                            items: order.items,
-                            payment_method: order.paymentMethod,
-                            customer_name: order.customerName,
-                            customer_phone: order.customerPhone,
-                            customer_email: order.customerEmail,
-                        });
-                        await db.orders.update(order.offlineRef, { status: 'synced', syncedAt: new Date().toISOString() });
-                        await db.syncQueue.delete(entry.id);
-                        showToast(`Order ${order.offlineRef} synced`, 'success');
-                    } catch (err) {
-                        if (err.message.includes('duplicate') || err.message.includes('already exists')) {
-                            await db.orders.update(order.offlineRef, { status: 'duplicate' });
-                            await db.syncQueue.delete(entry.id);
-                            showToast(`Order ${order.offlineRef} already exists (skipped)`, 'warning');
-                        } else {
-                            await db.syncQueue.update(entry.id, { attempts: entry.attempts + 1, lastTry: new Date().toISOString() });
-                            if (entry.attempts >= 5) {
-                                showToast(`Order ${order.offlineRef} failed after 5 attempts`, 'error');
-                            }
-                        }
-                    }
-                }
-            } catch (e) {
-                showToast('Sync error: ' + e.message, 'error');
-            } finally {
-                syncInProgress = false;
-                syncNowBtn.disabled = false;
-                syncNowBtn.innerHTML = '<i class="fa-solid fa-rotate"></i> Sync';
-            }
-        }
-
-        // ---------- Cashier History ----------
-        async function renderHistory() {
-            const cashierId = localStorage.getItem('user_id') || 'unknown';
-            const orders = await db.orders.where('cashierId').equals(cashierId).toArray();
-            if (orders.length === 0) {
-                historyList.innerHTML = '<p class="text-gray-500">No orders found.</p>';
-                return;
-            }
-            historyList.innerHTML = orders.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(o => `
-                <div class="border-b py-2 flex justify-between items-center">
-                    <div>
-                        <div><strong>${o.offlineRef}</strong> - ${new Date(o.createdAt).toLocaleString()}</div>
-                        <div class="text-sm">Status: <span class="${o.status === 'synced' ? 'text-green-600' : 'text-yellow-600'}">${o.status}</span> | Total: ₦${o.total}</div>
-                    </div>
-                    ${o.status === 'pending' ? '<button onclick="syncSingleOrder(\''+o.offlineRef+'\')" class="text-blue-500 text-sm"><i class="fa-solid fa-rotate"></i> Sync</button>' : ''}
-                </div>
-            `).join('');
-        }
-
-        window.syncSingleOrder = async function(offlineRef) {
-            if (!isOnline) { showToast('Go online to sync.', 'error'); return; }
-            const order = await db.orders.get(offlineRef);
-            if (!order) return;
-            try {
-                const result = await apiCall('/pos/terminal/checkout', 'POST', {
-                    items: order.items,
-                    payment_method: order.paymentMethod,
-                    customer_name: order.customerName,
-                    customer_phone: order.customerPhone,
-                    customer_email: order.customerEmail,
-                });
-                await db.orders.update(offlineRef, { status: 'synced', syncedAt: new Date().toISOString() });
-                await db.syncQueue.delete(offlineRef);
-                showToast(`Order ${offlineRef} synced`, 'success');
-                renderHistory();
-            } catch (err) {
-                showToast('Sync failed: ' + err.message, 'error');
-            }
-        };
-
-        // ---------- Points Redemption (online only) ----------
-        async function applyPoints() {
-            if (!isOnline) {
-                showToast('⚠️ Points redemption requires internet.', 'error');
-                return;
-            }
-            const state = tabState[activeTab];
-            if (!state.loyaltyUserId) {
-                showToast('Please search and select a customer first', 'error');
-                return;
-            }
-            let pointsToRedeem = parseInt(redeemPointsInput.value, 10);
-            if (isNaN(pointsToRedeem) || pointsToRedeem <= 0) {
-                showToast('Enter a valid number of points', 'error');
-                return;
-            }
-            if (pointsToRedeem > state.pointsBalance) {
-                showToast(`You only have ${state.pointsBalance} points`, 'error');
-                return;
-            }
-            try {
-                await apiCall('/loyalty/redeem', 'POST', { points: pointsToRedeem });
-                state.pointsRedeemed = (state.pointsRedeemed || 0) + pointsToRedeem;
-                state.pointsBalance -= pointsToRedeem;
-                redeemPointsInput.value = '';
-                renderActiveCart();
-                showToast(`✅ ${pointsToRedeem} points redeemed – ₦${pointsToRedeem} off this order!`, 'success');
-                syncUIWithActiveTab();
-                const cust = await db.customers.get(state.loyaltyUserId);
-                if (cust) {
-                    await db.customers.update(state.loyaltyUserId, { loyalty_points: state.pointsBalance });
-                }
-            } catch (err) {
-                showToast(`Redemption failed: ${err.message}`, 'error');
-            }
-        }
-
-        // ---------- Navigation ----------
-        function setActiveTab(tabId) {
-            if (tabId === activeTab) return;
-            tabState[activeTab].paymentMethod = paymentMethodSelect.value;
-            tabState[activeTab].customerName = customerNameInput.value;
-            tabState[activeTab].customerPhone = customerPhoneInput.value;
-            tabState[activeTab].customerEmail = customerEmailInput.value;
-            activeTab = tabId;
-            syncUIWithActiveTab();
-            customerSearchInput.value = '';
-            suggestionsDiv.classList.add('hidden');
-        }
-
-        // ---------- Login / Demo ----------
-        async function demoLogin() {
-            const btn = document.getElementById('demo-login-btn');
-            btn.disabled = true;
-            try {
-                const res = await fetch(`${BACKEND}/auth/login`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' })
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.detail);
-                token = data.access_token;
-                localStorage.setItem('access_token', token);
-                localStorage.setItem('refresh_token', data.refresh_token);
-                localStorage.removeItem('selected_org_id');
-                const me = await apiCall('/auth/me');
-                localStorage.setItem('user_id', me.user_id);
-                localStorage.setItem('user_role', me.role || 'customer');
-                const orgRes = await fetch(`${BACKEND}/auth/org`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (orgRes.ok) {
-                    const orgData = await orgRes.json();
-                    localStorage.setItem('org_name', orgData.org_name || 'Unknown Org');
-                }
-                await loadCustomers();
-                hideLoginModal();
-                tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
-                tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
-                activeTab = 1;
-                syncUIWithActiveTab();
-                products = [];
-                productContainer.innerHTML = '';
-                emptyMsgDiv.classList.add('hidden');
-                showToast('Demo login — Offline‑ready POS', 'success');
-                const navOrg = document.getElementById('nav-org-name');
-                if (navOrg) navOrg.innerText = localStorage.getItem('org_name') || 'Unknown Org';
-            } catch (err) { showToast(err.message, 'error'); } finally { btn.disabled = false; }
-        }
-
-        async function handleLogin() {
-            const email = document.getElementById('login-email').value.trim();
-            const pwd = document.getElementById('login-password').value.trim();
-            if (!email || !pwd) { showToast('Enter email and password', 'error'); return; }
-            try {
-                const res = await fetch(`${BACKEND}/auth/login`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, password: pwd })
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.detail);
-                token = data.access_token;
-                localStorage.setItem('access_token', token);
-                localStorage.setItem('refresh_token', data.refresh_token);
-                localStorage.removeItem('selected_org_id');
-                const me = await apiCall('/auth/me');
-                localStorage.setItem('user_id', me.user_id);
-                localStorage.setItem('user_role', me.role || 'customer');
-                const orgRes = await fetch(`${BACKEND}/auth/org`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (orgRes.ok) {
-                    const orgData = await orgRes.json();
-                    localStorage.setItem('org_name', orgData.org_name || 'Unknown Org');
-                }
-                await loadCustomers();
-                hideLoginModal();
-                tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
-                tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
-                activeTab = 1;
-                syncUIWithActiveTab();
-                products = [];
-                productContainer.innerHTML = '';
-                emptyMsgDiv.classList.add('hidden');
-                showToast('Login successful', 'success');
-                const navOrg = document.getElementById('nav-org-name');
-                if (navOrg) navOrg.innerText = localStorage.getItem('org_name') || 'Unknown Org';
+                await req('/loyalty/adjust-points', 'POST', { user_id: userId, points_delta: delta, reason });
+                showToast(`Points updated by ${delta}`, 'success');
+                loadCustomers();
             } catch (err) { showToast(err.message, 'error'); }
-        }
+        });
 
-        // ---------- Initialisation ----------
-        function initTabs() {
-            tab1Btn.onclick = () => setActiveTab(1);
-            tab2Btn.onclick = () => setActiveTab(2);
-        }
+        document.getElementById('customer-search')?.addEventListener('input', () => applyFiltersAndRender());
+        document.getElementById('apply-date-filter')?.addEventListener('click', () => applyFiltersAndRender());
+        document.getElementById('clear-date-filter')?.addEventListener('click', () => {
+            document.getElementById('filter-date-from').value = '';
+            document.getElementById('filter-date-to').value = '';
+            document.getElementById('customer-search').value = '';
+            applyFiltersAndRender();
+        });
 
-        function initCustomerSearch() {
-            customerSearchInput.addEventListener('input', renderSuggestions);
-            document.addEventListener('click', (e) => {
-                if (!customerSearchInput.contains(e.target) && !suggestionsDiv.contains(e.target)) {
-                    suggestionsDiv.classList.add('hidden');
+        document.getElementById('export-csv-btn')?.addEventListener('click', () => {
+            let csv = "Name,Email,Phone,Points,Tier,Created Date,Address\n";
+            const exportData = filteredCustomers.length ? filteredCustomers : (window.allCustomers || customers);
+            exportData.forEach(c => {
+                csv +=
+                    `"${c.first_name} ${c.last_name}","${c.email}","${c.phone}",${c.current_points},"${c.tier}","${c.created_at || ''}","${c.address || ''}"\n`;
+            });
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `customers_${new Date().toISOString().slice(0, 10)}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        const registerForm = document.getElementById('register-customer-form');
+        const registerBtn = document.getElementById('register-submit-btn');
+        if (registerForm) {
+            registerForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const firstName = document.getElementById('reg-firstname')?.value.trim();
+                const lastName = document.getElementById('reg-lastname')?.value.trim();
+                const email = document.getElementById('reg-email')?.value.trim();
+                const phone = document.getElementById('reg-phone')?.value.trim();
+                if (!firstName || !lastName) { showToast('First name and last name are required', 'error'); return; }
+                if (!email) { showToast('Email is required', 'error'); return; }
+                if (!phone) { showToast('Phone number is required', 'error'); return; }
+                const originalContent = registerBtn.innerHTML;
+                registerBtn.disabled = true;
+                registerBtn.classList.add('btn-loading');
+                registerBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Registering...';
+                const payload = {
+                    first_name: firstName,
+                    last_name: lastName,
+                    email,
+                    phone,
+                    date_of_birth: document.getElementById('reg-dob')?.value || null,
+                    address: document.getElementById('reg-address')?.value.trim() || null,
+                    tier: document.getElementById('reg-tier')?.value || 'bronze',
+                    loyalty_points: parseInt(document.getElementById('reg-points')?.value) || 0
+                };
+                try {
+                    const response = await req('/admin/register-customer', 'POST', payload);
+                    showToast(response.message || 'Customer registered successfully! Welcome email sent.', 'success');
+                    registerForm.reset();
+                    await loadCustomers();
+                } catch (err) { showToast('Registration failed: ' + (err.message || 'Unknown error'), 'error'); } finally {
+                    registerBtn.disabled = false;
+                    registerBtn.classList.remove('btn-loading');
+                    registerBtn.innerHTML = originalContent;
                 }
             });
         }
 
-        // ---------- Event Listeners ----------
-        checkoutBtn.addEventListener('click', processCheckout);
-        applyPointsBtn.addEventListener('click', applyPoints);
-        document.getElementById('modal-login-btn')?.addEventListener('click', handleLogin);
-        document.getElementById('demo-login-btn')?.addEventListener('click', demoLogin);
-        document.getElementById('close-modal-btn')?.addEventListener('click', hideLoginModal);
-        syncNowBtn.addEventListener('click', syncPendingOrders);
-        historyBtn.addEventListener('click', async () => {
-            historyModal.classList.add('active');
-            await renderHistory();
-        });
-        closeHistoryBtn.addEventListener('click', () => historyModal.classList.remove('active'));
-        historyModal.addEventListener('click', (e) => { if (e.target === historyModal) historyModal.classList.remove('active'); });
+        async function forceRefresh() {
+            if (window.allCustomers) window.allCustomers = null;
+            if (typeof loadCustomers === 'function') { await loadCustomers(); }
+            if (typeof loadTickets === 'function') { await loadTickets(); }
+            showToast('Data refreshed from server', 'success');
+        }
+        document.getElementById('refresh-customers-btn')?.addEventListener('click', forceRefresh);
 
-        paymentMethodSelect.onchange = () => { tabState[activeTab].paymentMethod = paymentMethodSelect.value; };
-        customerNameInput.addEventListener('input', () => { tabState[activeTab].customerName = customerNameInput.value; });
-        customerPhoneInput.addEventListener('input', () => { tabState[activeTab].customerPhone = customerPhoneInput.value; });
-        customerEmailInput.addEventListener('input', () => { tabState[activeTab].customerEmail = customerEmailInput.value; });
+        // TAB SWITCHING
+        const userRole = localStorage.getItem('user_role') || 'customer';
+        const canAccessSupport = ['owner', 'admin', 'support'].includes(userRole);
+        const canAccessLoyalty = ['owner', 'admin', 'loyalty_manager'].includes(userRole);
+        const supportTab = document.getElementById('support-tab');
+        const loyaltyTab = document.getElementById('loyalty-tab');
+        const supportBtn = document.getElementById('support-tab-btn');
+        const loyaltyBtn = document.getElementById('loyalty-tab-btn');
+        if (!canAccessSupport) supportBtn.style.display = 'none';
+        if (!canAccessLoyalty) loyaltyBtn.style.display = 'none';
 
-        // ---------- Start ----------
-        (async () => {
-            updateConnectionStatus();
-            initTabs();
-            initCustomerSearch();
-            if (token) {
-                try {
-                    await loadCustomers();
-                    if (!tabState[1].cart.length && !tabState[2].cart.length) {
-                        tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
-                        tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
-                    }
-                    activeTab = 1;
-                    syncUIWithActiveTab();
-                    productContainer.innerHTML = '';
-                    emptyMsgDiv.classList.add('hidden');
-                } catch (e) { token = null; showLoginModal(); }
-            } else { showLoginModal(); }
+        function showSupportTab() { supportTab.classList.remove('hidden');
+            loyaltyTab.classList.add('hidden');
+            supportBtn.classList.add('tab-active');
+            supportBtn.classList.remove('tab-inactive');
+            loyaltyBtn.classList.add('tab-inactive');
+            loyaltyBtn.classList.remove('tab-active');
+            loadTickets(); }
 
-            if (isOnline) await syncPendingOrders();
-        })();
+        function showLoyaltyTab() { supportTab.classList.add('hidden');
+            loyaltyTab.classList.remove('hidden');
+            loyaltyBtn.classList.add('tab-active');
+            loyaltyBtn.classList.remove('tab-inactive');
+            supportBtn.classList.add('tab-inactive');
+            supportBtn.classList.remove('tab-active');
+            loadCustomers(); }
+        supportBtn.addEventListener('click', showSupportTab);
+        loyaltyBtn.addEventListener('click', showLoyaltyTab);
+        if (canAccessSupport) showSupportTab();
+        else if (canAccessLoyalty) showLoyaltyTab();
 
-        console.log('✅ Offline‑Ready POS with Receipt Printing loaded');
+        function escapeHtml(str) { return String(str).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;',
+                    '>': '&gt;' } [m])); }
+        (async () => { if (token) { if (canAccessSupport) await loadTickets(); if (canAccessLoyalty) await loadCustomers(); } })();
     </script>
 </body>
 </html>
