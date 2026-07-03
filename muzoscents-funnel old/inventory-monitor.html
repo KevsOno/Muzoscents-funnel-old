@@ -6,10 +6,9 @@
     <title>Kevs POS Pro | Offline‑Ready</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <!-- Dexie for IndexedDB -->
     <script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js"></script>
     <style>
-        /* ... (keep existing styles) ... */
+        /* (styles unchanged) */
         .tab-active { background-color: #3b82f6; color: white; }
         .tab-inactive { background-color: #f3f4f6; color: #1f2937; }
         .product-card { transition: all 0.15s ease; padding: 0.5rem; }
@@ -19,8 +18,8 @@
         .total-amount { font-size: 1.5rem; font-weight: 800; }
         .offline-badge { background: #f59e0b; color: #fff; padding: 2px 10px; border-radius: 20px; font-size: 0.7rem; }
         .online-badge { background: #22c55e; color: #fff; padding: 2px 10px; border-radius: 20px; font-size: 0.7rem; }
-        .sync-btn { background: #3b82f6; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; }
-        .sync-btn:disabled { opacity: 0.5; }
+        .sync-btn { background: #3b82f6; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; border: none; cursor: pointer; }
+        .sync-btn:disabled { opacity: 0.5; cursor: not-allowed; }
         #history-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 50; align-items: center; justify-content: center; }
         #history-modal.active { display: flex; }
         #history-modal .modal-content { background: white; max-width: 800px; width: 90%; max-height: 80vh; overflow-y: auto; padding: 20px; border-radius: 12px; }
@@ -30,7 +29,7 @@
 
     <!-- Global Nav -->
     <div id="kevs-nav-container"></div>
-    <!-- ... (same nav script as original) ... -->
+    <!-- ... (insert your existing nav script here to keep it consistent) ... -->
 
     <div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
 
@@ -150,7 +149,7 @@
         </div>
     </div>
 
-    <!-- Login Modal (unchanged) -->
+    <!-- Login Modal -->
     <div id="auth-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
         <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm">
             <div class="flex justify-between items-center mb-4">
@@ -170,7 +169,7 @@
 
     <script>
         // ================================================================
-        //  OFFLINE‑READY POS – FULL IMPLEMENTATION
+        //  OFFLINE‑READY POS – FULL IMPLEMENTATION (FIXED SYNC BUTTON)
         // ================================================================
 
         const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
@@ -179,7 +178,7 @@
         let allCustomers = [];
         let posSearchTerm = '';
         let posPage = 1;
-        const POS_PAGE_SIZE = 50; // adjust for performance
+        const POS_PAGE_SIZE = 50;
         let posTotalItems = 0;
         let posIsLoading = false;
         let posHasMore = true;
@@ -249,7 +248,7 @@
             setTimeout(() => toast.remove(), 3800);
         }
 
-        // ---------- API Call (with refresh) ----------
+        // ---------- API Call ----------
         async function apiCall(endpoint, method = 'GET', body = null, retry = true, signal = null) {
             const headers = { 'Content-Type': 'application/json' };
             if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -286,7 +285,6 @@
             return res.json();
         }
 
-        // ---------- Login Modal ----------
         function showLoginModal() { document.getElementById('auth-modal').classList.remove('hidden'); }
         function hideLoginModal() { document.getElementById('auth-modal').classList.add('hidden'); }
 
@@ -299,10 +297,9 @@
         window.addEventListener('online', () => { updateConnectionStatus(); syncPendingOrders(); });
         window.addEventListener('offline', updateConnectionStatus);
 
-        // ---------- Product Cache & Search ----------
+        // ---------- Product Cache & Search (unchanged) ----------
         async function loadPOSProducts(reset = true) {
             const trimmed = posSearchTerm.trim();
-            // If search term < 2 chars, clear and return
             if (trimmed.length < 2) {
                 products = [];
                 productContainer.innerHTML = '';
@@ -313,7 +310,6 @@
                 if (abortController) abortController.abort();
                 return;
             }
-
             if (reset) {
                 posPage = 1;
                 posTotalItems = 0;
@@ -332,18 +328,14 @@
             loadingMoreDiv.classList.remove('hidden');
 
             const offset = (posPage - 1) * POS_PAGE_SIZE;
-
             try {
                 let items = [];
                 let total = 0;
-
                 if (isOnline) {
-                    // Online: fetch from backend and cache
                     const url = `/inventory/pos?limit=${POS_PAGE_SIZE}&offset=${offset}&q=${encodeURIComponent(trimmed)}`;
                     const data = await apiCall(url, 'GET', null, true, abortController.signal);
                     items = data.items || [];
                     total = data.total || 0;
-                    // Cache each product (upsert)
                     for (const p of items) {
                         await db.products.put({
                             id: p.id,
@@ -355,22 +347,17 @@
                         });
                     }
                 } else {
-                    // Offline: search IndexedDB with pagination
                     let collection = db.products.where('description').startsWithIgnoreCase(trimmed)
                         .or('item_code').startsWithIgnoreCase(trimmed)
                         .or('sku').startsWithIgnoreCase(trimmed);
                     total = await collection.count();
                     items = await collection.offset(offset).limit(POS_PAGE_SIZE).toArray();
-                    // Ensure we have the same fields
                     items = items.map(p => ({ ...p, price_naira: p.price_naira, current_qty: p.current_qty }));
                 }
-
                 posTotalItems = total;
                 posHasMore = (offset + POS_PAGE_SIZE) < total;
-
                 if (reset) products = items;
                 else products = products.concat(items);
-
                 appendProductCards(items);
                 posPage++;
                 return products;
@@ -619,12 +606,11 @@
             renderActiveCart();
         }
 
-        // ---------- Load Customers (cache offline) ----------
+        // ---------- Load Customers ----------
         async function loadCustomers() {
             try {
                 const data = await apiCall('/organisations/me/users');
                 allCustomers = data.users || [];
-                // Cache customers in IndexedDB
                 for (const c of allCustomers) {
                     await db.customers.put({
                         id: c.id,
@@ -637,7 +623,6 @@
                 }
             } catch (err) {
                 console.warn('Failed to load customers online, using cache:', err);
-                // Offline: load from IndexedDB
                 allCustomers = await db.customers.toArray();
             }
         }
@@ -826,7 +811,6 @@
                 return;
             }
 
-            // Offline: only cash allowed
             if (!isOnline && paymentMethod !== 'cash') {
                 showToast('⚠️ Offline: only cash payments are accepted', 'error');
                 return;
@@ -855,10 +839,8 @@
 
             try {
                 if (!isOnline) {
-                    // Offline: save to IndexedDB
                     await db.orders.add(order);
                     await db.syncQueue.add({ orderId: order.offlineRef, attempts: 0, lastTry: null });
-                    // Reduce local stock optimistically
                     for (const item of cart) {
                         const product = await db.products.get(item.id);
                         if (product) {
@@ -869,28 +851,22 @@
                     state.pointsRedeemed = 0;
                     renderActiveCart();
                     showToast(`✅ Order saved offline (Ref: ${offlineRef}). Will sync when online.`, 'success');
-                    await addToHistory(order, 'pending');
                     return;
                 }
 
-                // Online: try immediate checkout
                 const result = await apiCall('/pos/terminal/checkout', 'POST', {
                     items: itemsPayload,
                     payment_method: paymentMethod,
                     customer_name: customerName,
                     customer_phone: customerPhone,
                     customer_email: customerEmail,
-                    // offline_reference: offlineRef // uncomment if backend supports
                 });
-                // On success, mark as synced
                 await db.orders.add({ ...order, status: 'synced', syncedAt: new Date().toISOString() });
-                await addToHistory(order, 'synced');
                 state.cart = [];
                 state.pointsRedeemed = 0;
                 renderActiveCart();
                 showToast(`✅ Sale complete! Receipt: ${result.receipt_number}`, 'success');
             } catch (err) {
-                // If online fails, fallback to offline queue
                 if (!isOnline || err.message.includes('offline') || err.message.includes('network')) {
                     await db.orders.add({ ...order, status: 'pending' });
                     await db.syncQueue.add({ orderId: order.offlineRef, attempts: 0, lastTry: null });
@@ -914,12 +890,12 @@
             return Math.max(0, subtotal - pointsRedeemed);
         }
 
-        // ---------- Sync Manager ----------
+        // ---------- Sync Manager (FIXED: uses innerHTML) ----------
         async function syncPendingOrders() {
             if (!isOnline || syncInProgress) return;
             syncInProgress = true;
             syncNowBtn.disabled = true;
-            syncNowBtn.innerText = 'Syncing...';
+            syncNowBtn.innerHTML = '<i class="fa-solid fa-spinner fa-pulse"></i> Syncing...';
             try {
                 const pending = await db.syncQueue.toArray();
                 for (const entry of pending) {
@@ -935,21 +911,16 @@
                             customer_name: order.customerName,
                             customer_phone: order.customerPhone,
                             customer_email: order.customerEmail,
-                            // offline_reference: order.offlineRef
                         });
-                        // Success
                         await db.orders.update(order.offlineRef, { status: 'synced', syncedAt: new Date().toISOString() });
                         await db.syncQueue.delete(entry.id);
-                        await addToHistory(order, 'synced');
                         showToast(`Order ${order.offlineRef} synced`, 'success');
                     } catch (err) {
-                        // If duplicate or conflict, mark as duplicate and skip
                         if (err.message.includes('duplicate') || err.message.includes('already exists')) {
                             await db.orders.update(order.offlineRef, { status: 'duplicate' });
                             await db.syncQueue.delete(entry.id);
                             showToast(`Order ${order.offlineRef} already exists (skipped)`, 'warning');
                         } else {
-                            // Retry later
                             await db.syncQueue.update(entry.id, { attempts: entry.attempts + 1, lastTry: new Date().toISOString() });
                             if (entry.attempts >= 5) {
                                 showToast(`Order ${order.offlineRef} failed after 5 attempts`, 'error');
@@ -962,16 +933,11 @@
             } finally {
                 syncInProgress = false;
                 syncNowBtn.disabled = false;
-                syncNowBtn.innerText = '<i class="fa-solid fa-rotate"></i> Sync';
+                syncNowBtn.innerHTML = '<i class="fa-solid fa-rotate"></i> Sync';
             }
         }
 
         // ---------- Cashier History ----------
-        async function addToHistory(order, status) {
-            // Store in IndexedDB (already in orders table)
-            // We'll just refresh history view when opened
-        }
-
         async function renderHistory() {
             const cashierId = localStorage.getItem('user_id') || 'unknown';
             const orders = await db.orders.where('cashierId').equals(cashierId).toArray();
@@ -1039,7 +1005,6 @@
                 renderActiveCart();
                 showToast(`✅ ${pointsToRedeem} points redeemed – ₦${pointsToRedeem} off this order!`, 'success');
                 syncUIWithActiveTab();
-                // Update customer cache
                 const cust = await db.customers.get(state.loyaltyUserId);
                 if (cust) {
                     await db.customers.update(state.loyaltyUserId, { loyalty_points: state.pointsBalance });
@@ -1155,7 +1120,7 @@
         closeHistoryBtn.addEventListener('click', () => historyModal.classList.remove('active'));
         historyModal.addEventListener('click', (e) => { if (e.target === historyModal) historyModal.classList.remove('active'); });
 
-        // Bind field changes to state
+        // Bind field changes
         paymentMethodSelect.onchange = () => { tabState[activeTab].paymentMethod = paymentMethodSelect.value; };
         customerNameInput.addEventListener('input', () => { tabState[activeTab].customerName = customerNameInput.value; });
         customerPhoneInput.addEventListener('input', () => { tabState[activeTab].customerPhone = customerPhoneInput.value; });
@@ -1180,13 +1145,10 @@
                 } catch (e) { token = null; showLoginModal(); }
             } else { showLoginModal(); }
 
-            // Attempt sync on load if online
             if (isOnline) await syncPendingOrders();
         })();
 
-        // Also, we need to sync when coming online – already added listener.
-
-        console.log('✅ Offline‑Ready POS loaded');
+        console.log('✅ Offline‑Ready POS loaded (Sync button fixed)');
     </script>
 </body>
 </html>
