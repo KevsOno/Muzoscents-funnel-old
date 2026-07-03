@@ -4,356 +4,713 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Executive Dashboard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.tailwindcss.com">
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js">
+    </script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body {
+            background: #f1f5f9;
+        }
+        .org-card {
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+        .org-card:hover {
+            background: #2d3a5e;
+            transform: translateY(-1px);
+        }
+        .org-card.selected {
+            background: #3b82f6;
+            border-color: #60a5fa;
+        }
+        .loading-spinner {
+            border: 2px solid #e5e7eb;
+            border-top: 2px solid #3b82f6;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 0.6s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
 </head>
 <body class="bg-gray-100 p-4">
 
-<!-- ========== GLOBAL NAVIGATION (Kevs bOS) ========== -->
-<div id="kevs-nav-container"></div>
-<script>
-(function() {
-    const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
-    const LOGIN_URL = '/kdsiginin';
-
-    const navItems = [
-        { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy', roles: ['owner','admin','sales_rep','finance'] },
-        { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & online payments', roles: ['owner','admin','sales_rep'] },
-        { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', title: 'Order shipping, tracking & dispatch', roles: ['owner','admin','logistics'] },
-        { path: '/kdsupport',     name: 'Support',   icon: 'fa-headset', title: 'Ticket management & customer context', roles: ['owner','admin','support'] },
-        { path: '/kddashboard',   name: 'Exec',      icon: 'fa-chart-simple', title: 'Executive revenue & profit overview', roles: ['owner','admin','finance'] },
-        { path: '/kdadmin',       name: 'Inventory', icon: 'fa-boxes', title: 'Manage products, stock, bulk CSV upload', roles: ['owner','admin','inventory_manager'] },
-        { path: '/kdteam',        name: 'Team',      icon: 'fa-users', title: 'Invite & manage team members', roles: ['owner','admin'] },
-        { path: '/kdknowledge',   name: 'Knowledge', icon: 'fa-database', title: 'Manage AI knowledge base documents', roles: ['owner','admin'] }
-    ];
-
-    function getUserRole() {
-        try {
-            const role = localStorage.getItem('user_role');
-            return role || 'customer';
-        } catch(e) { return 'customer'; }
-    }
-
-    function canAccess(requiredRoles) {
-        const userRole = getUserRole();
-        return requiredRoles.includes(userRole);
-    }
-
-    function buildNavbar() {
-        const currentPath = window.location.pathname;
-        let linksHtml = '';
-        navItems.forEach(item => {
-            if (!canAccess(item.roles)) return;
-            const isActive = currentPath === item.path;
-            const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
-            linksHtml += `
-                <a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}" title="${item.title}">
-                    <i class="fa-solid ${item.icon} w-4"></i> ${item.name}
-                </a>
-            `;
-        });
-        let userName = 'User';
-        try {
-            const profileStr = localStorage.getItem('user_profile_display');
-            if (profileStr) userName = profileStr;
-        } catch(e) {}
-        return `
-            <div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40">
-                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div class="flex flex-wrap items-center justify-between py-3 gap-3">
-                        <div class="flex items-center gap-2">
-                            <i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i>
-                            <span class="text-xl font-bold tracking-tight">${APP_NAME}</span>
-                            <span class="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span>
-                        </div>
-                        <div class="hidden md:flex items-center gap-1 flex-wrap">
-                            ${linksHtml}
-                        </div>
-                        <div class="flex items-center gap-3">
-                            <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full hidden sm:inline-block">
-                                <i class="fa-regular fa-user mr-1"></i> <span id="nav-user-name">${escapeHtml(userName)}</span>
-                            </span>
-                            <button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition flex items-center gap-1">
-                                <i class="fa-solid fa-sign-out-alt"></i> <span class="hidden sm:inline">Logout</span>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="md:hidden flex overflow-x-auto pb-2 gap-1 snap-x">
-                        ${linksHtml}
-                    </div>
+    <!-- ========== ORGANISATION SELECTION MODAL ========== -->
+    <div id="org-selection-modal" class="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4" style="display:none;">
+        <div class="bg-slate-800 rounded-2xl max-w-2xl w-full p-6 border border-slate-700 shadow-2xl">
+            <div class="text-center mb-6">
+                <i class="fa-solid fa-building text-4xl text-blue-400 mb-2"></i>
+                <h2 class="text-2xl font-bold text-white">Select Organisation</h2>
+                <p class="text-slate-400 text-sm mt-1">Choose which organisation you want to view executive data for</p>
+            </div>
+            <div id="org-list-container" class="mb-6 max-h-96 overflow-y-auto">
+                <div class="text-center py-8">
+                    <div class="loading-spinner mx-auto"></div>
+                    <p class="text-slate-400 mt-2">Loading your organisations...</p>
                 </div>
             </div>
-        `;
-    }
+            <button id="confirm-org-btn" disabled class="w-full bg-blue-600 text-white py-3 rounded-lg font-medium transition opacity-50 cursor-not-allowed">
+                Continue to Dashboard
+            </button>
+        </div>
+    </div>
 
-    function escapeHtml(str) {
-        if (!str) return '';
-        return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
-    }
+    <!-- ========== GLOBAL NAVIGATION (Kevs bOS) ========== -->
+    <div id="kevs-nav-container"></div>
 
-    async function globalLogout() {
-        const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
-        const token = localStorage.getItem('access_token');
-        if (token) {
-            try {
-                await fetch(`${BACKEND}/auth/logout`, {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-                });
-            } catch(e) {}
+    <div class="max-w-7xl mx-auto mt-4">
+
+        <!-- Org banner -->
+        <div id="current-org-banner" class="hidden mb-4 p-3 bg-blue-900/30 rounded-lg border border-blue-700 flex items-center justify-between" style="background:#1e293b;border-color:#334155;">
+            <div class="flex items-center gap-3">
+                <i class="fa-solid fa-building text-blue-400"></i>
+                <div>
+                    <p class="text-xs text-slate-400">Currently viewing data for</p>
+                    <p id="current-org-name" class="font-semibold text-white">-</p>
+                </div>
+            </div>
+            <button id="switch-org-btn" class="text-sm bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg transition text-white">
+                <i class="fa-solid fa-arrow-right-arrow-left mr-1"></i> Switch Organisation
+            </button>
+        </div>
+
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-2xl font-bold">📊 Executive Dashboard</h1>
+            <div class="flex gap-2">
+                <a href="/kdstore" class="bg-orange-500 text-white px-3 py-1 rounded text-sm hover:bg-orange-600">Online Store</a>
+                <a href="/kdadmin" class="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600">Inventory</a>
+            </div>
+        </div>
+
+        <!-- Date filters -->
+        <div class="bg-white rounded shadow p-4 mb-6 flex flex-wrap gap-4 items-end">
+            <div><label class="block text-sm">Start Date</label><input type="date" id="start-date" class="border rounded p-2"></div>
+            <div><label class="block text-sm">End Date</label><input type="date" id="end-date" class="border rounded p-2"></div>
+            <button id="update-dates" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Update</button>
+            <button id="refresh-product-stats" class="bg-green-600 text-white px-4 py-2 rounded ml-2 hover:bg-green-700">⟳ Refresh Breakdown</button>
+            <div class="ml-auto"><span class="text-sm text-gray-500">Default: last 30 days</span></div>
+        </div>
+
+        <!-- KPI Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white p-4 rounded shadow"><div class="text-gray-500 text-sm">Total Revenue</div><div id="kpi-revenue" class="text-2xl font-bold">₦0</div></div>
+            <div class="bg-white p-4 rounded shadow"><div class="text-gray-500 text-sm">COGS</div><div id="kpi-cogs" class="text-2xl font-bold">₦0</div></div>
+            <div class="bg-white p-4 rounded shadow"><div class="text-gray-500 text-sm">Gross Profit</div><div id="kpi-profit" class="text-2xl font-bold">₦0</div></div>
+            <div class="bg-white p-4 rounded shadow" id="inventory-value-card">
+                <div class="text-gray-500 text-sm">Total Inventory Value</div>
+                <div id="kpi-inventory-value" class="text-2xl font-bold">₦0</div>
+                <div id="inventory-source" class="text-xs text-gray-400 mt-1">via /dashboard/metrics</div>
+            </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <div class="bg-white p-4 rounded shadow"><canvas id="revenueChart" height="250"></canvas></div>
+            <div class="bg-white p-4 rounded shadow"><canvas id="profitChart" height="250"></canvas></div>
+        </div>
+
+        <!-- Expenditure Breakdown -->
+        <div class="bg-white rounded shadow p-4 mb-6">
+            <h2 class="text-xl font-semibold mb-3">Expenditure Breakdown (COGS by Product)</h2>
+            <div id="expenditure-table" class="overflow-x-auto">
+                <p class="text-gray-400 text-center py-4">Loading...</p>
+            </div>
+        </div>
+
+        <!-- Top 50 Products -->
+        <div class="bg-white rounded shadow p-4">
+            <h2 class="text-xl font-semibold mb-3">🏆 Top 50 Selling Products (units)</h2>
+            <div id="top-products" class="overflow-x-auto max-h-[600px] overflow-y-auto">
+                <p class="text-gray-400 text-center py-4">Loading...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ================================================================
+        // CONFIGURATION
+        // ================================================================
+        const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
+        let token = localStorage.getItem('access_token');
+        let revenueChart, profitChart;
+        let selectedOrganisation = null;
+        let userOrganisations = [];
+        let allLocations = [];
+
+        // ================================================================
+        // TOAST / UTILITIES
+        // ================================================================
+        function showToast(msg, type) {
+            const toastDiv = document.createElement('div');
+            toastDiv.className =
+                `fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white ${type === 'success' ? 'bg-green-600' : type === 'error' ? 'bg-red-600' : 'bg-blue-600'} z-50 text-sm shadow-lg max-w-md`;
+            toastDiv.innerText = msg;
+            document.body.appendChild(toastDiv);
+            setTimeout(() => toastDiv.remove(), 4000);
         }
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('user_role');
-        localStorage.removeItem('user_profile_display');
-        window.location.href = LOGIN_URL;
-    }
 
-    async function updateUserDisplay() {
-        const token = localStorage.getItem('access_token');
-        if (!token) return;
-        try {
-            const res = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/me', {
-                headers: { 'Authorization': `Bearer ${token}` }
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
             });
-            if (res.ok) {
-                const me = await res.json();
-                const contextRes = await fetch(`https://kevsono-kevs-digital-bos.hf.space/support/customer-context?target_user_id=${me.user_id}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (contextRes.ok) {
-                    const context = await contextRes.json();
-                    const name = context.profile?.first_name || 'User';
-                    localStorage.setItem('user_profile_display', name);
-                    const nameSpan = document.getElementById('nav-user-name');
-                    if (nameSpan) nameSpan.innerText = name;
-                }
-            }
-        } catch(e) {}
-    }
-
-    function initNavigation() {
-        const container = document.getElementById('kevs-nav-container');
-        if (container) {
-            container.innerHTML = buildNavbar();
-            const logoutBtn = document.getElementById('global-logout-btn');
-            if (logoutBtn) logoutBtn.addEventListener('click', globalLogout);
-            updateUserDisplay();
         }
-    }
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initNavigation);
-    } else {
-        initNavigation();
-    }
-})();
-</script>
-<!-- ========== END GLOBAL NAVIGATION ========== -->
+        // ================================================================
+        // TOKEN / API
+        // ================================================================
+        async function refreshToken() {
+            const refresh = localStorage.getItem('refresh_token');
+            if (!refresh) return false;
+            try {
+                const res = await fetch(`${API_BASE}/auth/refresh`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh_token: refresh })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    localStorage.setItem('access_token', data.access_token);
+                    localStorage.setItem('refresh_token', data.refresh_token);
+                    token = data.access_token;
+                    return true;
+                }
+            } catch (e) {}
+            return false;
+        }
 
-<div class="max-w-7xl mx-auto">
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold">📊 Executive Dashboard</h1>
-        <div class="flex gap-2">
-            <a href="/kdstore" class="bg-orange-500 text-white px-3 py-1 rounded text-sm">Online Store</a>
-            <a href="/kdadmin" class="bg-green-500 text-white px-3 py-1 rounded text-sm">Inventory</a>
-        </div>
-    </div>
+        async function apiCall(endpoint, options = {}, retry = true) {
+            const headers = {
+                'Content-Type': 'application/json',
+                ...options.headers,
+            };
+            if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    <div class="bg-white rounded shadow p-4 mb-6 flex flex-wrap gap-4 items-end">
-        <div><label class="block text-sm">Start Date</label><input type="date" id="start-date" class="border rounded p-2"></div>
-        <div><label class="block text-sm">End Date</label><input type="date" id="end-date" class="border rounded p-2"></div>
-        <button id="update-dates" class="bg-blue-600 text-white px-4 py-2 rounded">Update</button>
-        <button id="refresh-product-stats" class="bg-green-600 text-white px-4 py-2 rounded ml-2">⟳ Refresh Breakdown</button>
-        <div class="ml-auto"><span class="text-sm text-gray-500">Default: last 30 days</span></div>
-    </div>
+            // Inject organisation header if selected
+            const orgId = selectedOrganisation ? selectedOrganisation.id : localStorage.getItem('selected_org_id');
+            if (orgId) {
+                headers['X-Selected-Org-Id'] = orgId;
+            }
 
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div class="bg-white p-4 rounded shadow"><div class="text-gray-500 text-sm">Total Revenue</div><div id="kpi-revenue" class="text-2xl font-bold">₦0</div></div>
-        <div class="bg-white p-4 rounded shadow"><div class="text-gray-500 text-sm">COGS</div><div id="kpi-cogs" class="text-2xl font-bold">₦0</div></div>
-        <div class="bg-white p-4 rounded shadow"><div class="text-gray-500 text-sm">Gross Profit</div><div id="kpi-profit" class="text-2xl font-bold">₦0</div></div>
-        <div class="bg-white p-4 rounded shadow"><div class="text-gray-500 text-sm">Inventory Value</div><div id="kpi-inventory-value" class="text-2xl font-bold">₦0</div></div>
-    </div>
-
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <div class="bg-white p-4 rounded shadow"><canvas id="revenueChart" height="250"></canvas></div>
-        <div class="bg-white p-4 rounded shadow"><canvas id="profitChart" height="250"></canvas></div>
-    </div>
-
-    <div class="bg-white rounded shadow p-4 mb-6">
-        <h2 class="text-xl font-semibold mb-3">Expenditure Breakdown (COGS by Product)</h2>
-        <div id="expenditure-table" class="overflow-x-auto">
-            <p class="text-gray-400 text-center py-4">Loading...</p>
-        </div>
-    </div>
-
-    <div class="bg-white rounded shadow p-4">
-        <h2 class="text-xl font-semibold mb-3">🏆 Top Selling Products (units)</h2>
-        <div id="top-products" class="overflow-x-auto">
-            <p class="text-gray-400 text-center py-4">Loading...</p>
-        </div>
-    </div>
-</div>
-
-<script>
-    const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
-    let token = localStorage.getItem('access_token');
-    let revenueChart, profitChart;
-
-    async function apiCall(endpoint, options = {}, retry = true) {
-        const headers = {
-            'Content-Type': 'application/json',
-            ...options.headers,
-        };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-
-        const response = await fetch(`${API_BASE}${endpoint}`, {
-            ...options,
-            headers,
-        });
-
-        if (response.status === 401 && retry) {
-            const refreshed = await refreshToken();
-            if (refreshed) {
-                return apiCall(endpoint, options, false);
-            } else {
-                localStorage.clear();
-                window.location.href = '/kdsiginin';
+            const res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
+            if (res.status === 401 && retry) {
+                const ok = await refreshToken();
+                if (ok) return apiCall(endpoint, options, false);
                 throw new Error('Session expired');
             }
-        }
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`API error ${response.status}: ${text}`);
-        }
-        return response.json();
-    }
-
-    async function refreshToken() {
-        const refreshToken = localStorage.getItem('refresh_token');
-        if (!refreshToken) return false;
-        try {
-            const res = await fetch(`${API_BASE}/auth/refresh`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ refresh_token: refreshToken })
-            });
-            if (res.ok) {
-                const data = await res.json();
-                token = data.access_token;
-                localStorage.setItem('access_token', token);
-                localStorage.setItem('refresh_token', data.refresh_token);
-                return true;
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: 'API error' }));
+                throw new Error(err.detail || 'API error');
             }
-        } catch (e) {}
-        return false;
-    }
+            return res.json();
+        }
 
-    const today = new Date();
-    const defaultEnd = today.toISOString().slice(0,10);
-    const defaultStart = new Date(today.setDate(today.getDate()-30)).toISOString().slice(0,10);
-    document.getElementById('start-date').value = defaultStart;
-    document.getElementById('end-date').value = defaultEnd;
+        // ================================================================
+        // ORGANISATION MANAGEMENT (copied from kdadmin logic)
+        // ================================================================
+        async function fetchUserOrganisations() {
+            try {
+                const response = await fetch(`${API_BASE}/auth/user-organisations`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!response.ok) throw new Error('Failed to fetch organisations');
+                const data = await response.json();
+                const orgs = data.organisations || data || [];
+                return orgs.map(org => ({
+                    id: org.id || org.org_id,
+                    org_id: org.id || org.org_id,
+                    org_name: org.org_name || `Org: ${org.id}`,
+                    role: org.role || 'member'
+                }));
+            } catch (err) {
+                console.warn('Primary org fetch failed, falling back to /auth/me + /auth/org', err);
+                try {
+                    const me = await apiCall('/auth/me');
+                    if (me.org_id) {
+                        let orgName = null;
+                        try {
+                            const orgInfo = await apiCall('/auth/org');
+                            orgName = orgInfo.org_name || null;
+                        } catch (e) { console.warn('Could not fetch org name via /auth/org', e); }
+                        if (!orgName) orgName = `Org: ${me.org_id}`;
+                        return [{ id: me.org_id, org_id: me.org_id, org_name: orgName, role: me.role || 'admin' }];
+                    }
+                } catch (e) { console.error('Fallback also failed', e); }
+                return [];
+            }
+        }
 
-    async function loadProductStats() {
-        const start = document.getElementById('start-date').value;
-        const end = document.getElementById('end-date').value;
-        if (!start || !end) return;
-
-        console.log(`Fetching product stats from ${start} to ${end}...`);
-        try {
-            const result = await apiCall(`/sales/product-stats?start_date=${start}&end_date=${end}`);
-            console.log("Product stats response:", result);
-
-            const statsArray = result.product_stats || [];
-            
-            if (statsArray.length === 0) {
-                document.getElementById('expenditure-table').innerHTML = '<p class="text-gray-500 text-center py-4">📭 No COGS data for selected period.</p>';
-                document.getElementById('top-products').innerHTML = '<p class="text-gray-500 text-center py-4">📭 No product sales data for selected period.</p>';
+        function renderOrganisationSelection(organisations) {
+            const container = document.getElementById('org-list-container');
+            if (!organisations || organisations.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-8">
+                        <i class="fa-solid fa-store-slash text-4xl text-red-400 mb-2"></i>
+                        <p class="text-slate-400">You are not a member of any organisation.</p>
+                        <button id="goto-register" class="mt-4 bg-blue-600 px-4 py-2 rounded-lg text-white">Register</button>
+                    </div>
+                `;
+                document.getElementById('goto-register')?.addEventListener('click', () => window.location.href = '/kdsiginin');
                 return;
             }
 
-            let expendHtml = '<table class="min-w-full"><thead><tr><th class="text-left p-2">Product</th><th class="text-left p-2">Total COGS (₦)</th></tr></thead><tbody>';
-            for (let item of statsArray) {
-                const productName = item.product_name || 'Unknown';
-                const cogs = item.cost_of_goods_sold || 0;
-                expendHtml += `<tr><td class="p-2 border-b">${escapeHtml(productName)}</td><td class="p-2 border-b">₦${cogs.toLocaleString()}</td></tr>`;
-            }
-            expendHtml += '</tbody></table>';
-            document.getElementById('expenditure-table').innerHTML = expendHtml;
+            container.innerHTML = `
+                <div class="space-y-3">
+                    ${organisations.map(org => {
+                        const targetId = org.id || org.org_id;
+                        const targetName = org.org_name || `Org: ${targetId}`;
+                        return `
+                        <div class="org-card p-4 rounded-xl border border-slate-600 hover:bg-slate-700 transition text-white"
+                             data-org-id="${targetId}"
+                             data-org-name="${escapeHtml(targetName)}"
+                             data-org-role="${org.role || 'member'}">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-3">
+                                    <i class="fa-solid fa-building text-2xl ${org.role === 'owner' ? 'text-amber-400' : 'text-blue-400'}"></i>
+                                    <div>
+                                        <h3 class="font-semibold text-white">${escapeHtml(targetName)}</h3>
+                                        <span class="text-xs px-2 py-0.5 rounded-full ${org.role === 'owner' ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-600 text-slate-300'}">${org.role || 'member'}</span>
+                                    </div>
+                                </div>
+                                <i class="fa-regular fa-circle text-slate-500 text-xl org-radio"></i>
+                            </div>
+                        </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
 
-            const sorted = [...statsArray].sort((a,b) => (b.quantity_sold || 0) - (a.quantity_sold || 0));
-            let topHtml = '<table class="min-w-full"><thead><tr><th class="text-left p-2">Product</th><th class="text-left p-2">Units Sold</th></tr></thead><tbody>';
-            for (let item of sorted.slice(0,10)) {
-                const productName = item.product_name || 'Unknown';
-                const qty = item.quantity_sold || 0;
-                topHtml += `<tr><td class="p-2 border-b">${escapeHtml(productName)}</td><td class="p-2 border-b">${qty}</td></tr>`;
-            }
-            topHtml += '</tbody></table>';
-            document.getElementById('top-products').innerHTML = topHtml;
+            document.querySelectorAll('.org-card').forEach(card => {
+                card.addEventListener('click', () => {
+                    document.querySelectorAll('.org-card').forEach(c => {
+                        c.classList.remove('selected', 'bg-blue-900/50', 'border-blue-500');
+                        const radio = c.querySelector('.org-radio');
+                        if (radio) radio.className = 'fa-regular fa-circle text-slate-500 text-xl org-radio';
+                    });
+                    card.classList.add('selected', 'bg-blue-900/50', 'border-blue-500');
+                    const radio = card.querySelector('.org-radio');
+                    if (radio) radio.className = 'fa-solid fa-circle-check text-blue-400 text-xl org-radio';
 
-        } catch (err) {
-            console.error("Failed to load product stats:", err);
-            document.getElementById('expenditure-table').innerHTML = `<p class="text-red-500 text-center py-4">⚠️ Error loading COGS data: ${err.message}</p>`;
-            document.getElementById('top-products').innerHTML = `<p class="text-red-500 text-center py-4">⚠️ Error loading top products: ${err.message}</p>`;
+                    selectedOrganisation = {
+                        id: card.dataset.orgId,
+                        name: card.dataset.orgName,
+                        role: card.dataset.orgRole
+                    };
+
+                    const confirmBtn = document.getElementById('confirm-org-btn');
+                    confirmBtn.disabled = false;
+                    confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    confirmBtn.classList.add('hover:bg-blue-700');
+                });
+            });
         }
-    }
 
-    async function loadDashboard() {
-        const start = document.getElementById('start-date').value;
-        const end = document.getElementById('end-date').value;
-        if (!start || !end) return;
-
-        try {
-            const summary = await apiCall(`/sales/summary?start_date=${start}&end_date=${end}`);
-            document.getElementById('kpi-revenue').innerHTML = `₦${summary.total_revenue.toLocaleString()}`;
-            document.getElementById('kpi-cogs').innerHTML = `₦${summary.total_cogs.toLocaleString()}`;
-            document.getElementById('kpi-profit').innerHTML = `₦${summary.total_profit.toLocaleString()}`;
-
-            const inventory = await apiCall('/inventory');
-            let inventoryValue = 0;
-            for (let item of inventory) {
-                inventoryValue += (item.price_naira * (item.current_qty || 0));
+        // ================================================================
+        // LOCATIONS (for inventory value context)
+        // ================================================================
+        async function loadLocations() {
+            if (!selectedOrganisation) return;
+            try {
+                const response = await apiCall('/locations');
+                const locationsData = response.locations || response || [];
+                allLocations = locationsData.map(loc => ({
+                    id: loc.id,
+                    name: loc.name,
+                    type: loc.is_warehouse ? 'warehouse' : 'store',
+                    address: loc.address,
+                    is_active: loc.is_active
+                }));
+            } catch (err) {
+                console.warn('Could not load locations:', err);
             }
-            document.getElementById('kpi-inventory-value').innerHTML = `₦${inventoryValue.toLocaleString()}`;
+        }
 
-            const trend = await apiCall(`/sales/trend?days=30`);
-            const labels = trend.map(t => t.date);
-            const revenues = trend.map(t => t.revenue);
-            if (revenueChart) revenueChart.destroy();
-            revenueChart = new Chart(document.getElementById('revenueChart'), {
-                type: 'line',
-                data: { labels, datasets: [{ label: 'Daily Revenue (₦)', data: revenues, borderColor: '#3b82f6', fill: false }] }
-            });
-            if (profitChart) profitChart.destroy();
-            profitChart = new Chart(document.getElementById('profitChart'), {
-                type: 'line',
-                data: { labels, datasets: [{ label: 'Daily Profit (est.)', data: revenues.map(r => r * 0.25), borderColor: '#10b981', fill: false }] }
-            });
+        // ================================================================
+        // DASHBOARD LOADERS
+        // ================================================================
 
+        // ── Inventory Value (uses /dashboard/metrics like kdadmin) ──
+        async function loadInventoryValue() {
+            try {
+                const metrics = await apiCall('/dashboard/metrics');
+                const value = metrics.total_inventory_value || 0;
+                document.getElementById('kpi-inventory-value').innerHTML = `₦${value.toLocaleString()}`;
+                document.getElementById('inventory-source').innerHTML = 'via /dashboard/metrics ✓';
+                return value;
+            } catch (err) {
+                console.error('Failed to load inventory value from /dashboard/metrics:', err);
+                // Fallback: try /inventory with manual calc (but warn)
+                try {
+                    const inv = await apiCall('/inventory');
+                    let val = 0;
+                    for (let item of inv) {
+                        val += (item.price_naira || 0) * (item.current_qty || 0);
+                    }
+                    document.getElementById('kpi-inventory-value').innerHTML = `₦${val.toLocaleString()}`;
+                    document.getElementById('inventory-source').innerHTML = '⚠️ fallback: manual calc (may be inaccurate)';
+                    return val;
+                } catch (e2) {
+                    document.getElementById('kpi-inventory-value').innerHTML = '❌ Error';
+                    document.getElementById('inventory-source').innerHTML = 'failed to load';
+                    return 0;
+                }
+            }
+        }
+
+        // ── KPI: revenue, cogs, profit ──
+        async function loadKPIs(start, end) {
+            try {
+                const summary = await apiCall(`/sales/summary?start_date=${start}&end_date=${end}`);
+                document.getElementById('kpi-revenue').innerHTML = `₦${(summary.total_revenue || 0).toLocaleString()}`;
+                document.getElementById('kpi-cogs').innerHTML = `₦${(summary.total_cogs || 0).toLocaleString()}`;
+                document.getElementById('kpi-profit').innerHTML = `₦${(summary.total_profit || 0).toLocaleString()}`;
+            } catch (err) {
+                console.error('KPI load error:', err);
+            }
+        }
+
+        // ── Charts ──
+        async function loadCharts() {
+            try {
+                const trend = await apiCall('/sales/trend?days=30');
+                const labels = trend.map(t => t.date);
+                const revenues = trend.map(t => t.revenue || 0);
+                if (revenueChart) revenueChart.destroy();
+                revenueChart = new Chart(document.getElementById('revenueChart'), {
+                    type: 'line',
+                    data: {
+                        labels,
+                        datasets: [{
+                            label: 'Daily Revenue (₦)',
+                            data: revenues,
+                            borderColor: '#3b82f6',
+                            fill: false,
+                            tension: 0.2
+                        }]
+                    },
+                    options: { responsive: true, plugins: { legend: { position: 'top' } } }
+                });
+                if (profitChart) profitChart.destroy();
+                // Estimate profit as 25% of revenue (fallback if real data not available)
+                const profitData = revenues.map(r => r * 0.25);
+                profitChart = new Chart(document.getElementById('profitChart'), {
+                    type: 'line',
+                    data: {
+                        labels,
+                        datasets: [{
+                            label: 'Daily Profit (est.)',
+                            data: profitData,
+                            borderColor: '#10b981',
+                            fill: false,
+                            tension: 0.2
+                        }]
+                    },
+                    options: { responsive: true, plugins: { legend: { position: 'top' } } }
+                });
+            } catch (err) {
+                console.error('Chart load error:', err);
+            }
+        }
+
+        // ── Product Stats (COGS breakdown + Top 50) ──
+        async function loadProductStats() {
+            const start = document.getElementById('start-date').value;
+            const end = document.getElementById('end-date').value;
+            if (!start || !end) {
+                showToast('Please select date range', 'warning');
+                return;
+            }
+
+            try {
+                const result = await apiCall(`/sales/product-stats?start_date=${start}&end_date=${end}`);
+                const statsArray = result.product_stats || [];
+
+                if (statsArray.length === 0) {
+                    document.getElementById('expenditure-table').innerHTML =
+                        '<p class="text-gray-500 text-center py-4">📭 No COGS data for selected period.</p>';
+                    document.getElementById('top-products').innerHTML =
+                        '<p class="text-gray-500 text-center py-4">📭 No product sales data for selected period.</p>';
+                    return;
+                }
+
+                // ── Expenditure table ──
+                let expendHtml =
+                    '<table class="min-w-full"><thead><tr><th class="text-left p-2">Product</th><th class="text-left p-2">Total COGS (₦)</th></tr></thead><tbody>';
+                for (let item of statsArray) {
+                    const productName = item.product_name || 'Unknown';
+                    const cogs = item.cost_of_goods_sold || 0;
+                    expendHtml +=
+                        `<tr><td class="p-2 border-b">${escapeHtml(productName)}</td><td class="p-2 border-b">₦${cogs.toLocaleString()}</td></tr>`;
+                }
+                expendHtml += '</tbody></table>';
+                document.getElementById('expenditure-table').innerHTML = expendHtml;
+
+                // ── Top 50 products (by units sold) ──
+                const sorted = [...statsArray].sort((a, b) => (b.quantity_sold || 0) - (a.quantity_sold || 0));
+                const top50 = sorted.slice(0, 50);
+                let topHtml =
+                    '<table class="min-w-full"><thead><tr><th class="text-left p-2">#</th><th class="text-left p-2">Product</th><th class="text-left p-2">Units Sold</th><th class="text-left p-2">Revenue (₦)</th></tr></thead><tbody>';
+                top50.forEach((item, idx) => {
+                    const productName = item.product_name || 'Unknown';
+                    const qty = item.quantity_sold || 0;
+                    const revenue = item.revenue || 0;
+                    topHtml +=
+                        `<tr><td class="p-2 border-b text-gray-400">${idx+1}</td><td class="p-2 border-b">${escapeHtml(productName)}</td><td class="p-2 border-b font-mono">${qty}</td><td class="p-2 border-b font-mono">₦${revenue.toLocaleString()}</td></tr>`;
+                });
+                topHtml += '</tbody></table>';
+                if (top50.length === 0) {
+                    topHtml = '<p class="text-gray-500 text-center py-4">📭 No product sales data.</p>';
+                }
+                document.getElementById('top-products').innerHTML = topHtml;
+
+            } catch (err) {
+                console.error("Product stats error:", err);
+                document.getElementById('expenditure-table').innerHTML =
+                    `<p class="text-red-500 text-center py-4">⚠️ Error: ${escapeHtml(err.message)}</p>`;
+                document.getElementById('top-products').innerHTML =
+                    `<p class="text-red-500 text-center py-4">⚠️ Error: ${escapeHtml(err.message)}</p>`;
+            }
+        }
+
+        // ── Full dashboard refresh ──
+        async function loadDashboard() {
+            const start = document.getElementById('start-date').value;
+            const end = document.getElementById('end-date').value;
+            if (!start || !end) {
+                showToast('Please select a date range', 'warning');
+                return;
+            }
+
+            await loadKPIs(start, end);
+            await loadInventoryValue();
+            await loadCharts();
             await loadProductStats();
-        } catch (err) {
-            console.error('Dashboard load error:', err);
-            document.getElementById('expenditure-table').innerHTML = '<p class="text-red-500">Failed to load dashboard data. Check console.</p>';
         }
-    }
 
-    function escapeHtml(str) {
-        if (!str) return '';
-        return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
-    }
+        // ================================================================
+        // INITIALISATION
+        // ================================================================
+        async function init() {
+            if (!token) {
+                window.location.href = '/kdsiginin';
+                return;
+            }
 
-    document.getElementById('update-dates').onclick = () => loadDashboard();
-    document.getElementById('refresh-product-stats').onclick = () => loadProductStats();
+            try {
+                // verify user
+                await apiCall('/auth/me');
 
-    (async () => {
-        if (!token) {
-            window.location.href = '/kdsiginin';
-            return;
+                // Check for saved org
+                const savedOrgId = localStorage.getItem('selected_org_id');
+                if (savedOrgId) {
+                    userOrganisations = await fetchUserOrganisations();
+                    const savedOrg = userOrganisations.find(o => o.id === savedOrgId || o.org_id === savedOrgId);
+                    if (savedOrg) {
+                        selectedOrganisation = { id: savedOrg.id, name: savedOrg.org_name, role: savedOrg.role };
+                        document.getElementById('org-selection-modal').style.display = 'none';
+                        document.getElementById('current-org-name').innerText = selectedOrganisation.name;
+                        document.getElementById('current-org-banner').classList.remove('hidden');
+
+                        await loadLocations();
+                        // Set default dates
+                        const today = new Date();
+                        const endDate = today.toISOString().slice(0, 10);
+                        const startDate = new Date(today.setDate(today.getDate() - 30)).toISOString().slice(0, 10);
+                        document.getElementById('start-date').value = startDate;
+                        document.getElementById('end-date').value = endDate;
+
+                        await loadDashboard();
+                        return;
+                    }
+                }
+
+                // No saved org → show selection modal
+                await initialiseOrganisationSelection();
+
+            } catch (err) {
+                console.error('Init error:', err);
+                if (err.message === 'Session expired') {
+                    localStorage.clear();
+                    window.location.href = '/kdsiginin';
+                } else {
+                    showToast(`Init error: ${err.message}`, 'error');
+                }
+            }
         }
-        await loadDashboard();
-    })();
-</script>
+
+        async function initialiseOrganisationSelection() {
+            try {
+                userOrganisations = await fetchUserOrganisations();
+                renderOrganisationSelection(userOrganisations);
+                document.getElementById('org-selection-modal').style.display = 'flex';
+            } catch (err) {
+                console.error('Failed to load organisations:', err);
+                localStorage.clear();
+                window.location.href = '/kdsiginin';
+            }
+        }
+
+        // ================================================================
+        // EVENT BINDING
+        // ================================================================
+
+        // Confirm org selection
+        document.getElementById('confirm-org-btn')?.addEventListener('click', async function() {
+            if (!selectedOrganisation) return;
+            localStorage.setItem('selected_org_id', selectedOrganisation.id);
+            localStorage.setItem('selected_org_name', selectedOrganisation.name);
+            document.getElementById('org-selection-modal').style.display = 'none';
+            document.getElementById('current-org-name').innerText = selectedOrganisation.name;
+            document.getElementById('current-org-banner').classList.remove('hidden');
+
+            await loadLocations();
+            // Set default dates
+            const today = new Date();
+            const endDate = today.toISOString().slice(0, 10);
+            const startDate = new Date(today.setDate(today.getDate() - 30)).toISOString().slice(0, 10);
+            document.getElementById('start-date').value = startDate;
+            document.getElementById('end-date').value = endDate;
+
+            await loadDashboard();
+            showToast(`📊 Dashboard loaded for ${selectedOrganisation.name}`, 'success');
+        });
+
+        // Switch organisation
+        document.getElementById('switch-org-btn')?.addEventListener('click', function() {
+            selectedOrganisation = null;
+            localStorage.removeItem('selected_org_id');
+            localStorage.removeItem('selected_org_name');
+            document.getElementById('org-selection-modal').style.display = 'flex';
+            document.getElementById('current-org-banner').classList.add('hidden');
+            initialiseOrganisationSelection();
+        });
+
+        // Date update
+        document.getElementById('update-dates')?.addEventListener('click', loadDashboard);
+
+        // Refresh product stats only
+        document.getElementById('refresh-product-stats')?.addEventListener('click', loadProductStats);
+
+        // ================================================================
+        // GLOBAL NAVIGATION (inlined from kdadmin)
+        // ================================================================
+        (function() {
+            const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
+            const LOGIN_URL = '/kdsiginin';
+            const navItems = [
+                { path: '/kdbi', name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy',
+                    roles: ['owner', 'admin', 'sales_rep', 'finance'] },
+                { path: '/kdpos', name: 'POS', icon: 'fa-cash-register',
+                    title: 'Multi‑tab sales, SKU search & online payments', roles: ['owner', 'admin', 'sales_rep'] },
+                { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast',
+                    title: 'Order shipping, tracking & dispatch', roles: ['owner', 'admin', 'logistics'] },
+                { path: '/kdsupport', name: 'Support', icon: 'fa-headset', title: 'Ticket management & customer context',
+                    roles: ['owner', 'admin', 'support'] },
+                { path: '/kddashboard', name: 'Exec', icon: 'fa-chart-simple',
+                    title: 'Executive revenue & profit overview', roles: ['owner', 'admin', 'finance'] },
+                { path: '/kdadmin', name: 'Inventory', icon: 'fa-boxes', title: 'Manage products, stock, bulk CSV upload',
+                    roles: ['owner', 'admin', 'inventory_manager'] },
+                { path: '/kdteam', name: 'Team', icon: 'fa-users', title: 'Invite & manage team members',
+                    roles: ['owner', 'admin'] },
+                { path: '/kdknowledge', name: 'Knowledge', icon: 'fa-database',
+                    title: 'Manage AI knowledge base documents', roles: ['owner', 'admin'] }
+            ];
+
+            function getUserRole() {
+                try { return localStorage.getItem('user_role') || 'customer'; } catch (e) { return 'customer'; }
+            }
+
+            function canAccess(requiredRoles) {
+                return requiredRoles.includes(getUserRole());
+            }
+
+            function buildNavbar() {
+                const currentPath = window.location.pathname;
+                let linksHtml = '';
+                navItems.forEach(item => {
+                    if (!canAccess(item.roles)) return;
+                    const isActive = currentPath === item.path;
+                    const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
+                    linksHtml += `
+                        <a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}" title="${item.title}">
+                            <i class="fa-solid ${item.icon} w-4"></i> ${item.name}
+                        </a>
+                    `;
+                });
+                let userName = 'User';
+                try {
+                    const profileStr = localStorage.getItem('user_profile_display');
+                    if (profileStr) userName = profileStr;
+                } catch (e) {}
+                return `
+                    <div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40">
+                        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                            <div class="flex flex-wrap items-center justify-between py-3 gap-3">
+                                <div class="flex items-center gap-2">
+                                    <i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i>
+                                    <span class="text-xl font-bold tracking-tight">${APP_NAME}</span>
+                                    <span class="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span>
+                                </div>
+                                <div class="hidden md:flex items-center gap-1 flex-wrap">${linksHtml}</div>
+                                <div class="flex items-center gap-3">
+                                    <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full hidden sm:inline-block">
+                                        <i class="fa-regular fa-user mr-1"></i> <span id="nav-user-name">${escapeHtml(userName)}</span>
+                                    </span>
+                                    <button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition flex items-center gap-1">
+                                        <i class="fa-solid fa-sign-out-alt"></i> <span class="hidden sm:inline">Logout</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="md:hidden flex overflow-x-auto pb-2 gap-1 snap-x">${linksHtml}</div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            async function globalLogout() {
+                try {
+                    await fetch(`${API_BASE}/auth/logout`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+                    });
+                } catch (e) {}
+                localStorage.clear();
+                window.location.href = LOGIN_URL;
+            }
+
+            function initNavigation() {
+                const container = document.getElementById('kevs-nav-container');
+                if (container) {
+                    container.innerHTML = buildNavbar();
+                    document.getElementById('global-logout-btn')?.addEventListener('click', globalLogout);
+                }
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initNavigation);
+            } else {
+                initNavigation();
+            }
+        })();
+
+        // ================================================================
+        // START
+        // ================================================================
+        init();
+    </script>
 </body>
 </html>
