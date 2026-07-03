@@ -1,658 +1,766 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Kevs BI – Support & Loyalty</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com">
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
     <style>
-        body { background-color: #F1F5F9; font-family: system-ui, sans-serif; }
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 10px; }
-        .ticket-active { background-color: #F1F5F9; border-left: 4px solid #3b82f6; }
-        .debug-panel { background: #1e1e2f; color: #0fc; font-family: monospace; font-size: 10px; max-height: 120px; overflow-y: auto; padding: 6px; }
-        .tab-active { background-color: #3b82f6; color: white; border-bottom: 2px solid #3b82f6; }
-        .tab-inactive { background-color: #e2e8f0; color: #1f2937; }
-        @media (max-width: 768px) {
-            .ticket-sidebar, .customer-sidebar { width: 100% !important; border-right: none !important; border-left: none !important; }
-            .conversation-area { width: 100% !important; }
+        body {
+            background-color: #F1F5F9;
+            font-family: system-ui, sans-serif;
         }
-        button:active { transform: scale(0.97); transition: transform 0.05s ease; }
-        .btn-loading { opacity: 0.7; cursor: not-allowed; transform: none !important; }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #CBD5E1;
+            border-radius: 10px;
+        }
+        .ticket-active {
+            background-color: #F1F5F9;
+            border-left: 4px solid #3b82f6;
+        }
+        .tab-active {
+            background-color: #3b82f6;
+            color: white;
+            border-bottom: 2px solid #3b82f6;
+        }
+        .tab-inactive {
+            background-color: #e2e8f0;
+            color: #1f2937;
+        }
+        @media (max-width: 768px) {
+            .ticket-sidebar,
+            .customer-sidebar {
+                width: 100% !important;
+                border-right: none !important;
+                border-left: none !important;
+            }
+            .conversation-area {
+                width: 100% !important;
+            }
+        }
+        button:active {
+            transform: scale(0.97);
+            transition: transform 0.05s ease;
+        }
+        .btn-loading {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none !important;
+        }
     </style>
 </head>
 <body class="h-screen flex flex-col overflow-hidden">
 
-<!-- ========== GLOBAL NAVIGATION (Kevs bOS) ========== -->
-<div id="kevs-nav-container"></div>
-<script>
-(function() {
-    const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
-    const LOGIN_URL = '/kdsiginin';
-    const navItems = [
-        { path: '/kdbi', name: 'Dashboard', icon: 'fa-chart-line', roles: ['owner','admin','sales_rep','finance'] },
-        { path: '/kdpos', name: 'POS', icon: 'fa-cash-register', roles: ['owner','admin','sales_rep'] },
-        { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', roles: ['owner','admin','logistics'] },
-        { path: '/kdsupport', name: 'Support', icon: 'fa-headset', roles: ['owner','admin','support','loyalty_manager'] },
-        { path: '/kddashboard', name: 'Exec', icon: 'fa-chart-simple', roles: ['owner','admin','finance'] },
-        { path: '/kdadmin', name: 'Inventory', icon: 'fa-boxes', roles: ['owner','admin','inventory_manager'] },
-        { path: '/kdteam', name: 'Team', icon: 'fa-users', roles: ['owner','admin'] },
-        { path: '/kdknowledge', name: 'Knowledge', icon: 'fa-database', roles: ['owner','admin'] }
-    ];
-    function getUserRole() { try { return localStorage.getItem('user_role') || 'customer'; } catch(e) { return 'customer'; } }
-    function canAccess(roles) { return roles.includes(getUserRole()); }
-    function buildNavbar() {
-        const currentPath = window.location.pathname;
-        let linksHtml = '';
-        navItems.forEach(item => {
-            if (!canAccess(item.roles)) return;
-            const isActive = currentPath === item.path;
-            const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
-            linksHtml += `<a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeClass}" title="${item.title}"><i class="fa-solid ${item.icon} w-4"></i> ${item.name}</a>`;
-        });
-        let userName = localStorage.getItem('user_profile_display') || 'User';
-        return `<div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40"><div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-3"><div class="flex items-center gap-2"><i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i><span class="text-xl font-bold">${APP_NAME}</span><span class="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span></div><div class="hidden md:flex gap-2">${linksHtml}</div><div class="flex items-center gap-3"><span class="text-xs bg-white/10 px-3 py-1.5 rounded-full"><i class="fa-regular fa-user mr-1"></i> ${escapeHtml(userName)}</span><button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 px-3 py-1.5 rounded-lg text-sm"><i class="fa-solid fa-sign-out-alt"></i> Logout</button></div></div><div class="md:hidden flex overflow-x-auto pb-2 gap-1 px-2">${linksHtml}</div></div>`;
-    }
-    function escapeHtml(str) { return String(str).replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
-    async function globalLogout() {
-        const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
-        const token = localStorage.getItem('access_token');
-        if (token) await fetch(`${BACKEND}/auth/logout`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }).catch(()=>{});
-        localStorage.clear();
-        window.location.href = LOGIN_URL;
-    }
-    async function updateUserDisplay() {
-        const token = localStorage.getItem('access_token');
-        if (!token) return;
-        try {
-            const res = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/me', { headers: { 'Authorization': `Bearer ${token}` } });
-            if (res.ok) {
-                const me = await res.json();
-                const contextRes = await fetch(`https://kevsono-kevs-digital-bos.hf.space/support/customer-context?target_user_id=${me.user_id}`, { headers: { 'Authorization': `Bearer ${token}` } });
-                if (contextRes.ok) {
-                    const context = await contextRes.json();
-                    const name = context.profile?.first_name || 'User';
-                    localStorage.setItem('user_profile_display', name);
-                    const nameSpan = document.getElementById('nav-user-name');
-                    if (nameSpan) nameSpan.innerText = name;
+    <!-- ========== GLOBAL NAVIGATION (Kevs bOS) ========== -->
+    <div id="kevs-nav-container"></div>
+    <script>
+        (function() {
+            const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
+            const LOGIN_URL = '/kdsiginin';
+            const navItems = [
+                { path: '/kdbi', name: 'Dashboard', icon: 'fa-chart-line', roles: ['owner', 'admin', 'sales_rep',
+                        'finance'
+                    ] },
+                { path: '/kdpos', name: 'POS', icon: 'fa-cash-register', roles: ['owner', 'admin', 'sales_rep'] },
+                { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', roles: ['owner', 'admin',
+                        'logistics'
+                    ] },
+                { path: '/kdsupport', name: 'Support', icon: 'fa-headset', roles: ['owner', 'admin', 'support',
+                        'loyalty_manager'
+                    ] },
+                { path: '/kddashboard', name: 'Exec', icon: 'fa-chart-simple', roles: ['owner', 'admin', 'finance'] },
+                { path: '/kdadmin', name: 'Inventory', icon: 'fa-boxes', roles: ['owner', 'admin',
+                        'inventory_manager'
+                    ] },
+                { path: '/kdteam', name: 'Team', icon: 'fa-users', roles: ['owner', 'admin'] },
+                { path: '/kdknowledge', name: 'Knowledge', icon: 'fa-database', roles: ['owner', 'admin'] }
+            ];
+
+            function getUserRole() {
+                try { return localStorage.getItem('user_role') || 'customer'; } catch (e) { return 'customer'; }
+            }
+
+            function canAccess(roles) { return roles.includes(getUserRole()); }
+
+            function buildNavbar() {
+                const currentPath = window.location.pathname;
+                let linksHtml = '';
+                navItems.forEach(item => {
+                    if (!canAccess(item.roles)) return;
+                    const isActive = currentPath === item.path;
+                    const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
+                    linksHtml +=
+                        `<a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeClass}" title="${item.title}"><i class="fa-solid ${item.icon} w-4"></i> ${item.name}</a>`;
+                });
+                let userName = localStorage.getItem('user_profile_display') || 'User';
+                return `<div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40"><div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-3"><div class="flex items-center gap-2"><i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i><span class="text-xl font-bold">${APP_NAME}</span><span class="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span></div><div class="hidden md:flex gap-2">${linksHtml}</div><div class="flex items-center gap-3"><span class="text-xs bg-white/10 px-3 py-1.5 rounded-full"><i class="fa-regular fa-user mr-1"></i> ${escapeHtml(userName)}</span><button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 px-3 py-1.5 rounded-lg text-sm"><i class="fa-solid fa-sign-out-alt"></i> Logout</button></div></div><div class="md:hidden flex overflow-x-auto pb-2 gap-1 px-2">${linksHtml}</div></div>`;
+            }
+
+            function escapeHtml(str) { return String(str).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;',
+                    '>': '&gt;' } [m])); }
+
+            async function globalLogout() {
+                const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
+                const token = localStorage.getItem('access_token');
+                if (token) await fetch(`${BACKEND}/auth/logout`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } })
+                    .catch(() => {});
+                localStorage.clear();
+                window.location.href = LOGIN_URL;
+            }
+
+            async function updateUserDisplay() {
+                const token = localStorage.getItem('access_token');
+                if (!token) return;
+                try {
+                    const res = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/me', { headers: { 'Authorization': `Bearer ${token}` } });
+                    if (res.ok) {
+                        const me = await res.json();
+                        const contextRes = await fetch(
+                            `https://kevsono-kevs-digital-bos.hf.space/support/customer-context?target_user_id=${me.user_id}`, { headers: { 'Authorization': `Bearer ${token}` } }
+                        );
+                        if (contextRes.ok) {
+                            const context = await contextRes.json();
+                            const name = context.profile?.first_name || 'User';
+                            localStorage.setItem('user_profile_display', name);
+                            const nameSpan = document.getElementById('nav-user-name');
+                            if (nameSpan) nameSpan.innerText = name;
+                        }
+                    }
+                } catch (e) {}
+            }
+
+            function initNavigation() {
+                const container = document.getElementById('kevs-nav-container');
+                if (container) {
+                    container.innerHTML = buildNavbar();
+                    document.getElementById('global-logout-btn')?.addEventListener('click', globalLogout);
+                    updateUserDisplay();
                 }
             }
-        } catch(e) {}
-    }
-    function initNavigation() {
-        const container = document.getElementById('kevs-nav-container');
-        if (container) {
-            container.innerHTML = buildNavbar();
-            document.getElementById('global-logout-btn')?.addEventListener('click', globalLogout);
-            updateUserDisplay();
-        }
-    }
-    document.addEventListener('DOMContentLoaded', initNavigation);
-})();
-</script>
-<!-- ========== END GLOBAL NAVIGATION ========== -->
+            document.addEventListener('DOMContentLoaded', initNavigation);
+        })();
+    </script>
+    <!-- ========== END GLOBAL NAVIGATION ========== -->
 
-<div id="toast-container" class="fixed top-6 right-4 z-50 space-y-2 w-80"></div>
+    <div id="toast-container" class="fixed top-6 right-4 z-50 space-y-2 w-80"></div>
 
-<!-- Tab Bar -->
-<div class="bg-white border-b px-4 md:px-6 pt-2 flex gap-2 md:gap-4 overflow-x-auto">
-    <button id="support-tab-btn" class="tab-active px-3 md:px-4 py-2 font-semibold rounded-t-lg transition whitespace-nowrap">🎫 Support Tickets</button>
-    <button id="loyalty-tab-btn" class="tab-inactive px-3 md:px-4 py-2 font-semibold rounded-t-lg transition whitespace-nowrap">⭐ Loyalty & CRM</button>
-</div>
-
-<!-- ================= SUPPORT TAB - MOBILE STACKED ================= -->
-<div id="support-tab" class="flex-1 flex flex-col md:flex-row overflow-hidden pt-2">
-    <!-- Left column: ticket list -->
-    <section class="ticket-sidebar w-full md:w-80 bg-white border-r border-slate-200 flex flex-col shrink-0 overflow-hidden md:overflow-y-auto">
-        <div class="p-4 border-b bg-slate-50">
-            <div class="flex gap-2 mb-2">
-                <select id="queue-status-filter" class="flex-1 border rounded-lg p-1.5 text-xs">
-                    <option value="open">🟢 Open Tickets</option>
-                    <option value="pending">🟡 Escalated</option>
-                    <option value="resolved">⚫ Resolved</option>
-                </select>
-                <button id="new-ticket-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-lg text-xs flex items-center gap-1">
-                    <i class="fas fa-plus"></i> New
-                </button>
-            </div>
-        </div>
-        <div id="ticket-feed" class="flex-1 overflow-y-auto divide-y divide-slate-100"><div class="p-8 text-center text-xs">Loading tickets...</div></div>
-    </section>
-
-    <!-- Middle: conversation area -->
-    <section class="conversation-area flex-1 bg-slate-50 flex flex-col overflow-hidden relative">
-        <div id="no-ticket-selected" class="absolute inset-0 bg-slate-50 z-10 flex items-center justify-center p-6 text-center"><div><i class="fa-solid fa-inbox text-3xl text-slate-300 mb-2"></i><p class="text-sm">Select a ticket</p></div></div>
-        <div class="bg-white border-b px-4 md:px-6 py-3 shrink-0"><h2 id="active-ticket-subject" class="font-semibold text-sm md:text-base">-</h2><p id="active-ticket-meta" class="text-xs text-slate-400">-</p></div>
-        <div id="message-flow-area" class="flex-1 p-4 md:p-6 overflow-y-auto space-y-4"></div>
-        <div class="bg-white border-t p-3 md:p-4 shrink-0">
-            <form id="agent-reply-form" class="flex gap-2">
-                <input id="agent-response-input" placeholder="Type reply..." class="flex-1 border rounded-xl px-4 py-2 text-sm" required>
-                <button type="submit" class="bg-[#1E3A5F] text-white px-4 py-2 rounded-xl text-sm">Send</button>
-            </form>
-        </div>
-    </section>
-
-    <!-- Right column: customer info & actions -->
-    <section class="customer-sidebar w-full md:w-80 bg-white border-l border-slate-200 flex flex-col shrink-0 overflow-y-auto p-5 space-y-6">
-        <div>
-            <h3 class="text-xs font-bold uppercase text-slate-500">Customer Information</h3>
-            <div id="customer-info-card" class="mt-2 text-xs bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
-                <div><i class="fa-regular fa-user mr-1"></i> <strong>Name:</strong> <span id="cust-name">-</span></div>
-                <div><i class="fa-regular fa-envelope mr-1"></i> <strong>Email:</strong> <span id="cust-email">-</span></div>
-                <div><i class="fa-regular fa-phone mr-1"></i> <strong>Phone:</strong> <span id="cust-phone">-</span></div>
-                <div><i class="fa-regular fa-address-card mr-1"></i> <strong>Address:</strong> <span id="cust-address">-</span></div>
-                <div class="border-t pt-2 mt-1">
-                    <div><i class="fa-solid fa-coins mr-1"></i> <strong>Loyalty Points:</strong> <span id="cust-points">0</span></div>
-                    <div><i class="fa-solid fa-medal mr-1"></i> <strong>Tier:</strong> <span id="cust-tier">-</span></div>
-                </div>
-                <div class="border-t pt-2 mt-1">
-                    <div><strong>📦 Total Orders:</strong> <span id="cust-total-orders">-</span></div>
-                    <div><strong>💰 Total Spent:</strong> <span id="cust-total-spent">₦0</span></div>
-                    <div><strong>🕒 Last Order:</strong> <span id="cust-last-order">-</span></div>
-                </div>
-                <div class="pt-2">
-                    <a id="cust-orders-link" href="#" target="_blank" class="text-blue-600 text-xs underline">🔍 View all customer orders</a>
-                </div>
-            </div>
-        </div>
-        <div>
-            <h3 class="text-xs font-bold uppercase text-slate-500">Loyalty History</h3>
-            <div id="loyalty-display" class="text-xs mt-2 bg-slate-50 p-3 rounded-lg border border-slate-200">-</div>
-        </div>
-        <textarea id="ticket-resolution-notes" rows="3" placeholder="Resolution notes" class="border rounded-lg p-2 text-xs"></textarea>
-        <button id="resolve-ticket-btn" class="bg-emerald-600 text-white py-2 rounded-lg text-xs">✅ Resolve Ticket</button>
-        <button id="escalate-ticket-btn" class="bg-amber-600 hover:bg-amber-700 text-white py-2 rounded-lg text-xs mt-2">⚠️ Escalate Ticket</button>
-    </section>
-</div>
-
-<!-- ================= LOYALTY & CRM TAB (Modified) ================= -->
-<div id="loyalty-tab" class="hidden flex-1 overflow-auto p-4 md:p-6">
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <!-- Register Customer Card -->
-        <div class="bg-white rounded-xl shadow p-5">
-            <h2 class="text-xl font-bold mb-4"><i class="fas fa-user-plus text-green-600 mr-2"></i>Register Customer</h2>
-            <form id="register-customer-form" class="space-y-3">
-                <div class="grid grid-cols-2 gap-2">
-                    <input type="text" id="reg-firstname" placeholder="First name *" class="border rounded p-2" required>
-                    <input type="text" id="reg-lastname" placeholder="Last name *" class="border rounded p-2" required>
-                </div>
-                <input type="email" id="reg-email" placeholder="Email *" class="w-full border rounded p-2" required>
-                <input type="tel" id="reg-phone" placeholder="Phone *" class="w-full border rounded p-2" required>
-                <input type="date" id="reg-dob" placeholder="Date of Birth" class="w-full border rounded p-2">
-                <input type="text" id="reg-address" placeholder="Address" class="w-full border rounded p-2">
-                <select id="reg-tier" class="w-full border rounded p-2">
-                    <option value="bronze">Bronze</option>
-                    <option value="silver">Silver</option>
-                    <option value="gold">Gold</option>
-                    <option value="platinum">Platinum</option>
-                </select>
-                <input type="number" id="reg-points" placeholder="Initial points" value="0" class="w-full border rounded p-2">
-                <button type="submit" id="register-submit-btn" class="w-full bg-blue-600 text-white py-2 rounded-lg transition active:scale-95 flex items-center justify-center gap-2">
-                    <span>Register & Send Welcome Email</span>
-                </button>
-            </form>
-            <p class="text-xs text-gray-500 mt-3">A temporary password will be emailed to the customer.</p>
-        </div>
-
-        <!-- Customer Directory with Date Range Filter -->
-        <div class="bg-white rounded-xl shadow p-5 col-span-2">
-            <div class="flex flex-col gap-3 mb-3">
-                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                    <h2 class="text-xl font-bold"><i class="fas fa-users mr-2"></i>Customer Directory</h2>
-                    <div class="flex gap-2">
-                        <button id="export-csv-btn" class="bg-emerald-600 text-white px-3 py-1 rounded text-sm"><i class="fas fa-file-csv"></i> Export</button>
-                    <!-- Add this button next to Export in the Customer Directory -->
-<button id="refresh-customers-btn" class="bg-blue-600 text-white px-3 py-1 rounded text-sm"><i class="fas fa-sync-alt"></i> Refresh</button>
-                    </div>
-                    
-                </div>
-                <!-- Date Range Filter -->
-                <div class="flex flex-wrap items-end gap-2 bg-gray-50 p-2 rounded-lg">
-                    <div>
-                        <label class="text-xs font-medium">From Date</label>
-                        <input type="date" id="filter-date-from" class="border rounded p-1 text-sm">
-                    </div>
-                    <div>
-                        <label class="text-xs font-medium">To Date</label>
-                        <input type="date" id="filter-date-to" class="border rounded p-1 text-sm">
-                    </div>
-                    <button id="apply-date-filter" class="bg-blue-500 text-white px-3 py-1 rounded text-sm">Apply</button>
-                    <button id="clear-date-filter" class="bg-gray-400 text-white px-3 py-1 rounded text-sm">Clear</button>
-                </div>
-                <!-- Search input -->
-                <input type="text" id="customer-search" placeholder="Search by name, email or phone..." class="border rounded p-1 text-sm w-full">
-            </div>
-            <div class="overflow-x-auto max-h-96">
-                <table class="min-w-full text-sm">
-                    <thead class="bg-gray-100">
-                        <tr><th class="p-2 text-left">Name</th><th class="p-2 text-left">Email</th><th class="p-2 text-left">Phone</th><th class="p-2 text-left">Points</th><th class="p-2 text-left">Tier</th><th class="p-2 text-left">Created</th><th class="p-2 text-center">Action</th></tr>
-                    </thead>
-                    <tbody id="customer-table-body"><tr><td colspan="7" class="text-center p-4">Loading...</td></tr>
-                </tbody>
-                </table>
-            </div>
-        </div>
+    <!-- Tab Bar -->
+    <div class="bg-white border-b px-4 md:px-6 pt-2 flex gap-2 md:gap-4 overflow-x-auto">
+        <button id="support-tab-btn" class="tab-active px-3 md:px-4 py-2 font-semibold rounded-t-lg transition whitespace-nowrap">🎫 Support Tickets</button>
+        <button id="loyalty-tab-btn" class="tab-inactive px-3 md:px-4 py-2 font-semibold rounded-t-lg transition whitespace-nowrap">⭐ Loyalty &amp; CRM</button>
     </div>
 
-    <!-- Compact Points Adjustment Form -->
-    <div class="mt-6">
-        <div class="bg-white rounded-xl shadow p-4 max-w-md">
-            <h2 class="text-lg font-bold mb-2"><i class="fas fa-gift mr-2 text-purple-600"></i>Adjust Points</h2>
-            <form id="points-adjust-form" class="space-y-2">
-                <input type="hidden" id="adjust-user-id">
-                <div class="grid grid-cols-2 gap-2">
-                    <div><label class="block text-xs">Customer</label><input type="text" id="adjust-customer-name" readonly class="w-full bg-gray-100 border rounded p-1 text-sm"></div>
-                    <div><label class="block text-xs">Current Points</label><input type="number" id="adjust-current-points" readonly class="w-full bg-gray-100 border rounded p-1 text-sm"></div>
+    <!-- ================= SUPPORT TAB - MOBILE STACKED ================= -->
+    <div id="support-tab" class="flex-1 flex flex-col md:flex-row overflow-hidden pt-2">
+        <!-- Left column: ticket list -->
+        <section class="ticket-sidebar w-full md:w-80 bg-white border-r border-slate-200 flex flex-col shrink-0 overflow-hidden md:overflow-y-auto">
+            <div class="p-4 border-b bg-slate-50">
+                <div class="flex gap-2 mb-2">
+                    <select id="queue-status-filter" class="flex-1 border rounded-lg p-1.5 text-xs">
+                        <option value="open">🟢 Open Tickets</option>
+                        <option value="pending">🟡 Escalated</option>
+                        <option value="resolved">⚫ Resolved</option>
+                    </select>
+                    <button id="new-ticket-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-lg text-xs flex items-center gap-1">
+                        <i class="fas fa-plus"></i> New
+                    </button>
                 </div>
-                <div class="grid grid-cols-2 gap-2">
-                    <div><label class="block text-xs">Add / Deduct</label><input type="number" id="adjust-points-delta" placeholder="e.g., +50 or -20" class="w-full border rounded p-1 text-sm"></div>
-                    <div><label class="block text-xs">Reason</label><input type="text" id="adjust-reason" placeholder="Birthday, purchase..." class="w-full border rounded p-1 text-sm"></div>
-                </div>
-                <button type="submit" class="w-full bg-purple-600 text-white py-1 rounded-lg text-sm">Update Points</button>
-            </form>
-        </div>
-    </div>
-</div>
+            </div>
+            <div id="ticket-feed" class="flex-1 overflow-y-auto divide-y divide-slate-100"><div class="p-8 text-center text-xs">Loading tickets...</div></div>
+        </section>
 
-<!-- New Ticket Modal (unchanged) -->
-<div id="new-ticket-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-    <div class="bg-white rounded-2xl max-w-md w-full p-6">
-        <div class="flex justify-between items-center mb-4">
-            <h3 class="text-xl font-bold text-gray-800">➕ Create New Ticket</h3>
-            <button id="close-new-ticket-modal" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
-        </div>
-        <form id="new-ticket-form" class="space-y-4">
+        <!-- Middle: conversation area -->
+        <section class="conversation-area flex-1 bg-slate-50 flex flex-col overflow-hidden relative">
+            <div id="no-ticket-selected" class="absolute inset-0 bg-slate-50 z-10 flex items-center justify-center p-6 text-center"><div><i class="fa-solid fa-inbox text-3xl text-slate-300 mb-2"></i><p class="text-sm">Select a ticket</p></div></div>
+            <div class="bg-white border-b px-4 md:px-6 py-3 shrink-0"><h2 id="active-ticket-subject" class="font-semibold text-sm md:text-base">-</h2><p id="active-ticket-meta" class="text-xs text-slate-400">-</p></div>
+            <div id="message-flow-area" class="flex-1 p-4 md:p-6 overflow-y-auto space-y-4"></div>
+            <div class="bg-white border-t p-3 md:p-4 shrink-0">
+                <form id="agent-reply-form" class="flex gap-2">
+                    <input id="agent-response-input" placeholder="Type reply..." class="flex-1 border rounded-xl px-4 py-2 text-sm" required />
+                    <button type="submit" class="bg-[#1E3A5F] text-white px-4 py-2 rounded-xl text-sm">Send</button>
+                </form>
+            </div>
+        </section>
+
+        <!-- Right column: customer info & actions -->
+        <section class="customer-sidebar w-full md:w-80 bg-white border-l border-slate-200 flex flex-col shrink-0 overflow-y-auto p-5 space-y-6">
             <div>
-                <label class="block text-sm font-medium">Customer (email or name)</label>
-                <input type="text" id="new-ticket-customer" placeholder="Search by email or name..." class="w-full border rounded-lg p-2" autocomplete="off">
-                <div id="customer-search-results" class="hidden absolute z-50 bg-white border rounded-lg mt-1 max-h-40 overflow-y-auto w-full"></div>
+                <h3 class="text-xs font-bold uppercase text-slate-500">Customer Information</h3>
+                <div id="customer-info-card" class="mt-2 text-xs bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
+                    <div><i class="fa-regular fa-user mr-1"></i> <strong>Name:</strong> <span id="cust-name">-</span></div>
+                    <div><i class="fa-regular fa-envelope mr-1"></i> <strong>Email:</strong> <span id="cust-email">-</span></div>
+                    <div><i class="fa-regular fa-phone mr-1"></i> <strong>Phone:</strong> <span id="cust-phone">-</span></div>
+                    <div><i class="fa-regular fa-address-card mr-1"></i> <strong>Address:</strong> <span id="cust-address">-</span></div>
+                    <div class="border-t pt-2 mt-1">
+                        <div><i class="fa-solid fa-coins mr-1"></i> <strong>Loyalty Points:</strong> <span id="cust-points">0</span></div>
+                        <div><i class="fa-solid fa-medal mr-1"></i> <strong>Tier:</strong> <span id="cust-tier">-</span></div>
+                    </div>
+                    <div class="border-t pt-2 mt-1">
+                        <div><strong>📦 Total Orders:</strong> <span id="cust-total-orders">-</span></div>
+                        <div><strong>💰 Total Spent:</strong> <span id="cust-total-spent">₦0</span></div>
+                        <div><strong>🕒 Last Order:</strong> <span id="cust-last-order">-</span></div>
+                    </div>
+                    <div class="pt-2">
+                        <a id="cust-orders-link" href="#" target="_blank" class="text-blue-600 text-xs underline">🔍 View all customer orders</a>
+                    </div>
+                </div>
             </div>
-            <div><label class="block text-sm font-medium">Subject *</label><input type="text" id="new-ticket-subject" required class="w-full border rounded-lg p-2"></div>
-            <div><label class="block text-sm font-medium">Description *</label><textarea id="new-ticket-description" rows="3" required class="w-full border rounded-lg p-2"></textarea></div>
-            <div><label class="block text-sm font-medium">Priority</label><select id="new-ticket-priority" class="w-full border rounded-lg p-2"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option><option value="urgent">Urgent</option></select></div>
-            <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg">Create Ticket</button>
-        </form>
+            <div>
+                <h3 class="text-xs font-bold uppercase text-slate-500">Loyalty History</h3>
+                <div id="loyalty-display" class="text-xs mt-2 bg-slate-50 p-3 rounded-lg border border-slate-200">-</div>
+            </div>
+            <textarea id="ticket-resolution-notes" rows="3" placeholder="Resolution notes" class="border rounded-lg p-2 text-xs"></textarea>
+            <button id="resolve-ticket-btn" class="bg-emerald-600 text-white py-2 rounded-lg text-xs">✅ Resolve Ticket</button>
+            <button id="escalate-ticket-btn" class="bg-amber-600 hover:bg-amber-700 text-white py-2 rounded-lg text-xs mt-2">⚠️ Escalate Ticket</button>
+        </section>
     </div>
-</div>
 
-<!-- Escalate Modal (unchanged) -->
-<div id="escalate-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-    <div class="bg-white rounded-2xl max-w-md w-full p-6"><div class="flex justify-between items-center mb-4"><h3 class="text-xl font-bold text-gray-800">🚨 Escalate Ticket</h3><button id="close-escalate-modal" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button></div><div class="space-y-4"><div><label class="block text-sm font-medium">Department</label><select id="escalate-dept" class="w-full border rounded-lg p-2 mt-1"><option value="Technical Support">🛠️ Technical Support</option><option value="Billing">💰 Billing</option><option value="Logistics">📦 Logistics</option><option value="Sales">📈 Sales</option><option value="Management">🏢 Management</option></select></div><div><label class="block text-sm font-medium">Method</label><select id="escalate-method" class="w-full border rounded-lg p-2 mt-1"><option value="email">✉️ Email</option><option value="whatsapp">📱 WhatsApp</option></select></div><div><label class="block text-sm font-medium">Note</label><textarea id="escalate-note" rows="3" class="w-full border rounded-lg p-2"></textarea></div><button id="confirm-escalate-btn" class="w-full bg-amber-600 text-white py-2 rounded-lg font-semibold">Send Escalation</button></div></div>
-</div>
+    <!-- ================= LOYALTY & CRM TAB ================= -->
+    <div id="loyalty-tab" class="hidden flex-1 overflow-auto p-4 md:p-6">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Register Customer Card -->
+            <div class="bg-white rounded-xl shadow p-5">
+                <h2 class="text-xl font-bold mb-4"><i class="fas fa-user-plus text-green-600 mr-2"></i>Register Customer</h2>
+                <form id="register-customer-form" class="space-y-3">
+                    <div class="grid grid-cols-2 gap-2">
+                        <input type="text" id="reg-firstname" placeholder="First name *" class="border rounded p-2" required />
+                        <input type="text" id="reg-lastname" placeholder="Last name *" class="border rounded p-2" required />
+                    </div>
+                    <input type="email" id="reg-email" placeholder="Email *" class="w-full border rounded p-2" required />
+                    <input type="tel" id="reg-phone" placeholder="Phone *" class="w-full border rounded p-2" required />
+                    <input type="date" id="reg-dob" placeholder="Date of Birth" class="w-full border rounded p-2" />
+                    <input type="text" id="reg-address" placeholder="Address" class="w-full border rounded p-2" />
+                    <select id="reg-tier" class="w-full border rounded p-2">
+                        <option value="bronze">Bronze</option>
+                        <option value="silver">Silver</option>
+                        <option value="gold">Gold</option>
+                        <option value="platinum">Platinum</option>
+                    </select>
+                    <input type="number" id="reg-points" placeholder="Initial points" value="0" class="w-full border rounded p-2" />
+                    <button type="submit" id="register-submit-btn" class="w-full bg-blue-600 text-white py-2 rounded-lg transition active:scale-95 flex items-center justify-center gap-2">
+                        <span>Register &amp; Send Welcome Email</span>
+                    </button>
+                </form>
+                <p class="text-xs text-gray-500 mt-3">A temporary password will be emailed to the customer.</p>
+            </div>
 
-<div class="debug-panel shrink-0"><div class="text-white text-xs mb-1">🔍 DEBUG</div><div id="debug"></div></div>
+            <!-- Customer Directory with Date Range Filter -->
+            <div class="bg-white rounded-xl shadow p-5 col-span-2">
+                <div class="flex flex-col gap-3 mb-3">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                        <h2 class="text-xl font-bold"><i class="fas fa-users mr-2"></i>Customer Directory</h2>
+                        <div class="flex gap-2">
+                            <button id="export-csv-btn" class="bg-emerald-600 text-white px-3 py-1 rounded text-sm"><i class="fas fa-file-csv"></i> Export</button>
+                            <button id="refresh-customers-btn" class="bg-blue-600 text-white px-3 py-1 rounded text-sm"><i class="fas fa-sync-alt"></i> Refresh</button>
+                        </div>
+                    </div>
+                    <!-- Date Range Filter -->
+                    <div class="flex flex-wrap items-end gap-2 bg-gray-50 p-2 rounded-lg">
+                        <div>
+                            <label class="text-xs font-medium">From Date</label>
+                            <input type="date" id="filter-date-from" class="border rounded p-1 text-sm" />
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium">To Date</label>
+                            <input type="date" id="filter-date-to" class="border rounded p-1 text-sm" />
+                        </div>
+                        <button id="apply-date-filter" class="bg-blue-500 text-white px-3 py-1 rounded text-sm">Apply</button>
+                        <button id="clear-date-filter" class="bg-gray-400 text-white px-3 py-1 rounded text-sm">Clear</button>
+                    </div>
+                    <!-- Search input -->
+                    <input type="text" id="customer-search" placeholder="Search by name, email or phone..." class="border rounded p-1 text-sm w-full" />
+                </div>
+                <div class="overflow-x-auto max-h-96">
+                    <table class="min-w-full text-sm">
+                        <thead class="bg-gray-100">
+                            <tr><th class="p-2 text-left">Name</th><th class="p-2 text-left">Email</th><th class="p-2 text-left">Phone</th><th class="p-2 text-left">Points</th><th class="p-2 text-left">Tier</th><th class="p-2 text-left">Created</th><th class="p-2 text-center">Action</th></tr>
+                        </thead>
+                        <tbody id="customer-table-body"><tr><td colspan="7" class="text-center p-4">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
 
-<script>
-    const BACKEND_URL = 'https://kevsono-kevs-digital-bos.hf.space';
-    let token = localStorage.getItem('access_token');
-    let activeTicketId = null;
-    let customers = [];
-    let filteredCustomers = [];
+        <!-- Compact Points Adjustment Form -->
+        <div class="mt-6">
+            <div class="bg-white rounded-xl shadow p-4 max-w-md">
+                <h2 class="text-lg font-bold mb-2"><i class="fas fa-gift mr-2 text-purple-600"></i>Adjust Points</h2>
+                <form id="points-adjust-form" class="space-y-2">
+                    <input type="hidden" id="adjust-user-id" />
+                    <div class="grid grid-cols-2 gap-2">
+                        <div><label class="block text-xs">Customer</label><input type="text" id="adjust-customer-name" readonly class="w-full bg-gray-100 border rounded p-1 text-sm" /></div>
+                        <div><label class="block text-xs">Current Points</label><input type="number" id="adjust-current-points" readonly class="w-full bg-gray-100 border rounded p-1 text-sm" /></div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div><label class="block text-xs">Add / Deduct</label><input type="number" id="adjust-points-delta" placeholder="e.g., +50 or -20" class="w-full border rounded p-1 text-sm" /></div>
+                        <div><label class="block text-xs">Reason</label><input type="text" id="adjust-reason" placeholder="Birthday, purchase..." class="w-full border rounded p-1 text-sm" /></div>
+                    </div>
+                    <button type="submit" class="w-full bg-purple-600 text-white py-1 rounded-lg text-sm">Update Points</button>
+                </form>
+            </div>
+        </div>
+    </div>
 
-    function showToast(msg, type='success') { 
-        const container = document.getElementById('toast-container');
-        const toast = document.createElement('div');
-        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type==='success'?'bg-green-600':'bg-red-600'} mb-2 text-sm`;
-        toast.innerText = msg;
-        container.appendChild(toast);
-        setTimeout(() => toast.remove(), 3500);
-    }
+    <!-- New Ticket Modal -->
+    <div id="new-ticket-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold text-gray-800">➕ Create New Ticket</h3>
+                <button id="close-new-ticket-modal" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+            </div>
+            <form id="new-ticket-form" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium">Customer (email or name)</label>
+                    <input type="text" id="new-ticket-customer" placeholder="Search by email or name..." class="w-full border rounded-lg p-2" autocomplete="off" />
+                    <div id="customer-search-results" class="hidden absolute z-50 bg-white border rounded-lg mt-1 max-h-40 overflow-y-auto w-full"></div>
+                </div>
+                <div><label class="block text-sm font-medium">Subject *</label><input type="text" id="new-ticket-subject" required class="w-full border rounded-lg p-2" /></div>
+                <div><label class="block text-sm font-medium">Description *</label><textarea id="new-ticket-description" rows="3" required class="w-full border rounded-lg p-2"></textarea></div>
+                <div><label class="block text-sm font-medium">Priority</label><select id="new-ticket-priority" class="w-full border rounded-lg p-2"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option><option value="urgent">Urgent</option></select></div>
+                <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg">Create Ticket</button>
+            </form>
+        </div>
+    </div>
 
-    function addDebugLog(endpoint, method, status, data, err) {
-        const logsDiv = document.getElementById('debug');
-        const entry = document.createElement('div'); entry.className = 'text-xs border-b border-gray-700 py-1';
-        const ts = new Date().toLocaleTimeString();
-        entry.innerHTML = `<span class="text-gray-400">[${ts}]</span> <span class="${status>=200&&status<300?'text-green-400':'text-red-400'}">${method} ${endpoint}</span> → ${status||'ERR'}<br>${err?`❌ ${err}`:(data?JSON.stringify(data).substring(0,150):'')}`;
-        logsDiv.appendChild(entry); logsDiv.scrollTop = logsDiv.scrollHeight;
-    }
+    <!-- Escalate Modal -->
+    <div id="escalate-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6"><div class="flex justify-between items-center mb-4"><h3 class="text-xl font-bold text-gray-800">🚨 Escalate Ticket</h3><button id="close-escalate-modal" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button></div><div class="space-y-4"><div><label class="block text-sm font-medium">Department</label><select id="escalate-dept" class="w-full border rounded-lg p-2 mt-1"><option value="Technical Support">🛠️ Technical Support</option><option value="Billing">💰 Billing</option><option value="Logistics">📦 Logistics</option><option value="Sales">📈 Sales</option><option value="Management">🏢 Management</option></select></div><div><label class="block text-sm font-medium">Method</label><select id="escalate-method" class="w-full border rounded-lg p-2 mt-1"><option value="email">✉️ Email</option><option value="whatsapp">📱 WhatsApp</option></select></div><div><label class="block text-sm font-medium">Note</label><textarea id="escalate-note" rows="3" class="w-full border rounded-lg p-2"></textarea></div><button id="confirm-escalate-btn" class="w-full bg-amber-600 text-white py-2 rounded-lg font-semibold">Send Escalation</button></div></div>
+    </div>
 
-    async function refreshToken() {
-        const refresh = localStorage.getItem('refresh_token');
-        if (!refresh) return false;
-        try {
-            const res = await fetch(`${BACKEND_URL}/auth/refresh`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh_token: refresh }) });
-            if (res.ok) {
-                const { access_token, refresh_token } = await res.json();
-                localStorage.setItem('access_token', access_token);
-                localStorage.setItem('refresh_token', refresh_token);
-                token = access_token;
-                return true;
-            }
-        } catch (e) {}
-        return false;
-    }
+    <script>
+        const BACKEND_URL = 'https://kevsono-kevs-digital-bos.hf.space';
+        let token = localStorage.getItem('access_token');
+        let activeTicketId = null;
+        let customers = [];
+        let filteredCustomers = [];
 
-    async function req(endpoint, method='GET', body=null, retry=true) {
-        const headers = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-        let res;
-        try {
-            res = await fetch(`${BACKEND_URL}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
-            let data; try { data = await res.json(); } catch(e) { data = { raw: await res.text() }; }
-            addDebugLog(endpoint, method, res.status, data);
-            if (res.status === 401 && retry) {
-                const ok = await refreshToken();
-                if (ok) return req(endpoint, method, body, false);
-                throw new Error('Session expired');
-            }
-            if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`);
-            return data;
-        } catch (err) { addDebugLog(endpoint, method, res?.status || null, null, err.message); throw err; }
-    }
-
-    // ---------- SUPPORT TICKETS (unchanged) ----------
-    async function loadTickets() { /* unchanged for brevity, but fully functional */
-        const status = document.getElementById('queue-status-filter').value;
-        try {
-            const data = await req(`/support/tickets?status=${status}`);
-            const feed = document.getElementById('ticket-feed');
-            feed.innerHTML = '';
-            if (!data.tickets || data.tickets.length === 0) { feed.innerHTML = '<div class="p-8 text-center text-xs">No tickets</div>'; return; }
-            data.tickets.forEach(t => {
-                const div = document.createElement('div');
-                div.className = `p-4 cursor-pointer hover:bg-slate-50 ${activeTicketId === t.id ? 'ticket-active' : ''}`;
-                div.onclick = () => selectTicket(t.id);
-                div.innerHTML = `<div class="font-semibold text-sm">${escapeHtml(t.subject)}</div><div class="text-xs text-slate-500">${t.status} | ${new Date(t.created_at).toLocaleString()}</div>`;
-                feed.appendChild(div);
-            });
-        } catch(err) { document.getElementById('ticket-feed').innerHTML = `<div class="p-8 text-center text-red-500">Error: ${err.message}</div>`; }
-    }
-
-    async function selectTicket(ticketId) {
-        activeTicketId = ticketId;
-        document.getElementById('no-ticket-selected').classList.add('hidden');
-        try {
-            const data = await req(`/support/tickets/${ticketId}`);
-            document.getElementById('active-ticket-subject').innerText = data.ticket.subject;
-            document.getElementById('active-ticket-meta').innerText = `ID: ${data.ticket.id}`;
-            const container = document.getElementById('message-flow-area');
-            container.innerHTML = '';
-            (data.messages || []).forEach(m => {
-                const msgDiv = document.createElement('div');
-                msgDiv.className = `p-2 rounded-lg ${m.sender_type === 'agent' ? 'bg-blue-100 text-right' : 'bg-gray-100'}`;
-                msgDiv.innerText = `${m.sender_type}: ${m.message}`;
-                container.appendChild(msgDiv);
-            });
-            await loadCustomerFullContext(data.ticket.user_id);
-            loadTickets();
-        } catch(err) { showToast('Failed to load ticket', 'error'); }
-    }
-
-    async function loadCustomerFullContext(userId) {
-        try {
-            const context = await req(`/support/customer-context?target_user_id=${userId}`);
-            const profile = context.profile || {};
-            const loyalty = context.loyalty || { current_points: 0, tier: 'bronze' };
-            let orderSummary = { total_orders: 0, total_spent: 0, last_order_date: null };
-            try { const summary = await req(`/sales/customer-summary?user_id=${userId}`); orderSummary = summary; } catch(e) {}
-            document.getElementById('cust-name').innerText = `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'Guest';
-            document.getElementById('cust-email').innerText = profile.email || '-';
-            document.getElementById('cust-phone').innerText = profile.phone || '-';
-            document.getElementById('cust-address').innerText = profile.address || '-';
-            document.getElementById('cust-points').innerText = loyalty.current_points;
-            document.getElementById('cust-tier').innerText = loyalty.tier || 'bronze';
-            document.getElementById('cust-total-orders').innerText = orderSummary.total_orders ?? '-';
-            document.getElementById('cust-total-spent').innerHTML = `₦${(orderSummary.total_spent || 0).toLocaleString()}`;
-            document.getElementById('cust-last-order').innerText = orderSummary.last_order_date ? new Date(orderSummary.last_order_date).toLocaleDateString() : '-';
-            const ordersLink = document.getElementById('cust-orders-link');
-            if (ordersLink) ordersLink.href = `/kdfulfillment?customer_id=${userId}`;
-            document.getElementById('loyalty-display').innerHTML = `<div><strong>Points:</strong> ${loyalty.current_points}</div><div><strong>Tier:</strong> ${loyalty.tier}</div><div><strong>Member since:</strong> ${profile.created_at ? new Date(profile.created_at).toLocaleDateString() : '-'}</div>`;
-        } catch(err) { console.error(err); }
-    }
-
-    async function createTicket(customerId, subject, description, priority) { return await req('/support/tickets', 'POST', { user_id: customerId || null, subject, description, priority: priority || 'medium' }); }
-    async function searchCustomers(query) {
-        if (query.length < 2) return [];
-        try { const users = await req('/organisations/me/users'); return (users.users || []).filter(u => u.email.toLowerCase().includes(query.toLowerCase()) || `${u.first_name} ${u.last_name}`.toLowerCase().includes(query.toLowerCase())); } catch(e) { return []; }
-    }
-
-    // New ticket modal logic
-    const newTicketModal = document.getElementById('new-ticket-modal');
-    const newTicketBtn = document.getElementById('new-ticket-btn');
-    const closeNewTicketModal = document.getElementById('close-new-ticket-modal');
-    const newTicketForm = document.getElementById('new-ticket-form');
-    const customerSearchInput = document.getElementById('new-ticket-customer');
-    const customerSearchResults = document.getElementById('customer-search-results');
-    let selectedCustomerId = null;
-    newTicketBtn?.addEventListener('click', () => { newTicketModal.classList.remove('hidden'); customerSearchInput.value = ''; selectedCustomerId = null; document.getElementById('new-ticket-subject').value = ''; document.getElementById('new-ticket-description').value = ''; document.getElementById('new-ticket-priority').value = 'medium'; });
-    closeNewTicketModal?.addEventListener('click', () => newTicketModal.classList.add('hidden'));
-    window.addEventListener('click', (e) => { if (e.target === newTicketModal) newTicketModal.classList.add('hidden'); });
-    customerSearchInput?.addEventListener('input', async (e) => {
-        const query = e.target.value.trim();
-        if (query.length < 2) { customerSearchResults.classList.add('hidden'); return; }
-        const results = await searchCustomers(query);
-        if (results.length === 0) customerSearchResults.innerHTML = '<div class="p-2 text-gray-500">No customers found</div>';
-        else {
-            customerSearchResults.innerHTML = results.map(c => `<div class="p-2 hover:bg-gray-100 cursor-pointer" data-id="${c.id}" data-name="${c.first_name} ${c.last_name} (${c.email})">${escapeHtml(c.first_name)} ${escapeHtml(c.last_name)} - ${escapeHtml(c.email)}</div>`).join('');
-            customerSearchResults.querySelectorAll('div[data-id]').forEach(div => { div.addEventListener('click', () => { customerSearchInput.value = div.getAttribute('data-name'); selectedCustomerId = div.getAttribute('data-id'); customerSearchResults.classList.add('hidden'); }); });
+        function showToast(msg, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className =
+                `px-4 py-2 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} mb-2 text-sm`;
+            toast.innerText = msg;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 3500);
         }
-        customerSearchResults.classList.remove('hidden');
-    });
-    document.addEventListener('click', (e) => { if (!customerSearchInput?.contains(e.target) && !customerSearchResults?.contains(e.target)) customerSearchResults?.classList.add('hidden'); });
-    newTicketForm?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const subject = document.getElementById('new-ticket-subject').value.trim();
-        const description = document.getElementById('new-ticket-description').value.trim();
-        const priority = document.getElementById('new-ticket-priority').value;
-        if (!subject || !description) { showToast('Subject and description are required', 'error'); return; }
-        try { await createTicket(selectedCustomerId, subject, description, priority); showToast('Ticket created successfully', 'success'); newTicketModal.classList.add('hidden'); loadTickets(); } catch(err) { showToast('Failed to create ticket: ' + err.message, 'error'); }
-    });
-    document.getElementById('agent-reply-form')?.addEventListener('submit', async (e) => {
-        e.preventDefault(); if (!activeTicketId) return; const msg = document.getElementById('agent-response-input').value.trim(); if (!msg) return; try { await req(`/support/tickets/${activeTicketId}/message`, 'POST', { message: msg }); await selectTicket(activeTicketId); document.getElementById('agent-response-input').value = ''; } catch(err) { showToast('Failed to send', 'error'); }
-    });
-    document.getElementById('resolve-ticket-btn')?.addEventListener('click', async () => { if (!activeTicketId) return; const notes = document.getElementById('ticket-resolution-notes').value; try { await req(`/support/tickets/${activeTicketId}/resolve`, 'POST', { resolution_notes: notes }); showToast('Ticket resolved'); activeTicketId = null; document.getElementById('no-ticket-selected').classList.remove('hidden'); loadTickets(); } catch(err) { showToast('Resolve failed', 'error'); } });
-    document.getElementById('queue-status-filter')?.addEventListener('change', loadTickets);
 
-    // Escalation
-    const escalateBtn = document.getElementById('escalate-ticket-btn');
-    const escalateModal = document.getElementById('escalate-modal');
-    const closeEscalateModal = document.getElementById('close-escalate-modal');
-    const confirmEscalateBtn = document.getElementById('confirm-escalate-btn');
-    function openEscalateModal() { if (!activeTicketId) { showToast('No ticket selected', 'error'); return; } escalateModal.classList.remove('hidden'); }
-    function closeEscalateModalFn() { escalateModal.classList.add('hidden'); }
-    async function confirmEscalation() { 
-        if (!activeTicketId) return;
-        const department = document.getElementById('escalate-dept').value;
-        const method = document.getElementById('escalate-method').value;
-        const note = document.getElementById('escalate-note').value;
-        try { await req(`/support/tickets/${activeTicketId}/escalate`, 'POST', { department, method, note }); showToast('Escalation sent', 'success'); closeEscalateModalFn(); } catch(err) { showToast('Escalation failed', 'error'); }
-    }
-    escalateBtn?.addEventListener('click', openEscalateModal);
-    closeEscalateModal?.addEventListener('click', closeEscalateModalFn);
-    confirmEscalateBtn?.addEventListener('click', confirmEscalation);
-    window.addEventListener('click', (e) => { if (e.target === escalateModal) closeEscalateModalFn(); });
-
-    // ---------- LOYALTY & CRM with proper search + date filter ----------
-    async function loadCustomers() {
-        try {
-            const data = await req('/organisations/me/users');
-            const users = data.users || [];
-            console.log('Loaded customers:', users.length);
-            customers = users.map(u => ({
-                id: u.id,
-                first_name: u.first_name || '',
-                last_name: u.last_name || '',
-                email: u.email || '',
-                phone: u.phone || '',
-                current_points: u.loyalty_points || 0,
-                tier: u.loyalty_tier || 'bronze',
-                date_of_birth: u.date_of_birth || null,
-                address: u.address || '',
-                created_at: u.created_at || new Date().toISOString()
-            }));
-            window.allCustomers = [...customers];
-            applyFiltersAndRender();
-        } catch(err) { 
-            console.error('Load customers error:', err);
-            document.getElementById('customer-table-body').innerHTML = '<tr><td colspan="7" class="text-center p-4 text-red-500">Error loading customers</td></tr>';
-        }
-    }
-
-    function applyFiltersAndRender() {
-        const searchTerm = document.getElementById('customer-search')?.value.toLowerCase() || '';
-        const fromDate = document.getElementById('filter-date-from')?.value;
-        const toDate = document.getElementById('filter-date-to')?.value;
-        let filtered = [...(window.allCustomers || customers)];
-        if (searchTerm) {
-            filtered = filtered.filter(c => {
-                const fullName = `${c.first_name} ${c.last_name}`.toLowerCase();
-                return fullName.includes(searchTerm) || c.email.toLowerCase().includes(searchTerm) || c.phone.includes(searchTerm);
-            });
-        }
-        if (fromDate || toDate) {
-            filtered = filtered.filter(c => {
-                if (!c.created_at) return !fromDate && !toDate;
-                const createdDate = new Date(c.created_at).toISOString().slice(0,10);
-                if (fromDate && createdDate < fromDate) return false;
-                if (toDate && createdDate > toDate) return false;
-                return true;
-            });
-        }
-        filteredCustomers = filtered;
-        renderCustomerTable();
-    }
-
-    function renderCustomerTable() {
-        const tbody = document.getElementById('customer-table-body');
-        if (!filteredCustomers || filteredCustomers.length === 0) { 
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center p-4">No customers found</td></tr>'; 
-            return; 
-        }
-        tbody.innerHTML = filteredCustomers.map(c => `
-            <tr class="border-b hover:bg-gray-50">
-                <td class="p-2">${escapeHtml(c.first_name)} ${escapeHtml(c.last_name)}</td>
-                <td class="p-2">${escapeHtml(c.email)}</td>
-                <td class="p-2">${escapeHtml(c.phone)}</td>
-                <td class="p-2 font-bold">${c.current_points}</td>
-                <td class="p-2 capitalize">${c.tier}</td>
-                <td class="p-2">${c.created_at ? new Date(c.created_at).toLocaleDateString() : '-'}</td>
-                <td class="p-2 text-center"><button onclick="openPointsAdjust('${c.id}', '${escapeHtml(c.first_name)} ${escapeHtml(c.last_name)}', ${c.current_points})" class="bg-indigo-100 text-indigo-700 px-2 py-1 rounded text-xs">Adjust</button></td>
-            </tr>
-        `).join('');
-    }
-
-    window.openPointsAdjust = function(userId, name, currentPoints) {
-        document.getElementById('adjust-user-id').value = userId;
-        document.getElementById('adjust-customer-name').value = name;
-        document.getElementById('adjust-current-points').value = currentPoints;
-        document.getElementById('adjust-points-delta').value = '';
-        document.getElementById('adjust-reason').value = '';
-    };
-
-    document.getElementById('points-adjust-form')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const userId = document.getElementById('adjust-user-id').value;
-        const delta = parseInt(document.getElementById('adjust-points-delta').value);
-        if (isNaN(delta)) { showToast('Enter a valid number', 'error'); return; }
-        const reason = document.getElementById('adjust-reason').value;
-        try {
-            await req('/loyalty/adjust-points', 'POST', { user_id: userId, points_delta: delta, reason });
-            showToast(`Points updated by ${delta}`, 'success');
-            loadCustomers();
-        } catch(err) { showToast(err.message, 'error'); }
-    });
-
-    document.getElementById('customer-search')?.addEventListener('input', () => applyFiltersAndRender());
-    document.getElementById('apply-date-filter')?.addEventListener('click', () => applyFiltersAndRender());
-    document.getElementById('clear-date-filter')?.addEventListener('click', () => {
-        document.getElementById('filter-date-from').value = '';
-        document.getElementById('filter-date-to').value = '';
-        document.getElementById('customer-search').value = '';
-        applyFiltersAndRender();
-    });
-    
-    document.getElementById('export-csv-btn')?.addEventListener('click', () => {
-        let csv = "Name,Email,Phone,Points,Tier,Created Date,Address\n";
-        const exportData = filteredCustomers.length ? filteredCustomers : (window.allCustomers || customers);
-        exportData.forEach(c => {
-            csv += `"${c.first_name} ${c.last_name}","${c.email}","${c.phone}",${c.current_points},"${c.tier}","${c.created_at || ''}","${c.address || ''}"\n`;
-        });
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `customers_${new Date().toISOString().slice(0,10)}.csv`;
-        a.click();
-        URL.revokeObjectURL(url);
-    });
-
-    const registerForm = document.getElementById('register-customer-form');
-    const registerBtn = document.getElementById('register-submit-btn');
-    if (registerForm) {
-        registerForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const firstName = document.getElementById('reg-firstname')?.value.trim();
-            const lastName = document.getElementById('reg-lastname')?.value.trim();
-            const email = document.getElementById('reg-email')?.value.trim();
-            const phone = document.getElementById('reg-phone')?.value.trim();
-            if (!firstName || !lastName) { showToast('First name and last name are required', 'error'); return; }
-            if (!email) { showToast('Email is required', 'error'); return; }
-            if (!phone) { showToast('Phone number is required', 'error'); return; }
-            const originalContent = registerBtn.innerHTML;
-            registerBtn.disabled = true;
-            registerBtn.classList.add('btn-loading');
-            registerBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Registering...';
-            const payload = {
-                first_name: firstName, last_name: lastName, email, phone,
-                date_of_birth: document.getElementById('reg-dob')?.value || null,
-                address: document.getElementById('reg-address')?.value.trim() || null,
-                tier: document.getElementById('reg-tier')?.value || 'bronze',
-                loyalty_points: parseInt(document.getElementById('reg-points')?.value) || 0
-            };
+        async function refreshToken() {
+            const refresh = localStorage.getItem('refresh_token');
+            if (!refresh) return false;
             try {
-                const response = await req('/admin/register-customer', 'POST', payload);
-                showToast(response.message || 'Customer registered successfully! Welcome email sent.', 'success');
-                registerForm.reset();
-                await loadCustomers();
-            } catch(err) { showToast('Registration failed: ' + (err.message || 'Unknown error'), 'error'); }
-            finally { registerBtn.disabled = false; registerBtn.classList.remove('btn-loading'); registerBtn.innerHTML = originalContent; }
+                const res = await fetch(`${BACKEND_URL}/auth/refresh`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh_token: refresh })
+                });
+                if (res.ok) {
+                    const { access_token, refresh_token } = await res.json();
+                    localStorage.setItem('access_token', access_token);
+                    localStorage.setItem('refresh_token', refresh_token);
+                    token = access_token;
+                    return true;
+                }
+            } catch (e) {}
+            return false;
+        }
+
+        async function req(endpoint, method = 'GET', body = null, retry = true) {
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+            let res;
+            try {
+                res = await fetch(`${BACKEND_URL}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) :
+                        undefined });
+                let data;
+                try { data = await res.json(); } catch (e) { data = { raw: await res.text() }; }
+                if (res.status === 401 && retry) {
+                    const ok = await refreshToken();
+                    if (ok) return req(endpoint, method, body, false);
+                    throw new Error('Session expired');
+                }
+                if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`);
+                return data;
+            } catch (err) {
+                throw err;
+            }
+        }
+
+        // ---------- SUPPORT TICKETS ----------
+        async function loadTickets() {
+            const status = document.getElementById('queue-status-filter').value;
+            try {
+                const data = await req(`/support/tickets?status=${status}`);
+                const feed = document.getElementById('ticket-feed');
+                feed.innerHTML = '';
+                if (!data.tickets || data.tickets.length === 0) { feed.innerHTML =
+                    '<div class="p-8 text-center text-xs">No tickets</div>'; return; }
+                data.tickets.forEach(t => {
+                    const div = document.createElement('div');
+                    div.className = `p-4 cursor-pointer hover:bg-slate-50 ${activeTicketId === t.id ? 'ticket-active' : ''}`;
+                    div.onclick = () => selectTicket(t.id);
+                    div.innerHTML =
+                        `<div class="font-semibold text-sm">${escapeHtml(t.subject)}</div><div class="text-xs text-slate-500">${t.status} | ${new Date(t.created_at).toLocaleString()}</div>`;
+                    feed.appendChild(div);
+                });
+            } catch (err) { document.getElementById('ticket-feed').innerHTML =
+                    `<div class="p-8 text-center text-red-500">Error: ${err.message}</div>`; }
+        }
+
+        async function selectTicket(ticketId) {
+            activeTicketId = ticketId;
+            document.getElementById('no-ticket-selected').classList.add('hidden');
+            try {
+                const data = await req(`/support/tickets/${ticketId}`);
+                document.getElementById('active-ticket-subject').innerText = data.ticket.subject;
+                document.getElementById('active-ticket-meta').innerText = `ID: ${data.ticket.id}`;
+                const container = document.getElementById('message-flow-area');
+                container.innerHTML = '';
+                (data.messages || []).forEach(m => {
+                    const msgDiv = document.createElement('div');
+                    msgDiv.className = `p-2 rounded-lg ${m.sender_type === 'agent' ? 'bg-blue-100 text-right' : 'bg-gray-100'}`;
+                    msgDiv.innerText = `${m.sender_type}: ${m.message}`;
+                    container.appendChild(msgDiv);
+                });
+                await loadCustomerFullContext(data.ticket.user_id);
+                loadTickets();
+            } catch (err) { showToast('Failed to load ticket', 'error'); }
+        }
+
+        async function loadCustomerFullContext(userId) {
+            try {
+                const context = await req(`/support/customer-context?target_user_id=${userId}`);
+                const profile = context.profile || {};
+                const loyalty = context.loyalty || { current_points: 0, tier: 'bronze' };
+                let orderSummary = { total_orders: 0, total_spent: 0, last_order_date: null };
+                try { const summary = await req(`/sales/customer-summary?user_id=${userId}`);
+                    orderSummary = summary; } catch (e) {}
+                document.getElementById('cust-name').innerText = `${profile.first_name || ''} ${profile.last_name || ''}`
+                    .trim() || 'Guest';
+                document.getElementById('cust-email').innerText = profile.email || '-';
+                document.getElementById('cust-phone').innerText = profile.phone || '-';
+                document.getElementById('cust-address').innerText = profile.address || '-';
+                document.getElementById('cust-points').innerText = loyalty.current_points;
+                document.getElementById('cust-tier').innerText = loyalty.tier || 'bronze';
+                document.getElementById('cust-total-orders').innerText = orderSummary.total_orders ?? '-';
+                document.getElementById('cust-total-spent').innerHTML = `₦${(orderSummary.total_spent || 0).toLocaleString()}`;
+                document.getElementById('cust-last-order').innerText = orderSummary.last_order_date ? new Date(orderSummary
+                    .last_order_date).toLocaleDateString() : '-';
+                const ordersLink = document.getElementById('cust-orders-link');
+                if (ordersLink) ordersLink.href = `/kdfulfillment?customer_id=${userId}`;
+                document.getElementById('loyalty-display').innerHTML =
+                    `<div><strong>Points:</strong> ${loyalty.current_points}</div><div><strong>Tier:</strong> ${loyalty.tier}</div><div><strong>Member since:</strong> ${profile.created_at ? new Date(profile.created_at).toLocaleDateString() : '-'}</div>`;
+            } catch (err) { console.error(err); }
+        }
+
+        async function createTicket(customerId, subject, description, priority) {
+            return await req('/support/tickets', 'POST', { user_id: customerId || null, subject, description,
+                priority: priority || 'medium' });
+        }
+        async function searchCustomers(query) {
+            if (query.length < 2) return [];
+            try { const users = await req('/organisations/me/users'); return (users.users || []).filter(u => u.email
+                    .toLowerCase().includes(query.toLowerCase()) || `${u.first_name} ${u.last_name}`.toLowerCase()
+                    .includes(query.toLowerCase())); } catch (e) { return []; }
+        }
+
+        // New ticket modal logic
+        const newTicketModal = document.getElementById('new-ticket-modal');
+        const newTicketBtn = document.getElementById('new-ticket-btn');
+        const closeNewTicketModal = document.getElementById('close-new-ticket-modal');
+        const newTicketForm = document.getElementById('new-ticket-form');
+        const customerSearchInput = document.getElementById('new-ticket-customer');
+        const customerSearchResults = document.getElementById('customer-search-results');
+        let selectedCustomerId = null;
+        newTicketBtn?.addEventListener('click', () => { newTicketModal.classList.remove('hidden');
+            customerSearchInput.value = '';
+            selectedCustomerId = null;
+            document.getElementById('new-ticket-subject').value = '';
+            document.getElementById('new-ticket-description').value = '';
+            document.getElementById('new-ticket-priority').value = 'medium'; });
+        closeNewTicketModal?.addEventListener('click', () => newTicketModal.classList.add('hidden'));
+        window.addEventListener('click', (e) => { if (e.target === newTicketModal) newTicketModal.classList.add('hidden'); });
+        customerSearchInput?.addEventListener('input', async (e) => {
+            const query = e.target.value.trim();
+            if (query.length < 2) { customerSearchResults.classList.add('hidden'); return; }
+            const results = await searchCustomers(query);
+            if (results.length === 0) customerSearchResults.innerHTML =
+                '<div class="p-2 text-gray-500">No customers found</div>';
+            else {
+                customerSearchResults.innerHTML = results.map(c =>
+                    `<div class="p-2 hover:bg-gray-100 cursor-pointer" data-id="${c.id}" data-name="${c.first_name} ${c.last_name} (${c.email})">${escapeHtml(c.first_name)} ${escapeHtml(c.last_name)} - ${escapeHtml(c.email)}</div>`
+                    ).join('');
+                customerSearchResults.querySelectorAll('div[data-id]').forEach(div => { div.addEventListener('click',
+                        () => { customerSearchInput.value = div.getAttribute('data-name');
+                            selectedCustomerId = div.getAttribute('data-id');
+                            customerSearchResults.classList.add('hidden'); }); });
+            }
+            customerSearchResults.classList.remove('hidden');
         });
-    }
+        document.addEventListener('click', (e) => { if (!customerSearchInput?.contains(e.target) && !customerSearchResults
+                ?.contains(e.target)) customerSearchResults?.classList.add('hidden'); });
+        newTicketForm?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const subject = document.getElementById('new-ticket-subject').value.trim();
+            const description = document.getElementById('new-ticket-description').value.trim();
+            const priority = document.getElementById('new-ticket-priority').value;
+            if (!subject || !description) { showToast('Subject and description are required', 'error'); return; }
+            try { await createTicket(selectedCustomerId, subject, description, priority);
+                showToast('Ticket created successfully', 'success');
+                newTicketModal.classList.add('hidden');
+                loadTickets(); } catch (err) { showToast('Failed to create ticket: ' + err.message, 'error'); }
+        });
+        document.getElementById('agent-reply-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!activeTicketId) return;
+            const msg = document.getElementById('agent-response-input').value.trim();
+            if (!msg) return;
+            try { await req(`/support/tickets/${activeTicketId}/message`, 'POST', { message: msg });
+                await selectTicket(activeTicketId);
+                document.getElementById('agent-response-input').value = ''; } catch (err) { showToast(
+                    'Failed to send', 'error'); }
+        });
+        document.getElementById('resolve-ticket-btn')?.addEventListener('click', async () => {
+            if (!activeTicketId) return;
+            const notes = document.getElementById('ticket-resolution-notes').value;
+            try { await req(`/support/tickets/${activeTicketId}/resolve`, 'POST', { resolution_notes: notes });
+                showToast('Ticket resolved');
+                activeTicketId = null;
+                document.getElementById('no-ticket-selected').classList.remove('hidden');
+                loadTickets(); } catch (err) { showToast('Resolve failed', 'error'); }
+        });
+        document.getElementById('queue-status-filter')?.addEventListener('change', loadTickets);
 
-    // Add a refresh function that clears cache and reloads
-async function forceRefresh() {
-    // Clear any cached data
-    if (window.allCustomers) window.allCustomers = null;
-    
-    // Reload from server
-    if (typeof loadCustomers === 'function') {
-        await loadCustomers();
-    }
-    if (typeof loadTeam === 'function') {
-        await loadTeam();
-    }
-    if (typeof loadTickets === 'function') {
-        await loadTickets();
-    }
-    
-    showToast('Data refreshed from server', 'success');
-}
+        // Escalation
+        const escalateBtn = document.getElementById('escalate-ticket-btn');
+        const escalateModal = document.getElementById('escalate-modal');
+        const closeEscalateModal = document.getElementById('close-escalate-modal');
+        const confirmEscalateBtn = document.getElementById('confirm-escalate-btn');
 
-// Add refresh button handlers
-document.getElementById('refresh-customers-btn')?.addEventListener('click', forceRefresh);
-document.getElementById('refresh-team-btn')?.addEventListener('click', forceRefresh);
-    // TAB SWITCHING
-    const userRole = localStorage.getItem('user_role') || 'customer';
-    const canAccessSupport = ['owner','admin','support'].includes(userRole);
-    const canAccessLoyalty = ['owner','admin','loyalty_manager'].includes(userRole);
-    const supportTab = document.getElementById('support-tab');
-    const loyaltyTab = document.getElementById('loyalty-tab');
-    const supportBtn = document.getElementById('support-tab-btn');
-    const loyaltyBtn = document.getElementById('loyalty-tab-btn');
-    if (!canAccessSupport) supportBtn.style.display = 'none';
-    if (!canAccessLoyalty) loyaltyBtn.style.display = 'none';
-    function showSupportTab() { supportTab.classList.remove('hidden'); loyaltyTab.classList.add('hidden'); supportBtn.classList.add('tab-active'); supportBtn.classList.remove('tab-inactive'); loyaltyBtn.classList.add('tab-inactive'); loyaltyBtn.classList.remove('tab-active'); loadTickets(); }
-    function showLoyaltyTab() { supportTab.classList.add('hidden'); loyaltyTab.classList.remove('hidden'); loyaltyBtn.classList.add('tab-active'); loyaltyBtn.classList.remove('tab-inactive'); supportBtn.classList.add('tab-inactive'); supportBtn.classList.remove('tab-active'); loadCustomers(); }
-    supportBtn.addEventListener('click', showSupportTab);
-    loyaltyBtn.addEventListener('click', showLoyaltyTab);
-    if (canAccessSupport) showSupportTab();
-    else if (canAccessLoyalty) showLoyaltyTab();
+        function openEscalateModal() { if (!activeTicketId) { showToast('No ticket selected', 'error'); return; }
+            escalateModal.classList.remove('hidden'); }
 
-    function escapeHtml(str) { return String(str).replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
-    (async () => { if (token) { if (canAccessSupport) await loadTickets(); if (canAccessLoyalty) await loadCustomers(); } })();
-</script>
+        function closeEscalateModalFn() { escalateModal.classList.add('hidden'); }
+        async function confirmEscalation() {
+            if (!activeTicketId) return;
+            const department = document.getElementById('escalate-dept').value;
+            const method = document.getElementById('escalate-method').value;
+            const note = document.getElementById('escalate-note').value;
+            try { await req(`/support/tickets/${activeTicketId}/escalate`, 'POST', { department, method, note });
+                showToast('Escalation sent', 'success');
+                closeEscalateModalFn(); } catch (err) { showToast('Escalation failed', 'error'); }
+        }
+        escalateBtn?.addEventListener('click', openEscalateModal);
+        closeEscalateModal?.addEventListener('click', closeEscalateModalFn);
+        confirmEscalateBtn?.addEventListener('click', confirmEscalation);
+        window.addEventListener('click', (e) => { if (e.target === escalateModal) closeEscalateModalFn(); });
+
+        // ---------- LOYALTY & CRM ----------
+        async function loadCustomers() {
+            try {
+                const data = await req('/organisations/me/users');
+                const users = data.users || [];
+                console.log('Loaded customers:', users.length);
+                customers = users.map(u => ({
+                    id: u.id,
+                    first_name: u.first_name || '',
+                    last_name: u.last_name || '',
+                    email: u.email || '',
+                    phone: u.phone || '',
+                    current_points: u.loyalty_points || 0,
+                    tier: u.loyalty_tier || 'bronze',
+                    date_of_birth: u.date_of_birth || null,
+                    address: u.address || '',
+                    created_at: u.created_at || new Date().toISOString()
+                }));
+                window.allCustomers = [...customers];
+                applyFiltersAndRender();
+            } catch (err) {
+                console.error('Load customers error:', err);
+                document.getElementById('customer-table-body').innerHTML =
+                    '<tr><td colspan="7" class="text-center p-4 text-red-500">Error loading customers</td></tr>';
+            }
+        }
+
+        function applyFiltersAndRender() {
+            const searchTerm = document.getElementById('customer-search')?.value.toLowerCase() || '';
+            const fromDate = document.getElementById('filter-date-from')?.value;
+            const toDate = document.getElementById('filter-date-to')?.value;
+            let filtered = [...(window.allCustomers || customers)];
+            if (searchTerm) {
+                filtered = filtered.filter(c => {
+                    const fullName = `${c.first_name} ${c.last_name}`.toLowerCase();
+                    return fullName.includes(searchTerm) || c.email.toLowerCase().includes(searchTerm) || c.phone
+                        .includes(searchTerm);
+                });
+            }
+            if (fromDate || toDate) {
+                filtered = filtered.filter(c => {
+                    if (!c.created_at) return !fromDate && !toDate;
+                    const createdDate = new Date(c.created_at).toISOString().slice(0, 10);
+                    if (fromDate && createdDate < fromDate) return false;
+                    if (toDate && createdDate > toDate) return false;
+                    return true;
+                });
+            }
+            filteredCustomers = filtered;
+            renderCustomerTable();
+        }
+
+        function renderCustomerTable() {
+            const tbody = document.getElementById('customer-table-body');
+            if (!filteredCustomers || filteredCustomers.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center p-4">No customers found</td></tr>';
+                return;
+            }
+            tbody.innerHTML = filteredCustomers.map(c => `
+                    <tr class="border-b hover:bg-gray-50">
+                        <td class="p-2">${escapeHtml(c.first_name)} ${escapeHtml(c.last_name)}</td>
+                        <td class="p-2">${escapeHtml(c.email)}</td>
+                        <td class="p-2">${escapeHtml(c.phone)}</td>
+                        <td class="p-2 font-bold">${c.current_points}</td>
+                        <td class="p-2 capitalize">${c.tier}</td>
+                        <td class="p-2">${c.created_at ? new Date(c.created_at).toLocaleDateString() : '-'}</td>
+                        <td class="p-2 text-center"><button onclick="openPointsAdjust('${c.id}', '${escapeHtml(c.first_name)} ${escapeHtml(c.last_name)}', ${c.current_points})" class="bg-indigo-100 text-indigo-700 px-2 py-1 rounded text-xs">Adjust</button></td>
+                    </tr>
+                `).join('');
+        }
+
+        window.openPointsAdjust = function(userId, name, currentPoints) {
+            document.getElementById('adjust-user-id').value = userId;
+            document.getElementById('adjust-customer-name').value = name;
+            document.getElementById('adjust-current-points').value = currentPoints;
+            document.getElementById('adjust-points-delta').value = '';
+            document.getElementById('adjust-reason').value = '';
+        };
+
+        document.getElementById('points-adjust-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const userId = document.getElementById('adjust-user-id').value;
+            const delta = parseInt(document.getElementById('adjust-points-delta').value);
+            if (isNaN(delta)) { showToast('Enter a valid number', 'error'); return; }
+            const reason = document.getElementById('adjust-reason').value;
+            try {
+                await req('/loyalty/adjust-points', 'POST', { user_id: userId, points_delta: delta, reason });
+                showToast(`Points updated by ${delta}`, 'success');
+                loadCustomers();
+            } catch (err) { showToast(err.message, 'error'); }
+        });
+
+        document.getElementById('customer-search')?.addEventListener('input', () => applyFiltersAndRender());
+        document.getElementById('apply-date-filter')?.addEventListener('click', () => applyFiltersAndRender());
+        document.getElementById('clear-date-filter')?.addEventListener('click', () => {
+            document.getElementById('filter-date-from').value = '';
+            document.getElementById('filter-date-to').value = '';
+            document.getElementById('customer-search').value = '';
+            applyFiltersAndRender();
+        });
+
+        document.getElementById('export-csv-btn')?.addEventListener('click', () => {
+            let csv = "Name,Email,Phone,Points,Tier,Created Date,Address\n";
+            const exportData = filteredCustomers.length ? filteredCustomers : (window.allCustomers || customers);
+            exportData.forEach(c => {
+                csv +=
+                    `"${c.first_name} ${c.last_name}","${c.email}","${c.phone}",${c.current_points},"${c.tier}","${c.created_at || ''}","${c.address || ''}"\n`;
+            });
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `customers_${new Date().toISOString().slice(0, 10)}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        const registerForm = document.getElementById('register-customer-form');
+        const registerBtn = document.getElementById('register-submit-btn');
+        if (registerForm) {
+            registerForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const firstName = document.getElementById('reg-firstname')?.value.trim();
+                const lastName = document.getElementById('reg-lastname')?.value.trim();
+                const email = document.getElementById('reg-email')?.value.trim();
+                const phone = document.getElementById('reg-phone')?.value.trim();
+                if (!firstName || !lastName) { showToast('First name and last name are required', 'error'); return; }
+                if (!email) { showToast('Email is required', 'error'); return; }
+                if (!phone) { showToast('Phone number is required', 'error'); return; }
+                const originalContent = registerBtn.innerHTML;
+                registerBtn.disabled = true;
+                registerBtn.classList.add('btn-loading');
+                registerBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Registering...';
+                const payload = {
+                    first_name: firstName,
+                    last_name: lastName,
+                    email,
+                    phone,
+                    date_of_birth: document.getElementById('reg-dob')?.value || null,
+                    address: document.getElementById('reg-address')?.value.trim() || null,
+                    tier: document.getElementById('reg-tier')?.value || 'bronze',
+                    loyalty_points: parseInt(document.getElementById('reg-points')?.value) || 0
+                };
+                try {
+                    const response = await req('/admin/register-customer', 'POST', payload);
+                    showToast(response.message || 'Customer registered successfully! Welcome email sent.', 'success');
+                    registerForm.reset();
+                    await loadCustomers();
+                } catch (err) { showToast('Registration failed: ' + (err.message || 'Unknown error'), 'error'); } finally {
+                    registerBtn.disabled = false;
+                    registerBtn.classList.remove('btn-loading');
+                    registerBtn.innerHTML = originalContent;
+                }
+            });
+        }
+
+        async function forceRefresh() {
+            if (window.allCustomers) window.allCustomers = null;
+            if (typeof loadCustomers === 'function') { await loadCustomers(); }
+            if (typeof loadTickets === 'function') { await loadTickets(); }
+            showToast('Data refreshed from server', 'success');
+        }
+        document.getElementById('refresh-customers-btn')?.addEventListener('click', forceRefresh);
+
+        // TAB SWITCHING
+        const userRole = localStorage.getItem('user_role') || 'customer';
+        const canAccessSupport = ['owner', 'admin', 'support'].includes(userRole);
+        const canAccessLoyalty = ['owner', 'admin', 'loyalty_manager'].includes(userRole);
+        const supportTab = document.getElementById('support-tab');
+        const loyaltyTab = document.getElementById('loyalty-tab');
+        const supportBtn = document.getElementById('support-tab-btn');
+        const loyaltyBtn = document.getElementById('loyalty-tab-btn');
+        if (!canAccessSupport) supportBtn.style.display = 'none';
+        if (!canAccessLoyalty) loyaltyBtn.style.display = 'none';
+
+        function showSupportTab() { supportTab.classList.remove('hidden');
+            loyaltyTab.classList.add('hidden');
+            supportBtn.classList.add('tab-active');
+            supportBtn.classList.remove('tab-inactive');
+            loyaltyBtn.classList.add('tab-inactive');
+            loyaltyBtn.classList.remove('tab-active');
+            loadTickets(); }
+
+        function showLoyaltyTab() { supportTab.classList.add('hidden');
+            loyaltyTab.classList.remove('hidden');
+            loyaltyBtn.classList.add('tab-active');
+            loyaltyBtn.classList.remove('tab-inactive');
+            supportBtn.classList.add('tab-inactive');
+            supportBtn.classList.remove('tab-active');
+            loadCustomers(); }
+        supportBtn.addEventListener('click', showSupportTab);
+        loyaltyBtn.addEventListener('click', showLoyaltyTab);
+        if (canAccessSupport) showSupportTab();
+        else if (canAccessLoyalty) showLoyaltyTab();
+
+        function escapeHtml(str) { return String(str).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;',
+                    '>': '&gt;' } [m])); }
+        (async () => { if (token) { if (canAccessSupport) await loadTickets(); if (canAccessLoyalty) await loadCustomers(); } })();
+    </script>
 </body>
 </html>
