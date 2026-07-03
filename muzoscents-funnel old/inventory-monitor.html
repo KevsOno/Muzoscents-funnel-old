@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Kevs POS Pro | Offline‑Ready + Dashboard</title>
+    <title>Kevs POS Pro | Offline‑Ready + Audit</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js"></script>
@@ -54,7 +54,7 @@
 </head>
 <body class="bg-gray-100 p-4 font-sans">
 
-    <!-- GLOBAL NAVIGATION (same as before) -->
+    <!-- GLOBAL NAVIGATION -->
     <div id="kevs-nav-container"></div>
     <script>
         (function() {
@@ -223,7 +223,7 @@
         <div class="bg-white rounded-xl shadow-md p-4 mb-4 flex flex-wrap justify-between items-center gap-3">
             <div>
                 <h1 class="text-2xl font-bold">💳 Kevs POS Terminal</h1>
-                <p class="text-xs text-gray-500">Offline‑Ready · SKU Search · Scanner · Cashier History</p>
+                <p class="text-xs text-gray-500">Offline‑Ready · SKU Search · Scanner · Cashier History · Audit</p>
             </div>
             <div class="flex items-center gap-2">
                 <span id="connection-status" class="online-badge"><i class="fa-solid fa-wifi"></i> Online</span>
@@ -370,7 +370,7 @@
 
     <script>
         // ================================================================
-        //  OFFLINE‑READY POS – EXPANDED ORDER SCHEMA
+        //  OFFLINE‑READY POS – WITH FULL AUDIT TRAIL
         // ================================================================
 
         const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
@@ -399,14 +399,15 @@
             });
         }
 
-        // ---------- Dexie IndexedDB ----------
+        // ---------- Dexie IndexedDB (upgraded to version 2) ----------
         const db = new Dexie('KevsPOSOffline');
-        db.version(1).stores({
+        db.version(2).stores({
             products: 'id, description, item_code, sku, price_naira, current_qty',
             customers: 'id, first_name, last_name, phone, email, loyalty_points',
-            orders: '++id, offlineRef, cashierId, createdAt, status, syncedAt, receiptData' // receiptData as JSON
+            orders: '++id, offlineRef, cashierId, createdAt, status, syncedAt, receiptData',
+            syncQueue: '++id, orderId, attempts, lastTry',
+            auditQueue: '++id, eventType, createdAt, retryCount'
         });
-        // We'll keep syncQueue as separate store for pending sync entries
 
         // ---------- DOM refs ----------
         const productContainer = document.getElementById('product-list');
@@ -511,10 +512,14 @@
             connectionStatus.innerHTML = isOnline ? '<i class="fa-solid fa-wifi"></i> Online' : '<i class="fa-solid fa-wifi-slash"></i> Offline';
             connectionStatus.className = isOnline ? 'online-badge' : 'offline-badge';
         }
-        window.addEventListener('online', () => { updateConnectionStatus(); syncPendingOrders(); });
+        window.addEventListener('online', () => {
+            updateConnectionStatus();
+            syncPendingOrders();
+            flushAuditQueue();
+        });
         window.addEventListener('offline', updateConnectionStatus);
 
-        // ---------- Product Cache & Search (unchanged) ----------
+        // ---------- Product Cache & Search ----------
         async function loadPOSProducts(reset = true) {
             const trimmed = posSearchTerm.trim();
             if (trimmed.length < 2) {
@@ -1058,7 +1063,47 @@
             }, 1000);
         }
 
-        // ---------- Checkout with expanded receipt ----------
+        // ---------- Audit Event Emitter ----------
+        async function emitAuditEvent(eventType, payload, localCreatedAt = null) {
+            const event = {
+                event_type: eventType,
+                event_version: 1,
+                payload: payload,
+                local_created_at: localCreatedAt || new Date().toISOString(),
+                retryCount: 0
+            };
+
+            if (navigator.onLine) {
+                try {
+                    await apiCall('/api/audit/event', 'POST', event);
+                    return;
+                } catch (e) {
+                    // fall through to queue
+                }
+            }
+            // Offline or failed – store in queue
+            await db.auditQueue.add(event);
+        }
+
+        async function flushAuditQueue() {
+            if (!navigator.onLine) return;
+            const pending = await db.auditQueue.toArray();
+            if (pending.length === 0) return;
+            const events = pending.map(e => ({
+                event_type: e.event_type,
+                event_version: e.event_version,
+                payload: e.payload,
+                local_created_at: e.local_created_at
+            }));
+            try {
+                await apiCall('/api/audit/events', 'POST', { events });
+                await db.auditQueue.clear();
+            } catch (err) {
+                console.warn('Audit batch sync failed', err);
+            }
+        }
+
+        // ---------- Checkout with expanded receipt & audit ----------
         async function processCheckout() {
             const state = tabState[activeTab];
             const cart = state.cart;
@@ -1091,10 +1136,9 @@
             // Build receipt data
             const subtotal = cart.reduce((sum, i) => sum + i.price * i.qty, 0);
             const discount = pointsRedeemed;
-            const tax = 0; // can be added later
+            const tax = 0;
             const grandTotal = Math.max(0, subtotal - discount + tax);
 
-            // Item details: fetch full product data from products cache
             const itemDetails = cart.map(item => {
                 const product = products.find(p => p.id === item.id) || {};
                 return {
@@ -1111,14 +1155,14 @@
             });
 
             const receiptData = {
-                receiptNumber: offlineRef, // will be replaced if online
+                receiptNumber: offlineRef,
                 customer: {
                     name: customerName || '',
                     phone: customerPhone || '',
                     email: customerEmail || '',
                     loyaltyId: state.loyaltyUserId || null,
                     pointsBefore: state.pointsBalance || 0,
-                    pointsAfter: state.pointsBalance || 0, // will be updated after sync
+                    pointsAfter: state.pointsBalance || 0,
                     pointsRedeemed: pointsRedeemed
                 },
                 items: itemDetails,
@@ -1128,7 +1172,7 @@
                 grandTotal: grandTotal,
                 payment: {
                     method: paymentMethod,
-                    reference: null // will be set if online
+                    reference: null
                 },
                 cashierId: cashierId,
                 cashierName: cashierName,
@@ -1168,10 +1212,19 @@
                     state.pointsRedeemed = 0;
                     renderActiveCart();
                     showToast(`✅ Order saved offline (Ref: ${offlineRef}). Will sync when online.`, 'success');
-                    // Print receipt with offline data
                     receiptData.receiptNumber = offlineRef;
                     receiptData.customer.pointsAfter = state.pointsBalance || 0;
                     printReceipt(receiptData);
+                    // Audit event
+                    await emitAuditEvent('sale.created', {
+                        sale_id: offlineRef,
+                        receipt_number: offlineRef,
+                        total: order.receiptData.grandTotal,
+                        payment_method: paymentMethod,
+                        customer_id: state.loyaltyUserId || null,
+                        items_count: cart.length,
+                        offline: true
+                    });
                     return;
                 }
 
@@ -1183,7 +1236,7 @@
                     customer_phone: customerPhone,
                     customer_email: customerEmail,
                     // offline_reference: offlineRef,
-                    receipt_data: receiptData // send full receipt
+                    receipt_data: receiptData
                 });
                 // Save synced order
                 order.status = 'synced';
@@ -1211,6 +1264,16 @@
                 renderActiveCart();
                 showToast(`✅ Sale complete! Receipt: ${result.receipt_number}`, 'success');
                 printReceipt(order.receiptData);
+                // Audit event
+                await emitAuditEvent('sale.created', {
+                    sale_id: result.sale_id || offlineRef,
+                    receipt_number: result.receipt_number || offlineRef,
+                    total: order.receiptData.grandTotal,
+                    payment_method: paymentMethod,
+                    customer_id: state.loyaltyUserId || null,
+                    items_count: cart.length,
+                    online: true
+                });
 
             } catch (err) {
                 if (!isOnline || err.message.includes('offline') || err.message.includes('network')) {
@@ -1224,6 +1287,17 @@
                     receiptData.receiptNumber = offlineRef;
                     receiptData.customer.pointsAfter = state.pointsBalance || 0;
                     printReceipt(receiptData);
+                    // Audit event
+                    await emitAuditEvent('sale.created', {
+                        sale_id: offlineRef,
+                        receipt_number: offlineRef,
+                        total: order.receiptData.grandTotal,
+                        payment_method: paymentMethod,
+                        customer_id: state.loyaltyUserId || null,
+                        items_count: cart.length,
+                        offline: true,
+                        fallback: true
+                    });
                 } else {
                     showToast(`❌ Checkout failed: ${err.message}`, 'error');
                 }
@@ -1248,7 +1322,6 @@
                         continue;
                     }
                     try {
-                        // Prepare payload: items, customer, payment, receiptData
                         const payload = {
                             items: order.receiptData.items.map(item => ({
                                 inventory_id: item.productId,
@@ -1258,7 +1331,7 @@
                             customer_name: order.receiptData.customer.name,
                             customer_phone: order.receiptData.customer.phone,
                             customer_email: order.receiptData.customer.email,
-                            receipt_data: order.receiptData // full receipt
+                            receipt_data: order.receiptData
                             // offline_reference: order.offlineRef
                         };
                         const result = await apiCall('/pos/terminal/checkout', 'POST', payload);
@@ -1279,6 +1352,13 @@
                     }
                 }
                 localStorage.setItem('last_sync_time', new Date().toLocaleString());
+                // Audit sync completed
+                await emitAuditEvent('sync.completed', {
+                    synced_count: pending.length,
+                    timestamp: new Date().toISOString()
+                });
+                // Flush any queued audit events
+                await flushAuditQueue();
                 if (dashboardModal.classList.contains('active')) updateDashboard();
             } catch (e) {
                 showToast('Sync error: ' + e.message, 'error');
@@ -1327,7 +1407,7 @@
             `;
         }
 
-        // ---------- Cashier History (show rich receipt) ----------
+        // ---------- Cashier History ----------
         async function renderHistory() {
             const cashierId = localStorage.getItem('user_id') || 'unknown';
             const orders = await db.orders.where('cashierId').equals(cashierId).toArray();
@@ -1373,7 +1453,7 @@
             }
         };
 
-        // ---------- Points Redemption ----------
+        // ---------- Points Redemption with audit ----------
         async function applyPoints() {
             if (!isOnline) {
                 showToast('⚠️ Points redemption requires internet.', 'error');
@@ -1405,6 +1485,12 @@
                 if (cust) {
                     await db.customers.update(state.loyaltyUserId, { loyalty_points: state.pointsBalance });
                 }
+                // Audit event
+                await emitAuditEvent('points.redeemed', {
+                    user_id: state.loyaltyUserId,
+                    points: pointsToRedeem,
+                    balance_after: state.pointsBalance
+                });
             } catch (err) {
                 showToast(`Redemption failed: ${err.message}`, 'error');
             }
@@ -1423,7 +1509,7 @@
             suggestionsDiv.classList.add('hidden');
         }
 
-        // ---------- Login / Demo ----------
+        // ---------- Login / Demo with audit ----------
         async function demoLogin() {
             const btn = document.getElementById('demo-login-btn');
             btn.disabled = true;
@@ -1461,6 +1547,11 @@
                 showToast('Demo login — Offline‑ready POS', 'success');
                 const navOrg = document.getElementById('nav-org-name');
                 if (navOrg) navOrg.innerText = localStorage.getItem('org_name') || 'Unknown Org';
+                // Audit event
+                await emitAuditEvent('user.login', {
+                    email: 'demo@kevsdigital.com',
+                    method: 'demo'
+                });
             } catch (err) { showToast(err.message, 'error'); } finally { btn.disabled = false; }
         }
 
@@ -1502,6 +1593,11 @@
                 showToast('Login successful', 'success');
                 const navOrg = document.getElementById('nav-org-name');
                 if (navOrg) navOrg.innerText = localStorage.getItem('org_name') || 'Unknown Org';
+                // Audit event
+                await emitAuditEvent('user.login', {
+                    email: email,
+                    method: 'password'
+                });
             } catch (err) { showToast(err.message, 'error'); }
         }
 
@@ -1568,10 +1664,13 @@
                 } catch (e) { token = null; showLoginModal(); }
             } else { showLoginModal(); }
 
-            if (isOnline) await syncPendingOrders();
+            if (isOnline) {
+                await syncPendingOrders();
+                await flushAuditQueue();
+            }
         })();
 
-        console.log('✅ Offline‑Ready POS with expanded order schema loaded');
+        console.log('✅ Offline‑Ready POS with full audit trail loaded');
     </script>
 </body>
 </html>
