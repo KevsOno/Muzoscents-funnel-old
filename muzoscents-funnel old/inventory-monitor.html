@@ -54,7 +54,7 @@
 </head>
 <body class="bg-gray-100 p-4 font-sans">
 
-    <!-- GLOBAL NAVIGATION -->
+    <!-- GLOBAL NAVIGATION (same as before) -->
     <div id="kevs-nav-container"></div>
     <script>
         (function() {
@@ -220,7 +220,6 @@
 
     <!-- Main POS -->
     <div class="max-w-7xl mx-auto">
-        <!-- Header -->
         <div class="bg-white rounded-xl shadow-md p-4 mb-4 flex flex-wrap justify-between items-center gap-3">
             <div>
                 <h1 class="text-2xl font-bold">💳 Kevs POS Terminal</h1>
@@ -248,7 +247,6 @@
 
         <!-- MAIN LAYOUT -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            
             <!-- CART (LEFT) -->
             <div class="lg:col-span-2 lg:order-first bg-white rounded-xl shadow-md p-4 flex flex-col min-h-[600px]">
                 <div class="flex justify-between items-center border-b pb-2 mb-2">
@@ -324,7 +322,6 @@
                 <div id="product-list-empty" class="hidden text-center py-8 text-gray-400 col-span-full">No products match your search</div>
                 <div id="loading-more" class="hidden text-center py-4 text-gray-500 text-sm"><i class="fa-solid fa-spinner fa-pulse"></i> Loading more...</div>
             </div>
-
         </div>
     </div>
 
@@ -346,9 +343,7 @@
                 <h3 class="text-lg font-bold">📊 Sync Dashboard</h3>
                 <button id="close-dashboard-btn" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
             </div>
-            <div id="dashboard-content" class="space-y-2">
-                <!-- populated by JavaScript -->
-            </div>
+            <div id="dashboard-content" class="space-y-2"></div>
             <button id="refresh-dashboard-btn" class="mt-4 w-full bg-blue-600 text-white py-2 rounded-lg text-sm hover:bg-blue-700">
                 <i class="fa-solid fa-rotate"></i> Refresh
             </button>
@@ -375,8 +370,7 @@
 
     <script>
         // ================================================================
-        //  OFFLINE‑READY POS – FULL IMPLEMENTATION
-        //  Includes: UUID offline refs, receipt printing, sync dashboard
+        //  OFFLINE‑READY POS – EXPANDED ORDER SCHEMA
         // ================================================================
 
         const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
@@ -410,9 +404,9 @@
         db.version(1).stores({
             products: 'id, description, item_code, sku, price_naira, current_qty',
             customers: 'id, first_name, last_name, phone, email, loyalty_points',
-            orders: '++id, offlineRef, cashierId, createdAt, status, syncedAt',
-            syncQueue: '++id, orderId, attempts, lastTry'
+            orders: '++id, offlineRef, cashierId, createdAt, status, syncedAt, receiptData' // receiptData as JSON
         });
+        // We'll keep syncQueue as separate store for pending sync entries
 
         // ---------- DOM refs ----------
         const productContainer = document.getElementById('product-list');
@@ -520,7 +514,7 @@
         window.addEventListener('online', () => { updateConnectionStatus(); syncPendingOrders(); });
         window.addEventListener('offline', updateConnectionStatus);
 
-        // ---------- Product Cache & Search ----------
+        // ---------- Product Cache & Search (unchanged) ----------
         async function loadPOSProducts(reset = true) {
             const trimmed = posSearchTerm.trim();
             if (trimmed.length < 2) {
@@ -566,7 +560,10 @@
                             item_code: p.item_code,
                             sku: p.sku || p.item_code,
                             price_naira: p.price_naira,
-                            current_qty: p.current_qty
+                            current_qty: p.current_qty,
+                            cost_price_naira: p.cost_price_naira || 0,
+                            handling_category: p.handling_category || 'standard',
+                            weight_kg: p.weight_kg || 0
                         });
                     }
                 } else {
@@ -1015,63 +1012,53 @@
             }
         }
 
-        // ---------- Print Receipt ----------
-        function printReceipt(orderData, customerPoints) {
+        // ---------- Print Receipt (uses receiptData) ----------
+        function printReceipt(receiptData) {
             const printArea = document.getElementById('receipt-print-area');
             const orgName = localStorage.getItem('org_name') || 'Kevs Digital';
-            const cashierName = localStorage.getItem('user_profile_display') || 'Cashier';
             const now = new Date();
             const dateStr = now.toLocaleString();
 
             let itemsHtml = '';
-            let subtotal = 0;
-            orderData.items.forEach(item => {
-                const itemTotal = item.quantity * item.unit_price;
-                subtotal += itemTotal;
+            receiptData.items.forEach(item => {
                 itemsHtml += `
                     <div class="receipt-item">
                         <span>${escapeHtml(item.name)} x ${item.quantity}</span>
-                        <span>₦${itemTotal.toFixed(2)}</span>
+                        <span>₦${item.subtotal.toFixed(2)}</span>
                     </div>
                 `;
             });
 
-            const discount = orderData.pointsRedeemed || 0;
-            const total = orderData.total || subtotal;
-
             const receiptHtml = `
                 <div class="receipt-header">${orgName}</div>
-                <div style="text-align:center;font-size:10px;">Receipt #${orderData.receiptNumber || orderData.offlineRef}</div>
-                <div style="text-align:center;font-size:10px;">Cashier: ${cashierName}</div>
+                <div style="text-align:center;font-size:10px;">Receipt #${receiptData.receiptNumber}</div>
+                <div style="text-align:center;font-size:10px;">Cashier: ${escapeHtml(receiptData.cashierName || 'Cashier')}</div>
                 <div style="text-align:center;font-size:10px;">${dateStr}</div>
                 <div class="receipt-divider"></div>
                 ${itemsHtml}
                 <div class="receipt-divider"></div>
-                <div class="receipt-item"><span>Subtotal</span><span>₦${subtotal.toFixed(2)}</span></div>
-                ${discount > 0 ? `<div class="receipt-item"><span>Points Discount</span><span>-₦${discount.toFixed(2)}</span></div>` : ''}
-                <div class="receipt-item receipt-total"><span>TOTAL</span><span>₦${total.toFixed(2)}</span></div>
+                <div class="receipt-item"><span>Subtotal</span><span>₦${receiptData.subtotal.toFixed(2)}</span></div>
+                ${receiptData.discount > 0 ? `<div class="receipt-item"><span>Discount</span><span>-₦${receiptData.discount.toFixed(2)}</span></div>` : ''}
+                ${receiptData.tax > 0 ? `<div class="receipt-item"><span>Tax</span><span>₦${receiptData.tax.toFixed(2)}</span></div>` : ''}
+                <div class="receipt-item receipt-total"><span>TOTAL</span><span>₦${receiptData.grandTotal.toFixed(2)}</span></div>
                 <div class="receipt-divider"></div>
-                <div style="text-align:center;font-size:10px;">Payment: ${orderData.paymentMethod || 'cash'}</div>
-                ${orderData.customerName ? `<div style="text-align:center;font-size:10px;">Customer: ${escapeHtml(orderData.customerName)}</div>` : ''}
-                <div style="text-align:center;font-size:10px;font-weight:bold;">Loyalty Points: ${customerPoints}</div>
+                <div style="text-align:center;font-size:10px;">Payment: ${receiptData.payment.method}</div>
+                ${receiptData.customer.name ? `<div style="text-align:center;font-size:10px;">Customer: ${escapeHtml(receiptData.customer.name)}</div>` : ''}
+                ${receiptData.customer.pointsAfter !== undefined ? `<div style="text-align:center;font-size:10px;font-weight:bold;">Loyalty Points: ${receiptData.customer.pointsAfter}</div>` : ''}
                 <div class="receipt-divider"></div>
                 <div class="receipt-footer">Thank you for shopping with us!</div>
             `;
 
             printArea.innerHTML = receiptHtml;
             printArea.style.display = 'block';
-
-            // Trigger print
             window.print();
-
-            // Hide after print (or after a short delay)
             setTimeout(() => {
                 printArea.style.display = 'none';
                 printArea.innerHTML = '';
             }, 1000);
         }
 
-        // ---------- Checkout (Offline‑Aware) with UUID ----------
+        // ---------- Checkout with expanded receipt ----------
         async function processCheckout() {
             const state = tabState[activeTab];
             const cart = state.cart;
@@ -1097,39 +1084,80 @@
 
             const itemsPayload = cart.map(i => ({ inventory_id: i.id, quantity: i.qty }));
             const cashierId = localStorage.getItem('user_id') || 'unknown';
+            const cashierName = localStorage.getItem('user_profile_display') || 'Cashier';
+            const orgName = localStorage.getItem('org_name') || 'Kevs Digital';
             const offlineRef = generateUUID();
 
-            const orderData = {
-                items: cart.map(i => ({ name: i.name, quantity: i.qty, unit_price: i.price })),
-                total: calculateTotal(state),
-                pointsRedeemed: pointsRedeemed,
-                paymentMethod: paymentMethod,
-                customerName: customerName,
-                receiptNumber: null,
-                offlineRef: offlineRef,
+            // Build receipt data
+            const subtotal = cart.reduce((sum, i) => sum + i.price * i.qty, 0);
+            const discount = pointsRedeemed;
+            const tax = 0; // can be added later
+            const grandTotal = Math.max(0, subtotal - discount + tax);
+
+            // Item details: fetch full product data from products cache
+            const itemDetails = cart.map(item => {
+                const product = products.find(p => p.id === item.id) || {};
+                return {
+                    productId: item.id,
+                    name: item.name,
+                    sku: item.sku || product.sku || '',
+                    quantity: item.qty,
+                    unitPrice: item.price,
+                    subtotal: item.price * item.qty,
+                    costPrice: product.cost_price_naira || 0,
+                    handlingCategory: product.handling_category || 'standard',
+                    weightKg: product.weight_kg || 0
+                };
+            });
+
+            const receiptData = {
+                receiptNumber: offlineRef, // will be replaced if online
+                customer: {
+                    name: customerName || '',
+                    phone: customerPhone || '',
+                    email: customerEmail || '',
+                    loyaltyId: state.loyaltyUserId || null,
+                    pointsBefore: state.pointsBalance || 0,
+                    pointsAfter: state.pointsBalance || 0, // will be updated after sync
+                    pointsRedeemed: pointsRedeemed
+                },
+                items: itemDetails,
+                subtotal: subtotal,
+                discount: discount,
+                tax: tax,
+                grandTotal: grandTotal,
+                payment: {
+                    method: paymentMethod,
+                    reference: null // will be set if online
+                },
+                cashierId: cashierId,
+                cashierName: cashierName,
+                location: orgName,
+                metadata: {
+                    softwareVersion: '1.0.0',
+                    deviceId: 'web-' + (navigator.userAgent || 'unknown'),
+                    printed: false
+                }
+            };
+
+            const order = {
+                offlineRef,
+                cashierId,
+                createdAt: new Date().toISOString(),
+                status: 'pending',
+                syncedAt: null,
+                receiptData: receiptData
             };
 
             checkoutBtn.disabled = true;
             checkoutBtn.innerText = 'Processing...';
 
-            let finalCustomerPoints = state.pointsBalance || 0;
-
             try {
                 if (!isOnline) {
-                    await db.orders.add({
-                        offlineRef,
-                        cashierId,
-                        items: itemsPayload,
-                        paymentMethod,
-                        customerName,
-                        customerPhone,
-                        customerEmail,
-                        total: orderData.total,
-                        status: 'pending',
-                        createdAt: new Date().toISOString(),
-                        pointsRedeemed
-                    });
+                    // Offline: save order locally
+                    await db.orders.add(order);
                     await db.syncQueue.add({ orderId: offlineRef, attempts: 0, lastTry: null });
+                    // Reduce local stock
                     for (const item of cart) {
                         const product = await db.products.get(item.id);
                         if (product) {
@@ -1140,78 +1168,62 @@
                     state.pointsRedeemed = 0;
                     renderActiveCart();
                     showToast(`✅ Order saved offline (Ref: ${offlineRef}). Will sync when online.`, 'success');
-                    finalCustomerPoints = state.pointsBalance || 0;
-                    orderData.receiptNumber = offlineRef;
-                    printReceipt(orderData, finalCustomerPoints);
+                    // Print receipt with offline data
+                    receiptData.receiptNumber = offlineRef;
+                    receiptData.customer.pointsAfter = state.pointsBalance || 0;
+                    printReceipt(receiptData);
                     return;
                 }
 
+                // Online: call API
                 const result = await apiCall('/pos/terminal/checkout', 'POST', {
                     items: itemsPayload,
                     payment_method: paymentMethod,
                     customer_name: customerName,
                     customer_phone: customerPhone,
                     customer_email: customerEmail,
-                    // offline_reference: offlineRef
+                    // offline_reference: offlineRef,
+                    receipt_data: receiptData // send full receipt
                 });
-                await db.orders.add({
-                    offlineRef,
-                    cashierId,
-                    items: itemsPayload,
-                    paymentMethod,
-                    customerName,
-                    customerPhone,
-                    customerEmail,
-                    total: orderData.total,
-                    status: 'synced',
-                    createdAt: new Date().toISOString(),
-                    pointsRedeemed,
-                    syncedAt: new Date().toISOString()
-                });
+                // Save synced order
+                order.status = 'synced';
+                order.syncedAt = new Date().toISOString();
+                order.receiptData.receiptNumber = result.receipt_number || offlineRef;
+                order.receiptData.payment.reference = result.payment_reference || null;
+                // Update loyalty points if available
                 if (state.loyaltyUserId) {
                     try {
                         const balanceRes = await apiCall('/loyalty/balance');
-                        finalCustomerPoints = balanceRes.points || 0;
-                        state.pointsBalance = finalCustomerPoints;
-                        await db.customers.update(state.loyaltyUserId, { loyalty_points: finalCustomerPoints });
-                        customerPointsSpan.innerText = finalCustomerPoints;
+                        const finalPoints = balanceRes.points || 0;
+                        state.pointsBalance = finalPoints;
+                        await db.customers.update(state.loyaltyUserId, { loyalty_points: finalPoints });
+                        customerPointsSpan.innerText = finalPoints;
+                        order.receiptData.customer.pointsAfter = finalPoints;
                     } catch (e) {
-                        finalCustomerPoints = state.pointsBalance || 0;
+                        order.receiptData.customer.pointsAfter = state.pointsBalance || 0;
                     }
                 } else {
-                    finalCustomerPoints = 0;
+                    order.receiptData.customer.pointsAfter = 0;
                 }
-
+                await db.orders.add(order);
                 state.cart = [];
                 state.pointsRedeemed = 0;
                 renderActiveCart();
                 showToast(`✅ Sale complete! Receipt: ${result.receipt_number}`, 'success');
-                orderData.receiptNumber = result.receipt_number || offlineRef;
-                printReceipt(orderData, finalCustomerPoints);
+                printReceipt(order.receiptData);
 
             } catch (err) {
                 if (!isOnline || err.message.includes('offline') || err.message.includes('network')) {
-                    await db.orders.add({
-                        offlineRef,
-                        cashierId,
-                        items: itemsPayload,
-                        paymentMethod,
-                        customerName,
-                        customerPhone,
-                        customerEmail,
-                        total: orderData.total,
-                        status: 'pending',
-                        createdAt: new Date().toISOString(),
-                        pointsRedeemed
-                    });
+                    // Fallback to offline
+                    await db.orders.add(order);
                     await db.syncQueue.add({ orderId: offlineRef, attempts: 0, lastTry: null });
                     showToast(`Order queued for later sync (Ref: ${offlineRef})`, 'warning');
                     state.cart = [];
                     state.pointsRedeemed = 0;
                     renderActiveCart();
-                    finalCustomerPoints = state.pointsBalance || 0;
-                    orderData.receiptNumber = offlineRef;
-                    printReceipt(orderData, finalCustomerPoints);
+                    receiptData.receiptNumber = offlineRef;
+                    receiptData.customer.pointsAfter = state.pointsBalance || 0;
+                    printReceipt(receiptData);
                 } else {
                     showToast(`❌ Checkout failed: ${err.message}`, 'error');
                 }
@@ -1221,14 +1233,7 @@
             }
         }
 
-        function calculateTotal(state) {
-            const cart = state.cart;
-            let subtotal = cart.reduce((sum, i) => sum + i.price * i.qty, 0);
-            const pointsRedeemed = state.pointsRedeemed || 0;
-            return Math.max(0, subtotal - pointsRedeemed);
-        }
-
-        // ---------- Sync Manager ----------
+        // ---------- Sync Manager (sends full receiptData) ----------
         async function syncPendingOrders() {
             if (!isOnline || syncInProgress) return;
             syncInProgress = true;
@@ -1243,13 +1248,20 @@
                         continue;
                     }
                     try {
-                        const result = await apiCall('/pos/terminal/checkout', 'POST', {
-                            items: order.items,
-                            payment_method: order.paymentMethod,
-                            customer_name: order.customerName,
-                            customer_phone: order.customerPhone,
-                            customer_email: order.customerEmail,
-                        });
+                        // Prepare payload: items, customer, payment, receiptData
+                        const payload = {
+                            items: order.receiptData.items.map(item => ({
+                                inventory_id: item.productId,
+                                quantity: item.quantity
+                            })),
+                            payment_method: order.receiptData.payment.method,
+                            customer_name: order.receiptData.customer.name,
+                            customer_phone: order.receiptData.customer.phone,
+                            customer_email: order.receiptData.customer.email,
+                            receipt_data: order.receiptData // full receipt
+                            // offline_reference: order.offlineRef
+                        };
+                        const result = await apiCall('/pos/terminal/checkout', 'POST', payload);
                         await db.orders.update(order.offlineRef, { status: 'synced', syncedAt: new Date().toISOString() });
                         await db.syncQueue.delete(entry.id);
                         showToast(`Order ${order.offlineRef} synced`, 'success');
@@ -1267,9 +1279,7 @@
                     }
                 }
                 localStorage.setItem('last_sync_time', new Date().toLocaleString());
-                if (dashboardModal.classList.contains('active')) {
-                    updateDashboard();
-                }
+                if (dashboardModal.classList.contains('active')) updateDashboard();
             } catch (e) {
                 showToast('Sync error: ' + e.message, 'error');
             } finally {
@@ -1317,7 +1327,7 @@
             `;
         }
 
-        // ---------- Cashier History ----------
+        // ---------- Cashier History (show rich receipt) ----------
         async function renderHistory() {
             const cashierId = localStorage.getItem('user_id') || 'unknown';
             const orders = await db.orders.where('cashierId').equals(cashierId).toArray();
@@ -1329,7 +1339,8 @@
                 <div class="border-b py-2 flex justify-between items-center">
                     <div>
                         <div><strong>${o.offlineRef}</strong> - ${new Date(o.createdAt).toLocaleString()}</div>
-                        <div class="text-sm">Status: <span class="${o.status === 'synced' ? 'text-green-600' : 'text-yellow-600'}">${o.status}</span> | Total: ₦${o.total}</div>
+                        <div class="text-sm">Status: <span class="${o.status === 'synced' ? 'text-green-600' : 'text-yellow-600'}">${o.status}</span> | Total: ₦${o.receiptData?.grandTotal || 0}</div>
+                        <div class="text-xs text-gray-500">Items: ${o.receiptData?.items?.length || 0}</div>
                     </div>
                     ${o.status === 'pending' ? '<button onclick="syncSingleOrder(\''+o.offlineRef+'\')" class="text-blue-500 text-sm"><i class="fa-solid fa-rotate"></i> Sync</button>' : ''}
                 </div>
@@ -1341,13 +1352,18 @@
             const order = await db.orders.get(offlineRef);
             if (!order) return;
             try {
-                const result = await apiCall('/pos/terminal/checkout', 'POST', {
-                    items: order.items,
-                    payment_method: order.paymentMethod,
-                    customer_name: order.customerName,
-                    customer_phone: order.customerPhone,
-                    customer_email: order.customerEmail,
-                });
+                const payload = {
+                    items: order.receiptData.items.map(item => ({
+                        inventory_id: item.productId,
+                        quantity: item.quantity
+                    })),
+                    payment_method: order.receiptData.payment.method,
+                    customer_name: order.receiptData.customer.name,
+                    customer_phone: order.receiptData.customer.phone,
+                    customer_email: order.receiptData.customer.email,
+                    receipt_data: order.receiptData
+                };
+                const result = await apiCall('/pos/terminal/checkout', 'POST', payload);
                 await db.orders.update(offlineRef, { status: 'synced', syncedAt: new Date().toISOString() });
                 await db.syncQueue.delete(offlineRef);
                 showToast(`Order ${offlineRef} synced`, 'success');
@@ -1555,7 +1571,7 @@
             if (isOnline) await syncPendingOrders();
         })();
 
-        console.log('✅ Offline‑Ready POS with Dashboard loaded');
+        console.log('✅ Offline‑Ready POS with expanded order schema loaded');
     </script>
 </body>
 </html>
