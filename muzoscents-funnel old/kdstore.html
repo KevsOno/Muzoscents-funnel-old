@@ -61,38 +61,163 @@
         #pagination-container { margin-top: 1.5rem; margin-bottom: 2rem; }
         .pagination-info { font-size: 0.9rem; color: #6b7280; margin-bottom: 0.5rem; }
 
+        /* ============================================= */
+        /* APP-ONLY FEATURES – hidden on web, shown in app */
+        /* ============================================= */
+        .app-only-feature {
+            display: none;
+        }
 
-        /* --- DEFAULT: Hidden on the website --- */
-.app-only-feature {
-  display: none; /* Hides app-specific widgets from web users */
-}
+        @media all and (display-mode: standalone) {
+            .app-only-feature {
+                display: block;
+            }
 
-/* --- TRIGGER: When installed as an Android App (TWA) --- */
-@media all and (display-mode: standalone) {
-  
-  /* 1. Show the hidden app-native dashboard */
-  .app-only-feature {
-    display: block;
-  }
+            /* ---- BOTTOM NAVIGATION BAR ---- */
+            #bottom-nav {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                background: #ffffff;
+                box-shadow: 0 -2px 15px rgba(0, 0, 0, 0.08);
+                display: flex;
+                justify-content: space-around;
+                align-items: center;
+                padding: 8px 0 env(safe-area-inset-bottom, 8px) 0;
+                border-top: 1px solid #f0e6d8;
+                z-index: 100;
+                backdrop-filter: blur(6px);
+                background-color: rgba(255, 255, 255, 0.95);
+            }
 
-  /* 2. OPTIONAL: Hide desktop navigation or fat headers */
-  .web-only-nav {
-    display: none;
-  }
+            .nav-item {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                cursor: pointer;
+                padding: 4px 12px;
+                border-radius: 30px;
+                transition: background 0.2s;
+                text-decoration: none;
+                min-width: 64px;
+                flex: 1;
+                -webkit-tap-highlight-color: transparent;
+            }
 
-  /* 3. Make buttons bigger for thumbs (touch targets) */
-  .action-btn {
-    padding: 16px 24px;
-    font-size: 1.1rem;
-    border-radius: 50px;
-  }
+            .nav-item:active {
+                background-color: #fef3e8;
+            }
 
-  /* 4. Reduce white space to fit more content on screen */
-  .hero-banner {
-    padding: 20px 16px;
-    margin-bottom: 10px;
-  }
-}
+            .nav-icon {
+                font-size: 24px;
+                line-height: 1.2;
+                transition: transform 0.2s;
+            }
+
+            .nav-item:active .nav-icon {
+                transform: scale(0.9);
+            }
+
+            .nav-label {
+                font-size: 11px;
+                font-weight: 500;
+                color: #4b5563;
+                margin-top: 2px;
+                letter-spacing: 0.3px;
+            }
+
+            .nav-item:active .nav-label {
+                color: #f97316;
+            }
+
+            /* ---- RECENT ORDERS CARD ---- */
+            .recent-orders-card {
+                background: white;
+                border-radius: 20px;
+                padding: 16px;
+                margin: 16px 16px 100px 16px;
+                box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+                border: 1px solid #f0ede8;
+            }
+
+            .recent-orders-card .order-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 12px;
+            }
+
+            .recent-orders-card .order-header span:first-child {
+                font-weight: 600;
+                color: #1e293b;
+                font-size: 1rem;
+            }
+
+            .recent-orders-card .order-header a {
+                color: #f97316;
+                font-size: 0.85rem;
+                text-decoration: none;
+                font-weight: 500;
+            }
+
+            .order-scroll {
+                display: flex;
+                gap: 12px;
+                overflow-x: auto;
+                padding: 4px 2px 8px;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: thin;
+            }
+
+            .order-scroll::-webkit-scrollbar {
+                height: 4px;
+            }
+            .order-scroll::-webkit-scrollbar-thumb {
+                background: #e5e0d8;
+                border-radius: 10px;
+            }
+
+            .order-item {
+                background: #faf8f5;
+                padding: 12px 16px;
+                border-radius: 14px;
+                min-width: 130px;
+                border: 1px solid #f0ede8;
+                flex-shrink: 0;
+            }
+
+            .order-item .order-id {
+                font-weight: 600;
+                color: #1e293b;
+                display: block;
+                font-size: 0.9rem;
+            }
+
+            .order-item .order-status {
+                font-size: 0.75rem;
+                color: #64748b;
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                margin-top: 4px;
+            }
+
+            /* ---- ADJUST MAIN CONTENT TO NOT OVERLAP WITH NAV ---- */
+            #dynamic-main {
+                padding-bottom: 80px;
+            }
+
+            /* Move floating chat up so it doesn't overlap bottom nav */
+            #chat-bubble {
+                bottom: 90px;
+            }
+
+            /* Hide the old placeholder divs that we moved into the nav */
+            .app-only-feature:not(#bottom-nav):not(.recent-orders-card) {
+                display: none;
+            }
+        }
     </style>
 </head>
 <body class="text-gray-800">
@@ -166,55 +291,7 @@
         <div class="slider-dots" id="sliderDots"></div>
     </section>
 
-    <!-- APP-ONLY: Quick Action Dashboard (Hidden on Web) -->
-<div class="app-only-feature" style="background: #fff; border-radius: 16px; padding: 16px; margin: 16px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
-  <div style="display: flex; justify-content: space-around; align-items: center;">
-    
-    <!-- Button 1: Live Support (Floating Chat trigger) -->
-    <div onclick="openSupportChat()" style="text-align: center; cursor: pointer;">
-      <div style="background: #f97316; width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto; color: white; font-size: 24px;">💬</div>
-      <span style="font-size: 12px; color: #333;">Live Help</span>
-    </div>
-
-    <!-- Button 2: Track Order (Direct shortcut) -->
-    <div onclick="trackOrder()" style="text-align: center; cursor: pointer;">
-      <div style="background: #1e293b; width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto; color: white; font-size: 24px;">📍</div>
-      <span style="font-size: 12px; color: #333;">Track</span>
-    </div>
-
-    <!-- Button 3: AI Assistant (Your marketplace USP) -->
-    <div onclick="openAIHelper()" style="text-align: center; cursor: pointer;">
-      <div style="background: #8b5cf6; width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto; color: white; font-size: 24px;">🤖</div>
-      <span style="font-size: 12px; color: #333;">AI Search</span>
-    </div>
-
-    <!-- Button 4: Cart (Quick view) -->
-    <div onclick="openCart()" style="text-align: center; cursor: pointer;">
-      <div style="background: #10b981; width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto; color: white; font-size: 24px;">🛒</div>
-      <span style="font-size: 12px; color: #333;">Cart</span>
-    </div>
-
-  </div>
-</div>
-
-<!-- APP-ONLY: "Recent Orders" Quick Tile -->
-<div class="app-only-feature" style="background: #f8fafc; border-radius: 16px; padding: 16px; margin-bottom: 16px;">
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-    <span style="font-weight: bold; color: #1e293b;">🕐 Recent Orders</span>
-    <a href="#" style="color: #f97316; font-size: 14px; text-decoration: none;">View All</a>
-  </div>
-  <div style="display: flex; gap: 10px; overflow-x: auto; padding: 4px 0;">
-    <div style="background: white; padding: 12px; border-radius: 12px; min-width: 120px; border: 1px solid #e2e8f0;">
-      <span style="font-weight: bold; display: block;">#KD-101</span>
-      <span style="font-size: 12px; color: #64748b;">Delivered ✅</span>
-    </div>
-    <div style="background: white; padding: 12px; border-radius: 12px; min-width: 120px; border: 1px solid #e2e8f0;">
-      <span style="font-weight: bold; display: block;">#KD-100</span>
-      <span style="font-size: 12px; color: #f59e0b;">In Transit 🚀</span>
-    </div>
-  </div>
-</div>
-
+    <!-- ===== MAIN CONTENT ===== -->
     <main id="dynamic-main" class="container mx-auto px-4 py-12">
         <div id="shop-view">
             <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
@@ -244,6 +321,44 @@
             <div id="tickets-list" class="space-y-3"><div class="text-center py-10 text-gray-500"><i class="fa-solid fa-spinner fa-pulse"></i> Loading your tickets...</div></div>
         </div>
     </main>
+
+    <!-- ===== APP-ONLY: BOTTOM NAVIGATION (fixed) ===== -->
+    <div id="bottom-nav" class="app-only-feature">
+        <div class="nav-item" onclick="openSupportChat()">
+            <div class="nav-icon">💬</div>
+            <span class="nav-label">Live Help</span>
+        </div>
+        <div class="nav-item" onclick="trackOrder()">
+            <div class="nav-icon">📍</div>
+            <span class="nav-label">Track</span>
+        </div>
+        <div class="nav-item" onclick="openAIHelper()">
+            <div class="nav-icon">🤖</div>
+            <span class="nav-label">AI Search</span>
+        </div>
+        <div class="nav-item" onclick="openCart()">
+            <div class="nav-icon">🛒</div>
+            <span class="nav-label">Cart</span>
+        </div>
+    </div>
+
+    <!-- ===== APP-ONLY: RECENT ORDERS CARD ===== -->
+    <div class="app-only-feature recent-orders-card">
+        <div class="order-header">
+            <span>🕐 Recent Orders</span>
+            <a href="#" onclick="showView('tickets')">View All</a>
+        </div>
+        <div class="order-scroll">
+            <div class="order-item">
+                <span class="order-id">#KD-101</span>
+                <span class="order-status">✅ Delivered</span>
+            </div>
+            <div class="order-item">
+                <span class="order-id">#KD-100</span>
+                <span class="order-status">🚀 In Transit</span>
+            </div>
+        </div>
+    </div>
 
     <footer class="bg-gray-800 text-white mt-16 py-8"><div class="container mx-auto px-4 text-center text-sm"><p>© 2026 Kevs Digital bOS – AI‑powered marketplace</p><p class="text-gray-400 mt-2"><i class="fa-regular fa-clock"></i> 24/7 AI Concierge | Fast Delivery</p></div></footer>
 
@@ -415,7 +530,8 @@
             updateCartUI();
         }
         function loadCart() { const saved = localStorage.getItem('kevs_cart'); cart = saved ? JSON.parse(saved) : []; updateCartUI(); }
-        
+
+         
         function updateCartUI() {
             const subtotal = cart.reduce((s,i) => s + i.price * i.quantity, 0);
             let total = subtotal;
@@ -581,6 +697,7 @@
         }
         document.getElementById('refresh-categories-btn')?.addEventListener('click', refreshCategories);
 
+
         // ---------- PRODUCT DETAIL (unchanged) ----------
         function showProductDetail(p) {
             currentProductForModal = p;
@@ -684,7 +801,8 @@
                 updateCartUI(); 
             } else { 
                 deliv.classList.add('bg-orange-500','text-white'); 
-                pickup.classList.remove('bg-orange-500','text-white'); 
+
+            pickup.classList.remove('bg-orange-500','text-white'); 
                 pickup.classList.add('bg-gray-200'); 
                 document.getElementById('delivery-address-section').classList.remove('hidden'); 
                 if(deliveryAddress) recalcDeliveryFee(true); 
@@ -768,36 +886,35 @@
         })();
 
 
-        // Detect if the user is in the standalone App
-const isInApp = window.matchMedia('(display-mode: standalone)').matches || 
-                window.navigator.standalone || 
-                window.matchMedia('(display-mode: fullscreen)').matches;
+        // ============================================================
+        //  APP-ONLY BOTTOM NAV – actions that actually do something useful
+        // ============================================================
+        function openSupportChat() {
+            const modal = document.getElementById('chat-modal');
+            if (modal) {
+                modal.classList.add('active');
+                initChat();
+            }
+        }
 
-if (isInApp) {
-  console.log("🚀 Kevs Market is running in App Mode! Native features unlocked.");
-  // You could fire an analytics event here to track app installs.
-}
+        function trackOrder() {
+            const modal = document.getElementById('track-modal');
+            if (modal) modal.classList.add('active');
+        }
 
-// --- Functions for the new App Buttons ---
-function openSupportChat() {
-  alert("💬 Connecting you to instant live support...");
-  // Replace with: window.location.href = "/kdstore/live-chat";
-}
+        function openAIHelper() {
+            const searchInput = document.getElementById('product-search');
+            if (searchInput) {
+                searchInput.focus();
+                // Optionally pre-fill a placeholder or clear it
+                // searchInput.placeholder = "Ask AI anything...";
+            }
+        }
 
-function trackOrder() {
-  alert("📍 Opening order tracking dashboard...");
-  // Replace with: window.location.href = "/kdstore/tracking";
-}
-
-function openAIHelper() {
-  alert("🤖 AI Assistant activated! What are you looking for?");
-  // Replace with: document.getElementById('ai-chat-widget').style.display = 'block';
-}
-
-function openCart() {
-  alert("🛒 Opening your shopping cart...");
-  // Replace with: window.location.href = "/kdstore/cart";
-}
+        function openCart() {
+            const drawer = document.getElementById('cart-drawer');
+            if (drawer) drawer.classList.remove('translate-x-full');
+        }
     </script>
     <script>
   // Register the service worker
