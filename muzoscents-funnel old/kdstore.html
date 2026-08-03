@@ -928,5 +928,93 @@
       .catch(err => console.warn('❌ SW registration failed', err));
   }
     </script>
+
+    <script>
+// ============================================================
+//  DEEP LINKS HANDLER (Shortcuts & Share Target)
+//  Adapted to your existing functions (sendChatMessage, etc.)
+// ============================================================
+(function handleDeepLinks() {
+    // --- Safety checks for DOM elements ---
+    const chatModal = document.getElementById('chat-modal');
+    const chatInput = document.getElementById('chat-input');
+    if (!chatModal || !chatInput) {
+        console.warn('Chat elements missing – deep‑link handling skipped.');
+        return;
+    }
+
+    // --- Read URL parameters ---
+    const urlParams = new URLSearchParams(window.location.search);
+    const page = urlParams.get('page');
+    const shareTitle = urlParams.get('share_title');
+    const shareText = urlParams.get('share_text');
+    const shareUrl = urlParams.get('share_url');
+
+    // --- Helper: open chat, optionally pre‑fill and auto‑send ---
+    function openChatAndAutoSend(message) {
+        // Open modal if not already active
+        if (!chatModal.classList.contains('active')) {
+            chatModal.classList.add('active');
+        }
+        // Initialise chat (if not already)
+        if (typeof initChat === 'function') {
+            initChat();
+        } else {
+            console.warn('initChat is not defined');
+        }
+
+        if (message) {
+            chatInput.value = message;
+            // Auto‑send after a short delay so the chat UI loads
+            setTimeout(() => {
+                if (typeof sendChatMessage === 'function') {
+                    sendChatMessage();   // uses the input value
+                } else {
+                    console.warn('sendChatMessage is not defined – message not auto‑sent.');
+                }
+            }, 500);
+        }
+    }
+
+    // --- Handle Shortcuts ---
+    if (page === 'orders') {
+        // Check if user is logged in (token is defined globally)
+        if (typeof token !== 'undefined' && token) {
+            if (typeof showView === 'function') {
+                showView('tickets');   // your existing view switcher
+            } else {
+                console.warn('showView not defined');
+            }
+        } else {
+            if (typeof showAuthModal === 'function') {
+                showAuthModal();
+            } else {
+                console.warn('showAuthModal not defined');
+            }
+        }
+        return; // stop processing further
+    }
+
+    if (page === 'support') {
+        openChatAndAutoSend(null); // just open chat, no auto‑message
+        return;
+    }
+
+    // --- Handle Share Target ---
+    if (shareTitle || shareText || shareUrl) {
+        let message = '';
+        if (shareText) {
+            message = `I found this: ${shareText}`;
+        } else if (shareUrl) {
+            message = `Can you help me with this: ${shareUrl}`;
+        } else if (shareTitle) {
+            message = `Shared: ${shareTitle}`;
+        }
+        if (message) {
+            openChatAndAutoSend(message);
+        }
+    }
+})();
+</script>
 </body>
 </html>
