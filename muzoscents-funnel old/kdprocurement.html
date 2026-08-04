@@ -18,7 +18,9 @@
         .modal-close:hover { color: white; }
         .form-input { background: #0f172a; border: 1px solid #334155; border-radius: 0.5rem; padding: 0.5rem 0.75rem; color: #e2e8f0; width: 100%; }
         .form-input:focus { border-color: #3b82f6; outline: none; }
+        .form-input.required { border-color: #f59e0b; }
         .form-label { display: block; font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.25rem; }
+        .form-label .required-star { color: #f59e0b; margin-left: 2px; }
         .btn-primary { background: #3b82f6; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; transition: background 0.15s; border: none; cursor: pointer; }
         .btn-primary:hover { background: #2563eb; }
         .btn-secondary { background: #334155; color: #e2e8f0; padding: 0.5rem 1rem; border-radius: 0.5rem; transition: background 0.15s; border: none; cursor: pointer; }
@@ -27,6 +29,8 @@
         .btn-danger:hover { background: #b91c1c; }
         .btn-success { background: #22c55e; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; transition: background 0.15s; border: none; cursor: pointer; }
         .btn-success:hover { background: #16a34a; }
+        .btn-warning { background: #f59e0b; color: #0f172a; padding: 0.5rem 1rem; border-radius: 0.5rem; transition: background 0.15s; border: none; cursor: pointer; font-weight: 600; }
+        .btn-warning:hover { background: #d97706; }
         .table-container { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
         th { text-align: left; padding: 0.75rem 1rem; background: #1e293b; color: #94a3b8; font-weight: 500; border-bottom: 1px solid #334155; }
@@ -40,7 +44,8 @@
         .status-cancelled { background: #dc2626; color: white; }
         .status-pending { background: #f59e0b; color: #0f172a; }
         .status-posted { background: #22c55e; color: #0f172a; }
-        .line-item { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; padding: 0.5rem; background: #0f172a; border-radius: 0.5rem; margin-bottom: 0.5rem; }
+        .line-item { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; padding: 0.5rem; background: #0f172a; border-radius: 0.5rem; margin-bottom: 0.5rem; border: 1px solid #1e293b; }
+        .line-item .required-field { border-color: #f59e0b; }
         .line-item input, .line-item select { background: #1e293b; border: 1px solid #334155; border-radius: 0.25rem; padding: 0.25rem 0.5rem; color: #e2e8f0; font-size: 0.85rem; }
         .line-item .remove-line { color: #dc2626; cursor: pointer; font-size: 0.85rem; }
         .pagination-btn { background: #1e293b; border: 1px solid #334155; color: #cbd5e1; padding: 0.3rem 0.8rem; border-radius: 0.5rem; font-size: 0.85rem; transition: all 0.15s; }
@@ -50,6 +55,8 @@
         .toast.success { border-left: 4px solid #22c55e; }
         .toast.error { border-left: 4px solid #dc2626; }
         .toast.info { border-left: 4px solid #3b82f6; }
+        .helper-box { background: #1e293b; border-left: 3px solid #f59e0b; padding: 0.75rem 1rem; border-radius: 0.5rem; margin-bottom: 1rem; font-size: 0.85rem; color: #cbd5e1; }
+        .helper-box i { color: #f59e0b; margin-right: 0.5rem; }
     </style>
 </head>
 <body class="text-slate-200">
@@ -85,7 +92,7 @@
         <!-- Auth placeholder -->
         <div id="auth-check-placeholder" class="bg-slate-800/50 rounded-2xl p-8 text-center">
             <i class="fa-solid fa-spinner fa-pulse text-3xl mb-3"></i>
-                <p>Verifying access...</p>
+            <p>Verifying access...</p>
         </div>
 
         <!-- TABS -->
@@ -238,6 +245,14 @@
         <div class="modal-content">
             <button class="modal-close" onclick="closeModal('grn-modal')">&times;</button>
             <h3 id="grn-modal-title" class="text-xl font-bold mb-4">Create Goods Received Note</h3>
+            
+            <!-- HELPER NOTE FOR WAREHOUSE STAFF -->
+            <div class="helper-box">
+                <i class="fa-solid fa-clipboard-check"></i>
+                <strong>Warehouse Receiving:</strong> Enter the actual <strong>batch number</strong> and <strong>expiry date</strong> printed on the physical goods. 
+                These are <span class="text-yellow-400 font-semibold">required</span> for all received items. Accurate data ensures proper FEFO management and supplier traceability.
+            </div>
+
             <form id="grn-form" class="space-y-4">
                 <input type="hidden" id="grn-id">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -255,7 +270,7 @@
                     </div>
                 </div>
                 <div>
-                    <label class="form-label">Items</label>
+                    <label class="form-label">Items <span class="text-yellow-400 text-xs">(Batch # and Expiry Date are required)</span></label>
                     <div id="grn-items-container" class="space-y-2">
                         <!-- dynamically populated from PO -->
                     </div>
@@ -909,7 +924,7 @@
         };
 
         // ========================================================================
-        // GOODS RECEIVED NOTES (GRN)
+        // GOODS RECEIVED NOTES (GRN) with ENFORCED Batch & Expiry
         // ========================================================================
         async function loadGRNs(page = 1) {
             const status = document.getElementById('grn-status-filter').value;
@@ -1033,6 +1048,9 @@
             modal.classList.add('active');
         }
 
+        /**
+         * UPDATED: Batch and Expiry are now REQUIRED (enforced via HTML and JS validation)
+         */
         function addGRNItem(existingItem = null, poItem = null) {
             const container = document.getElementById('grn-items-container');
             const div = document.createElement('div');
@@ -1050,13 +1068,13 @@
 
             // product name display
             const nameSpan = document.createElement('span');
-            nameSpan.className = 'text-sm text-slate-300 min-w-[120px]';
+            nameSpan.className = 'text-sm text-slate-300 min-w-[100px]';
             nameSpan.innerText = existingItem?.product_name || poItem?.inventory?.description || 'Product';
 
             // received quantity
             const qtyLabel = document.createElement('label');
             qtyLabel.className = 'text-xs text-slate-400';
-            qtyLabel.innerText = 'Received';
+            qtyLabel.innerText = 'Recv';
             const qtyInput = document.createElement('input');
             qtyInput.type = 'number';
             qtyInput.className = 'form-input w-16';
@@ -1066,7 +1084,7 @@
             // accepted quantity
             const accLabel = document.createElement('label');
             accLabel.className = 'text-xs text-slate-400';
-            accLabel.innerText = 'Accepted';
+            accLabel.innerText = 'Acc';
             const accInput = document.createElement('input');
             accInput.type = 'number';
             accInput.className = 'form-input w-16';
@@ -1076,7 +1094,7 @@
             // rejected quantity
             const rejLabel = document.createElement('label');
             rejLabel.className = 'text-xs text-slate-400';
-            rejLabel.innerText = 'Rejected';
+            rejLabel.innerText = 'Rej';
             const rejInput = document.createElement('input');
             rejInput.type = 'number';
             rejInput.className = 'form-input w-16';
@@ -1086,21 +1104,29 @@
             // rejection reason
             const reasonInput = document.createElement('input');
             reasonInput.type = 'text';
-            reasonInput.className = 'form-input w-32';
+            reasonInput.className = 'form-input w-28';
             reasonInput.placeholder = 'Reason';
             reasonInput.value = existingItem?.rejection_reason || '';
 
-            // batch override
+            // ─── BATCH NUMBER (REQUIRED) ───
+            const batchLabel = document.createElement('label');
+            batchLabel.className = 'text-xs text-yellow-400';
+            batchLabel.innerText = 'Batch *';
             const batchInput = document.createElement('input');
             batchInput.type = 'text';
-            batchInput.className = 'form-input w-24';
+            batchInput.className = 'form-input w-24 required-field';
             batchInput.placeholder = 'Batch #';
+            batchInput.required = true;
             batchInput.value = existingItem?.batch_number || '';
 
-            // expiry override
+            // ─── EXPIRY DATE (REQUIRED) ───
+            const expiryLabel = document.createElement('label');
+            expiryLabel.className = 'text-xs text-yellow-400';
+            expiryLabel.innerText = 'Expiry *';
             const expiryInput = document.createElement('input');
             expiryInput.type = 'date';
-            expiryInput.className = 'form-input w-28';
+            expiryInput.className = 'form-input w-28 required-field';
+            expiryInput.required = true;
             expiryInput.value = existingItem?.expiry_date || '';
 
             // cost override
@@ -1127,7 +1153,9 @@
             div.appendChild(rejLabel);
             div.appendChild(rejInput);
             div.appendChild(reasonInput);
+            div.appendChild(batchLabel);
             div.appendChild(batchInput);
+            div.appendChild(expiryLabel);
             div.appendChild(expiryInput);
             div.appendChild(costInput);
             div.appendChild(removeBtn);
@@ -1147,18 +1175,36 @@
                 return;
             }
 
+            // ─── VALIDATE ITEMS: enforce Batch # and Expiry Date ───
             const items = [];
             const itemDivs = document.querySelectorAll('#grn-items-container .line-item');
+            let valid = true;
+            let errorMsg = '';
+
             itemDivs.forEach(div => {
                 const poItemId = div.querySelector('.grn-po-item-id').value;
-                const received = parseInt(div.querySelector('input[type="number"]:nth-child(4)').value) || 0;
-                const accepted = parseInt(div.querySelector('input[type="number"]:nth-child(7)').value) || 0;
-                const rejected = parseInt(div.querySelector('input[type="number"]:nth-child(10)').value) || 0;
-                const reason = div.querySelector('input[type="text"]:nth-child(11)').value || null;
-                const batch = div.querySelector('input[type="text"]:nth-child(12)').value || null;
-                const expiry = div.querySelector('input[type="date"]:nth-child(13)').value || null;
-                const cost = parseFloat(div.querySelector('input[type="number"]:nth-child(14)').value) || null;
+                const received = parseInt(div.querySelectorAll('input[type="number"]')[0].value) || 0;
+                const accepted = parseInt(div.querySelectorAll('input[type="number"]')[1].value) || 0;
+                const rejected = parseInt(div.querySelectorAll('input[type="number"]')[2].value) || 0;
+                const reason = div.querySelectorAll('input[type="text"]')[0].value || null;
+                const batch = div.querySelectorAll('input[type="text"]')[1].value.trim();
+                const expiry = div.querySelector('input[type="date"]').value;
+                const cost = parseFloat(div.querySelectorAll('input[type="number"]')[3].value) || null;
+
+                // If this line has any receiving activity, validate batch and expiry
                 if (poItemId && (received > 0 || accepted > 0 || rejected > 0)) {
+                    if (!batch) {
+                        valid = false;
+                        errorMsg = '⚠️ Batch number is required for each received item. Please check the item: ' + (div
+                            .querySelector('span')?.innerText || '');
+                        return;
+                    }
+                    if (!expiry) {
+                        valid = false;
+                        errorMsg = '⚠️ Expiry date is required for each received item. Please check the item: ' + (div
+                            .querySelector('span')?.innerText || '');
+                        return;
+                    }
                     items.push({
                         po_item_id: poItemId,
                         received_quantity: received,
@@ -1171,8 +1217,13 @@
                     });
                 }
             });
+
+            if (!valid) {
+                showToast(errorMsg, 'error');
+                return;
+            }
             if (items.length === 0) {
-                showToast('Add at least one item', 'error');
+                showToast('Add at least one valid item with quantity > 0', 'error');
                 return;
             }
 
@@ -1236,14 +1287,12 @@
 
         // View GRN detail
         window.viewGRNDetail = async function(id) {
-            // Reuse the PO detail modal or create a specific one.
-            // For simplicity, we open the GRN modal in read-only mode? 
-            // Actually we can show a simple alert with the details.
             try {
                 const grn = await apiCall(`/grn/${id}`);
                 let msg = `GRN ${grn.grn_number}\nPO: ${grn.po?.po_number || 'N/A'}\nReceived: ${grn.received_date}\nStatus: ${grn.status}\nItems:\n`;
                 (grn.grn_items || []).forEach(item => {
-                    msg += `  Product: ${item.inventory_id || 'N/A'} | Received: ${item.received_quantity} | Accepted: ${item.accepted_quantity} | Rejected: ${item.rejected_quantity}\n`;
+                    msg +=
+                        `  Product: ${item.inventory_id || 'N/A'} | Batch: ${item.batch_number || 'N/A'} | Expiry: ${item.expiry_date || 'N/A'} | Recv: ${item.received_quantity} | Acc: ${item.accepted_quantity} | Rej: ${item.rejected_quantity}\n`;
                 });
                 alert(msg);
             } catch (err) {
@@ -1273,7 +1322,6 @@
 
         window.goToPage = function(page, containerId, totalPages, loadFn) {
             if (page < 1 || page > totalPages) return;
-            // determine which page variable to update based on containerId
             if (containerId === 'supplier-pagination') currentSupplierPage = page;
             else if (containerId === 'po-pagination') currentPOPage = page;
             else if (containerId === 'grn-pagination') currentGRNPage = page;
