@@ -1,0 +1,1336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kevs bOS – Procurement</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body { background: #0F172A; font-family: 'Inter', system-ui; }
+        .tab-active { border-bottom: 2px solid #3b82f6; color: white; }
+        .tab-inactive { color: #94a3b8; }
+        .tab-inactive:hover { color: #e2e8f0; }
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); z-index: 50; align-items: center; justify-content: center; padding: 1rem; }
+        .modal-overlay.active { display: flex; }
+        .modal-content { background: #1e293b; border: 1px solid #475569; border-radius: 1.5rem; max-width: 900px; width: 100%; max-height: 90vh; overflow-y: auto; padding: 2rem; position: relative; }
+        .modal-close { position: absolute; top: 1rem; right: 1rem; background: transparent; border: none; color: #94a3b8; font-size: 1.5rem; cursor: pointer; }
+        .modal-close:hover { color: white; }
+        .form-input { background: #0f172a; border: 1px solid #334155; border-radius: 0.5rem; padding: 0.5rem 0.75rem; color: #e2e8f0; width: 100%; }
+        .form-input:focus { border-color: #3b82f6; outline: none; }
+        .form-label { display: block; font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.25rem; }
+        .btn-primary { background: #3b82f6; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; transition: background 0.15s; border: none; cursor: pointer; }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-secondary { background: #334155; color: #e2e8f0; padding: 0.5rem 1rem; border-radius: 0.5rem; transition: background 0.15s; border: none; cursor: pointer; }
+        .btn-secondary:hover { background: #475569; }
+        .btn-danger { background: #dc2626; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; transition: background 0.15s; border: none; cursor: pointer; }
+        .btn-danger:hover { background: #b91c1c; }
+        .btn-success { background: #22c55e; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; transition: background 0.15s; border: none; cursor: pointer; }
+        .btn-success:hover { background: #16a34a; }
+        .table-container { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th { text-align: left; padding: 0.75rem 1rem; background: #1e293b; color: #94a3b8; font-weight: 500; border-bottom: 1px solid #334155; }
+        td { padding: 0.75rem 1rem; border-bottom: 1px solid #1e293b; }
+        tr:hover td { background: #1e293b; }
+        .status-badge { display: inline-block; padding: 0.1rem 0.6rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 600; }
+        .status-draft { background: #94a3b8; color: #0f172a; }
+        .status-sent { background: #3b82f6; color: white; }
+        .status-partial { background: #f59e0b; color: #0f172a; }
+        .status-received { background: #22c55e; color: #0f172a; }
+        .status-cancelled { background: #dc2626; color: white; }
+        .status-pending { background: #f59e0b; color: #0f172a; }
+        .status-posted { background: #22c55e; color: #0f172a; }
+        .line-item { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; padding: 0.5rem; background: #0f172a; border-radius: 0.5rem; margin-bottom: 0.5rem; }
+        .line-item input, .line-item select { background: #1e293b; border: 1px solid #334155; border-radius: 0.25rem; padding: 0.25rem 0.5rem; color: #e2e8f0; font-size: 0.85rem; }
+        .line-item .remove-line { color: #dc2626; cursor: pointer; font-size: 0.85rem; }
+        .pagination-btn { background: #1e293b; border: 1px solid #334155; color: #cbd5e1; padding: 0.3rem 0.8rem; border-radius: 0.5rem; font-size: 0.85rem; transition: all 0.15s; }
+        .pagination-btn:hover:not(:disabled) { background: #334155; }
+        .pagination-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .toast { position: fixed; bottom: 2rem; right: 2rem; background: #1e293b; border: 1px solid #475569; padding: 0.75rem 1.5rem; border-radius: 0.75rem; color: #e2e8f0; z-index: 999; box-shadow: 0 10px 30px rgba(0,0,0,0.3); display: none; max-width: 400px; }
+        .toast.success { border-left: 4px solid #22c55e; }
+        .toast.error { border-left: 4px solid #dc2626; }
+        .toast.info { border-left: 4px solid #3b82f6; }
+    </style>
+</head>
+<body class="text-slate-200">
+
+    <!-- GLOBAL NAVIGATION -->
+    <div id="kevs-nav-container"></div>
+
+    <!-- MAIN CONTENT -->
+    <div class="max-w-7xl mx-auto p-4 md:p-6">
+
+        <!-- Organisation Banner -->
+        <div id="current-org-banner" class="hidden mb-4 p-3 bg-blue-900/30 rounded-lg border border-blue-700 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <i class="fa-solid fa-building text-blue-400"></i>
+                <div>
+                    <p class="text-xs text-slate-400">Managing procurement for</p>
+                    <p id="current-org-name" class="font-semibold text-white">-</p>
+                </div>
+            </div>
+            <button id="switch-org-btn" class="text-sm bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg transition">
+                <i class="fa-solid fa-arrow-right-arrow-left mr-1"></i> Switch Organisation
+            </button>
+        </div>
+
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-6 pb-4 border-b border-slate-700">
+            <div>
+                <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">📦 Procurement Management</h1>
+                <p class="text-sm text-slate-400">Suppliers, Purchase Orders, Goods Received Notes</p>
+            </div>
+        </div>
+
+        <!-- Auth placeholder -->
+        <div id="auth-check-placeholder" class="bg-slate-800/50 rounded-2xl p-8 text-center">
+            <i class="fa-solid fa-spinner fa-pulse text-3xl mb-3"></i>
+                <p>Verifying access...</p>
+        </div>
+
+        <!-- TABS -->
+        <div id="procurement-tabs" class="hidden flex flex-wrap gap-2 border-b border-slate-700 mb-6">
+            <button class="tab-btn px-4 py-2 text-sm font-medium tab-active" data-tab="suppliers">🏢 Suppliers</button>
+            <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="purchase-orders">📋 Purchase Orders</button>
+            <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="grn">📦 Goods Received</button>
+        </div>
+
+        <!-- ===== TAB: SUPPLIERS ===== -->
+        <div id="tab-suppliers" class="tab-content hidden">
+            <div class="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">Suppliers</h2>
+                    <button onclick="openSupplierModal()" class="btn-primary"><i class="fa-solid fa-plus mr-1"></i> Add Supplier</button>
+                </div>
+                <div class="flex gap-4 mb-4">
+                    <select id="supplier-status-filter" class="form-input w-auto">
+                        <option value="">All Status</option>
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                    </select>
+                    <button onclick="loadSuppliers()" class="btn-secondary"><i class="fa-solid fa-rotate-right mr-1"></i> Refresh</button>
+                </div>
+                <div id="suppliers-list-container">
+                    <div class="text-center py-8 text-slate-400">Loading suppliers...</div>
+                </div>
+                <div id="supplier-pagination" class="flex items-center justify-between mt-4 pt-4 border-t border-slate-700"></div>
+            </div>
+        </div>
+
+        <!-- ===== TAB: PURCHASE ORDERS ===== -->
+        <div id="tab-purchase-orders" class="tab-content hidden">
+            <div class="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">Purchase Orders</h2>
+                    <button onclick="openPOModal()" class="btn-primary"><i class="fa-solid fa-plus mr-1"></i> Create PO</button>
+                </div>
+                <div class="flex flex-wrap gap-4 mb-4">
+                    <select id="po-status-filter" class="form-input w-auto">
+                        <option value="">All Status</option>
+                        <option value="draft">Draft</option>
+                        <option value="sent">Sent</option>
+                        <option value="partially_received">Partially Received</option>
+                        <option value="received">Received</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
+                    <input type="date" id="po-date-from" class="form-input w-auto" placeholder="From">
+                    <input type="date" id="po-date-to" class="form-input w-auto" placeholder="To">
+                    <button onclick="loadPurchaseOrders()" class="btn-secondary"><i class="fa-solid fa-rotate-right mr-1"></i> Refresh</button>
+                </div>
+                <div id="po-list-container">
+                    <div class="text-center py-8 text-slate-400">Loading purchase orders...</div>
+                </div>
+                <div id="po-pagination" class="flex items-center justify-between mt-4 pt-4 border-t border-slate-700"></div>
+            </div>
+        </div>
+
+        <!-- ===== TAB: GRN ===== -->
+        <div id="tab-grn" class="tab-content hidden">
+            <div class="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">Goods Received Notes</h2>
+                    <button onclick="openGRNModal()" class="btn-primary"><i class="fa-solid fa-plus mr-1"></i> Create GRN</button>
+                </div>
+                <div class="flex flex-wrap gap-4 mb-4">
+                    <select id="grn-status-filter" class="form-input w-auto">
+                        <option value="">All Status</option>
+                        <option value="draft">Draft</option>
+                        <option value="posted">Posted</option>
+                    </select>
+                    <button onclick="loadGRNs()" class="btn-secondary"><i class="fa-solid fa-rotate-right mr-1"></i> Refresh</button>
+                </div>
+                <div id="grn-list-container">
+                    <div class="text-center py-8 text-slate-400">Loading GRNs...</div>
+                </div>
+                <div id="grn-pagination" class="flex items-center justify-between mt-4 pt-4 border-t border-slate-700"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ===== MODALS ===== -->
+
+    <!-- Supplier Modal -->
+    <div id="supplier-modal" class="modal-overlay">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('supplier-modal')">&times;</button>
+            <h3 id="supplier-modal-title" class="text-xl font-bold mb-4">Add Supplier</h3>
+            <form id="supplier-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input type="hidden" id="supplier-id">
+                <div><label class="form-label">Name *</label><input type="text" id="s-name" class="form-input" required></div>
+                <div><label class="form-label">Contact Person</label><input type="text" id="s-contact" class="form-input"></div>
+                <div><label class="form-label">Email</label><input type="email" id="s-email" class="form-input"></div>
+                <div><label class="form-label">Phone</label><input type="text" id="s-phone" class="form-input"></div>
+                <div class="md:col-span-2"><label class="form-label">Address</label><input type="text" id="s-address" class="form-input"></div>
+                <div><label class="form-label">Tax ID</label><input type="text" id="s-tax" class="form-input"></div>
+                <div><label class="form-label">Payment Terms</label><input type="text" id="s-terms" class="form-input" placeholder="e.g. Net 30"></div>
+                <div><label class="form-label">Status</label>
+                    <select id="s-status" class="form-input"><option value="active">Active</option><option value="inactive">Inactive</option></select>
+                </div>
+                <div class="md:col-span-2 flex gap-3">
+                    <button type="submit" class="btn-primary">💾 Save</button>
+                    <button type="button" onclick="closeModal('supplier-modal')" class="btn-secondary">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Purchase Order Modal -->
+    <div id="po-modal" class="modal-overlay">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('po-modal')">&times;</button>
+            <h3 id="po-modal-title" class="text-xl font-bold mb-4">Create Purchase Order</h3>
+            <form id="po-form" class="space-y-4">
+                <input type="hidden" id="po-id">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div><label class="form-label">Supplier *</label>
+                        <select id="po-supplier" class="form-input" required><option value="">Select supplier...</option></select>
+                    </div>
+                    <div><label class="form-label">Expected Delivery Date</label>
+                        <input type="date" id="po-expected-date" class="form-input">
+                    </div>
+                    <div class="md:col-span-2"><label class="form-label">Notes</label>
+                        <input type="text" id="po-notes" class="form-input" placeholder="Optional notes">
+                    </div>
+                </div>
+                <div>
+                    <label class="form-label">Line Items</label>
+                    <div id="po-line-items" class="space-y-2">
+                        <div class="line-item">
+                            <select class="po-item-select form-input w-48"><option value="">Select product...</option></select>
+                            <input type="number" placeholder="Qty" class="po-item-qty form-input w-24" min="1" value="1">
+                            <input type="number" placeholder="Unit cost" class="po-item-cost form-input w-32" min="0" step="0.01" value="0">
+                            <button type="button" class="remove-line text-red-400" onclick="removeLineItem(this)"><i class="fa-regular fa-trash-can"></i></button>
+                        </div>
+                    </div>
+                    <button type="button" onclick="addLineItem()" class="btn-secondary text-sm"><i class="fa-solid fa-plus mr-1"></i> Add Item</button>
+                </div>
+                <div class="flex gap-3 mt-4">
+                    <button type="submit" class="btn-primary">💾 Save</button>
+                    <button type="button" onclick="closeModal('po-modal')" class="btn-secondary">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- GRN Modal -->
+    <div id="grn-modal" class="modal-overlay">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('grn-modal')">&times;</button>
+            <h3 id="grn-modal-title" class="text-xl font-bold mb-4">Create Goods Received Note</h3>
+            <form id="grn-form" class="space-y-4">
+                <input type="hidden" id="grn-id">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div><label class="form-label">Purchase Order *</label>
+                        <select id="grn-po-select" class="form-input" required><option value="">Select PO...</option></select>
+                    </div>
+                    <div><label class="form-label">Received Date</label>
+                        <input type="date" id="grn-received-date" class="form-input">
+                    </div>
+                    <div><label class="form-label">Receiving Location *</label>
+                        <select id="grn-location" class="form-input" required><option value="">Select location...</option></select>
+                    </div>
+                    <div><label class="form-label">Notes</label>
+                        <input type="text" id="grn-notes" class="form-input" placeholder="Optional">
+                    </div>
+                </div>
+                <div>
+                    <label class="form-label">Items</label>
+                    <div id="grn-items-container" class="space-y-2">
+                        <!-- dynamically populated from PO -->
+                    </div>
+                </div>
+                <div class="flex gap-3 mt-4">
+                    <button type="submit" class="btn-primary">💾 Save (Draft)</button>
+                    <button type="button" onclick="postGRN()" id="grn-post-btn" class="btn-success hidden">📤 Post GRN</button>
+                    <button type="button" onclick="closeModal('grn-modal')" class="btn-secondary">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- PO Detail Modal (view only) -->
+    <div id="po-detail-modal" class="modal-overlay">
+        <div class="modal-content max-w-2xl">
+            <button class="modal-close" onclick="closeModal('po-detail-modal')">&times;</button>
+            <h3 id="po-detail-title" class="text-xl font-bold mb-4">Purchase Order Details</h3>
+            <div id="po-detail-content" class="space-y-3"></div>
+            <div class="flex gap-3 mt-4">
+                <button onclick="closeModal('po-detail-modal')" class="btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="toast"></div>
+
+    <!-- ===== JAVASCRIPT ===== -->
+    <script>
+        // ========================================================================
+        // CONFIGURATION
+        // ========================================================================
+        const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
+        let token = localStorage.getItem('access_token');
+        let currentUser = null;
+        let selectedOrganisation = null;
+        let allSuppliers = [];
+        let allInventory = [];
+        let allLocations = [];
+        let currentSupplierPage = 1;
+        let currentPOPage = 1;
+        let currentGRNPage = 1;
+        const PAGE_SIZE = 20;
+        let totalSuppliers = 0, totalPOs = 0, totalGRNs = 0;
+        let poLineItems = [];
+        let editingGRNId = null; // used when editing a draft GRN
+
+        // ========================================================================
+        // UTILITIES
+        // ========================================================================
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' } [m]));
+        }
+
+        function showToast(msg, type = 'info') {
+            const toast = document.getElementById('toast');
+            toast.className = `toast ${type}`;
+            toast.innerText = msg;
+            toast.style.display = 'block';
+            clearTimeout(toast._timer);
+            toast._timer = setTimeout(() => toast.style.display = 'none', 4000);
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+        }
+
+        function openModal(id) {
+            document.getElementById(id).classList.add('active');
+        }
+
+        // ========================================================================
+        // API CALLS
+        // ========================================================================
+        async function apiCall(endpoint, options = {}, retry = true) {
+            if (!options.headers) options.headers = {};
+            if (!(options.body instanceof FormData)) {
+                options.headers['Content-Type'] = 'application/json';
+            }
+            if (token) options.headers['Authorization'] = `Bearer ${token}`;
+
+            const orgId = selectedOrganisation ? selectedOrganisation.id : localStorage.getItem('selected_org_id');
+            if (orgId) {
+                options.headers['X-Selected-Org-Id'] = orgId;
+            }
+
+            let res = await fetch(`${API_BASE}${endpoint}`, options);
+            if (res.status === 401 && retry) {
+                const refresh = localStorage.getItem('refresh_token');
+                if (refresh) {
+                    try {
+                        const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ refresh_token: refresh })
+                        });
+                        if (refreshRes.ok) {
+                            const data = await refreshRes.json();
+                            localStorage.setItem('access_token', data.access_token);
+                            localStorage.setItem('refresh_token', data.refresh_token);
+                            token = data.access_token;
+                            return apiCall(endpoint, options, false);
+                        }
+                    } catch (e) {}
+                }
+                throw new Error('Session expired');
+            }
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: 'API error' }));
+                throw new Error(err.detail || 'API error');
+            }
+            return res.json();
+        }
+
+        // ========================================================================
+        // GLOBAL NAVIGATION (same as other pages)
+        // ========================================================================
+        (function() {
+            const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
+            const LOGIN_URL = '/kdsiginin';
+            const navItems = [
+                { path: '/kdbi', name: 'Dashboard', icon: 'fa-chart-line', roles: ['owner', 'admin'] },
+                { path: '/kdpos', name: 'POS', icon: 'fa-cash-register', roles: ['owner', 'admin', 'sales_rep'] },
+                { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', roles: ['owner', 'admin',
+                        'logistics'] },
+                { path: '/kdsupport', name: 'Support', icon: 'fa-headset', roles: ['owner', 'admin', 'support'] },
+                { path: '/kddashboard', name: 'Exec', icon: 'fa-chart-simple', roles: ['owner', 'admin', 'finance'] },
+                { path: '/kdadmin', name: 'Inventory', icon: 'fa-boxes', roles: ['owner', 'admin', 'inventory_manager'] },
+                { path: '/kdteam', name: 'Team', icon: 'fa-users', roles: ['owner', 'admin'] },
+                { path: '/kdknowledge', name: 'Knowledge', icon: 'fa-database', roles: ['owner', 'admin'] },
+                { path: '/kdprocurement', name: 'Procurement', icon: 'fa-truck', roles: ['owner', 'admin',
+                        'inventory_manager', 'procurement'] }
+            ];
+
+            function getUserRole() {
+                try { return localStorage.getItem('user_role') || 'customer'; } catch (e) { return 'customer'; }
+            }
+
+            function buildNavbar() {
+                const currentPath = window.location.pathname;
+                let linksHtml = '';
+                navItems.forEach(item => {
+                    if (!item.roles.includes(getUserRole())) return;
+                    const isActive = currentPath === item.path;
+                    const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
+                    linksHtml +=
+                        `<a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${activeClass}"><i class="fa-solid ${item.icon} w-4"></i> ${item.name}</a>`;
+                });
+                let userName = 'User';
+                try { userName = localStorage.getItem('user_profile_display') || 'User'; } catch (e) {}
+                return `<div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40">
+                    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+                        <div class="flex items-center gap-2"><i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i><span class="text-xl font-bold">${APP_NAME}</span></div>
+                        <div class="hidden md:flex items-center gap-1 flex-wrap">${linksHtml}</div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full"><i class="fa-regular fa-user mr-1"></i> ${escapeHtml(userName)}</span>
+                            <button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition"><i class="fa-solid fa-sign-out-alt"></i></button>
+                        </div>
+                    </div>
+                    <div class="md:hidden flex overflow-x-auto pb-2 px-4 gap-1">${linksHtml}</div>
+                </div>`;
+            }
+
+            async function globalLogout() {
+                try {
+                    await fetch(`${API_BASE}/auth/logout`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
+                } catch (e) {}
+                localStorage.clear();
+                window.location.href = LOGIN_URL;
+            }
+
+            const container = document.getElementById('kevs-nav-container');
+            if (container) {
+                container.innerHTML = buildNavbar();
+                document.getElementById('global-logout-btn')?.addEventListener('click', globalLogout);
+            }
+        })();
+
+        // ========================================================================
+        // ORGANISATION SELECTION (simplified – reuses admin logic)
+        // ========================================================================
+        async function fetchUserOrganisations() {
+            try {
+                const response = await fetch(`${API_BASE}/auth/user-organisations`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!response.ok) throw new Error('Failed');
+                const data = await response.json();
+                const orgs = data.organisations || data || [];
+                return orgs.map(org => ({
+                    id: org.id || org.org_id,
+                    org_name: org.org_name || `Org: ${org.id}`,
+                    role: org.role || 'member'
+                }));
+            } catch (err) {
+                // fallback: use /auth/me
+                const me = await apiCall('/auth/me');
+                if (me.org_id) {
+                    let orgName = null;
+                    try {
+                        const orgInfo = await apiCall('/auth/org');
+                        orgName = orgInfo.org_name;
+                    } catch (e) {}
+                    return [{ id: me.org_id, org_name: orgName || `Org: ${me.org_id}`, role: me.role || 'admin' }];
+                }
+                return [];
+            }
+        }
+
+        async function initOrganisation() {
+            const savedOrgId = localStorage.getItem('selected_org_id');
+            if (savedOrgId) {
+                const orgs = await fetchUserOrganisations();
+                const saved = orgs.find(o => o.id === savedOrgId);
+                if (saved) {
+                    selectedOrganisation = { id: saved.id, name: saved.org_name, role: saved.role };
+                    document.getElementById('current-org-name').innerText = selectedOrganisation.name;
+                    document.getElementById('current-org-banner').classList.remove('hidden');
+                    document.getElementById('auth-check-placeholder').classList.add('hidden');
+                    document.getElementById('procurement-tabs').classList.remove('hidden');
+                    // load data
+                    await loadSuppliers();
+                    await loadPurchaseOrders();
+                    await loadGRNs();
+                    await loadInventoryAndLocations();
+                    return;
+                }
+            }
+            // show org selection (simple: pick first)
+            const orgs = await fetchUserOrganisations();
+            if (orgs.length === 0) {
+                showToast('You are not a member of any organisation', 'error');
+                return;
+            }
+            // auto-select first
+            selectedOrganisation = { id: orgs[0].id, name: orgs[0].org_name, role: orgs[0].role };
+            localStorage.setItem('selected_org_id', selectedOrganisation.id);
+            document.getElementById('current-org-name').innerText = selectedOrganisation.name;
+            document.getElementById('current-org-banner').classList.remove('hidden');
+            document.getElementById('auth-check-placeholder').classList.add('hidden');
+            document.getElementById('procurement-tabs').classList.remove('hidden');
+            await loadSuppliers();
+            await loadPurchaseOrders();
+            await loadGRNs();
+            await loadInventoryAndLocations();
+        }
+
+        document.getElementById('switch-org-btn')?.addEventListener('click', function() {
+            localStorage.removeItem('selected_org_id');
+            location.reload();
+        });
+
+        // ========================================================================
+        // DATA LOADING HELPERS
+        // ========================================================================
+        async function loadInventoryAndLocations() {
+            try {
+                const inv = await apiCall('/inventory');
+                allInventory = inv.items || inv || [];
+                const loc = await apiCall('/locations');
+                allLocations = loc.locations || loc || [];
+                // populate selects
+                populateInventorySelects();
+                populateLocationSelects();
+                populatePOSupplierSelect();
+            } catch (err) {
+                console.warn('Failed to load inventory/locations', err);
+            }
+        }
+
+        function populateInventorySelects() {
+            const selects = document.querySelectorAll('.po-item-select');
+            selects.forEach(sel => {
+                const currentVal = sel.value;
+                sel.innerHTML = '<option value="">Select product...</option>' +
+                    allInventory.map(p => `<option value="${p.id}">${escapeHtml(p.description)} (${escapeHtml(p.item_code || p.id)})</option>`)
+                    .join('');
+                if (currentVal) sel.value = currentVal;
+            });
+        }
+
+        function populateLocationSelects() {
+            const sel = document.getElementById('grn-location');
+            if (!sel) return;
+            sel.innerHTML = '<option value="">Select location...</option>' +
+                allLocations.map(l => `<option value="${l.id}">${escapeHtml(l.name)}</option>`).join('');
+        }
+
+        function populatePOSupplierSelect() {
+            const sel = document.getElementById('po-supplier');
+            if (!sel) return;
+            sel.innerHTML = '<option value="">Select supplier...</option>' +
+                allSuppliers.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+        }
+
+        // ========================================================================
+        // SUPPLIERS
+        // ========================================================================
+        async function loadSuppliers(page = 1) {
+            const status = document.getElementById('supplier-status-filter').value;
+            let url = `/suppliers?limit=${PAGE_SIZE}&offset=${(page-1)*PAGE_SIZE}`;
+            if (status) url += `&status=${status}`;
+            try {
+                const data = await apiCall(url);
+                const items = data.suppliers || [];
+                totalSuppliers = items.length; // fallback, if backend returns total we could use it
+                allSuppliers = items;
+                renderSuppliers(items);
+                renderPagination('supplier-pagination', page, Math.ceil(totalSuppliers / PAGE_SIZE), loadSuppliers);
+            } catch (err) {
+                document.getElementById('suppliers-list-container').innerHTML =
+                    `<div class="text-center py-8 text-red-400">❌ ${escapeHtml(err.message)}</div>`;
+            }
+        }
+
+        function renderSuppliers(suppliers) {
+            const container = document.getElementById('suppliers-list-container');
+            if (!suppliers || suppliers.length === 0) {
+                container.innerHTML = '<div class="text-center py-8 text-slate-400">No suppliers found</div>';
+                return;
+            }
+            container.innerHTML = `<div class="table-container"><table>
+                <thead><tr><th>Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Status</th><th>Actions</th></tr></thead>
+                <tbody>${suppliers.map(s => `
+                    <tr>
+                        <td class="font-medium">${escapeHtml(s.name)}</td>
+                        <td>${escapeHtml(s.contact_person || '—')}</td>
+                        <td>${escapeHtml(s.email || '—')}</td>
+                        <td>${escapeHtml(s.phone || '—')}</td>
+                        <td><span class="status-badge ${s.status === 'active' ? 'status-sent' : 'status-cancelled'}">${s.status || 'active'}</span></td>
+                        <td>
+                            <button onclick="editSupplier('${s.id}')" class="text-blue-400 hover:text-blue-300 mr-2"><i class="fa-regular fa-pen-to-square"></i></button>
+                            <button onclick="deleteSupplier('${s.id}')" class="text-red-400 hover:text-red-300"><i class="fa-regular fa-trash-can"></i></button>
+                        </td>
+                    </tr>
+                `).join('')}</tbody></table></div>`;
+            // store for editing
+            window._allSuppliers = suppliers;
+        }
+
+        // Supplier CRUD
+        function openSupplierModal(supplierId = null) {
+            const modal = document.getElementById('supplier-modal');
+            const form = document.getElementById('supplier-form');
+            form.reset();
+            document.getElementById('supplier-id').value = '';
+            document.getElementById('supplier-modal-title').innerText = supplierId ? 'Edit Supplier' : 'Add Supplier';
+            if (supplierId) {
+                const s = window._allSuppliers.find(s => s.id === supplierId);
+                if (s) {
+                    document.getElementById('s-name').value = s.name || '';
+                    document.getElementById('s-contact').value = s.contact_person || '';
+                    document.getElementById('s-email').value = s.email || '';
+                    document.getElementById('s-phone').value = s.phone || '';
+                    document.getElementById('s-address').value = s.address || '';
+                    document.getElementById('s-tax').value = s.tax_id || '';
+                    document.getElementById('s-terms').value = s.payment_terms || '';
+                    document.getElementById('s-status').value = s.status || 'active';
+                    document.getElementById('supplier-id').value = s.id;
+                }
+            }
+            modal.classList.add('active');
+        }
+
+        document.getElementById('supplier-form')?.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const id = document.getElementById('supplier-id').value;
+            const payload = {
+                name: document.getElementById('s-name').value.trim(),
+                contact_person: document.getElementById('s-contact').value.trim() || null,
+                email: document.getElementById('s-email').value.trim() || null,
+                phone: document.getElementById('s-phone').value.trim() || null,
+                address: document.getElementById('s-address').value.trim() || null,
+                tax_id: document.getElementById('s-tax').value.trim() || null,
+                payment_terms: document.getElementById('s-terms').value.trim() || null,
+                status: document.getElementById('s-status').value
+            };
+            try {
+                if (id) {
+                    await apiCall(`/suppliers/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+                    showToast('Supplier updated', 'success');
+                } else {
+                    await apiCall('/suppliers', { method: 'POST', body: JSON.stringify(payload) });
+                    showToast('Supplier added', 'success');
+                }
+                closeModal('supplier-modal');
+                loadSuppliers(currentSupplierPage);
+                populatePOSupplierSelect();
+            } catch (err) {
+                showToast(`Error: ${err.message}`, 'error');
+            }
+        });
+
+        window.editSupplier = function(id) {
+            openSupplierModal(id);
+        };
+
+        window.deleteSupplier = async function(id) {
+            if (!confirm('Delete this supplier? This cannot be undone.')) return;
+            try {
+                await apiCall(`/suppliers/${id}`, { method: 'DELETE' });
+                showToast('Supplier deleted', 'success');
+                loadSuppliers(currentSupplierPage);
+                populatePOSupplierSelect();
+            } catch (err) {
+                showToast(`Error: ${err.message}`, 'error');
+            }
+        };
+
+        document.getElementById('supplier-status-filter')?.addEventListener('change', () => loadSuppliers(1));
+
+        // ========================================================================
+        // PURCHASE ORDERS
+        // ========================================================================
+        async function loadPurchaseOrders(page = 1) {
+            const status = document.getElementById('po-status-filter').value;
+            const from = document.getElementById('po-date-from').value;
+            const to = document.getElementById('po-date-to').value;
+            let url = `/purchase-orders?limit=${PAGE_SIZE}&offset=${(page-1)*PAGE_SIZE}`;
+            if (status) url += `&status=${status}`;
+            if (from) url += `&from_date=${from}`;
+            if (to) url += `&to_date=${to}`;
+            try {
+                const data = await apiCall(url);
+                const items = data.purchase_orders || [];
+                totalPOs = data.total || items.length;
+                renderPOs(items);
+                renderPagination('po-pagination', page, Math.ceil(totalPOs / PAGE_SIZE), loadPurchaseOrders);
+            } catch (err) {
+                document.getElementById('po-list-container').innerHTML =
+                    `<div class="text-center py-8 text-red-400">❌ ${escapeHtml(err.message)}</div>`;
+            }
+        }
+
+        function renderPOs(pos) {
+            const container = document.getElementById('po-list-container');
+            if (!pos || pos.length === 0) {
+                container.innerHTML = '<div class="text-center py-8 text-slate-400">No purchase orders</div>';
+                return;
+            }
+            container.innerHTML = `<div class="table-container"><table>
+                <thead><tr><th>PO #</th><th>Supplier</th><th>Date</th><th>Expected</th><th>Total (₦)</th><th>Status</th><th>Actions</th></tr></thead>
+                <tbody>${pos.map(po => `
+                    <tr>
+                        <td class="font-mono">${escapeHtml(po.po_number)}</td>
+                        <td>${escapeHtml(po.supplier?.name || '—')}</td>
+                        <td>${po.order_date || '—'}</td>
+                        <td>${po.expected_delivery_date || '—'}</td>
+                        <td class="font-mono">${(po.total_amount || 0).toLocaleString()}</td>
+                        <td><span class="status-badge status-${po.status}">${po.status || 'draft'}</span></td>
+                        <td>
+                            <button onclick="viewPODetail('${po.id}')" class="text-blue-400 hover:text-blue-300 mr-2"><i class="fa-regular fa-eye"></i></button>
+                            ${po.status === 'draft' ? `
+                                <button onclick="editPO('${po.id}')" class="text-yellow-400 hover:text-yellow-300 mr-2"><i class="fa-regular fa-pen-to-square"></i></button>
+                                <button onclick="deletePO('${po.id}')" class="text-red-400 hover:text-red-300"><i class="fa-regular fa-trash-can"></i></button>
+                            ` : ''}
+                            ${po.status === 'draft' ? `<button onclick="updatePOStatus('${po.id}','sent')" class="text-green-400 hover:text-green-300 text-sm">Send</button>` : ''}
+                            ${po.status === 'sent' || po.status === 'partially_received' ? `<button onclick="updatePOStatus('${po.id}','received')" class="text-green-400 hover:text-green-300 text-sm">Mark Received</button>` : ''}
+                            ${po.status !== 'cancelled' && po.status !== 'received' ? `<button onclick="updatePOStatus('${po.id}','cancelled')" class="text-red-400 hover:text-red-300 text-sm">Cancel</button>` : ''}
+                        </td>
+                    </tr>
+                `).join('')}</tbody></table></div>`;
+            window._allPOs = pos;
+        }
+
+        // PO CRUD
+        function openPOModal(poId = null) {
+            const modal = document.getElementById('po-modal');
+            const form = document.getElementById('po-form');
+            form.reset();
+            document.getElementById('po-id').value = '';
+            document.getElementById('po-modal-title').innerText = poId ? 'Edit Purchase Order' : 'Create Purchase Order';
+            document.getElementById('po-line-items').innerHTML = '';
+            if (poId) {
+                const po = window._allPOs.find(p => p.id === poId);
+                if (po) {
+                    document.getElementById('po-id').value = po.id;
+                    document.getElementById('po-supplier').value = po.supplier_id || '';
+                    document.getElementById('po-expected-date').value = po.expected_delivery_date || '';
+                    document.getElementById('po-notes').value = po.notes || '';
+                    // load items
+                    if (po.purchase_order_items) {
+                        po.purchase_order_items.forEach(item => {
+                            addLineItem(item.inventory_id, item.quantity_ordered, item.unit_cost);
+                        });
+                    }
+                }
+            } else {
+                // add one empty line
+                addLineItem();
+            }
+            modal.classList.add('active');
+            populatePOSupplierSelect();
+            populateInventorySelects();
+        }
+
+        // Line items
+        window.addLineItem = function(inventoryId = null, qty = 1, cost = 0) {
+            const container = document.getElementById('po-line-items');
+            const div = document.createElement('div');
+            div.className = 'line-item';
+            const sel = document.createElement('select');
+            sel.className = 'po-item-select form-input w-48';
+            sel.innerHTML = '<option value="">Select product...</option>';
+            allInventory.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = `${p.description} (${p.item_code || p.id})`;
+                if (p.id == inventoryId) opt.selected = true;
+                sel.appendChild(opt);
+            });
+            const qtyInput = document.createElement('input');
+            qtyInput.type = 'number';
+            qtyInput.className = 'po-item-qty form-input w-24';
+            qtyInput.min = 1;
+            qtyInput.value = qty || 1;
+            const costInput = document.createElement('input');
+            costInput.type = 'number';
+            costInput.className = 'po-item-cost form-input w-32';
+            costInput.min = 0;
+            costInput.step = 0.01;
+            costInput.value = cost || 0;
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'remove-line text-red-400';
+            removeBtn.innerHTML = '<i class="fa-regular fa-trash-can"></i>';
+            removeBtn.onclick = function() { this.parentElement.remove(); };
+            div.appendChild(sel);
+            div.appendChild(qtyInput);
+            div.appendChild(costInput);
+            div.appendChild(removeBtn);
+            container.appendChild(div);
+        };
+
+        window.removeLineItem = function(btn) {
+            btn.closest('.line-item').remove();
+        };
+
+        document.getElementById('po-form')?.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const id = document.getElementById('po-id').value;
+            const supplier_id = document.getElementById('po-supplier').value;
+            const expected_delivery_date = document.getElementById('po-expected-date').value;
+            const notes = document.getElementById('po-notes').value.trim();
+
+            const lineItems = [];
+            const items = document.querySelectorAll('#po-line-items .line-item');
+            let valid = true;
+            items.forEach(div => {
+                const invId = div.querySelector('.po-item-select').value;
+                const qty = parseInt(div.querySelector('.po-item-qty').value);
+                const cost = parseFloat(div.querySelector('.po-item-cost').value);
+                if (invId && qty > 0 && cost >= 0) {
+                    lineItems.push({ inventory_id: parseInt(invId), quantity_ordered: qty, unit_cost: cost });
+                } else {
+                    valid = false;
+                }
+            });
+            if (!valid || lineItems.length === 0) {
+                showToast('Please add at least one valid line item', 'error');
+                return;
+            }
+            if (!supplier_id) {
+                showToast('Select a supplier', 'error');
+                return;
+            }
+
+            const payload = {
+                supplier_id,
+                expected_delivery_date: expected_delivery_date || null,
+                notes: notes || null,
+                items: lineItems
+            };
+
+            try {
+                if (id) {
+                    await apiCall(`/purchase-orders/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+                    showToast('Purchase order updated', 'success');
+                } else {
+                    await apiCall('/purchase-orders', { method: 'POST', body: JSON.stringify(payload) });
+                    showToast('Purchase order created', 'success');
+                }
+                closeModal('po-modal');
+                loadPurchaseOrders(currentPOPage);
+            } catch (err) {
+                showToast(`Error: ${err.message}`, 'error');
+            }
+        });
+
+        window.editPO = function(id) {
+            openPOModal(id);
+        };
+
+        window.deletePO = async function(id) {
+            if (!confirm('Delete this PO? Only drafts can be deleted.')) return;
+            try {
+                await apiCall(`/purchase-orders/${id}`, { method: 'DELETE' });
+                showToast('PO deleted', 'success');
+                loadPurchaseOrders(currentPOPage);
+            } catch (err) {
+                showToast(`Error: ${err.message}`, 'error');
+            }
+        };
+
+        window.updatePOStatus = async function(id, status) {
+            try {
+                await apiCall(`/purchase-orders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+                showToast(`PO status updated to ${status}`, 'success');
+                loadPurchaseOrders(currentPOPage);
+            } catch (err) {
+                showToast(`Error: ${err.message}`, 'error');
+            }
+        };
+
+        // View PO detail
+        window.viewPODetail = async function(id) {
+            try {
+                const po = await apiCall(`/purchase-orders/${id}`);
+                const container = document.getElementById('po-detail-content');
+                container.innerHTML = `
+                    <div><strong>PO #:</strong> ${escapeHtml(po.po_number)}</div>
+                    <div><strong>Supplier:</strong> ${escapeHtml(po.supplier?.name || '—')}</div>
+                    <div><strong>Date:</strong> ${po.order_date || '—'}</div>
+                    <div><strong>Expected Delivery:</strong> ${po.expected_delivery_date || '—'}</div>
+                    <div><strong>Status:</strong> <span class="status-badge status-${po.status}">${po.status}</span></div>
+                    <div><strong>Total:</strong> ₦${(po.total_amount || 0).toLocaleString()}</div>
+                    <div><strong>Notes:</strong> ${escapeHtml(po.notes || '—')}</div>
+                    <div><strong>Items:</strong></div>
+                    <div class="table-container">
+                        <table>
+                            <thead><tr><th>Product</th><th>Qty Ordered</th><th>Unit Cost</th><th>Total</th><th>Received</th></tr></thead>
+                            <tbody>${(po.purchase_order_items || []).map(item => `
+                                <tr>
+                                    <td>${escapeHtml(item.inventory?.description || 'Product')}</td>
+                                    <td>${item.quantity_ordered}</td>
+                                    <td>₦${(item.unit_cost || 0).toLocaleString()}</td>
+                                    <td>₦${(item.total || (item.unit_cost * item.quantity_ordered)).toLocaleString()}</td>
+                                    <td>${item.received_quantity || 0}</td>
+                                </tr>
+                            `).join('')}</tbody>
+                        </table>
+                    </div>
+                `;
+                document.getElementById('po-detail-title').innerText = `PO ${po.po_number}`;
+                openModal('po-detail-modal');
+            } catch (err) {
+                showToast(`Error: ${err.message}`, 'error');
+            }
+        };
+
+        // ========================================================================
+        // GOODS RECEIVED NOTES (GRN)
+        // ========================================================================
+        async function loadGRNs(page = 1) {
+            const status = document.getElementById('grn-status-filter').value;
+            let url = `/grn?limit=${PAGE_SIZE}&offset=${(page-1)*PAGE_SIZE}`;
+            if (status) url += `&status=${status}`;
+            try {
+                const data = await apiCall(url);
+                const items = data.grn || [];
+                totalGRNs = data.total || items.length;
+                renderGRNs(items);
+                renderPagination('grn-pagination', page, Math.ceil(totalGRNs / PAGE_SIZE), loadGRNs);
+            } catch (err) {
+                document.getElementById('grn-list-container').innerHTML =
+                    `<div class="text-center py-8 text-red-400">❌ ${escapeHtml(err.message)}</div>`;
+            }
+        }
+
+        function renderGRNs(grns) {
+            const container = document.getElementById('grn-list-container');
+            if (!grns || grns.length === 0) {
+                container.innerHTML = '<div class="text-center py-8 text-slate-400">No GRNs found</div>';
+                return;
+            }
+            container.innerHTML = `<div class="table-container"><table>
+                <thead><tr><th>GRN #</th><th>PO #</th><th>Received Date</th><th>Location</th><th>Status</th><th>Actions</th></tr></thead>
+                <tbody>${grns.map(grn => `
+                    <tr>
+                        <td class="font-mono">${escapeHtml(grn.grn_number)}</td>
+                        <td>${escapeHtml(grn.po?.po_number || '—')}</td>
+                        <td>${grn.received_date || '—'}</td>
+                        <td>${escapeHtml(grn.location?.name || '—')}</td>
+                        <td><span class="status-badge ${grn.status === 'posted' ? 'status-posted' : 'status-draft'}">${grn.status || 'draft'}</span></td>
+                        <td>
+                            <button onclick="viewGRNDetail('${grn.id}')" class="text-blue-400 hover:text-blue-300 mr-2"><i class="fa-regular fa-eye"></i></button>
+                            ${grn.status === 'draft' ? `
+                                <button onclick="editGRN('${grn.id}')" class="text-yellow-400 hover:text-yellow-300 mr-2"><i class="fa-regular fa-pen-to-square"></i></button>
+                                <button onclick="deleteGRN('${grn.id}')" class="text-red-400 hover:text-red-300 mr-2"><i class="fa-regular fa-trash-can"></i></button>
+                                <button onclick="postGRN('${grn.id}')" class="text-green-400 hover:text-green-300 text-sm">Post</button>
+                            ` : ''}
+                        </td>
+                    </tr>
+                `).join('')}</tbody></table></div>`;
+            window._allGRNs = grns;
+        }
+
+        // GRN CRUD
+        async function openGRNModal(grnId = null) {
+            const modal = document.getElementById('grn-modal');
+            const form = document.getElementById('grn-form');
+            form.reset();
+            document.getElementById('grn-id').value = '';
+            document.getElementById('grn-post-btn').classList.add('hidden');
+            document.getElementById('grn-modal-title').innerText = grnId ? 'Edit GRN' : 'Create GRN';
+
+            // populate PO select
+            const poSelect = document.getElementById('grn-po-select');
+            poSelect.innerHTML = '<option value="">Select PO...</option>';
+            try {
+                const pos = await apiCall('/purchase-orders?status=sent,partially_received');
+                (pos.purchase_orders || []).forEach(po => {
+                    const opt = document.createElement('option');
+                    opt.value = po.id;
+                    opt.textContent = `${po.po_number} (${po.supplier?.name || '—'})`;
+                    poSelect.appendChild(opt);
+                });
+            } catch (e) {}
+
+            // populate locations
+            populateLocationSelects();
+
+            // if editing, load GRN data
+            if (grnId) {
+                try {
+                    const grn = await apiCall(`/grn/${grnId}`);
+                    document.getElementById('grn-id').value = grn.id;
+                    document.getElementById('grn-po-select').value = grn.po_id || '';
+                    document.getElementById('grn-received-date').value = grn.received_date || '';
+                    document.getElementById('grn-location').value = grn.location_id || '';
+                    document.getElementById('grn-notes').value = grn.notes || '';
+                    // load items
+                    if (grn.grn_items) {
+                        document.getElementById('grn-items-container').innerHTML = '';
+                        grn.grn_items.forEach(item => {
+                            addGRNItem(item);
+                        });
+                    }
+                    // if draft, show post button
+                    if (grn.status === 'draft') {
+                        document.getElementById('grn-post-btn').classList.remove('hidden');
+                        document.getElementById('grn-post-btn').dataset.grnId = grn.id;
+                    }
+                } catch (err) {
+                    showToast(`Error loading GRN: ${err.message}`, 'error');
+                    return;
+                }
+            } else {
+                // new: add one empty item
+                document.getElementById('grn-items-container').innerHTML = '';
+                addGRNItem();
+                // when PO changes, load items
+                poSelect.onchange = async function() {
+                    const poId = this.value;
+                    if (!poId) {
+                        document.getElementById('grn-items-container').innerHTML = '';
+                        return;
+                    }
+                    try {
+                        const po = await apiCall(`/purchase-orders/${poId}`);
+                        const items = po.purchase_order_items || [];
+                        const container = document.getElementById('grn-items-container');
+                        container.innerHTML = '';
+                        items.forEach(poItem => {
+                            addGRNItem(null, poItem);
+                        });
+                    } catch (err) {
+                        showToast(`Error loading PO items: ${err.message}`, 'error');
+                    }
+                };
+            }
+
+            modal.classList.add('active');
+        }
+
+        function addGRNItem(existingItem = null, poItem = null) {
+            const container = document.getElementById('grn-items-container');
+            const div = document.createElement('div');
+            div.className = 'line-item';
+            div.style.flexWrap = 'wrap';
+            div.style.padding = '0.5rem';
+            div.style.background = '#0f172a';
+            div.style.borderRadius = '0.5rem';
+
+            // hidden po_item_id
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.className = 'grn-po-item-id';
+            hidden.value = existingItem?.po_item_id || poItem?.id || '';
+
+            // product name display
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'text-sm text-slate-300 min-w-[120px]';
+            nameSpan.innerText = existingItem?.product_name || poItem?.inventory?.description || 'Product';
+
+            // received quantity
+            const qtyLabel = document.createElement('label');
+            qtyLabel.className = 'text-xs text-slate-400';
+            qtyLabel.innerText = 'Received';
+            const qtyInput = document.createElement('input');
+            qtyInput.type = 'number';
+            qtyInput.className = 'form-input w-16';
+            qtyInput.min = 0;
+            qtyInput.value = existingItem?.received_quantity || poItem?.quantity_ordered || 0;
+
+            // accepted quantity
+            const accLabel = document.createElement('label');
+            accLabel.className = 'text-xs text-slate-400';
+            accLabel.innerText = 'Accepted';
+            const accInput = document.createElement('input');
+            accInput.type = 'number';
+            accInput.className = 'form-input w-16';
+            accInput.min = 0;
+            accInput.value = existingItem?.accepted_quantity || poItem?.quantity_ordered || 0;
+
+            // rejected quantity
+            const rejLabel = document.createElement('label');
+            rejLabel.className = 'text-xs text-slate-400';
+            rejLabel.innerText = 'Rejected';
+            const rejInput = document.createElement('input');
+            rejInput.type = 'number';
+            rejInput.className = 'form-input w-16';
+            rejInput.min = 0;
+            rejInput.value = existingItem?.rejected_quantity || 0;
+
+            // rejection reason
+            const reasonInput = document.createElement('input');
+            reasonInput.type = 'text';
+            reasonInput.className = 'form-input w-32';
+            reasonInput.placeholder = 'Reason';
+            reasonInput.value = existingItem?.rejection_reason || '';
+
+            // batch override
+            const batchInput = document.createElement('input');
+            batchInput.type = 'text';
+            batchInput.className = 'form-input w-24';
+            batchInput.placeholder = 'Batch #';
+            batchInput.value = existingItem?.batch_number || '';
+
+            // expiry override
+            const expiryInput = document.createElement('input');
+            expiryInput.type = 'date';
+            expiryInput.className = 'form-input w-28';
+            expiryInput.value = existingItem?.expiry_date || '';
+
+            // cost override
+            const costInput = document.createElement('input');
+            costInput.type = 'number';
+            costInput.className = 'form-input w-24';
+            costInput.placeholder = 'Cost';
+            costInput.step = 0.01;
+            costInput.value = existingItem?.cost_price_naira || poItem?.unit_cost || 0;
+
+            // remove button (only if existing GRN item)
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'remove-line text-red-400';
+            removeBtn.innerHTML = '<i class="fa-regular fa-trash-can"></i>';
+            removeBtn.onclick = function() { this.closest('.line-item').remove(); };
+
+            div.appendChild(hidden);
+            div.appendChild(nameSpan);
+            div.appendChild(qtyLabel);
+            div.appendChild(qtyInput);
+            div.appendChild(accLabel);
+            div.appendChild(accInput);
+            div.appendChild(rejLabel);
+            div.appendChild(rejInput);
+            div.appendChild(reasonInput);
+            div.appendChild(batchInput);
+            div.appendChild(expiryInput);
+            div.appendChild(costInput);
+            div.appendChild(removeBtn);
+            container.appendChild(div);
+        }
+
+        document.getElementById('grn-form')?.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const id = document.getElementById('grn-id').value;
+            const po_id = document.getElementById('grn-po-select').value;
+            const received_date = document.getElementById('grn-received-date').value;
+            const location_id = document.getElementById('grn-location').value;
+            const notes = document.getElementById('grn-notes').value.trim();
+
+            if (!po_id || !received_date || !location_id) {
+                showToast('PO, Received Date, and Location are required', 'error');
+                return;
+            }
+
+            const items = [];
+            const itemDivs = document.querySelectorAll('#grn-items-container .line-item');
+            itemDivs.forEach(div => {
+                const poItemId = div.querySelector('.grn-po-item-id').value;
+                const received = parseInt(div.querySelector('input[type="number"]:nth-child(4)').value) || 0;
+                const accepted = parseInt(div.querySelector('input[type="number"]:nth-child(7)').value) || 0;
+                const rejected = parseInt(div.querySelector('input[type="number"]:nth-child(10)').value) || 0;
+                const reason = div.querySelector('input[type="text"]:nth-child(11)').value || null;
+                const batch = div.querySelector('input[type="text"]:nth-child(12)').value || null;
+                const expiry = div.querySelector('input[type="date"]:nth-child(13)').value || null;
+                const cost = parseFloat(div.querySelector('input[type="number"]:nth-child(14)').value) || null;
+                if (poItemId && (received > 0 || accepted > 0 || rejected > 0)) {
+                    items.push({
+                        po_item_id: poItemId,
+                        received_quantity: received,
+                        accepted_quantity: accepted,
+                        rejected_quantity: rejected,
+                        rejection_reason: reason,
+                        batch_number: batch,
+                        expiry_date: expiry,
+                        cost_price_naira: cost
+                    });
+                }
+            });
+            if (items.length === 0) {
+                showToast('Add at least one item', 'error');
+                return;
+            }
+
+            const payload = {
+                po_id,
+                received_date,
+                location_id,
+                notes: notes || null,
+                items
+            };
+
+            try {
+                if (id) {
+                    await apiCall(`/grn/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+                    showToast('GRN updated', 'success');
+                } else {
+                    await apiCall('/grn', { method: 'POST', body: JSON.stringify(payload) });
+                    showToast('GRN created', 'success');
+                }
+                closeModal('grn-modal');
+                loadGRNs(currentGRNPage);
+            } catch (err) {
+                showToast(`Error: ${err.message}`, 'error');
+            }
+        });
+
+        window.editGRN = function(id) {
+            openGRNModal(id);
+        };
+
+        window.deleteGRN = async function(id) {
+            if (!confirm('Delete this GRN? Only drafts can be deleted.')) return;
+            try {
+                await apiCall(`/grn/${id}`, { method: 'DELETE' });
+                showToast('GRN deleted', 'success');
+                loadGRNs(currentGRNPage);
+            } catch (err) {
+                showToast(`Error: ${err.message}`, 'error');
+            }
+        };
+
+        // Post GRN
+        window.postGRN = async function(grnId = null) {
+            if (!grnId) {
+                // called from modal post button
+                grnId = document.getElementById('grn-post-btn')?.dataset.grnId;
+                if (!grnId) {
+                    showToast('No GRN ID found', 'error');
+                    return;
+                }
+            }
+            try {
+                const result = await apiCall(`/grn/${grnId}/post`, { method: 'POST' });
+                showToast(`GRN posted! PO status: ${result.po_status}`, 'success');
+                closeModal('grn-modal');
+                loadGRNs(currentGRNPage);
+            } catch (err) {
+                showToast(`Error: ${err.message}`, 'error');
+            }
+        };
+
+        // View GRN detail
+        window.viewGRNDetail = async function(id) {
+            // Reuse the PO detail modal or create a specific one.
+            // For simplicity, we open the GRN modal in read-only mode? 
+            // Actually we can show a simple alert with the details.
+            try {
+                const grn = await apiCall(`/grn/${id}`);
+                let msg = `GRN ${grn.grn_number}\nPO: ${grn.po?.po_number || 'N/A'}\nReceived: ${grn.received_date}\nStatus: ${grn.status}\nItems:\n`;
+                (grn.grn_items || []).forEach(item => {
+                    msg += `  Product: ${item.inventory_id || 'N/A'} | Received: ${item.received_quantity} | Accepted: ${item.accepted_quantity} | Rejected: ${item.rejected_quantity}\n`;
+                });
+                alert(msg);
+            } catch (err) {
+                showToast(`Error: ${err.message}`, 'error');
+            }
+        };
+
+        // ========================================================================
+        // PAGINATION HELPER
+        // ========================================================================
+        function renderPagination(containerId, currentPage, totalPages, loadFn) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            if (totalPages <= 1) {
+                container.innerHTML = '';
+                return;
+            }
+            let html = `<div class="flex items-center gap-2">`;
+            html += `<button class="pagination-btn" onclick="goToPage(${currentPage-1}, '${containerId}', ${totalPages}, ${loadFn})" ${currentPage<=1?'disabled':''}>Prev</button>`;
+            for (let i = 1; i <= totalPages; i++) {
+                html += `<button class="pagination-btn ${i===currentPage?'bg-blue-600 text-white':''}" onclick="goToPage(${i}, '${containerId}', ${totalPages}, ${loadFn})">${i}</button>`;
+            }
+            html += `<button class="pagination-btn" onclick="goToPage(${currentPage+1}, '${containerId}', ${totalPages}, ${loadFn})" ${currentPage>=totalPages?'disabled':''}>Next</button>`;
+            html += `</div>`;
+            container.innerHTML = html;
+        }
+
+        window.goToPage = function(page, containerId, totalPages, loadFn) {
+            if (page < 1 || page > totalPages) return;
+            // determine which page variable to update based on containerId
+            if (containerId === 'supplier-pagination') currentSupplierPage = page;
+            else if (containerId === 'po-pagination') currentPOPage = page;
+            else if (containerId === 'grn-pagination') currentGRNPage = page;
+            loadFn(page);
+        };
+
+        // ========================================================================
+        // TAB SWITCHING
+        // ========================================================================
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.tab-btn').forEach(b => {
+                    b.classList.remove('tab-active');
+                    b.classList.add('tab-inactive');
+                });
+                this.classList.remove('tab-inactive');
+                this.classList.add('tab-active');
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+                document.getElementById(`tab-${this.dataset.tab}`).classList.remove('hidden');
+                // refresh data on switch
+                const tab = this.dataset.tab;
+                if (tab === 'suppliers') loadSuppliers(currentSupplierPage);
+                else if (tab === 'purchase-orders') loadPurchaseOrders(currentPOPage);
+                else if (tab === 'grn') loadGRNs(currentGRNPage);
+            });
+        });
+
+        // show initial tab
+        document.querySelector('.tab-btn[data-tab="suppliers"]')?.click();
+
+        // ========================================================================
+        // INIT
+        // ========================================================================
+        async function init() {
+            if (!token) {
+                window.location.href = '/kdsiginin';
+                return;
+            }
+            try {
+                const me = await apiCall('/auth/me');
+                currentUser = me;
+                localStorage.setItem('user_role', me.role || 'admin');
+                await initOrganisation();
+            } catch (err) {
+                console.error('Init error:', err);
+                localStorage.clear();
+                window.location.href = '/kdsiginin';
+            }
+        }
+
+        // Listen for changes on PO status filter etc.
+        document.getElementById('po-status-filter')?.addEventListener('change', () => loadPurchaseOrders(1));
+        document.getElementById('po-date-from')?.addEventListener('change', () => loadPurchaseOrders(1));
+        document.getElementById('po-date-to')?.addEventListener('change', () => loadPurchaseOrders(1));
+        document.getElementById('grn-status-filter')?.addEventListener('change', () => loadGRNs(1));
+
+        init();
+    </script>
+</body>
+</html>
