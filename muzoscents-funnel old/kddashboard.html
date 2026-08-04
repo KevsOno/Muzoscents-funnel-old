@@ -205,15 +205,26 @@
                 headers['X-Selected-Org-Id'] = orgId;
             }
 
-            const res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
+            const url = `${API_BASE}${endpoint}`;
+            console.log(`🔵 API Call: ${url}`);
+
+            const res = await fetch(url, { ...options, headers });
             if (res.status === 401 && retry) {
                 const ok = await refreshToken();
                 if (ok) return apiCall(endpoint, options, false);
                 throw new Error('Session expired');
             }
             if (!res.ok) {
-                const err = await res.json().catch(() => ({ detail: 'API error' }));
-                throw new Error(err.detail || 'API error');
+                let errorMsg;
+                try {
+                    const err = await res.json();
+                    errorMsg = err.detail || err.message || 'API error';
+                } catch (e) {
+                    // If response is not JSON, read as text
+                    const text = await res.text();
+                    errorMsg = text || `HTTP ${res.status}`;
+                }
+                throw new Error(errorMsg);
             }
             return res.json();
         }
@@ -339,7 +350,7 @@
         }
 
         // ================================================================
-        // DASHBOARD LOADERS (with date guards)
+        // DASHBOARD LOADERS (with date guards and logging)
         // ================================================================
 
         // ── Inventory Value ──
@@ -369,14 +380,19 @@
             }
         }
 
-        // ── KPI: revenue, cogs, profit (with guard) ──
+        // ── KPI: revenue, cogs, profit ──
         async function loadKPIs(start, end) {
             if (!start || !end) {
                 console.warn('Dates are empty, skipping KPI load');
                 return;
             }
+            // Ensure ISO format
+            const startISO = new Date(start).toISOString().slice(0,10);
+            const endISO = new Date(end).toISOString().slice(0,10);
+            console.log(`📊 Loading KPIs: ${startISO} → ${endISO}`);
+
             try {
-                const summary = await apiCall(`/sales/summary?start_date=${start}&end_date=${end}`);
+                const summary = await apiCall(`/sales/summary?start_date=${startISO}&end_date=${endISO}`);
                 document.getElementById('kpi-revenue').innerHTML = `₦${(summary.total_revenue || 0).toLocaleString()}`;
                 document.getElementById('kpi-cogs').innerHTML = `₦${(summary.total_cogs || 0).toLocaleString()}`;
                 document.getElementById('kpi-profit').innerHTML = `₦${(summary.total_profit || 0).toLocaleString()}`;
@@ -430,7 +446,7 @@
             }
         }
 
-        // ── Product Stats (COGS breakdown + Top 50) with guard ──
+        // ── Product Stats (COGS breakdown + Top 50) ──
         async function loadProductStats() {
             const start = document.getElementById('start-date').value;
             const end = document.getElementById('end-date').value;
@@ -438,9 +454,12 @@
                 showToast('Please select a date range', 'warning');
                 return;
             }
+            const startISO = new Date(start).toISOString().slice(0,10);
+            const endISO = new Date(end).toISOString().slice(0,10);
+            console.log(`📊 Loading product stats: ${startISO} → ${endISO}`);
 
             try {
-                const result = await apiCall(`/sales/product-stats?start_date=${start}&end_date=${end}`);
+                const result = await apiCall(`/sales/product-stats?start_date=${startISO}&end_date=${endISO}`);
                 const statsArray = result.product_stats || [];
 
                 if (statsArray.length === 0) {
@@ -506,7 +525,7 @@
         }
 
         // ================================================================
-        // INITIALISATION (with dates set before loading)
+        // INITIALISATION (dates set before loading)
         // ================================================================
         async function init() {
             if (!token) {
@@ -602,7 +621,7 @@
         document.getElementById('refresh-product-stats')?.addEventListener('click', loadProductStats);
 
         // ================================================================
-        // GLOBAL NAVIGATION (inlined from kdadmin)
+        // GLOBAL NAVIGATION
         // ================================================================
         (function() {
             const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
