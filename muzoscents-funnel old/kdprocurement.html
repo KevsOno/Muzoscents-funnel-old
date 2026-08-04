@@ -57,6 +57,97 @@
         .toast.info { border-left: 4px solid #3b82f6; }
         .helper-box { background: #1e293b; border-left: 3px solid #f59e0b; padding: 0.75rem 1rem; border-radius: 0.5rem; margin-bottom: 1rem; font-size: 0.85rem; color: #cbd5e1; }
         .helper-box i { color: #f59e0b; margin-right: 0.5rem; }
+
+        /* ── Product search results (like kdadmin) ── */
+        #product-search-results-fixed {
+            position: fixed;
+            z-index: 100000;
+            background: #1e293b;
+            border: 1px solid #475569;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+            max-height: 320px;
+            overflow-y: auto;
+            min-width: 280px;
+            display: none;
+            pointer-events: auto;
+        }
+        #product-search-results-fixed.active {
+            display: block;
+        }
+        #product-search-results-fixed .result-item {
+            padding: 10px 14px;
+            border-bottom: 1px solid #334155;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        #product-search-results-fixed .result-item:hover {
+            background: #334155;
+        }
+        #product-search-results-fixed .result-item:last-child {
+            border-bottom: none;
+        }
+        #product-search-results-fixed .result-name {
+            font-weight: 500;
+            font-size: 0.9rem;
+            color: #f1f5f9;
+        }
+        #product-search-results-fixed .result-meta {
+            font-size: 0.75rem;
+            color: #94a3b8;
+        }
+        #product-search-results-fixed .result-stock {
+            font-size: 0.8rem;
+            color: #64748b;
+            background: #0f172a;
+            padding: 2px 10px;
+            border-radius: 20px;
+        }
+        #product-search-results-fixed .no-results {
+            padding: 20px;
+            text-align: center;
+            color: #64748b;
+            font-size: 0.9rem;
+        }
+        .po-search-input-wrapper {
+            position: relative;
+            flex: 1;
+            min-width: 180px;
+        }
+        .po-search-input-wrapper input {
+            width: 100%;
+        }
+        .po-search-results {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: #1e293b;
+            border: 1px solid #475569;
+            border-radius: 8px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 9999;
+            display: none;
+        }
+        .po-search-results.active {
+            display: block;
+        }
+        .po-search-results .result-item {
+            padding: 6px 10px;
+            cursor: pointer;
+            border-bottom: 1px solid #334155;
+            font-size: 0.85rem;
+        }
+        .po-search-results .result-item:hover {
+            background: #334155;
+        }
+        .po-search-results .result-item:last-child {
+            border-bottom: none;
+        }
     </style>
 </head>
 <body class="text-slate-200">
@@ -202,7 +293,7 @@
         </div>
     </div>
 
-    <!-- Purchase Order Modal -->
+    <!-- Purchase Order Modal (with product search) -->
     <div id="po-modal" class="modal-overlay">
         <div class="modal-content">
             <button class="modal-close" onclick="closeModal('po-modal')">&times;</button>
@@ -221,16 +312,11 @@
                     </div>
                 </div>
                 <div>
-                    <label class="form-label">Line Items</label>
-                    <div id="po-line-items" class="space-y-2">
-                        <div class="line-item">
-                            <select class="po-item-select form-input w-48"><option value="">Select product...</option></select>
-                            <input type="number" placeholder="Qty" class="po-item-qty form-input w-24" min="1" value="1">
-                            <input type="number" placeholder="Unit cost" class="po-item-cost form-input w-32" min="0" step="0.01" value="0">
-                            <button type="button" class="remove-line text-red-400" onclick="removeLineItem(this)"><i class="fa-regular fa-trash-can"></i></button>
-                        </div>
+                    <label class="form-label">Line Items <span class="text-xs text-slate-400">(Type product name to search)</span></label>
+                    <div id="po-line-items" class="space-y-2 max-h-60 overflow-y-auto">
+                        <!-- Default empty line will be added by JS -->
                     </div>
-                    <button type="button" onclick="addLineItem()" class="btn-secondary text-sm"><i class="fa-solid fa-plus mr-1"></i> Add Item</button>
+                    <button type="button" onclick="addLineItem()" class="btn-secondary text-sm mt-2"><i class="fa-solid fa-plus mr-1"></i> Add Item</button>
                 </div>
                 <div class="flex gap-3 mt-4">
                     <button type="submit" class="btn-primary">💾 Save</button>
@@ -316,8 +402,6 @@
         let currentGRNPage = 1;
         const PAGE_SIZE = 20;
         let totalSuppliers = 0, totalPOs = 0, totalGRNs = 0;
-        let poLineItems = [];
-        let editingGRNId = null; // used when editing a draft GRN
 
         // ========================================================================
         // UTILITIES
@@ -394,16 +478,16 @@
             const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
             const LOGIN_URL = '/kdsiginin';
             const navItems = [
-    { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy', roles: ['owner','admin','sales_rep','finance'] },
-    { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & online payments', roles: ['owner','admin','sales_rep'] },
-    { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', title: 'Order shipping, tracking & dispatch', roles: ['owner','admin','logistics'] },
-    { path: '/kdsupport',     name: 'Support',   icon: 'fa-headset', title: 'Ticket management & customer context', roles: ['owner','admin','support'] },
-    { path: '/kddashboard',   name: 'Exec',      icon: 'fa-chart-simple', title: 'Executive revenue & profit overview', roles: ['owner','admin','finance'] },
-    { path: '/kdadmin',       name: 'Inventory', icon: 'fa-boxes', title: 'Manage products, stock, bulk CSV upload', roles: ['owner','admin','inventory_manager','warehouse'] },
-    { path: '/kdteam',        name: 'Team',      icon: 'fa-users', title: 'Invite & manage team members', roles: ['owner','admin'] },
-    { path: '/kdknowledge',   name: 'Knowledge', icon: 'fa-database', title: 'Manage AI knowledge base documents', roles: ['owner','admin'] },
-    { path: '/kdprocurement', name: 'Procurement', icon: 'fa-truck', title: 'Manage suppliers, purchase orders, and goods received', roles: ['owner','admin','inventory_manager','procurement','warehouse'] }
-];
+                { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy', roles: ['owner','admin','sales_rep','finance'] },
+                { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & online payments', roles: ['owner','admin','sales_rep'] },
+                { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', title: 'Order shipping, tracking & dispatch', roles: ['owner','admin','logistics'] },
+                { path: '/kdsupport',     name: 'Support',   icon: 'fa-headset', title: 'Ticket management & customer context', roles: ['owner','admin','support'] },
+                { path: '/kddashboard',   name: 'Exec',      icon: 'fa-chart-simple', title: 'Executive revenue & profit overview', roles: ['owner','admin','finance'] },
+                { path: '/kdadmin',       name: 'Inventory', icon: 'fa-boxes', title: 'Manage products, stock, bulk CSV upload', roles: ['owner','admin','inventory_manager','warehouse'] },
+                { path: '/kdteam',        name: 'Team',      icon: 'fa-users', title: 'Invite & manage team members', roles: ['owner','admin'] },
+                { path: '/kdknowledge',   name: 'Knowledge', icon: 'fa-database', title: 'Manage AI knowledge base documents', roles: ['owner','admin'] },
+                { path: '/kdprocurement', name: 'Procurement', icon: 'fa-truck', title: 'Manage suppliers, purchase orders, and goods received', roles: ['owner','admin','inventory_manager','procurement','warehouse'] }
+            ];
             function getUserRole() {
                 try { return localStorage.getItem('user_role') || 'customer'; } catch (e) { return 'customer'; }
             }
@@ -531,24 +615,13 @@
                 allInventory = inv.items || inv || [];
                 const loc = await apiCall('/locations');
                 allLocations = loc.locations || loc || [];
-                // populate selects
-                populateInventorySelects();
-                populateLocationSelects();
+                // populate supplier select
                 populatePOSupplierSelect();
+                // populate location select for GRN
+                populateLocationSelects();
             } catch (err) {
                 console.warn('Failed to load inventory/locations', err);
             }
-        }
-
-        function populateInventorySelects() {
-            const selects = document.querySelectorAll('.po-item-select');
-            selects.forEach(sel => {
-                const currentVal = sel.value;
-                sel.innerHTML = '<option value="">Select product...</option>' +
-                    allInventory.map(p => `<option value="${p.id}">${escapeHtml(p.description)} (${escapeHtml(p.item_code || p.id)})</option>`)
-                    .join('');
-                if (currentVal) sel.value = currentVal;
-            });
         }
 
         function populateLocationSelects() {
@@ -682,7 +755,7 @@
         document.getElementById('supplier-status-filter')?.addEventListener('change', () => loadSuppliers(1));
 
         // ========================================================================
-        // PURCHASE ORDERS
+        // PURCHASE ORDERS (with product search)
         // ========================================================================
         async function loadPurchaseOrders(page = 1) {
             const status = document.getElementById('po-status-filter').value;
@@ -735,7 +808,7 @@
             window._allPOs = pos;
         }
 
-        // PO CRUD
+        // ── PO Modal with product search ──
         function openPOModal(poId = null) {
             const modal = document.getElementById('po-modal');
             const form = document.getElementById('po-form');
@@ -743,6 +816,7 @@
             document.getElementById('po-id').value = '';
             document.getElementById('po-modal-title').innerText = poId ? 'Edit Purchase Order' : 'Create Purchase Order';
             document.getElementById('po-line-items').innerHTML = '';
+            
             if (poId) {
                 const po = window._allPOs.find(p => p.id === poId);
                 if (po) {
@@ -751,10 +825,13 @@
                     document.getElementById('po-expected-date').value = po.expected_delivery_date || '';
                     document.getElementById('po-notes').value = po.notes || '';
                     // load items
-                    if (po.purchase_order_items) {
+                    if (po.purchase_order_items && po.purchase_order_items.length) {
                         po.purchase_order_items.forEach(item => {
                             addLineItem(item.inventory_id, item.quantity_ordered, item.unit_cost);
                         });
+                    } else {
+                        // fallback: add one empty line
+                        addLineItem();
                     }
                 }
             } else {
@@ -763,51 +840,151 @@
             }
             modal.classList.add('active');
             populatePOSupplierSelect();
-            populateInventorySelects();
         }
 
-        // Line items
+        // ── Add a line item with search input ──
         window.addLineItem = function(inventoryId = null, qty = 1, cost = 0) {
             const container = document.getElementById('po-line-items');
             const div = document.createElement('div');
             div.className = 'line-item';
-            const sel = document.createElement('select');
-            sel.className = 'po-item-select form-input w-48';
-            sel.innerHTML = '<option value="">Select product...</option>';
-            allInventory.forEach(p => {
-                const opt = document.createElement('option');
-                opt.value = p.id;
-                opt.textContent = `${p.description} (${p.item_code || p.id})`;
-                if (p.id == inventoryId) opt.selected = true;
-                sel.appendChild(opt);
-            });
+
+            // Hidden inventory_id
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.className = 'po-item-id';
+            hidden.value = inventoryId || '';
+
+            // Product search input
+            const searchWrapper = document.createElement('div');
+            searchWrapper.className = 'po-search-input-wrapper';
+            const searchInput = document.createElement('input');
+            searchInput.type = 'text';
+            searchInput.className = 'form-input po-product-search';
+            searchInput.placeholder = 'Type product name...';
+            searchInput.autocomplete = 'off';
+            searchInput.dataset.inventoryId = inventoryId || '';
+            // If editing, we need to display the product name
+            if (inventoryId) {
+                const product = allInventory.find(p => p.id == inventoryId);
+                if (product) {
+                    searchInput.value = product.description + ' (' + (product.item_code || product.id) + ')';
+                }
+            }
+
+            // Results dropdown
+            const resultsDiv = document.createElement('div');
+            resultsDiv.className = 'po-search-results';
+
+            // Quantity input
             const qtyInput = document.createElement('input');
             qtyInput.type = 'number';
-            qtyInput.className = 'po-item-qty form-input w-24';
+            qtyInput.className = 'form-input po-item-qty w-20';
             qtyInput.min = 1;
             qtyInput.value = qty || 1;
+
+            // Cost input
             const costInput = document.createElement('input');
             costInput.type = 'number';
-            costInput.className = 'po-item-cost form-input w-32';
+            costInput.className = 'form-input po-item-cost w-24';
             costInput.min = 0;
             costInput.step = 0.01;
             costInput.value = cost || 0;
+
+            // Remove button
             const removeBtn = document.createElement('button');
             removeBtn.type = 'button';
             removeBtn.className = 'remove-line text-red-400';
             removeBtn.innerHTML = '<i class="fa-regular fa-trash-can"></i>';
-            removeBtn.onclick = function() { this.parentElement.remove(); };
-            div.appendChild(sel);
+            removeBtn.onclick = function() { 
+                this.closest('.line-item').remove(); 
+                // also remove any global search results (if any)
+                closeAllSearchDropdowns();
+            };
+
+            searchWrapper.appendChild(searchInput);
+            searchWrapper.appendChild(resultsDiv);
+            div.appendChild(hidden);
+            div.appendChild(searchWrapper);
             div.appendChild(qtyInput);
             div.appendChild(costInput);
             div.appendChild(removeBtn);
             container.appendChild(div);
+
+            // Attach search logic to this input
+            setupProductSearch(searchInput, resultsDiv, hidden);
         };
 
-        window.removeLineItem = function(btn) {
-            btn.closest('.line-item').remove();
-        };
+        // ── Product search logic (per input) ──
+        function setupProductSearch(input, resultsDiv, hiddenInput) {
+            let debounceTimer;
 
+            input.addEventListener('input', function() {
+                clearTimeout(debounceTimer);
+                const query = this.value.trim();
+                if (query.length < 2) {
+                    resultsDiv.classList.remove('active');
+                    return;
+                }
+                debounceTimer = setTimeout(async () => {
+                    try {
+                        const data = await apiCall(`/inventory/search?q=${encodeURIComponent(query)}&limit=10&offset=0`);
+                        const items = data.items || [];
+                        renderSearchResults(resultsDiv, items, input, hiddenInput);
+                    } catch (err) {
+                        console.warn('Search error:', err);
+                        resultsDiv.innerHTML = '<div class="result-item no-results">Search error</div>';
+                        resultsDiv.classList.add('active');
+                    }
+                }, 300);
+            });
+
+            // Click outside to close
+            document.addEventListener('click', function(e) {
+                if (!input.contains(e.target) && !resultsDiv.contains(e.target)) {
+                    resultsDiv.classList.remove('active');
+                }
+            });
+
+            // Also close when we click a result (handled in render)
+        }
+
+        function renderSearchResults(container, items, input, hiddenInput) {
+            if (!items || items.length === 0) {
+                container.innerHTML = '<div class="result-item no-results">No products found</div>';
+                container.classList.add('active');
+                return;
+            }
+            container.innerHTML = '';
+            items.slice(0, 10).forEach(p => {
+                const div = document.createElement('div');
+                div.className = 'result-item';
+                div.innerHTML = `
+                    <div>
+                        <div class="result-name">${escapeHtml(p.description)}</div>
+                        <div class="result-meta">${escapeHtml(p.item_code || p.id)}</div>
+                    </div>
+                    <div class="result-stock">${p.current_qty || 0} left</div>
+                `;
+                div.addEventListener('click', function() {
+                    // Set the hidden inventory ID
+                    hiddenInput.value = p.id;
+                    // Update the input text to show the product name
+                    input.value = p.description + ' (' + (p.item_code || p.id) + ')';
+                    // Optionally pre-fill cost and qty? Not needed.
+                    container.classList.remove('active');
+                    // Trigger any change event so that form submission sees the new ID
+                    hiddenInput.dispatchEvent(new Event('change'));
+                });
+                container.appendChild(div);
+            });
+            container.classList.add('active');
+        }
+
+        function closeAllSearchDropdowns() {
+            document.querySelectorAll('.po-search-results').forEach(el => el.classList.remove('active'));
+        }
+
+        // ── Form submission for PO ──
         document.getElementById('po-form')?.addEventListener('submit', async function(e) {
             e.preventDefault();
             const id = document.getElementById('po-id').value;
@@ -816,10 +993,10 @@
             const notes = document.getElementById('po-notes').value.trim();
 
             const lineItems = [];
-            const items = document.querySelectorAll('#po-line-items .line-item');
+            const itemDivs = document.querySelectorAll('#po-line-items .line-item');
             let valid = true;
-            items.forEach(div => {
-                const invId = div.querySelector('.po-item-select').value;
+            itemDivs.forEach(div => {
+                const invId = div.querySelector('.po-item-id').value;
                 const qty = parseInt(div.querySelector('.po-item-qty').value);
                 const cost = parseFloat(div.querySelector('.po-item-cost').value);
                 if (invId && qty > 0 && cost >= 0) {
@@ -829,7 +1006,7 @@
                 }
             });
             if (!valid || lineItems.length === 0) {
-                showToast('Please add at least one valid line item', 'error');
+                showToast('Please add at least one valid line item with product, quantity, and cost', 'error');
                 return;
             }
             if (!supplier_id) {
