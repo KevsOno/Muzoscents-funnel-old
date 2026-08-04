@@ -58,24 +58,24 @@
         .helper-box { background: #1e293b; border-left: 3px solid #f59e0b; padding: 0.75rem 1rem; border-radius: 0.5rem; margin-bottom: 1rem; font-size: 0.85rem; color: #cbd5e1; }
         .helper-box i { color: #f59e0b; margin-right: 0.5rem; }
 
-        /* ── Product search results (like kdadmin) ── */
-        #product-search-results-fixed {
+        /* ── Fixed product search results (always on top) ── */
+        .po-search-results {
             position: fixed;
-            z-index: 100000;
+            z-index: 1000000;
             background: #1e293b;
             border: 1px solid #475569;
             border-radius: 12px;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
-            max-height: 320px;
+            max-height: 250px;
             overflow-y: auto;
             min-width: 280px;
             display: none;
             pointer-events: auto;
         }
-        #product-search-results-fixed.active {
+        .po-search-results.active {
             display: block;
         }
-        #product-search-results-fixed .result-item {
+        .po-search-results .result-item {
             padding: 10px 14px;
             border-bottom: 1px solid #334155;
             display: flex;
@@ -84,29 +84,29 @@
             cursor: pointer;
             transition: background 0.15s;
         }
-        #product-search-results-fixed .result-item:hover {
+        .po-search-results .result-item:hover {
             background: #334155;
         }
-        #product-search-results-fixed .result-item:last-child {
+        .po-search-results .result-item:last-child {
             border-bottom: none;
         }
-        #product-search-results-fixed .result-name {
+        .po-search-results .result-name {
             font-weight: 500;
             font-size: 0.9rem;
             color: #f1f5f9;
         }
-        #product-search-results-fixed .result-meta {
+        .po-search-results .result-meta {
             font-size: 0.75rem;
             color: #94a3b8;
         }
-        #product-search-results-fixed .result-stock {
+        .po-search-results .result-stock {
             font-size: 0.8rem;
             color: #64748b;
             background: #0f172a;
             padding: 2px 10px;
             border-radius: 20px;
         }
-        #product-search-results-fixed .no-results {
+        .po-search-results .no-results {
             padding: 20px;
             text-align: center;
             color: #64748b;
@@ -119,34 +119,6 @@
         }
         .po-search-input-wrapper input {
             width: 100%;
-        }
-        .po-search-results {
-            position: absolute;
-            top: 100%;
-            left: 0;
-            right: 0;
-            background: #1e293b;
-            border: 1px solid #475569;
-            border-radius: 8px;
-            max-height: 200px;
-            overflow-y: auto;
-            z-index: 9999;
-            display: none;
-        }
-        .po-search-results.active {
-            display: block;
-        }
-        .po-search-results .result-item {
-            padding: 6px 10px;
-            cursor: pointer;
-            border-bottom: 1px solid #334155;
-            font-size: 0.85rem;
-        }
-        .po-search-results .result-item:hover {
-            background: #334155;
-        }
-        .po-search-results .result-item:last-child {
-            border-bottom: none;
         }
     </style>
 </head>
@@ -293,7 +265,7 @@
         </div>
     </div>
 
-    <!-- Purchase Order Modal (with product search) -->
+    <!-- Purchase Order Modal -->
     <div id="po-modal" class="modal-overlay">
         <div class="modal-content">
             <button class="modal-close" onclick="closeModal('po-modal')">&times;</button>
@@ -314,7 +286,7 @@
                 <div>
                     <label class="form-label">Line Items <span class="text-xs text-slate-400">(Type product name to search)</span></label>
                     <div id="po-line-items" class="space-y-2 max-h-60 overflow-y-auto">
-                        <!-- Default empty line will be added by JS -->
+                        <!-- added by JS -->
                     </div>
                     <button type="button" onclick="addLineItem()" class="btn-secondary text-sm mt-2"><i class="fa-solid fa-plus mr-1"></i> Add Item</button>
                 </div>
@@ -332,11 +304,10 @@
             <button class="modal-close" onclick="closeModal('grn-modal')">&times;</button>
             <h3 id="grn-modal-title" class="text-xl font-bold mb-4">Create Goods Received Note</h3>
             
-            <!-- HELPER NOTE FOR WAREHOUSE STAFF -->
             <div class="helper-box">
                 <i class="fa-solid fa-clipboard-check"></i>
                 <strong>Warehouse Receiving:</strong> Enter the actual <strong>batch number</strong> and <strong>expiry date</strong> printed on the physical goods. 
-                These are <span class="text-yellow-400 font-semibold">required</span> for all received items. Accurate data ensures proper FEFO management and supplier traceability.
+                These are <span class="text-yellow-400 font-semibold">required</span> for all received items.
             </div>
 
             <form id="grn-form" class="space-y-4">
@@ -357,9 +328,7 @@
                 </div>
                 <div>
                     <label class="form-label">Items <span class="text-yellow-400 text-xs">(Batch # and Expiry Date are required)</span></label>
-                    <div id="grn-items-container" class="space-y-2">
-                        <!-- dynamically populated from PO -->
-                    </div>
+                    <div id="grn-items-container" class="space-y-2"></div>
                 </div>
                 <div class="flex gap-3 mt-4">
                     <button type="submit" class="btn-primary">💾 Save (Draft)</button>
@@ -370,7 +339,7 @@
         </div>
     </div>
 
-    <!-- PO Detail Modal (view only) -->
+    <!-- PO Detail Modal -->
     <div id="po-detail-modal" class="modal-overlay">
         <div class="modal-content max-w-2xl">
             <button class="modal-close" onclick="closeModal('po-detail-modal')">&times;</button>
@@ -533,7 +502,7 @@
         })();
 
         // ========================================================================
-        // ORGANISATION SELECTION (simplified – reuses admin logic)
+        // ORGANISATION SELECTION
         // ========================================================================
         async function fetchUserOrganisations() {
             try {
@@ -549,7 +518,6 @@
                     role: org.role || 'member'
                 }));
             } catch (err) {
-                // fallback: use /auth/me
                 const me = await apiCall('/auth/me');
                 if (me.org_id) {
                     let orgName = null;
@@ -574,7 +542,6 @@
                     document.getElementById('current-org-banner').classList.remove('hidden');
                     document.getElementById('auth-check-placeholder').classList.add('hidden');
                     document.getElementById('procurement-tabs').classList.remove('hidden');
-                    // load data
                     await loadSuppliers();
                     await loadPurchaseOrders();
                     await loadGRNs();
@@ -582,13 +549,11 @@
                     return;
                 }
             }
-            // show org selection (simple: pick first)
             const orgs = await fetchUserOrganisations();
             if (orgs.length === 0) {
                 showToast('You are not a member of any organisation', 'error');
                 return;
             }
-            // auto-select first
             selectedOrganisation = { id: orgs[0].id, name: orgs[0].org_name, role: orgs[0].role };
             localStorage.setItem('selected_org_id', selectedOrganisation.id);
             document.getElementById('current-org-name').innerText = selectedOrganisation.name;
@@ -615,9 +580,7 @@
                 allInventory = inv.items || inv || [];
                 const loc = await apiCall('/locations');
                 allLocations = loc.locations || loc || [];
-                // populate supplier select
                 populatePOSupplierSelect();
-                // populate location select for GRN
                 populateLocationSelects();
             } catch (err) {
                 console.warn('Failed to load inventory/locations', err);
@@ -648,7 +611,7 @@
             try {
                 const data = await apiCall(url);
                 const items = data.suppliers || [];
-                totalSuppliers = items.length; // fallback, if backend returns total we could use it
+                totalSuppliers = items.length;
                 allSuppliers = items;
                 renderSuppliers(items);
                 renderPagination('supplier-pagination', page, Math.ceil(totalSuppliers / PAGE_SIZE), loadSuppliers);
@@ -679,11 +642,9 @@
                         </td>
                     </tr>
                 `).join('')}</tbody></table></div>`;
-            // store for editing
             window._allSuppliers = suppliers;
         }
 
-        // Supplier CRUD
         function openSupplierModal(supplierId = null) {
             const modal = document.getElementById('supplier-modal');
             const form = document.getElementById('supplier-form');
@@ -736,12 +697,9 @@
             }
         });
 
-        window.editSupplier = function(id) {
-            openSupplierModal(id);
-        };
-
+        window.editSupplier = function(id) { openSupplierModal(id); };
         window.deleteSupplier = async function(id) {
-            if (!confirm('Delete this supplier? This cannot be undone.')) return;
+            if (!confirm('Delete this supplier?')) return;
             try {
                 await apiCall(`/suppliers/${id}`, { method: 'DELETE' });
                 showToast('Supplier deleted', 'success');
@@ -751,11 +709,10 @@
                 showToast(`Error: ${err.message}`, 'error');
             }
         };
-
         document.getElementById('supplier-status-filter')?.addEventListener('change', () => loadSuppliers(1));
 
         // ========================================================================
-        // PURCHASE ORDERS (with product search)
+        // PURCHASE ORDERS with FIXED product search
         // ========================================================================
         async function loadPurchaseOrders(page = 1) {
             const status = document.getElementById('po-status-filter').value;
@@ -808,7 +765,7 @@
             window._allPOs = pos;
         }
 
-        // ── PO Modal with product search ──
+        // ── Open PO Modal ──
         function openPOModal(poId = null) {
             const modal = document.getElementById('po-modal');
             const form = document.getElementById('po-form');
@@ -824,46 +781,39 @@
                     document.getElementById('po-supplier').value = po.supplier_id || '';
                     document.getElementById('po-expected-date').value = po.expected_delivery_date || '';
                     document.getElementById('po-notes').value = po.notes || '';
-                    // load items
                     if (po.purchase_order_items && po.purchase_order_items.length) {
                         po.purchase_order_items.forEach(item => {
                             addLineItem(item.inventory_id, item.quantity_ordered, item.unit_cost);
                         });
                     } else {
-                        // fallback: add one empty line
                         addLineItem();
                     }
                 }
             } else {
-                // add one empty line
                 addLineItem();
             }
             modal.classList.add('active');
             populatePOSupplierSelect();
         }
 
-        // ── Add a line item with search input ──
+        // ── Add Line Item with FIXED search ──
         window.addLineItem = function(inventoryId = null, qty = 1, cost = 0) {
             const container = document.getElementById('po-line-items');
             const div = document.createElement('div');
             div.className = 'line-item';
 
-            // Hidden inventory_id
             const hidden = document.createElement('input');
             hidden.type = 'hidden';
             hidden.className = 'po-item-id';
             hidden.value = inventoryId || '';
 
-            // Product search input
-            const searchWrapper = document.createElement('div');
-            searchWrapper.className = 'po-search-input-wrapper';
             const searchInput = document.createElement('input');
             searchInput.type = 'text';
             searchInput.className = 'form-input po-product-search';
             searchInput.placeholder = 'Type product name...';
             searchInput.autocomplete = 'off';
-            searchInput.dataset.inventoryId = inventoryId || '';
-            // If editing, we need to display the product name
+            searchInput.style.flex = '1';
+            searchInput.style.minWidth = '150px';
             if (inventoryId) {
                 const product = allInventory.find(p => p.id == inventoryId);
                 if (product) {
@@ -871,18 +821,12 @@
                 }
             }
 
-            // Results dropdown
-            const resultsDiv = document.createElement('div');
-            resultsDiv.className = 'po-search-results';
-
-            // Quantity input
             const qtyInput = document.createElement('input');
             qtyInput.type = 'number';
             qtyInput.className = 'form-input po-item-qty w-20';
             qtyInput.min = 1;
             qtyInput.value = qty || 1;
 
-            // Cost input
             const costInput = document.createElement('input');
             costInput.type = 'number';
             costInput.className = 'form-input po-item-cost w-24';
@@ -890,71 +834,132 @@
             costInput.step = 0.01;
             costInput.value = cost || 0;
 
-            // Remove button
             const removeBtn = document.createElement('button');
             removeBtn.type = 'button';
             removeBtn.className = 'remove-line text-red-400';
             removeBtn.innerHTML = '<i class="fa-regular fa-trash-can"></i>';
             removeBtn.onclick = function() { 
-                this.closest('.line-item').remove(); 
-                // also remove any global search results (if any)
-                closeAllSearchDropdowns();
+                const line = this.closest('.line-item');
+                if (line._resultsDiv) {
+                    line._resultsDiv.remove();
+                }
+                line.remove();
             };
 
-            searchWrapper.appendChild(searchInput);
-            searchWrapper.appendChild(resultsDiv);
             div.appendChild(hidden);
-            div.appendChild(searchWrapper);
+            div.appendChild(searchInput);
             div.appendChild(qtyInput);
             div.appendChild(costInput);
             div.appendChild(removeBtn);
             container.appendChild(div);
 
-            // Attach search logic to this input
-            setupProductSearch(searchInput, resultsDiv, hidden);
+            // ─── Attach the fixed-position search ───
+            setupProductSearch(searchInput, hidden, div);
         };
 
-        // ── Product search logic (per input) ──
-        function setupProductSearch(input, resultsDiv, hiddenInput) {
+        // ─── Fixed-position search logic ───
+        function setupProductSearch(input, hiddenInput, lineItem) {
             let debounceTimer;
+            
+            // Create a dedicated results container appended to body
+            const resultsDiv = document.createElement('div');
+            resultsDiv.className = 'po-search-results';
+            resultsDiv.style.position = 'fixed';
+            resultsDiv.style.zIndex = '1000000';
+            resultsDiv.style.display = 'none';
+            resultsDiv.style.minWidth = '280px';
+            resultsDiv.style.maxHeight = '250px';
+            resultsDiv.style.overflowY = 'auto';
+            resultsDiv.style.background = '#1e293b';
+            resultsDiv.style.border = '1px solid #475569';
+            resultsDiv.style.borderRadius = '12px';
+            resultsDiv.style.boxShadow = '0 20px 60px rgba(0,0,0,0.8)';
+            document.body.appendChild(resultsDiv);
+            
+            // Store reference for cleanup
+            lineItem._resultsDiv = resultsDiv;
+
+            function positionDropdown() {
+                const rect = input.getBoundingClientRect();
+                resultsDiv.style.top = (rect.bottom + 6) + 'px';
+                resultsDiv.style.left = rect.left + 'px';
+                resultsDiv.style.width = Math.max(280, Math.min(400, rect.width)) + 'px';
+            }
+
+            function showResults() {
+                positionDropdown();
+                resultsDiv.style.display = 'block';
+            }
+
+            function hideResults() {
+                resultsDiv.style.display = 'none';
+            }
 
             input.addEventListener('input', function() {
                 clearTimeout(debounceTimer);
                 const query = this.value.trim();
                 if (query.length < 2) {
-                    resultsDiv.classList.remove('active');
+                    hideResults();
                     return;
                 }
+                // Position before showing
+                positionDropdown();
+
                 debounceTimer = setTimeout(async () => {
                     try {
                         const data = await apiCall(`/inventory/search?q=${encodeURIComponent(query)}&limit=10&offset=0`);
                         const items = data.items || [];
                         renderSearchResults(resultsDiv, items, input, hiddenInput);
+                        if (items.length > 0) {
+                            showResults();
+                        } else {
+                            resultsDiv.innerHTML = '<div class="no-results">No products found</div>';
+                            showResults();
+                        }
                     } catch (err) {
                         console.warn('Search error:', err);
-                        resultsDiv.innerHTML = '<div class="result-item no-results">Search error</div>';
-                        resultsDiv.classList.add('active');
+                        resultsDiv.innerHTML = '<div class="no-results">Search error</div>';
+                        showResults();
                     }
                 }, 300);
             });
 
-            // Click outside to close
-            document.addEventListener('click', function(e) {
-                if (!input.contains(e.target) && !resultsDiv.contains(e.target)) {
-                    resultsDiv.classList.remove('active');
+            input.addEventListener('focus', function() {
+                // If there's a value and it's not empty, re-show results if they were populated
+                const query = this.value.trim();
+                if (query.length >= 2 && resultsDiv.children.length > 0) {
+                    positionDropdown();
+                    resultsDiv.style.display = 'block';
                 }
             });
 
-            // Also close when we click a result (handled in render)
+            input.addEventListener('blur', function() {
+                setTimeout(hideResults, 150);
+            });
+
+            // Reposition on scroll/resize
+            const repositionHandler = function() {
+                if (resultsDiv.style.display === 'block') {
+                    positionDropdown();
+                }
+            };
+            window.addEventListener('scroll', repositionHandler, true);
+            window.addEventListener('resize', repositionHandler, true);
+
+            // Clean up references if line item is removed
+            const originalRemove = lineItem.querySelector('.remove-line')?.onclick;
+            if (originalRemove) {
+                // We already override it above, but we need to ensure cleanup happens.
+                // The remove button onclick already handles cleanup.
+            }
         }
 
         function renderSearchResults(container, items, input, hiddenInput) {
+            container.innerHTML = '';
             if (!items || items.length === 0) {
-                container.innerHTML = '<div class="result-item no-results">No products found</div>';
-                container.classList.add('active');
+                container.innerHTML = '<div class="no-results">No products found</div>';
                 return;
             }
-            container.innerHTML = '';
             items.slice(0, 10).forEach(p => {
                 const div = document.createElement('div');
                 div.className = 'result-item';
@@ -966,25 +971,16 @@
                     <div class="result-stock">${p.current_qty || 0} left</div>
                 `;
                 div.addEventListener('click', function() {
-                    // Set the hidden inventory ID
                     hiddenInput.value = p.id;
-                    // Update the input text to show the product name
                     input.value = p.description + ' (' + (p.item_code || p.id) + ')';
-                    // Optionally pre-fill cost and qty? Not needed.
-                    container.classList.remove('active');
-                    // Trigger any change event so that form submission sees the new ID
+                    container.style.display = 'none';
                     hiddenInput.dispatchEvent(new Event('change'));
                 });
                 container.appendChild(div);
             });
-            container.classList.add('active');
         }
 
-        function closeAllSearchDropdowns() {
-            document.querySelectorAll('.po-search-results').forEach(el => el.classList.remove('active'));
-        }
-
-        // ── Form submission for PO ──
+        // ── PO Form Submit ──
         document.getElementById('po-form')?.addEventListener('submit', async function(e) {
             e.preventDefault();
             const id = document.getElementById('po-id').value;
@@ -1006,7 +1002,7 @@
                 }
             });
             if (!valid || lineItems.length === 0) {
-                showToast('Please add at least one valid line item with product, quantity, and cost', 'error');
+                showToast('Please add at least one valid line item', 'error');
                 return;
             }
             if (!supplier_id) {
@@ -1036,10 +1032,7 @@
             }
         });
 
-        window.editPO = function(id) {
-            openPOModal(id);
-        };
-
+        window.editPO = function(id) { openPOModal(id); };
         window.deletePO = async function(id) {
             if (!confirm('Delete this PO? Only drafts can be deleted.')) return;
             try {
@@ -1050,7 +1043,6 @@
                 showToast(`Error: ${err.message}`, 'error');
             }
         };
-
         window.updatePOStatus = async function(id, status) {
             try {
                 await apiCall(`/purchase-orders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
@@ -1060,35 +1052,23 @@
                 showToast(`Error: ${err.message}`, 'error');
             }
         };
-
-        // View PO detail
         window.viewPODetail = async function(id) {
             try {
                 const po = await apiCall(`/purchase-orders/${id}`);
-                const container = document.getElementById('po-detail-content');
-                container.innerHTML = `
+                document.getElementById('po-detail-content').innerHTML = `
                     <div><strong>PO #:</strong> ${escapeHtml(po.po_number)}</div>
                     <div><strong>Supplier:</strong> ${escapeHtml(po.supplier?.name || '—')}</div>
                     <div><strong>Date:</strong> ${po.order_date || '—'}</div>
                     <div><strong>Expected Delivery:</strong> ${po.expected_delivery_date || '—'}</div>
                     <div><strong>Status:</strong> <span class="status-badge status-${po.status}">${po.status}</span></div>
                     <div><strong>Total:</strong> ₦${(po.total_amount || 0).toLocaleString()}</div>
-                    <div><strong>Notes:</strong> ${escapeHtml(po.notes || '—')}</div>
                     <div><strong>Items:</strong></div>
-                    <div class="table-container">
-                        <table>
-                            <thead><tr><th>Product</th><th>Qty Ordered</th><th>Unit Cost</th><th>Total</th><th>Received</th></tr></thead>
-                            <tbody>${(po.purchase_order_items || []).map(item => `
-                                <tr>
-                                    <td>${escapeHtml(item.inventory?.description || 'Product')}</td>
-                                    <td>${item.quantity_ordered}</td>
-                                    <td>₦${(item.unit_cost || 0).toLocaleString()}</td>
-                                    <td>₦${(item.total || (item.unit_cost * item.quantity_ordered)).toLocaleString()}</td>
-                                    <td>${item.received_quantity || 0}</td>
-                                </tr>
-                            `).join('')}</tbody>
-                        </table>
-                    </div>
+                    <div class="table-container"><table>
+                        <thead><tr><th>Product</th><th>Qty Ordered</th><th>Unit Cost</th><th>Total</th><th>Received</th></tr></thead>
+                        <tbody>${(po.purchase_order_items || []).map(item => `
+                            <tr><td>${escapeHtml(item.inventory?.description || 'Product')}</td><td>${item.quantity_ordered}</td><td>₦${(item.unit_cost || 0).toLocaleString()}</td><td>₦${(item.total || (item.unit_cost * item.quantity_ordered)).toLocaleString()}</td><td>${item.received_quantity || 0}</td></tr>
+                        `).join('')}</tbody>
+                    </table></div>
                 `;
                 document.getElementById('po-detail-title').innerText = `PO ${po.po_number}`;
                 openModal('po-detail-modal');
@@ -1098,7 +1078,7 @@
         };
 
         // ========================================================================
-        // GOODS RECEIVED NOTES (GRN) with ENFORCED Batch & Expiry
+        // GOODS RECEIVED NOTES (GRN)
         // ========================================================================
         async function loadGRNs(page = 1) {
             const status = document.getElementById('grn-status-filter').value;
@@ -1144,7 +1124,6 @@
             window._allGRNs = grns;
         }
 
-        // GRN CRUD
         async function openGRNModal(grnId = null) {
             const modal = document.getElementById('grn-modal');
             const form = document.getElementById('grn-form');
@@ -1153,7 +1132,6 @@
             document.getElementById('grn-post-btn').classList.add('hidden');
             document.getElementById('grn-modal-title').innerText = grnId ? 'Edit GRN' : 'Create GRN';
 
-            // populate PO select
             const poSelect = document.getElementById('grn-po-select');
             poSelect.innerHTML = '<option value="">Select PO...</option>';
             try {
@@ -1166,10 +1144,8 @@
                 });
             } catch (e) {}
 
-            // populate locations
             populateLocationSelects();
 
-            // if editing, load GRN data
             if (grnId) {
                 try {
                     const grn = await apiCall(`/grn/${grnId}`);
@@ -1178,14 +1154,12 @@
                     document.getElementById('grn-received-date').value = grn.received_date || '';
                     document.getElementById('grn-location').value = grn.location_id || '';
                     document.getElementById('grn-notes').value = grn.notes || '';
-                    // load items
                     if (grn.grn_items) {
                         document.getElementById('grn-items-container').innerHTML = '';
                         grn.grn_items.forEach(item => {
                             addGRNItem(item);
                         });
                     }
-                    // if draft, show post button
                     if (grn.status === 'draft') {
                         document.getElementById('grn-post-btn').classList.remove('hidden');
                         document.getElementById('grn-post-btn').dataset.grnId = grn.id;
@@ -1195,10 +1169,8 @@
                     return;
                 }
             } else {
-                // new: add one empty item
                 document.getElementById('grn-items-container').innerHTML = '';
                 addGRNItem();
-                // when PO changes, load items
                 poSelect.onchange = async function() {
                     const poId = this.value;
                     if (!poId) {
@@ -1222,9 +1194,6 @@
             modal.classList.add('active');
         }
 
-        /**
-         * UPDATED: Batch and Expiry are now REQUIRED (enforced via HTML and JS validation)
-         */
         function addGRNItem(existingItem = null, poItem = null) {
             const container = document.getElementById('grn-items-container');
             const div = document.createElement('div');
@@ -1234,18 +1203,15 @@
             div.style.background = '#0f172a';
             div.style.borderRadius = '0.5rem';
 
-            // hidden po_item_id
             const hidden = document.createElement('input');
             hidden.type = 'hidden';
             hidden.className = 'grn-po-item-id';
             hidden.value = existingItem?.po_item_id || poItem?.id || '';
 
-            // product name display
             const nameSpan = document.createElement('span');
             nameSpan.className = 'text-sm text-slate-300 min-w-[100px]';
             nameSpan.innerText = existingItem?.product_name || poItem?.inventory?.description || 'Product';
 
-            // received quantity
             const qtyLabel = document.createElement('label');
             qtyLabel.className = 'text-xs text-slate-400';
             qtyLabel.innerText = 'Recv';
@@ -1255,7 +1221,6 @@
             qtyInput.min = 0;
             qtyInput.value = existingItem?.received_quantity || poItem?.quantity_ordered || 0;
 
-            // accepted quantity
             const accLabel = document.createElement('label');
             accLabel.className = 'text-xs text-slate-400';
             accLabel.innerText = 'Acc';
@@ -1265,7 +1230,6 @@
             accInput.min = 0;
             accInput.value = existingItem?.accepted_quantity || poItem?.quantity_ordered || 0;
 
-            // rejected quantity
             const rejLabel = document.createElement('label');
             rejLabel.className = 'text-xs text-slate-400';
             rejLabel.innerText = 'Rej';
@@ -1275,14 +1239,12 @@
             rejInput.min = 0;
             rejInput.value = existingItem?.rejected_quantity || 0;
 
-            // rejection reason
             const reasonInput = document.createElement('input');
             reasonInput.type = 'text';
             reasonInput.className = 'form-input w-28';
             reasonInput.placeholder = 'Reason';
             reasonInput.value = existingItem?.rejection_reason || '';
 
-            // ─── BATCH NUMBER (REQUIRED) ───
             const batchLabel = document.createElement('label');
             batchLabel.className = 'text-xs text-yellow-400';
             batchLabel.innerText = 'Batch *';
@@ -1293,7 +1255,6 @@
             batchInput.required = true;
             batchInput.value = existingItem?.batch_number || '';
 
-            // ─── EXPIRY DATE (REQUIRED) ───
             const expiryLabel = document.createElement('label');
             expiryLabel.className = 'text-xs text-yellow-400';
             expiryLabel.innerText = 'Expiry *';
@@ -1303,7 +1264,6 @@
             expiryInput.required = true;
             expiryInput.value = existingItem?.expiry_date || '';
 
-            // cost override
             const costInput = document.createElement('input');
             costInput.type = 'number';
             costInput.className = 'form-input w-24';
@@ -1311,7 +1271,6 @@
             costInput.step = 0.01;
             costInput.value = existingItem?.cost_price_naira || poItem?.unit_cost || 0;
 
-            // remove button (only if existing GRN item)
             const removeBtn = document.createElement('button');
             removeBtn.type = 'button';
             removeBtn.className = 'remove-line text-red-400';
@@ -1349,7 +1308,6 @@
                 return;
             }
 
-            // ─── VALIDATE ITEMS: enforce Batch # and Expiry Date ───
             const items = [];
             const itemDivs = document.querySelectorAll('#grn-items-container .line-item');
             let valid = true;
@@ -1365,18 +1323,15 @@
                 const expiry = div.querySelector('input[type="date"]').value;
                 const cost = parseFloat(div.querySelectorAll('input[type="number"]')[3].value) || null;
 
-                // If this line has any receiving activity, validate batch and expiry
                 if (poItemId && (received > 0 || accepted > 0 || rejected > 0)) {
                     if (!batch) {
                         valid = false;
-                        errorMsg = '⚠️ Batch number is required for each received item. Please check the item: ' + (div
-                            .querySelector('span')?.innerText || '');
+                        errorMsg = '⚠️ Batch number is required for each received item.';
                         return;
                     }
                     if (!expiry) {
                         valid = false;
-                        errorMsg = '⚠️ Expiry date is required for each received item. Please check the item: ' + (div
-                            .querySelector('span')?.innerText || '');
+                        errorMsg = '⚠️ Expiry date is required for each received item.';
                         return;
                     }
                     items.push({
@@ -1424,10 +1379,7 @@
             }
         });
 
-        window.editGRN = function(id) {
-            openGRNModal(id);
-        };
-
+        window.editGRN = function(id) { openGRNModal(id); };
         window.deleteGRN = async function(id) {
             if (!confirm('Delete this GRN? Only drafts can be deleted.')) return;
             try {
@@ -1438,11 +1390,8 @@
                 showToast(`Error: ${err.message}`, 'error');
             }
         };
-
-        // Post GRN
         window.postGRN = async function(grnId = null) {
             if (!grnId) {
-                // called from modal post button
                 grnId = document.getElementById('grn-post-btn')?.dataset.grnId;
                 if (!grnId) {
                     showToast('No GRN ID found', 'error');
@@ -1458,15 +1407,12 @@
                 showToast(`Error: ${err.message}`, 'error');
             }
         };
-
-        // View GRN detail
         window.viewGRNDetail = async function(id) {
             try {
                 const grn = await apiCall(`/grn/${id}`);
                 let msg = `GRN ${grn.grn_number}\nPO: ${grn.po?.po_number || 'N/A'}\nReceived: ${grn.received_date}\nStatus: ${grn.status}\nItems:\n`;
                 (grn.grn_items || []).forEach(item => {
-                    msg +=
-                        `  Product: ${item.inventory_id || 'N/A'} | Batch: ${item.batch_number || 'N/A'} | Expiry: ${item.expiry_date || 'N/A'} | Recv: ${item.received_quantity} | Acc: ${item.accepted_quantity} | Rej: ${item.rejected_quantity}\n`;
+                    msg += `  Product: ${item.inventory_id || 'N/A'} | Batch: ${item.batch_number || 'N/A'} | Expiry: ${item.expiry_date || 'N/A'} | Recv: ${item.received_quantity} | Acc: ${item.accepted_quantity} | Rej: ${item.rejected_quantity}\n`;
                 });
                 alert(msg);
             } catch (err) {
@@ -1515,15 +1461,12 @@
                 this.classList.add('tab-active');
                 document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
                 document.getElementById(`tab-${this.dataset.tab}`).classList.remove('hidden');
-                // refresh data on switch
                 const tab = this.dataset.tab;
                 if (tab === 'suppliers') loadSuppliers(currentSupplierPage);
                 else if (tab === 'purchase-orders') loadPurchaseOrders(currentPOPage);
                 else if (tab === 'grn') loadGRNs(currentGRNPage);
             });
         });
-
-        // show initial tab
         document.querySelector('.tab-btn[data-tab="suppliers"]')?.click();
 
         // ========================================================================
@@ -1546,7 +1489,6 @@
             }
         }
 
-        // Listen for changes on PO status filter etc.
         document.getElementById('po-status-filter')?.addEventListener('change', () => loadPurchaseOrders(1));
         document.getElementById('po-date-from')?.addEventListener('change', () => loadPurchaseOrders(1));
         document.getElementById('po-date-to')?.addEventListener('change', () => loadPurchaseOrders(1));
