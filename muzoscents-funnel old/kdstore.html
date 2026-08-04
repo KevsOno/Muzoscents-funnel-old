@@ -820,18 +820,20 @@
     if (!cart.length) return showToast("Cart empty", 'error');
     if (!token) return showAuthModal();
 
-    // ─── FORCE REFRESH PROFILE IF EMAIL IS MISSING ───
+    // ─── Attempt to refresh profile if email is missing ───
     if (token && !userProfile?.email) {
-        console.warn("⚠️ userProfile.email is missing – refreshing profile...");
-        await loadUser(); // This calls /auth/me and updates userProfile
-        // If still missing, show error and abort
+        console.warn("⚠️ userProfile.email is missing – attempting to refresh...");
+        try {
+            await loadUser(); // calls /auth/me
+        } catch (e) {
+            console.warn("Profile refresh failed, continuing with guest email", e);
+        }
+        // Even if email is still missing, we continue (backend will use guest email)
         if (!userProfile?.email) {
-            showToast("Could not retrieve your email. Please log out and log in again.", 'error');
-            return;
+            console.warn("❌ Email still missing – proceeding with null email (guest checkout)");
         }
     }
 
-    // ─── LOG THE EMAIL FOR DEBUGGING ───
     console.log(`📧 Checkout email: ${userProfile?.email || 'None'}`);
 
     if (deliveryOption === 'delivery' && (!deliveryAddress || deliveryFee === 0)) {
@@ -875,7 +877,8 @@
             });
             if (result.payment_url) {
                 localStorage.setItem('pending_payment', 'true');
-                window.location.href = result.payment_url;
+                // Use location.replace to avoid back-button issues
+                window.location.replace(result.payment_url);
             } else {
                 showToast("Payment initiation failed", 'error');
             }
@@ -884,7 +887,6 @@
         showToast(e.message, 'error');
     }
 }
-
         async function loadUserLoyalty() { if (!token) return; try { const me = await apiCall('/auth/me'); let points = 0, tier = 'bronze'; try { const context = await apiCall(`/support/customer-context?target_user_id=${me.user_id}`); if (context.loyalty) { points = context.loyalty.current_points || 0; tier = context.loyalty.tier || 'bronze'; } } catch(e) { points = me.loyalty_points || 0; tier = me.loyalty_tier || 'bronze'; } userLoyalty = { points, tier }; const pointsSpan = document.getElementById('user-points'); const tierSpan = document.getElementById('user-tier'); const loyaltyDiv = document.getElementById('loyalty-info-dropdown'); if (pointsSpan) pointsSpan.innerText = userLoyalty.points; if (tierSpan) tierSpan.innerText = userLoyalty.tier; if (loyaltyDiv) loyaltyDiv.classList.remove('hidden'); } catch(e) { console.warn(e); } }
         async function loadUser() { if (!token) return; try { const me = await apiCall('/auth/me'); userProfile = me; const displayName = me.first_name || me.email || 'User'; document.getElementById('user-info-dropdown').innerHTML = `<i class="fa-regular fa-user"></i> ${escapeHtml(displayName)}`; document.getElementById('logout-dropdown').classList.remove('hidden'); await loadUserLoyalty(); } catch(e) { userProfile = null; document.getElementById('user-info-dropdown').innerHTML = 'Guest'; document.getElementById('logout-dropdown').classList.add('hidden'); } }
         function showAuthModal(){ document.getElementById('auth-modal').classList.remove('hidden'); }
