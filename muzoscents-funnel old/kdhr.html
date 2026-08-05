@@ -1,0 +1,795 @@
+<!-- kdhr.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HR Management</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body { background: #0F172A; font-family: 'Inter', sans-serif; }
+        .tab-active { border-bottom: 2px solid #3b82f6; color: white; }
+        .tab-inactive { color: #94a3b8; }
+        .tab-inactive:hover { color: #e2e8f0; }
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); z-index: 50; align-items: center; justify-content: center; padding: 1rem; }
+        .modal-overlay.active { display: flex; }
+        .modal-content { background: #1e293b; border: 1px solid #475569; border-radius: 1.5rem; max-width: 800px; width: 100%; max-height: 90vh; overflow-y: auto; padding: 2rem; position: relative; }
+        .modal-close { position: absolute; top: 1rem; right: 1rem; background: transparent; border: none; color: #94a3b8; font-size: 1.5rem; cursor: pointer; }
+        .modal-close:hover { color: white; }
+        .form-input { background: #0f172a; border: 1px solid #334155; border-radius: 0.5rem; padding: 0.5rem 0.75rem; color: #e2e8f0; width: 100%; }
+        .form-input:focus { border-color: #3b82f6; outline: none; }
+        .btn-primary { background: #3b82f6; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; transition: background 0.15s; border: none; cursor: pointer; }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-secondary { background: #334155; color: #e2e8f0; padding: 0.5rem 1rem; border-radius: 0.5rem; transition: background 0.15s; border: none; cursor: pointer; }
+        .btn-secondary:hover { background: #475569; }
+        .status-badge { display: inline-block; padding: 0.1rem 0.6rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 600; }
+        .status-active { background: #22c55e; color: #0f172a; }
+        .status-inactive { background: #dc2626; color: white; }
+        .status-pending { background: #f59e0b; color: #0f172a; }
+        .status-approved { background: #22c55e; color: #0f172a; }
+        .status-rejected { background: #dc2626; color: white; }
+    </style>
+</head>
+<body class="text-slate-200">
+
+    <!-- Global navigation -->
+    <div id="kevs-nav-container"></div>
+
+    <div class="max-w-7xl mx-auto p-4 md:p-6">
+        <!-- Org banner -->
+        <div id="current-org-banner" class="hidden mb-4 p-3 bg-blue-900/30 rounded-lg border border-blue-700 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <i class="fa-solid fa-building text-blue-400"></i>
+                <div>
+                    <p class="text-xs text-slate-400">Managing HR for</p>
+                    <p id="current-org-name" class="font-semibold text-white">-</p>
+                </div>
+            </div>
+            <button id="switch-org-btn" class="text-sm bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg transition">
+                <i class="fa-solid fa-arrow-right-arrow-left mr-1"></i> Switch Organisation
+            </button>
+        </div>
+
+        <h1 class="text-2xl font-bold mb-6">👥 Human Resources</h1>
+
+        <!-- Tabs -->
+        <div class="flex flex-wrap gap-2 border-b border-slate-700 mb-6">
+            <button class="tab-btn px-4 py-2 text-sm font-medium tab-active" data-tab="employees">👤 Employees</button>
+            <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="attendance">⏱️ Attendance</button>
+            <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="leaves">📅 Leaves</button>
+            <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="payroll">💰 Payroll</button>
+            <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="myprofile">👤 My Profile</button>
+        </div>
+
+        <!-- ===== TAB: EMPLOYEES ===== -->
+        <div id="tab-employees" class="tab-content">
+            <div class="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">Employees</h2>
+                    <button onclick="openEmployeeModal()" class="btn-primary"><i class="fa-solid fa-plus mr-1"></i> Add Employee</button>
+                </div>
+                <div class="flex flex-wrap gap-4 mb-4">
+                    <select id="emp-dept-filter" class="form-input w-auto"><option value="">All Departments</option></select>
+                    <select id="emp-status-filter" class="form-input w-auto"><option value="">All Status</option><option value="active">Active</option><option value="inactive">Inactive</option></select>
+                    <button onclick="loadEmployees()" class="btn-secondary"><i class="fa-solid fa-rotate-right mr-1"></i> Refresh</button>
+                </div>
+                <div id="employees-list" class="overflow-x-auto">
+                    <p class="text-center py-8 text-slate-400">Loading...</p>
+                </div>
+                <div id="emp-pagination" class="flex items-center justify-between mt-4 pt-4 border-t border-slate-700"></div>
+            </div>
+        </div>
+
+        <!-- ===== TAB: ATTENDANCE ===== -->
+        <div id="tab-attendance" class="tab-content hidden">
+            <div class="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
+                <h2 class="text-xl font-bold mb-4">Attendance Log</h2>
+                <div class="flex flex-wrap gap-4 mb-4">
+                    <input type="date" id="att-start" class="form-input w-auto">
+                    <input type="date" id="att-end" class="form-input w-auto">
+                    <select id="att-employee" class="form-input w-auto"><option value="">All Employees</option></select>
+                    <button onclick="loadAttendance()" class="btn-secondary"><i class="fa-solid fa-rotate-right mr-1"></i> Refresh</button>
+                </div>
+                <div id="attendance-list" class="overflow-x-auto">
+                    <p class="text-center py-8 text-slate-400">Loading...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== TAB: LEAVES ===== -->
+        <div id="tab-leaves" class="tab-content hidden">
+            <div class="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">Leave Requests</h2>
+                    <button onclick="openLeaveModal()" class="btn-primary"><i class="fa-solid fa-plus mr-1"></i> Request Leave</button>
+                </div>
+                <div class="flex flex-wrap gap-4 mb-4">
+                    <select id="leave-status-filter" class="form-input w-auto"><option value="">All Status</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select>
+                    <button onclick="loadLeaveRequests()" class="btn-secondary"><i class="fa-solid fa-rotate-right mr-1"></i> Refresh</button>
+                </div>
+                <div id="leaves-list" class="overflow-x-auto">
+                    <p class="text-center py-8 text-slate-400">Loading...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== TAB: PAYROLL ===== -->
+        <div id="tab-payroll" class="tab-content hidden">
+            <div class="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">Payroll</h2>
+                    <button onclick="generatePayroll()" class="btn-primary"><i class="fa-solid fa-calculator mr-1"></i> Generate for Month</button>
+                </div>
+                <div class="flex flex-wrap gap-4 mb-4">
+                    <select id="pay-month" class="form-input w-auto">
+                        <option value="1">January</option><option value="2">February</option><option value="3">March</option>
+                        <option value="4">April</option><option value="5">May</option><option value="6">June</option>
+                        <option value="7">July</option><option value="8">August</option><option value="9">September</option>
+                        <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+                    </select>
+                    <input type="number" id="pay-year" class="form-input w-auto" placeholder="Year" value="2025">
+                    <button onclick="loadPayroll()" class="btn-secondary"><i class="fa-solid fa-rotate-right mr-1"></i> Load</button>
+                </div>
+                <div id="payroll-list" class="overflow-x-auto">
+                    <p class="text-center py-8 text-slate-400">Loading...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== TAB: MY PROFILE ===== -->
+        <div id="tab-myprofile" class="tab-content hidden">
+            <div class="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
+                <h2 class="text-xl font-bold mb-4">My Employee Profile</h2>
+                <div id="my-profile-content" class="space-y-2">
+                    <p class="text-slate-400">Loading...</p>
+                </div>
+                <div class="mt-4">
+                    <button onclick="clockIn()" class="btn-primary mr-2"><i class="fa-solid fa-right-to-bracket"></i> Clock In</button>
+                    <button onclick="clockOut()" class="btn-secondary"><i class="fa-solid fa-right-from-bracket"></i> Clock Out</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ===== MODALS ===== -->
+    <!-- Employee Modal -->
+    <div id="employee-modal" class="modal-overlay">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('employee-modal')">&times;</button>
+            <h3 id="emp-modal-title" class="text-xl font-bold mb-4">Add Employee</h3>
+            <form id="employee-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input type="hidden" id="emp-id">
+                <div><label class="form-label">First Name *</label><input type="text" id="emp-first" class="form-input" required></div>
+                <div><label class="form-label">Last Name *</label><input type="text" id="emp-last" class="form-input" required></div>
+                <div><label class="form-label">Email *</label><input type="email" id="emp-email" class="form-input" required></div>
+                <div><label class="form-label">Phone</label><input type="text" id="emp-phone" class="form-input"></div>
+                <div><label class="form-label">Department</label>
+                    <select id="emp-dept" class="form-input"><option value="">None</option></select>
+                </div>
+                <div><label class="form-label">Position</label><input type="text" id="emp-position" class="form-input"></div>
+                <div><label class="form-label">Hire Date *</label><input type="date" id="emp-hire" class="form-input" required></div>
+                <div><label class="form-label">Salary (₦)</label><input type="number" id="emp-salary" class="form-input" step="0.01" value="0"></div>
+                <div><label class="form-label">Status</label>
+                    <select id="emp-status" class="form-input"><option value="active">Active</option><option value="inactive">Inactive</option></select>
+                </div>
+                <div class="md:col-span-2"><label class="form-label">Link to existing user (optional)</label>
+                    <input type="text" id="emp-user-id" class="form-input" placeholder="User UUID">
+                </div>
+                <div class="md:col-span-2 flex gap-3">
+                    <button type="submit" class="btn-primary">💾 Save</button>
+                    <button type="button" onclick="closeModal('employee-modal')" class="btn-secondary">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Leave Request Modal -->
+    <div id="leave-modal" class="modal-overlay">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('leave-modal')">&times;</button>
+            <h3 class="text-xl font-bold mb-4">Request Leave</h3>
+            <form id="leave-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input type="hidden" id="leave-emp-id" value="">
+                <div><label class="form-label">Leave Type *</label>
+                    <select id="leave-type" class="form-input" required><option value="annual">Annual</option><option value="sick">Sick</option><option value="personal">Personal</option></select>
+                </div>
+                <div><label class="form-label">Start Date *</label><input type="date" id="leave-start" class="form-input" required></div>
+                <div><label class="form-label">End Date *</label><input type="date" id="leave-end" class="form-input" required></div>
+                <div class="md:col-span-2"><label class="form-label">Reason</label><textarea id="leave-reason" class="form-input" rows="2"></textarea></div>
+                <div class="md:col-span-2 flex gap-3">
+                    <button type="submit" class="btn-primary">📨 Submit</button>
+                    <button type="button" onclick="closeModal('leave-modal')" class="btn-secondary">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="fixed bottom-4 right-4 z-50 hidden px-4 py-2 rounded-lg text-white text-sm shadow-lg"></div>
+
+    <script>
+        // ================================================================
+        // HR FRONTEND – full CRUD
+        // ================================================================
+
+        const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
+        let token = localStorage.getItem('access_token');
+        let selectedOrganisation = null;
+        let allEmployees = [];
+        let allDepartments = [];
+        let currentEmpPage = 1;
+        const PAGE_SIZE = 20;
+
+        // ---------- Utilities ----------
+        function showToast(msg, type = 'info') {
+            const toast = document.getElementById('toast');
+            toast.className = `fixed bottom-4 right-4 z-50 px-4 py-2 rounded-lg text-white text-sm shadow-lg ${type === 'success' ? 'bg-green-600' : type === 'error' ? 'bg-red-600' : 'bg-blue-600'}`;
+            toast.innerText = msg;
+            toast.style.display = 'block';
+            clearTimeout(toast._timer);
+            toast._timer = setTimeout(() => toast.style.display = 'none', 4000);
+        }
+
+        function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' } [m])); }
+
+        function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+        function openModal(id) { document.getElementById(id).classList.add('active'); }
+
+        // ---------- API ----------
+        async function apiCall(endpoint, options = {}, retry = true) {
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+            const orgId = selectedOrganisation ? selectedOrganisation.id : localStorage.getItem('selected_org_id');
+            if (orgId) headers['X-Selected-Org-Id'] = orgId;
+            const res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
+            if (res.status === 401 && retry) {
+                const refresh = localStorage.getItem('refresh_token');
+                if (refresh) {
+                    try {
+                        const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ refresh_token: refresh })
+                        });
+                        if (refreshRes.ok) {
+                            const data = await refreshRes.json();
+                            localStorage.setItem('access_token', data.access_token);
+                            localStorage.setItem('refresh_token', data.refresh_token);
+                            token = data.access_token;
+                            return apiCall(endpoint, options, false);
+                        }
+                    } catch (e) {}
+                }
+                window.location.href = '/kdsiginin';
+                throw new Error('Session expired');
+            }
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: 'API error' }));
+                throw new Error(err.detail || 'API error');
+            }
+            return res.json();
+        }
+
+        // ---------- Organisation ----------
+        async function initOrganisation() {
+            const savedOrgId = localStorage.getItem('selected_org_id');
+            if (savedOrgId) {
+                try {
+                    const me = await apiCall('/auth/me');
+                    selectedOrganisation = { id: me.org_id, name: (await apiCall('/auth/org')).org_name };
+                    document.getElementById('current-org-name').innerText = selectedOrganisation.name;
+                    document.getElementById('current-org-banner').classList.remove('hidden');
+                    await loadDepartments();
+                    await loadEmployees();
+                    await loadAttendanceSelects();
+                    return;
+                } catch (e) {}
+            }
+            // fallback: show switch
+            document.getElementById('current-org-banner').classList.add('hidden');
+            showToast('Please select an organisation', 'error');
+        }
+
+        document.getElementById('switch-org-btn')?.addEventListener('click', function() {
+            localStorage.removeItem('selected_org_id');
+            window.location.reload();
+        });
+
+        // ---------- Departments ----------
+        async function loadDepartments() {
+            try {
+                const data = await apiCall('/hr/departments');
+                allDepartments = data.departments || [];
+                // populate dropdowns
+                const selects = ['emp-dept', 'emp-dept-filter'];
+                selects.forEach(id => {
+                    const sel = document.getElementById(id);
+                    if (!sel) return;
+                    const current = sel.value;
+                    sel.innerHTML = '<option value="">None</option>';
+                    allDepartments.forEach(d => {
+                        const opt = document.createElement('option');
+                        opt.value = d.id;
+                        opt.textContent = d.name;
+                        sel.appendChild(opt);
+                    });
+                    if (current) sel.value = current;
+                });
+            } catch (err) {
+                console.warn('Failed to load departments', err);
+            }
+        }
+
+        // ---------- Employees ----------
+        async function loadEmployees(page = 1) {
+            const dept = document.getElementById('emp-dept-filter').value;
+            const status = document.getElementById('emp-status-filter').value;
+            let url = `/hr/employees?limit=${PAGE_SIZE}&offset=${(page-1)*PAGE_SIZE}`;
+            if (dept) url += `&department_id=${dept}`;
+            if (status) url += `&status=${status}`;
+            try {
+                const data = await apiCall(url);
+                allEmployees = data.employees || [];
+                renderEmployees(allEmployees);
+                renderPagination('emp-pagination', page, Math.ceil((data.total || 0) / PAGE_SIZE), loadEmployees);
+            } catch (err) {
+                document.getElementById('employees-list').innerHTML = `<p class="text-red-400">Error: ${escapeHtml(err.message)}</p>`;
+            }
+        }
+
+        function renderEmployees(employees) {
+            const container = document.getElementById('employees-list');
+            if (!employees || employees.length === 0) {
+                container.innerHTML = '<p class="text-center py-8 text-slate-400">No employees found.</p>';
+                return;
+            }
+            let html = `<table class="min-w-full"><thead><tr><th class="text-left p-2">Name</th><th>Email</th><th>Department</th><th>Position</th><th>Status</th><th>Actions</th></tr></thead><tbody>`;
+            employees.forEach(emp => {
+                const deptName = allDepartments.find(d => d.id === emp.department_id)?.name || '—';
+                html += `
+                    <tr>
+                        <td class="p-2">${escapeHtml(emp.first_name)} ${escapeHtml(emp.last_name)}</td>
+                        <td class="p-2">${escapeHtml(emp.email)}</td>
+                        <td class="p-2">${escapeHtml(deptName)}</td>
+                        <td class="p-2">${escapeHtml(emp.position || '—')}</td>
+                        <td class="p-2"><span class="status-badge ${emp.status === 'active' ? 'status-active' : 'status-inactive'}">${emp.status}</span></td>
+                        <td class="p-2">
+                            <button onclick="editEmployee(${emp.id})" class="text-blue-400 hover:text-blue-300 mr-2"><i class="fa-regular fa-pen-to-square"></i></button>
+                            <button onclick="deleteEmployee(${emp.id})" class="text-red-400 hover:text-red-300"><i class="fa-regular fa-trash-can"></i></button>
+                        </td>
+                    </tr>
+                `;
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        // Employee CRUD
+        function openEmployeeModal(empId = null) {
+            const modal = document.getElementById('employee-modal');
+            const form = document.getElementById('employee-form');
+            form.reset();
+            document.getElementById('emp-id').value = '';
+            document.getElementById('emp-modal-title').innerText = empId ? 'Edit Employee' : 'Add Employee';
+            if (empId) {
+                const emp = allEmployees.find(e => e.id === empId);
+                if (emp) {
+                    document.getElementById('emp-id').value = emp.id;
+                    document.getElementById('emp-first').value = emp.first_name || '';
+                    document.getElementById('emp-last').value = emp.last_name || '';
+                    document.getElementById('emp-email').value = emp.email || '';
+                    document.getElementById('emp-phone').value = emp.phone || '';
+                    document.getElementById('emp-dept').value = emp.department_id || '';
+                    document.getElementById('emp-position').value = emp.position || '';
+                    document.getElementById('emp-hire').value = emp.hire_date || '';
+                    document.getElementById('emp-salary').value = emp.salary || 0;
+                    document.getElementById('emp-status').value = emp.status || 'active';
+                    document.getElementById('emp-user-id').value = emp.user_id || '';
+                }
+            }
+            openModal('employee-modal');
+        }
+
+        document.getElementById('employee-form')?.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const id = document.getElementById('emp-id').value;
+            const payload = {
+                first_name: document.getElementById('emp-first').value.trim(),
+                last_name: document.getElementById('emp-last').value.trim(),
+                email: document.getElementById('emp-email').value.trim(),
+                phone: document.getElementById('emp-phone').value.trim() || null,
+                department_id: parseInt(document.getElementById('emp-dept').value) || null,
+                position: document.getElementById('emp-position').value.trim() || null,
+                hire_date: document.getElementById('emp-hire').value,
+                salary: parseFloat(document.getElementById('emp-salary').value) || 0,
+                status: document.getElementById('emp-status').value,
+                user_id: document.getElementById('emp-user-id').value.trim() || null
+            };
+            try {
+                if (id) {
+                    await apiCall(`/hr/employees/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+                    showToast('Employee updated', 'success');
+                } else {
+                    await apiCall('/hr/employees', { method: 'POST', body: JSON.stringify(payload) });
+                    showToast('Employee added', 'success');
+                }
+                closeModal('employee-modal');
+                loadEmployees(currentEmpPage);
+            } catch (err) {
+                showToast(`Error: ${err.message}`, 'error');
+            }
+        });
+
+        window.editEmployee = function(id) { openEmployeeModal(id); };
+
+        window.deleteEmployee = async function(id) {
+            if (!confirm('Delete this employee?')) return;
+            try {
+                await apiCall(`/hr/employees/${id}`, { method: 'DELETE' });
+                showToast('Employee deleted', 'success');
+                loadEmployees(currentEmpPage);
+            } catch (err) {
+                showToast(`Error: ${err.message}`, 'error');
+            }
+        };
+
+        // ---------- Attendance ----------
+        async function loadAttendanceSelects() {
+            try {
+                const data = await apiCall('/hr/employees?limit=1000');
+                const emps = data.employees || [];
+                const sel = document.getElementById('att-employee');
+                sel.innerHTML = '<option value="">All Employees</option>';
+                emps.forEach(e => {
+                    const opt = document.createElement('option');
+                    opt.value = e.id;
+                    opt.textContent = `${e.first_name} ${e.last_name}`;
+                    sel.appendChild(opt);
+                });
+            } catch (err) { console.warn('Failed to load employee selects', err); }
+        }
+
+        async function loadAttendance() {
+            const emp = document.getElementById('att-employee').value;
+            const start = document.getElementById('att-start').value;
+            const end = document.getElementById('att-end').value;
+            let url = '/hr/attendance?limit=200';
+            if (emp) url += `&employee_id=${emp}`;
+            if (start) url += `&start_date=${start}`;
+            if (end) url += `&end_date=${end}`;
+            try {
+                const data = await apiCall(url);
+                const atts = data.attendance || [];
+                const container = document.getElementById('attendance-list');
+                if (atts.length === 0) {
+                    container.innerHTML = '<p class="text-center py-8 text-slate-400">No attendance records.</p>';
+                    return;
+                }
+                let html = `<table class="min-w-full"><thead><tr><th>Employee</th><th>Date</th><th>Clock In</th><th>Clock Out</th><th>Status</th></tr></thead><tbody>`;
+                for (const a of atts) {
+                    const empObj = allEmployees.find(e => e.id === a.employee_id);
+                    const name = empObj ? `${empObj.first_name} ${empObj.last_name}` : `ID ${a.employee_id}`;
+                    html += `
+                        <tr>
+                            <td class="p-2">${escapeHtml(name)}</td>
+                            <td class="p-2">${a.date}</td>
+                            <td class="p-2">${a.clock_in ? new Date(a.clock_in).toLocaleTimeString() : '—'}</td>
+                            <td class="p-2">${a.clock_out ? new Date(a.clock_out).toLocaleTimeString() : '—'}</td>
+                            <td class="p-2">${escapeHtml(a.status || 'present')}</td>
+                        </tr>
+                    `;
+                }
+                html += '</tbody></table>';
+                container.innerHTML = html;
+            } catch (err) {
+                showToast(`Error: ${err.message}`, 'error');
+            }
+        }
+
+        // ---------- Leave ----------
+        async function loadLeaveRequests() {
+            const status = document.getElementById('leave-status-filter').value;
+            let url = '/hr/leave-requests?limit=100';
+            if (status) url += `&status=${status}`;
+            try {
+                const data = await apiCall(url);
+                const requests = data.requests || [];
+                const container = document.getElementById('leaves-list');
+                if (requests.length === 0) {
+                    container.innerHTML = '<p class="text-center py-8 text-slate-400">No leave requests.</p>';
+                    return;
+                }
+                let html = `<table class="min-w-full"><thead><tr><th>Employee</th><th>Type</th><th>Start</th><th>End</th><th>Status</th><th>Actions</th></tr></thead><tbody>`;
+                for (const req of requests) {
+                    const empObj = allEmployees.find(e => e.id === req.employee_id);
+                    const name = empObj ? `${empObj.first_name} ${empObj.last_name}` : `ID ${req.employee_id}`;
+                    const statusClass = req.status === 'pending' ? 'status-pending' : req.status === 'approved' ? 'status-approved' :
+                        'status-rejected';
+                    html += `
+                        <tr>
+                            <td class="p-2">${escapeHtml(name)}</td>
+                            <td class="p-2">${escapeHtml(req.leave_type)}</td>
+                            <td class="p-2">${req.start_date}</td>
+                            <td class="p-2">${req.end_date}</td>
+                            <td class="p-2"><span class="status-badge ${statusClass}">${req.status}</span></td>
+                            <td class="p-2">
+                                ${req.status === 'pending' ? `
+                                    <button onclick="approveLeave(${req.id})" class="text-green-400 hover:text-green-300 mr-2"><i class="fa-regular fa-check-circle"></i></button>
+                                    <button onclick="rejectLeave(${req.id})" class="text-red-400 hover:text-red-300"><i class="fa-regular fa-circle-xmark"></i></button>
+                                ` : ''}
+                            </td>
+                        </tr>
+                    `;
+                }
+                html += '</tbody></table>';
+                container.innerHTML = html;
+            } catch (err) {
+                showToast(`Error: ${err.message}`, 'error');
+            }
+        }
+
+        function openLeaveModal() {
+            openModal('leave-modal');
+            // Pre-populate employee ID from my profile if possible
+            const empId = document.getElementById('my-profile-content')?.dataset?.employeeId;
+            if (empId) document.getElementById('leave-emp-id').value = empId;
+        }
+
+        document.getElementById('leave-form')?.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const empId = document.getElementById('leave-emp-id').value;
+            if (!empId) {
+                showToast('Employee ID missing', 'error');
+                return;
+            }
+            const payload = {
+                employee_id: parseInt(empId),
+                leave_type: document.getElementById('leave-type').value,
+                start_date: document.getElementById('leave-start').value,
+                end_date: document.getElementById('leave-end').value,
+                reason: document.getElementById('leave-reason').value.trim() || null
+            };
+            try {
+                await apiCall('/hr/leave-requests', { method: 'POST', body: JSON.stringify(payload) });
+                showToast('Leave request submitted', 'success');
+                closeModal('leave-modal');
+                loadLeaveRequests();
+            } catch (err) {
+                showToast(`Error: ${err.message}`, 'error');
+            }
+        });
+
+        window.approveLeave = async function(id) {
+            try {
+                await apiCall(`/hr/leave-requests/${id}`, { method: 'PUT', body: JSON.stringify({ status: 'approved' }) });
+                showToast('Leave approved', 'success');
+                loadLeaveRequests();
+            } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
+        };
+
+        window.rejectLeave = async function(id) {
+            try {
+                await apiCall(`/hr/leave-requests/${id}`, { method: 'PUT', body: JSON.stringify({ status: 'rejected' }) });
+                showToast('Leave rejected', 'success');
+                loadLeaveRequests();
+            } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
+        };
+
+        // ---------- Payroll ----------
+        async function generatePayroll() {
+            const month = parseInt(document.getElementById('pay-month').value);
+            const year = parseInt(document.getElementById('pay-year').value);
+            if (!month || !year) {
+                showToast('Select month and year', 'error');
+                return;
+            }
+            try {
+                const result = await apiCall('/hr/payroll/generate', { method: 'POST', body: JSON.stringify({ month, year }) });
+                showToast(result.message || 'Payroll generated', 'success');
+                loadPayroll();
+            } catch (err) {
+                showToast(`Error: ${err.message}`, 'error');
+            }
+        }
+
+        async function loadPayroll() {
+            const month = parseInt(document.getElementById('pay-month').value);
+            const year = parseInt(document.getElementById('pay-year').value);
+            let url = '/hr/payroll?limit=200';
+            if (month) url += `&month=${month}`;
+            if (year) url += `&year=${year}`;
+            try {
+                const data = await apiCall(url);
+                const payroll = data.payroll || [];
+                const container = document.getElementById('payroll-list');
+                if (payroll.length === 0) {
+                    container.innerHTML = '<p class="text-center py-8 text-slate-400">No payroll records.</p>';
+                    return;
+                }
+                let html = `<table class="min-w-full"><thead><tr><th>Employee</th><th>Base Salary</th><th>Allowances</th><th>Deductions</th><th>Net Pay</th><th>Status</th></tr></thead><tbody>`;
+                for (const p of payroll) {
+                    const empObj = allEmployees.find(e => e.id === p.employee_id);
+                    const name = empObj ? `${empObj.first_name} ${empObj.last_name}` : `ID ${p.employee_id}`;
+                    html += `
+                        <tr>
+                            <td class="p-2">${escapeHtml(name)}</td>
+                            <td class="p-2">₦${(p.base_salary || 0).toLocaleString()}</td>
+                            <td class="p-2">₦${(p.allowances || 0).toLocaleString()}</td>
+                            <td class="p-2">₦${(p.deductions || 0).toLocaleString()}</td>
+                            <td class="p-2 font-bold">₦${(p.net_pay || 0).toLocaleString()}</td>
+                            <td class="p-2">${escapeHtml(p.status)}</td>
+                        </tr>
+                    `;
+                }
+                html += '</tbody></table>';
+                container.innerHTML = html;
+            } catch (err) {
+                showToast(`Error: ${err.message}`, 'error');
+            }
+        }
+
+        // ---------- My Profile ----------
+        async function loadMyProfile() {
+            try {
+                const emp = await apiCall('/hr/me');
+                const container = document.getElementById('my-profile-content');
+                container.dataset.employeeId = emp.id;
+                container.innerHTML = `
+                    <div><strong>Name:</strong> ${escapeHtml(emp.first_name)} ${escapeHtml(emp.last_name)}</div>
+                    <div><strong>Email:</strong> ${escapeHtml(emp.email)}</div>
+                    <div><strong>Phone:</strong> ${escapeHtml(emp.phone || '—')}</div>
+                    <div><strong>Department:</strong> ${escapeHtml(allDepartments.find(d => d.id === emp.department_id)?.name || '—')}</div>
+                    <div><strong>Position:</strong> ${escapeHtml(emp.position || '—')}</div>
+                    <div><strong>Hire Date:</strong> ${emp.hire_date}</div>
+                    <div><strong>Salary:</strong> ₦${(emp.salary || 0).toLocaleString()}</div>
+                    <div><strong>Status:</strong> <span class="status-badge ${emp.status === 'active' ? 'status-active' : 'status-inactive'}">${emp.status}</span></div>
+                `;
+                document.getElementById('leave-emp-id').value = emp.id;
+            } catch (err) {
+                document.getElementById('my-profile-content').innerHTML = `<p class="text-red-400">${escapeHtml(err.message)}</p>`;
+            }
+        }
+
+        // ---------- Clock In/Out ----------
+        async function clockIn() {
+            const empId = document.getElementById('my-profile-content')?.dataset?.employeeId;
+            if (!empId) { showToast('No employee profile found', 'error'); return; }
+            try {
+                await apiCall('/hr/attendance/clock-in', { method: 'POST', body: JSON.stringify({ employee_id: parseInt(empId) }) });
+                showToast('Clocked in', 'success');
+                loadMyProfile();
+            } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
+        }
+
+        async function clockOut() {
+            const empId = document.getElementById('my-profile-content')?.dataset?.employeeId;
+            if (!empId) { showToast('No employee profile found', 'error'); return; }
+            try {
+                await apiCall('/hr/attendance/clock-out', { method: 'POST', body: JSON.stringify({ employee_id: parseInt(empId) }) });
+                showToast('Clocked out', 'success');
+                loadMyProfile();
+            } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
+        }
+
+        // ---------- Pagination helper ----------
+        function renderPagination(containerId, currentPage, totalPages, loadFn) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            if (totalPages <= 1) { container.innerHTML = ''; return; }
+            let html = `<div class="flex items-center gap-2">`;
+            html += `<button class="pagination-btn" onclick="goToPage(${currentPage-1}, '${containerId}', ${totalPages}, ${loadFn})" ${currentPage<=1?'disabled':''}>Prev</button>`;
+            for (let i = 1; i <= totalPages; i++) {
+                html += `<button class="pagination-btn ${i===currentPage?'bg-blue-600 text-white':''}" onclick="goToPage(${i}, '${containerId}', ${totalPages}, ${loadFn})">${i}</button>`;
+            }
+            html += `<button class="pagination-btn" onclick="goToPage(${currentPage+1}, '${containerId}', ${totalPages}, ${loadFn})" ${currentPage>=totalPages?'disabled':''}>Next</button>`;
+            html += `</div>`;
+            container.innerHTML = html;
+        }
+
+        window.goToPage = function(page, containerId, totalPages, loadFn) {
+            if (page < 1 || page > totalPages) return;
+            if (containerId === 'emp-pagination') currentEmpPage = page;
+            loadFn(page);
+        };
+
+        // ---------- Tab switching ----------
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.tab-btn').forEach(b => { b.classList.remove('tab-active');
+                    b.classList.add('tab-inactive'); });
+                this.classList.remove('tab-inactive');
+                this.classList.add('tab-active');
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+                const tabId = this.dataset.tab;
+                document.getElementById(`tab-${tabId}`).classList.remove('hidden');
+                // load data on switch
+                if (tabId === 'employees') loadEmployees(currentEmpPage);
+                else if (tabId === 'attendance') loadAttendance();
+                else if (tabId === 'leaves') loadLeaveRequests();
+                else if (tabId === 'payroll') loadPayroll();
+                else if (tabId === 'myprofile') loadMyProfile();
+            });
+        });
+
+        // ---------- Filters ----------
+        document.getElementById('emp-dept-filter')?.addEventListener('change', () => loadEmployees(1));
+        document.getElementById('emp-status-filter')?.addEventListener('change', () => loadEmployees(1));
+        document.getElementById('leave-status-filter')?.addEventListener('change', loadLeaveRequests);
+
+        // ---------- Init ----------
+        (async function init() {
+            if (!token) {
+                window.location.href = '/kdsiginin';
+                return;
+            }
+            try {
+                await initOrganisation();
+                // show default tab (employees)
+                document.querySelector('.tab-btn[data-tab="employees"]')?.click();
+            } catch (err) {
+                console.error(err);
+                showToast('Init error: ' + err.message, 'error');
+            }
+        })();
+
+        // ========== GLOBAL NAVIGATION (same as other pages) ==========
+        (function() {
+            const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
+            const LOGIN_URL = '/kdsiginin';
+            const navItems = [
+                { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy', roles: ['owner','admin','sales_rep','finance'] },
+                { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & online payments', roles: ['owner','admin','sales_rep'] },
+                { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', title: 'Order shipping, tracking & dispatch', roles: ['owner','admin','logistics'] },
+                { path: '/kdsupport',     name: 'Support',   icon: 'fa-headset', title: 'Ticket management & customer context', roles: ['owner','admin','support'] },
+                { path: '/kddashboard',   name: 'Exec',      icon: 'fa-chart-simple', title: 'Executive revenue & profit overview', roles: ['owner','admin','finance'] },
+                { path: '/kdadmin',       name: 'Inventory', icon: 'fa-boxes', title: 'Manage products, stock, bulk CSV upload', roles: ['owner','admin','inventory_manager','warehouse'] },
+                { path: '/kdteam',        name: 'Team',      icon: 'fa-users', title: 'Invite & manage team members', roles: ['owner','admin'] },
+                { path: '/kdknowledge',   name: 'Knowledge', icon: 'fa-database', title: 'Manage AI knowledge base documents', roles: ['owner','admin'] },
+                { path: '/kdprocurement', name: 'Procurement', icon: 'fa-truck', title: 'Manage suppliers, purchase orders, and goods received', roles: ['owner','admin','inventory_manager','procurement','warehouse'] },
+                { path: '/kdhr',          name: 'HR',        icon: 'fa-users-gear', title: 'Employee management, attendance, leave, payroll', roles: ['owner','admin','hr','employee'] }
+            ];
+            function getUserRole() {
+                try { return localStorage.getItem('user_role') || 'customer'; } catch (e) { return 'customer'; }
+            }
+            function buildNavbar() {
+                const currentPath = window.location.pathname;
+                let linksHtml = '';
+                navItems.forEach(item => {
+                    if (!item.roles.includes(getUserRole())) return;
+                    const isActive = currentPath === item.path;
+                    const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
+                    linksHtml += `
+                        <a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${activeClass}"><i class="fa-solid ${item.icon} w-4"></i> ${item.name}</a>
+                    `;
+                });
+                let userName = 'User';
+                try { userName = localStorage.getItem('user_profile_display') || 'User'; } catch (e) {}
+                return `<div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40">
+                    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+                        <div class="flex items-center gap-2"><i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i><span class="text-xl font-bold">${APP_NAME}</span></div>
+                        <div class="hidden md:flex items-center gap-1 flex-wrap">${linksHtml}</div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full"><i class="fa-regular fa-user mr-1"></i> ${escapeHtml(userName)}</span>
+                            <button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition"><i class="fa-solid fa-sign-out-alt"></i></button>
+                        </div>
+                    </div>
+                    <div class="md:hidden flex overflow-x-auto pb-2 px-4 gap-1">${linksHtml}</div>
+                </div>`;
+            }
+            async function globalLogout() {
+                try { await fetch(`${API_BASE}/auth/logout`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }); } catch (e) {}
+                localStorage.clear();
+                window.location.href = LOGIN_URL;
+            }
+            const container = document.getElementById('kevs-nav-container');
+            if (container) {
+                container.innerHTML = buildNavbar();
+                document.getElementById('global-logout-btn')?.addEventListener('click', globalLogout);
+            }
+        })();
+    </script>
+</body>
+</html>
