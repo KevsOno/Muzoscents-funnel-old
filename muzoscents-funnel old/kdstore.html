@@ -421,6 +421,53 @@
         }
 
         /* ============================================= */
+        /* MOBILE FIX: product card quantity & price     */
+        /* ============================================= */
+        @media (max-width: 480px) {
+            .product-card .qty-btn {
+                width: 24px;
+                height: 24px;
+                font-size: 0.85rem;
+            }
+            .product-card .qty-display {
+                min-width: 20px;
+                font-size: 0.85rem;
+            }
+            .product-card .flex.items-center.gap-2.mt-2 {
+                flex-wrap: wrap;
+                gap: 4px;
+            }
+            .product-card .text-xs.text-gray-400.ml-1 {
+                font-size: 0.65rem;
+                margin-left: 2px;
+            }
+            .product-card .flex.gap-2.mt-3 {
+                flex-direction: column;
+                gap: 6px;
+            }
+            .product-card .flex.gap-2.mt-3 button {
+                padding: 6px 8px;
+                font-size: 0.75rem;
+            }
+            .product-card .text-orange-600.font-bold.text-xl {
+                font-size: 1rem;
+            }
+            .product-card .text-xs.bg-gray-100.px-2.py-1.rounded-full {
+                font-size: 0.6rem;
+                padding: 2px 6px;
+            }
+            .product-card .h-28 {
+                height: 80px;
+            }
+            .product-card .h-28 img {
+                height: 60px;
+            }
+            .product-card .h-28 i {
+                font-size: 2rem;
+            }
+        }
+
+        /* ============================================= */
         /* APP-ONLY FEATURES – hidden on web, shown in app */
         /* ============================================= */
         .app-only-feature {
@@ -675,20 +722,20 @@
             <div id="tickets-list" class="space-y-3"><div class="text-center py-10 text-gray-500"><i class="fa-solid fa-spinner fa-pulse"></i> Loading your tickets...</div></div>
         </div>
 
-        <!-- ===== NEW: Order Confirmation View ===== -->
+        <!-- ===== ORDER CONFIRMATION VIEW ===== -->
         <div id="confirmation-view" class="hidden">
-            <div class="max-w-3xl mx-auto bg-white rounded-2xl shadow-lg p-6 border border-green-100">
+            <div class="max-w-3xl mx-auto bg-white rounded-2xl shadow-xl p-6 md:p-8 border border-green-100">
                 <div class="text-center mb-6">
-                    <i class="fa-regular fa-circle-check text-green-500 text-5xl"></i>
-                    <h2 class="text-3xl font-bold text-gray-800 mt-2">Order Confirmed! 🎉</h2>
-                    <p class="text-gray-600">Thank you for your purchase. A receipt has been sent to your email.</p>
+                    <i class="fa-regular fa-circle-check text-green-500 text-6xl"></i>
+                    <h2 class="text-3xl md:text-4xl font-bold text-gray-800 mt-3">Order Confirmed! 🎉</h2>
+                    <p class="text-gray-600 mt-1">Thank you for your purchase. A receipt has been sent to your email.</p>
                 </div>
                 <div id="confirmation-details" class="space-y-4">
                     <!-- Dynamically filled -->
                 </div>
-                <div class="mt-6 flex flex-wrap gap-4 justify-center">
-                    <button onclick="showView('shop')" class="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2 rounded-full font-semibold transition"><i class="fa-solid fa-arrow-left"></i> Continue Shopping</button>
-                    <button onclick="trackOrder()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-6 py-2 rounded-full font-semibold transition"><i class="fa-solid fa-truck"></i> Track Order</button>
+                <div class="mt-8 flex flex-wrap gap-4 justify-center">
+                    <button onclick="showView('shop')" class="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-full font-semibold transition"><i class="fa-solid fa-arrow-left"></i> Continue Shopping</button>
+                    <button onclick="openTrackModal()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-6 py-3 rounded-full font-semibold transition"><i class="fa-solid fa-truck"></i> Track Order</button>
                 </div>
             </div>
         </div>
@@ -700,7 +747,7 @@
             <div class="nav-icon">💬</div>
             <span class="nav-label">Live Help</span>
         </div>
-        <div class="nav-item" onclick="trackOrder()">
+        <div class="nav-item" onclick="openTrackModal()">
             <div class="nav-icon">📍</div>
             <span class="nav-label">Track</span>
         </div>
@@ -783,7 +830,7 @@
     <div id="auth-modal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[100]"><div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl"><div class="flex justify-between items-center mb-4"><h3 id="modal-title" class="text-xl font-bold">Sign In</h3><button id="close-auth-modal" class="text-2xl">&times;</button></div><div class="space-y-3"><input id="auth-email" type="email" placeholder="Email address" class="w-full border border-gray-300 rounded-lg p-2.5" autocomplete="off"><input id="auth-password" type="password" placeholder="Password" class="w-full border border-gray-300 rounded-lg p-2.5" autocomplete="off"><div id="reg-extra" class="hidden space-y-3 border-t pt-3"><input id="invite-code" placeholder="Invite code (optional)" class="w-full border border-gray-300 rounded-lg p-2" autocomplete="off"><div class="text-xs text-center">— OR create new org —</div><input id="org-name" placeholder="Organization name *" class="w-full border border-gray-300 rounded-lg p-2" autocomplete="off"><div class="grid grid-cols-2 gap-2"><input id="org-location" placeholder="City, Country *" class="border rounded p-2" autocomplete="off"><input id="org-niche" placeholder="Industry *" class="border rounded p-2" autocomplete="off"></div><input id="budget" type="number" placeholder="Budget (₦)" class="border p-2 rounded" autocomplete="off"><div class="grid grid-cols-2 gap-2"><input id="first-name" placeholder="First name *" class="border p-2 rounded" autocomplete="off"><input id="last-name" placeholder="Last name *" class="border p-2 rounded" autocomplete="off"></div><input id="phone-number" placeholder="Phone number *" class="border p-2 rounded" autocomplete="off"></div><button id="auth-submit" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2.5 rounded-lg">Sign In</button><button id="demo-access" class="w-full bg-emerald-500 text-white py-2.5 rounded-lg flex items-center justify-center gap-2"><i class="fa-solid fa-flask"></i> Demo Access</button><div class="text-center"><button id="toggle-auth-mode" class="text-sm text-orange-500 hover:underline">Don't have an account? Register</button></div></div></div></div>
 
     <script>
-        // ========== CONFIG (unchanged) ==========
+        // ========== CONFIG ==========
         const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
         let token = localStorage.getItem('access_token');
         let userProfile = null;
@@ -809,7 +856,7 @@
         let modalQuantity = 1;
         let productQuantities = {};
 
-        // ========== PAGINATION (unchanged) ==========
+        // ========== PAGINATION ==========
         let currentPage = 1;
         const PAGE_SIZE = 101;
 
@@ -857,7 +904,7 @@
             });
         }
 
-        // ========== UTILITIES (unchanged) ==========
+        // ========== UTILITIES ==========
         function setCartTotalLoading(loading) {
             const totalSpan = document.getElementById('cart-total');
             if (loading) {
@@ -941,7 +988,7 @@
             updateCartUI(); }
 
         // ============================================================
-        //  CART QUANTITY (unchanged)
+        //  CART QUANTITY
         // ============================================================
         window.updateCartQty = async function(idx, delta) {
             if (idx < 0 || idx >= cart.length) return;
@@ -959,7 +1006,7 @@
         };
 
         // ============================================================
-        //  updateCartUI (unchanged)
+        //  updateCartUI
         // ============================================================
         function updateCartUI() {
             const subtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
@@ -1012,7 +1059,7 @@
         };
 
         // ============================================================
-        //  addToCart (unchanged)
+        //  addToCart
         // ============================================================
         async function addToCart(product, qty = 1) {
             if (qty < 1) qty = 1;
@@ -1031,7 +1078,7 @@
             showToast(`${product.name} added to cart!`, 'success');
         }
 
-        // ---------- CATEGORY LOADING (unchanged) ----------
+        // ---------- CATEGORY LOADING ----------
         async function loadCategories() {
             try {
                 const data = await apiCall('/inventory/public-categories');
@@ -1095,7 +1142,7 @@
         }
 
         // ============================================================
-        //  CARD QUANTITY CONTROLS (unchanged)
+        //  CARD QUANTITY CONTROLS
         // ============================================================
         window.updateProductQty = function(id, delta) {
             if (!productQuantities.hasOwnProperty(id)) productQuantities[id] = 1;
@@ -1123,7 +1170,7 @@
         };
 
         // ============================================================
-        //  renderProducts (unchanged)
+        //  renderProducts
         // ============================================================
         function renderProducts() {
             const grid = document.getElementById('products-grid');
@@ -1152,16 +1199,16 @@
 
                 card.innerHTML = `
               <div class="h-28 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl flex items-center justify-center mb-3">${imageHtml}</div>
-              <h3 class="font-bold text-gray-800 truncate">${escapeHtml(p.description)}</h3>
+              <h3 class="font-bold text-gray-800 truncate text-sm md:text-base">${escapeHtml(p.description)}</h3>
               <div class="flex justify-between items-center mt-2">
-                <span class="text-orange-600 font-bold text-xl">₦${p.price_naira.toLocaleString()}</span>
+                <span class="text-orange-600 font-bold text-lg md:text-xl">₦${p.price_naira.toLocaleString()}</span>
                 <span class="text-xs bg-gray-100 px-2 py-1 rounded-full">${p.current_qty} left</span>
               </div>
-              <div class="flex items-center gap-2 mt-2">
+              <div class="flex items-center gap-1 md:gap-2 mt-2 flex-wrap">
                 <button class="qty-btn" onclick="updateProductQty('${p.id}', -1)">−</button>
                 <span class="qty-display" id="qty-${p.id}">${qty}</span>
                 <button class="qty-btn orange" onclick="updateProductQty('${p.id}', 1)">+</button>
-                <span class="text-xs text-gray-400 ml-1">× ₦${p.price_naira.toLocaleString()}</span>
+                <span class="text-xs text-gray-400 ml-0 md:ml-1">× ₦${p.price_naira.toLocaleString()}</span>
               </div>
               <div class="flex gap-2 mt-3">
                 <button class="view-details-btn flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-xl text-sm font-semibold"><i class="fa-regular fa-eye"></i> Details</button>
@@ -1183,7 +1230,7 @@
             });
         }
 
-        // ---------- SEARCH / FILTER (unchanged) ----------
+        // ---------- SEARCH / FILTER ----------
         let searchDebounce;
         const searchInput = document.getElementById('product-search'),
             searchClear = document.getElementById('search-clear');
@@ -1225,7 +1272,7 @@
         document.getElementById('refresh-categories-btn')?.addEventListener('click', refreshCategories);
 
         // ============================================================
-        //  PRODUCT DETAIL (unchanged)
+        //  PRODUCT DETAIL
         // ============================================================
         function showProductDetail(p) {
             currentProductForModal = p;
@@ -1296,7 +1343,7 @@
         });
 
         // ============================================================
-        //  Track Order Modal (unchanged)
+        //  Track Order Modal
         // ============================================================
         const trackModal = document.getElementById('track-modal');
 
@@ -1321,7 +1368,7 @@
             } catch (e) { resultDiv.innerHTML = `<div class="text-red-500">${e.message}</div>`; }
         });
 
-        // Tickets View (unchanged)
+        // Tickets View
         async function loadTickets() {
             if (!token) { showAuthModal();
                 showToast("Please login", 'error'); return; }
@@ -1341,6 +1388,9 @@
             } catch (e) { container.innerHTML = `<div class="text-red-500 p-4">Error: ${e.message}</div>`; }
         }
 
+        // ============================================================
+        //  showView – now with proper confirmation handling
+        // ============================================================
         function showView(view) {
             currentView = view;
             const shopDiv = document.getElementById('shop-view'),
@@ -1359,6 +1409,8 @@
                 loadTickets();
             } else if (view === 'confirmation') {
                 confirmDiv.classList.remove('hidden');
+                // Scroll to top to show the confirmation
+                window.scrollTo({ top: 0, behavior: 'smooth' });
             }
         }
         document.getElementById('refresh-tickets')?.addEventListener('click', loadTickets);
@@ -1411,7 +1463,7 @@
                 'chat-modal').classList.add('active');
             initChat(); }));
 
-        // Delivery & GPS (with loading state)
+        // Delivery & GPS
         const addrInput = document.getElementById('delivery-address'),
             addrSugg = document.getElementById('cart-address-suggestions');
         let addrDeb;
@@ -1506,7 +1558,7 @@
         document.getElementById('delivery-option')?.addEventListener('click', () => setDeliveryOpt('delivery'));
 
         // ============================================================
-        //  NEW: Show confirmation with order details
+        //  showConfirmation – builds and displays the confirmation view
         // ============================================================
         function showConfirmation(orderData) {
             const container = document.getElementById('confirmation-details');
@@ -1518,16 +1570,16 @@
 
             let deliveryHtml = '';
             if (orderData.deliveryOption === 'delivery' && orderData.deliveryAddress) {
-                deliveryHtml = `<div class="flex justify-between text-sm"><span class="text-gray-600">Delivery Address</span><span>${escapeHtml(orderData.deliveryAddress)}</span></div>
-                            <div class="flex justify-between text-sm"><span class="text-gray-600">Delivery Fee</span><span>₦${orderData.deliveryFee.toLocaleString()}</span></div>`;
+                deliveryHtml = `<div class="flex justify-between text-sm"><span class="text-gray-600">Delivery Address</span><span class="text-right max-w-[60%]">${escapeHtml(orderData.deliveryAddress)}</span></div>
+                            <div class="flex justify-between text-sm"><span class="text-gray-600">Delivery Fee</span><span>₦${(orderData.deliveryFee || 0).toLocaleString()}</span></div>`;
             }
 
             container.innerHTML = `
                 <div class="bg-gray-50 rounded-xl p-4 space-y-2">
-                    <div class="flex justify-between text-sm"><span class="text-gray-600">Receipt Number</span><span class="font-mono font-bold text-orange-600">${escapeHtml(orderData.receiptNumber || 'N/A')}</span></div>
-                    <div class="flex justify-between text-sm"><span class="text-gray-600">Date</span><span>${new Date(orderData.createdAt || Date.now()).toLocaleString()}</span></div>
-                    <div class="flex justify-between text-sm"><span class="text-gray-600">Payment Method</span><span>${escapeHtml(orderData.paymentMethod || 'Paystack')}</span></div>
-                    <div class="flex justify-between text-sm"><span class="text-gray-600">Delivery Option</span><span>${orderData.deliveryOption === 'delivery' ? '🚚 Delivery' : '📦 Pickup'}</span></div>
+                    <div class="flex justify-between text-sm flex-wrap"><span class="text-gray-600">Receipt Number</span><span class="font-mono font-bold text-orange-600">${escapeHtml(orderData.receiptNumber || 'N/A')}</span></div>
+                    <div class="flex justify-between text-sm flex-wrap"><span class="text-gray-600">Date</span><span>${new Date(orderData.createdAt || Date.now()).toLocaleString()}</span></div>
+                    <div class="flex justify-between text-sm flex-wrap"><span class="text-gray-600">Payment Method</span><span>${escapeHtml(orderData.paymentMethod || 'Paystack')}</span></div>
+                    <div class="flex justify-between text-sm flex-wrap"><span class="text-gray-600">Delivery Option</span><span>${orderData.deliveryOption === 'delivery' ? '🚚 Delivery' : '📦 Pickup'}</span></div>
                     ${deliveryHtml}
                 </div>
                 <div class="border-t border-gray-200 pt-3">
@@ -1535,7 +1587,7 @@
                     ${itemsHtml}
                 </div>
                 <div class="border-t border-gray-200 pt-3 space-y-1">
-                    <div class="flex justify-between font-bold text-lg"><span>Total</span><span class="text-orange-600">₦${orderData.totalAmount.toLocaleString()}</span></div>
+                    <div class="flex justify-between font-bold text-lg"><span>Total</span><span class="text-orange-600">₦${(orderData.totalAmount || 0).toLocaleString()}</span></div>
                 </div>
             `;
 
@@ -1544,7 +1596,7 @@
         }
 
         // ============================================================
-        //  MODIFIED: checkout with confirmation handling
+        //  checkout – with proper confirmation flow
         // ============================================================
         async function checkout() {
             const btn = document.getElementById('checkout-btn');
@@ -1595,7 +1647,7 @@
                     deliveryOption: deliveryOption,
                     deliveryAddress: deliveryOption === 'delivery' ? deliveryAddress : null,
                     paymentMethod: payMethod,
-                    receiptNumber: null, // will be filled from response
+                    receiptNumber: 'PENDING', // will be updated from response
                     createdAt: new Date().toISOString()
                 };
 
@@ -1605,25 +1657,27 @@
                         body: JSON.stringify(payload)
                     });
                     orderSnapshot.receiptNumber = result.receipt_number || 'N/A';
-                    // Show confirmation immediately
-                    showConfirmation(orderSnapshot);
-                    // Clear cart and reset
+                    // Clear cart
                     cart = [];
                     saveCart();
                     setDeliveryOpt('pickup');
                     renderProducts();
                     document.getElementById('cart-drawer').classList.add('translate-x-full');
                     showToast(`✅ Checkout success! Receipt: ${result.receipt_number}`, 'success');
+                    // Show confirmation
+                    showConfirmation(orderSnapshot);
                 } else {
+                    // Paystack – store order and redirect
                     const result = await apiCall('/pos/checkout', {
                         method: 'POST',
                         body: JSON.stringify(payload)
                     });
                     if (result.payment_url) {
+                        orderSnapshot.receiptNumber = result.receipt_number || 'PENDING';
                         // Store order snapshot in localStorage for after redirect
-                        orderSnapshot.receiptNumber = result.receipt_number || 'N/A';
                         localStorage.setItem('pending_order', JSON.stringify(orderSnapshot));
                         localStorage.setItem('pending_payment', 'true');
+                        // Redirect to Paystack
                         window.location.replace(result.payment_url);
                     } else {
                         showToast("Payment initiation failed", 'error');
@@ -1638,31 +1692,47 @@
         document.getElementById('checkout-btn')?.addEventListener('click', checkout);
 
         // ============================================================
-        //  Handle payment return (success)
+        //  handlePaymentReturn – runs on page load after Paystack redirect
         // ============================================================
         (function handlePaymentReturn() {
             const urlParams = new URLSearchParams(window.location.search);
-            const paymentSuccess = urlParams.get('payment') === 'success';
+            // Check for Paystack's typical return parameters
+            const reference = urlParams.get('reference') || urlParams.get('trxref');
+            const paymentSuccess = urlParams.get('payment') === 'success' || !!reference;
             const pendingOrder = localStorage.getItem('pending_order');
             const pendingFlag = localStorage.getItem('pending_payment') === 'true';
 
-            if (paymentSuccess && pendingOrder && pendingFlag) {
+            console.log('🔁 Payment return check:', { reference, paymentSuccess, pendingOrder: !!pendingOrder, pendingFlag });
+
+            // If we have a pending order AND (payment=success OR a reference param)
+            if (pendingOrder && paymentSuccess && pendingFlag) {
                 try {
                     const orderData = JSON.parse(pendingOrder);
-                    // Clear cart and show confirmation
+                    // Update receipt number if we got one from Paystack
+                    if (reference && orderData.receiptNumber === 'PENDING') {
+                        orderData.receiptNumber = 'PAYSTACK-' + reference.slice(0, 10);
+                    }
+                    // Clear cart
                     cart = [];
                     saveCart();
                     setDeliveryOpt('pickup');
                     renderProducts();
+                    // Show confirmation
                     showConfirmation(orderData);
-                    showToast("Payment successful! Your order is confirmed.", 'success');
+                    showToast("✅ Payment successful! Your order is confirmed.", 'success');
                     // Clean up
                     localStorage.removeItem('pending_order');
                     localStorage.removeItem('pending_payment');
-                    // Remove query param from URL
+                    // Remove query params from URL
                     window.history.replaceState({}, '', window.location.pathname);
                 } catch (e) {
                     console.warn("Failed to parse pending order", e);
+                    // Fallback: just show shop
+                    showView('shop');
+                    showToast("Payment successful! Check your email for receipt.", 'success');
+                    localStorage.removeItem('pending_order');
+                    localStorage.removeItem('pending_payment');
+                    window.history.replaceState({}, '', window.location.pathname);
                 }
             } else if (paymentSuccess && !pendingOrder) {
                 // Fallback: just show a generic success
@@ -1673,7 +1743,7 @@
         })();
 
         // ============================================================
-        //  Auth loading states (unchanged)
+        //  Auth loading states
         // ============================================================
         function setButtonLoading(btn, loading) {
             if (!btn) return;
@@ -1766,7 +1836,7 @@
         });
 
         // ============================================================
-        //  Load user, etc. (unchanged)
+        //  Load user, etc.
         // ============================================================
         async function loadUserLoyalty() { if (!token) return; try { const me = await apiCall('/auth/me'); let points = 0,
                 tier = 'bronze'; try { const context = await apiCall(
@@ -1807,7 +1877,7 @@
             document.getElementById('auth-submit').innerText = isReg ? "Create Profile" : "Sign In";
             document.getElementById('modal-title').innerText = isReg ? "Register Organization" : "Sign In"; });
 
-        // Chat and other UI (unchanged)
+        // Chat and other UI
         let chatMessagesDiv = null,
             chatSessionId = sessionId;
 
@@ -1827,7 +1897,7 @@
             input.value = '';
             addChatMsg('assistant', '', true); const lastMsgDiv = chatMessagesDiv.lastChild; try { const data = await apiCall(
                     '/support/chat-stream', { method: 'POST', body: JSON.stringify({ session_id: chatSessionId,
-                        message: msg }) }); if (lastMsgDiv && lastMsgDiv.classList.contains('bg-gray-1 00'))
+                        message: msg }) }); if (lastMsgDiv && lastMsgDiv.classList.contains('bg-gray-100'))
                     lastMsgDiv.remove();
                 addChatMsg('assistant', data.response || "Got it!"); } catch (e) { if (lastMsgDiv && lastMsgDiv.classList
                     .contains('bg-gray-100')) lastMsgDiv.remove();
@@ -1878,13 +1948,13 @@
             if (token) { try { await loadUser(); } catch (e) { token = null; } }
             await loadCategories();
             await loadProducts();
-
-            // Check for pending order after redirect (already handled above)
-            // But also handle the case where the order is pending but we haven't processed yet
-            // The handlePaymentReturn function already runs.
-
-            // Also, if there is a pending order but not from payment success? Not needed.
-            showView('shop');
+            // Payment return is handled by the IIFE above
+            // Only show shop view if no confirmation is needed
+            if (currentView === 'shop' || !document.getElementById('confirmation-view').classList.contains('hidden')) {
+                // Already handled
+            } else {
+                showView('shop');
+            }
         })();
 
         // ============================================================
@@ -1896,11 +1966,6 @@
                 modal.classList.add('active');
                 initChat();
             }
-        }
-
-        function trackOrder() {
-            const modal = document.getElementById('track-modal');
-            if (modal) modal.classList.add('active');
         }
 
         function openAIHelper() {
@@ -1916,7 +1981,7 @@
         }
     </script>
     <script>
-        // Register service worker (unchanged)
+        // Register service worker
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/sw.js')
                 .then(reg => console.log('✅ Service Worker registered', reg))
@@ -1926,7 +1991,7 @@
 
     <script>
         // ============================================================
-        //  DEEP LINKS HANDLER (unchanged)
+        //  DEEP LINKS HANDLER
         // ============================================================
         (function handleDeepLinks() {
             const chatModal = document.getElementById('chat-modal');
