@@ -612,7 +612,7 @@
         </div>
     </header>
 
-    <!-- Hero Slider (unchanged) -->
+    <!-- Hero Slider -->
     <section class="hero-slider relative">
         <div class="slider-container" id="heroSlider">
             <div class="hero-slide gradient-slide">
@@ -673,6 +673,24 @@
                 <button id="refresh-tickets" class="bg-orange-500 text-white px-4 py-2 rounded-full text-sm hover:bg-orange-600"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
             </div>
             <div id="tickets-list" class="space-y-3"><div class="text-center py-10 text-gray-500"><i class="fa-solid fa-spinner fa-pulse"></i> Loading your tickets...</div></div>
+        </div>
+
+        <!-- ===== NEW: Order Confirmation View ===== -->
+        <div id="confirmation-view" class="hidden">
+            <div class="max-w-3xl mx-auto bg-white rounded-2xl shadow-lg p-6 border border-green-100">
+                <div class="text-center mb-6">
+                    <i class="fa-regular fa-circle-check text-green-500 text-5xl"></i>
+                    <h2 class="text-3xl font-bold text-gray-800 mt-2">Order Confirmed! 🎉</h2>
+                    <p class="text-gray-600">Thank you for your purchase. A receipt has been sent to your email.</p>
+                </div>
+                <div id="confirmation-details" class="space-y-4">
+                    <!-- Dynamically filled -->
+                </div>
+                <div class="mt-6 flex flex-wrap gap-4 justify-center">
+                    <button onclick="showView('shop')" class="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2 rounded-full font-semibold transition"><i class="fa-solid fa-arrow-left"></i> Continue Shopping</button>
+                    <button onclick="trackOrder()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-6 py-2 rounded-full font-semibold transition"><i class="fa-solid fa-truck"></i> Track Order</button>
+                </div>
+            </div>
         </div>
     </main>
 
@@ -789,8 +807,6 @@
         let lastCalculatedCartState = '';
 
         let modalQuantity = 1;
-
-        // ========== NEW: per‑product quantity map for cards ==========
         let productQuantities = {};
 
         // ========== PAGINATION (unchanged) ==========
@@ -943,7 +959,7 @@
         };
 
         // ============================================================
-        //  updateCartUI (unchanged, already has + / -)
+        //  updateCartUI (unchanged)
         // ============================================================
         function updateCartUI() {
             const subtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
@@ -996,7 +1012,7 @@
         };
 
         // ============================================================
-        //  MODIFIED: addToCart now accepts an optional qty
+        //  addToCart (unchanged)
         // ============================================================
         async function addToCart(product, qty = 1) {
             if (qty < 1) qty = 1;
@@ -1068,7 +1084,6 @@
                 currentPage = page;
 
                 allProducts = items;
-                // Reset product quantities for new products
                 productQuantities = {};
                 allProducts.forEach(p => { productQuantities[p.id] = 1; });
                 renderProducts();
@@ -1080,12 +1095,11 @@
         }
 
         // ============================================================
-        //  NEW: updateProductQty – for card quantity controls
+        //  CARD QUANTITY CONTROLS (unchanged)
         // ============================================================
         window.updateProductQty = function(id, delta) {
             if (!productQuantities.hasOwnProperty(id)) productQuantities[id] = 1;
             const newQty = productQuantities[id] + delta;
-            // Find product to get stock
             const product = allProducts.find(p => p.id == id);
             const maxStock = product ? (product.current_qty || 999) : 999;
             if (newQty < 1) return;
@@ -1098,22 +1112,18 @@
             if (display) display.innerText = newQty;
         };
 
-        // ============================================================
-        //  NEW: addFromCard – adds product with current card quantity
-        // ============================================================
         window.addFromCard = async function(id) {
             const product = allProducts.find(p => p.id == id);
             if (!product) return;
             const qty = productQuantities[id] || 1;
             await addToCart({ id: product.id, name: product.description, price: product.price_naira }, qty);
-            // Reset quantity to 1 after adding
             productQuantities[id] = 1;
             const display = document.getElementById(`qty-${id}`);
             if (display) display.innerText = 1;
         };
 
         // ============================================================
-        //  REWRITTEN: renderProducts with card quantity controls
+        //  renderProducts (unchanged)
         // ============================================================
         function renderProducts() {
             const grid = document.getElementById('products-grid');
@@ -1129,7 +1139,6 @@
 
             grid.innerHTML = '';
             items.forEach(p => {
-                // Ensure quantity is initialised
                 if (!productQuantities.hasOwnProperty(p.id)) productQuantities[p.id] = 1;
                 const qty = productQuantities[p.id];
 
@@ -1148,7 +1157,6 @@
                 <span class="text-orange-600 font-bold text-xl">₦${p.price_naira.toLocaleString()}</span>
                 <span class="text-xs bg-gray-100 px-2 py-1 rounded-full">${p.current_qty} left</span>
               </div>
-              <!-- Quantity controls -->
               <div class="flex items-center gap-2 mt-2">
                 <button class="qty-btn" onclick="updateProductQty('${p.id}', -1)">−</button>
                 <span class="qty-display" id="qty-${p.id}">${qty}</span>
@@ -1161,12 +1169,10 @@
               </div>
             `;
 
-                // Handle "Details" button separately
                 const viewBtn = card.querySelector('.view-details-btn');
                 viewBtn.onclick = (e) => { e.stopPropagation();
                     showProductDetail(p); };
 
-                // Click on card also shows details (unless clicked on button)
                 card.onclick = (e) => {
                     if (e.target.tagName !== 'BUTTON' && !e.target.closest('button')) {
                         showProductDetail(p);
@@ -1219,7 +1225,7 @@
         document.getElementById('refresh-categories-btn')?.addEventListener('click', refreshCategories);
 
         // ============================================================
-        //  showProductDetail (unchanged, already has modal quantity)
+        //  PRODUCT DETAIL (unchanged)
         // ============================================================
         function showProductDetail(p) {
             currentProductForModal = p;
@@ -1338,12 +1344,22 @@
         function showView(view) {
             currentView = view;
             const shopDiv = document.getElementById('shop-view'),
-                ticketsDiv = document.getElementById('tickets-view');
-            if (view === 'shop') { shopDiv.classList.remove('hidden');
-                ticketsDiv.classList.add('hidden'); if (allProducts.length === 0) loadProducts(); } else if (view ===
-                'tickets') { shopDiv.classList.add('hidden');
+                ticketsDiv = document.getElementById('tickets-view'),
+                confirmDiv = document.getElementById('confirmation-view');
+            // Hide all
+            shopDiv.classList.add('hidden');
+            ticketsDiv.classList.add('hidden');
+            confirmDiv.classList.add('hidden');
+
+            if (view === 'shop') {
+                shopDiv.classList.remove('hidden');
+                if (allProducts.length === 0) loadProducts();
+            } else if (view === 'tickets') {
                 ticketsDiv.classList.remove('hidden');
-                loadTickets(); }
+                loadTickets();
+            } else if (view === 'confirmation') {
+                confirmDiv.classList.remove('hidden');
+            }
         }
         document.getElementById('refresh-tickets')?.addEventListener('click', loadTickets);
         document.getElementById('complaints-dropdown')?.addEventListener('click', () => showView('tickets'));
@@ -1395,7 +1411,7 @@
                 'chat-modal').classList.add('active');
             initChat(); }));
 
-        // Delivery & GPS (with loading state – unchanged from previous)
+        // Delivery & GPS (with loading state)
         const addrInput = document.getElementById('delivery-address'),
             addrSugg = document.getElementById('cart-address-suggestions');
         let addrDeb;
@@ -1420,7 +1436,6 @@
         addrInput?.addEventListener('input', (e) => { clearTimeout(addrDeb);
             addrDeb = setTimeout(() => fetchAddr(e.target.value), 400); });
 
-        // GPS with loading
         document.getElementById('gps-locate-cart')?.addEventListener('click', function() {
             const btn = this;
             if (navigator.geolocation) {
@@ -1452,7 +1467,6 @@
             }
         });
 
-        // Save & Estimate with loading
         async function estimateDelivery() {
             if (!deliveryAddress) return showToast("Enter address", 'error');
             const btn = document.getElementById('save-address-btn');
@@ -1492,7 +1506,45 @@
         document.getElementById('delivery-option')?.addEventListener('click', () => setDeliveryOpt('delivery'));
 
         // ============================================================
-        //  Checkout with loading
+        //  NEW: Show confirmation with order details
+        // ============================================================
+        function showConfirmation(orderData) {
+            const container = document.getElementById('confirmation-details');
+            if (!container) return;
+
+            const itemsHtml = orderData.items.map(item =>
+                `<div class="flex justify-between border-b border-gray-100 py-2"><span>${escapeHtml(item.name)} × ${item.quantity}</span><span class="font-mono">₦${(item.price * item.quantity).toLocaleString()}</span></div>`
+            ).join('');
+
+            let deliveryHtml = '';
+            if (orderData.deliveryOption === 'delivery' && orderData.deliveryAddress) {
+                deliveryHtml = `<div class="flex justify-between text-sm"><span class="text-gray-600">Delivery Address</span><span>${escapeHtml(orderData.deliveryAddress)}</span></div>
+                            <div class="flex justify-between text-sm"><span class="text-gray-600">Delivery Fee</span><span>₦${orderData.deliveryFee.toLocaleString()}</span></div>`;
+            }
+
+            container.innerHTML = `
+                <div class="bg-gray-50 rounded-xl p-4 space-y-2">
+                    <div class="flex justify-between text-sm"><span class="text-gray-600">Receipt Number</span><span class="font-mono font-bold text-orange-600">${escapeHtml(orderData.receiptNumber || 'N/A')}</span></div>
+                    <div class="flex justify-between text-sm"><span class="text-gray-600">Date</span><span>${new Date(orderData.createdAt || Date.now()).toLocaleString()}</span></div>
+                    <div class="flex justify-between text-sm"><span class="text-gray-600">Payment Method</span><span>${escapeHtml(orderData.paymentMethod || 'Paystack')}</span></div>
+                    <div class="flex justify-between text-sm"><span class="text-gray-600">Delivery Option</span><span>${orderData.deliveryOption === 'delivery' ? '🚚 Delivery' : '📦 Pickup'}</span></div>
+                    ${deliveryHtml}
+                </div>
+                <div class="border-t border-gray-200 pt-3">
+                    <div class="font-semibold mb-2">Order Items</div>
+                    ${itemsHtml}
+                </div>
+                <div class="border-t border-gray-200 pt-3 space-y-1">
+                    <div class="flex justify-between font-bold text-lg"><span>Total</span><span class="text-orange-600">₦${orderData.totalAmount.toLocaleString()}</span></div>
+                </div>
+            `;
+
+            // Show confirmation view
+            showView('confirmation');
+        }
+
+        // ============================================================
+        //  MODIFIED: checkout with confirmation handling
         // ============================================================
         async function checkout() {
             const btn = document.getElementById('checkout-btn');
@@ -1516,6 +1568,8 @@
 
                 const payMethod = document.getElementById('payment-method').value;
                 const items = cart.map(i => ({ inventory_id: i.id, quantity: i.quantity }));
+                const subtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+                const total = subtotal + (deliveryOption === 'delivery' ? deliveryFee : 0);
 
                 const payload = {
                     items,
@@ -1532,23 +1586,43 @@
                     payload.handling_fee = handlingFee;
                 }
 
+                // Build order snapshot for confirmation
+                const orderSnapshot = {
+                    items: cart.map(i => ({ name: i.name, price: i.price, quantity: i.quantity })),
+                    totalAmount: total,
+                    subtotal: subtotal,
+                    deliveryFee: deliveryOption === 'delivery' ? deliveryFee : 0,
+                    deliveryOption: deliveryOption,
+                    deliveryAddress: deliveryOption === 'delivery' ? deliveryAddress : null,
+                    paymentMethod: payMethod,
+                    receiptNumber: null, // will be filled from response
+                    createdAt: new Date().toISOString()
+                };
+
                 if (payMethod === 'cash') {
                     const result = await apiCall('/pos/terminal/checkout', {
                         method: 'POST',
                         body: JSON.stringify(payload)
                     });
-                    showToast(`✅ Checkout success! Receipt: ${result.receipt_number}`, 'success');
+                    orderSnapshot.receiptNumber = result.receipt_number || 'N/A';
+                    // Show confirmation immediately
+                    showConfirmation(orderSnapshot);
+                    // Clear cart and reset
                     cart = [];
                     saveCart();
                     setDeliveryOpt('pickup');
                     renderProducts();
                     document.getElementById('cart-drawer').classList.add('translate-x-full');
+                    showToast(`✅ Checkout success! Receipt: ${result.receipt_number}`, 'success');
                 } else {
                     const result = await apiCall('/pos/checkout', {
                         method: 'POST',
                         body: JSON.stringify(payload)
                     });
                     if (result.payment_url) {
+                        // Store order snapshot in localStorage for after redirect
+                        orderSnapshot.receiptNumber = result.receipt_number || 'N/A';
+                        localStorage.setItem('pending_order', JSON.stringify(orderSnapshot));
                         localStorage.setItem('pending_payment', 'true');
                         window.location.replace(result.payment_url);
                     } else {
@@ -1562,6 +1636,41 @@
             }
         }
         document.getElementById('checkout-btn')?.addEventListener('click', checkout);
+
+        // ============================================================
+        //  Handle payment return (success)
+        // ============================================================
+        (function handlePaymentReturn() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const paymentSuccess = urlParams.get('payment') === 'success';
+            const pendingOrder = localStorage.getItem('pending_order');
+            const pendingFlag = localStorage.getItem('pending_payment') === 'true';
+
+            if (paymentSuccess && pendingOrder && pendingFlag) {
+                try {
+                    const orderData = JSON.parse(pendingOrder);
+                    // Clear cart and show confirmation
+                    cart = [];
+                    saveCart();
+                    setDeliveryOpt('pickup');
+                    renderProducts();
+                    showConfirmation(orderData);
+                    showToast("Payment successful! Your order is confirmed.", 'success');
+                    // Clean up
+                    localStorage.removeItem('pending_order');
+                    localStorage.removeItem('pending_payment');
+                    // Remove query param from URL
+                    window.history.replaceState({}, '', window.location.pathname);
+                } catch (e) {
+                    console.warn("Failed to parse pending order", e);
+                }
+            } else if (paymentSuccess && !pendingOrder) {
+                // Fallback: just show a generic success
+                showToast("Payment successful! Check your email for receipt.", 'success');
+                localStorage.removeItem('pending_payment');
+                window.history.replaceState({}, '', window.location.pathname);
+            }
+        })();
 
         // ============================================================
         //  Auth loading states (unchanged)
@@ -1769,14 +1878,12 @@
             if (token) { try { await loadUser(); } catch (e) { token = null; } }
             await loadCategories();
             await loadProducts();
-            const urlParams = new URLSearchParams(window.location.search);
-            const paymentSuccess = urlParams.get('payment') === 'success';
-            const pendingFlag = localStorage.getItem('pending_payment') === 'true';
-            if (paymentSuccess || pendingFlag) { cart = [];
-                saveCart();
-                showToast("Payment successful! Your cart has been cleared.", 'success');
-                localStorage.removeItem('pending_payment'); if (paymentSuccess) window.history.replaceState({}, '',
-                    window.location.pathname); }
+
+            // Check for pending order after redirect (already handled above)
+            // But also handle the case where the order is pending but we haven't processed yet
+            // The handlePaymentReturn function already runs.
+
+            // Also, if there is a pending order but not from payment success? Not needed.
             showView('shop');
         })();
 
