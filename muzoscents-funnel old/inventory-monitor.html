@@ -3,1694 +3,744 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Kevs POS Pro | Offline‑Ready + Audit</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Kevs Digital – Storefront</title>
+    <link rel="manifest" href="/manifest.json">
+    <script src="https://cdn.tailwindcss.com">
+    </script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js"></script>
     <style>
-        .tab-active { background-color: #3b82f6; color: white; }
-        .tab-inactive { background-color: #f3f4f6; color: #1f2937; }
-        .product-card { transition: all 0.15s ease; padding: 0.5rem; }
-        .product-card:active { transform: scale(0.97); }
-        .qty-btn { width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: #f3f4f6; border: 1px solid #d1d5db; cursor: pointer; }
-        .qty-input { width: 36px; text-align: center; border: 1px solid #d1d5db; border-radius: 4px; padding: 2px 0; }
-        .total-amount { font-size: 1.5rem; font-weight: 800; }
-        .offline-badge { background: #f59e0b; color: #fff; padding: 2px 10px; border-radius: 20px; font-size: 0.7rem; }
-        .online-badge { background: #22c55e; color: #fff; padding: 2px 10px; border-radius: 20px; font-size: 0.7rem; }
-        .sync-btn { background: #3b82f6; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; border: none; cursor: pointer; }
-        .sync-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        #history-modal, #sync-dashboard-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 50; align-items: center; justify-content: center; }
-        #history-modal.active, #sync-dashboard-modal.active { display: flex; }
-        #history-modal .modal-content, #sync-dashboard-modal .modal-content { background: white; max-width: 800px; width: 90%; max-height: 80vh; overflow-y: auto; padding: 20px; border-radius: 12px; }
-        .dashboard-stat { display: flex; justify-content: space-between; border-bottom: 1px solid #e5e7eb; padding: 8px 0; }
-        .dashboard-stat .label { font-weight: 500; }
-        .dashboard-stat .value { font-weight: 700; }
-        .pending { color: #f59e0b; }
-        .synced { color: #22c55e; }
-        .failed { color: #ef4444; }
-
-        @media print {
-            body * { visibility: hidden; }
-            #receipt-print-area, #receipt-print-area * { visibility: visible; }
-            #receipt-print-area {
-                position: fixed;
-                left: 0;
-                top: 0;
-                width: 100%;
-                background: white;
-                padding: 20px;
-                font-size: 12px;
-                font-family: monospace;
-                color: black;
+        /* ── all existing styles (unchanged) ── */
+        body {
+            background: linear-gradient(135deg, #fff9f0 0%, #fff5e6 100%);
+            font-family: 'Inter', system-ui;
+        }
+        .product-card {
+            transition: all 0.25s ease;
+            border: 1px solid #ffe0b5;
+            cursor: pointer;
+        }
+        .product-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 25px -12px rgba(0, 0, 0, 0.15);
+            border-color: #f97316;
+        }
+        .cart-sidebar {
+            transition: transform 0.3s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+        }
+        .floating-chat {
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s;
+        }
+        .floating-chat:hover {
+            transform: scale(1.05);
+        }
+        .address-suggestions {
+            position: absolute;
+            z-index: 1000;
+            background: white;
+            border: 1px solid #f59e0b;
+            border-radius: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            width: 100%;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        .suggestion-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #f0e6d8;
+            color: #1e293b;
+        }
+        .suggestion-item:hover {
+            background-color: #fff3e6;
+        }
+        .chat-modal {
+            display: none;
+            position: fixed;
+            bottom: 90px;
+            right: 20px;
+            width: 350px;
+            max-width: calc(100vw - 40px);
+            background: white;
+            border-radius: 24px;
+            box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+            flex-direction: column;
+            border: 1px solid #f97316;
+        }
+        .chat-modal.active {
+            display: flex;
+        }
+        .chat-messages {
+            height: 350px;
+            overflow-y: auto;
+            background: #fef9f0;
+        }
+        .hero-slider {
+            position: relative;
+            overflow: hidden;
+            width: 100%;
+        }
+        .slider-container {
+            display: flex;
+            width: 100%;
+            transition: transform 0.5s ease-in-out;
+            will-change: transform;
+        }
+        .hero-slide {
+            flex: 0 0 100%;
+            min-height: 500px;
+            position: relative;
+            width: 100%;
+        }
+        .hero-slide.image-slide {
+            background-size: cover;
+            background-position: center;
+        }
+        .hero-slide.image-slide::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0.3) 100%);
+        }
+        .hero-slide.gradient-slide {
+            background: linear-gradient(90deg, #f97316 0%, #f59e0b 100%);
+        }
+        .slide-content {
+            position: relative;
+            z-index: 10;
+            max-width: 600px;
+        }
+        .slider-dots {
+            position: absolute;
+            bottom: 20px;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            z-index: 20;
+        }
+        .slider-dot {
+            width: 12px;
+            height: 12px;
+            background-color: rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .slider-dot.active {
+            background-color: #f97316;
+            width: 28px;
+            border-radius: 20px;
+        }
+        .slider-arrow {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(0, 0, 0, 0.5);
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 20;
+            transition: background 0.2s;
+        }
+        .slider-arrow:hover {
+            background: rgba(0, 0, 0, 0.8);
+        }
+        .slider-arrow.left {
+            left: 20px;
+        }
+        .slider-arrow.right {
+            right: 20px;
+        }
+        @media (max-width: 768px) {
+            .hero-slide {
+                min-height: 400px;
             }
-            .receipt-header { text-align: center; font-weight: bold; font-size: 16px; margin-bottom: 8px; }
-            .receipt-divider { border-top: 1px dashed #333; margin: 8px 0; }
-            .receipt-item { display: flex; justify-content: space-between; }
-            .receipt-total { font-weight: bold; font-size: 14px; }
-            .receipt-footer { text-align: center; margin-top: 8px; font-size: 10px; }
-            .no-print { display: none !important; }
+            .slide-content h1 {
+                font-size: 2rem;
+            }
+            .slider-arrow {
+                width: 32px;
+                height: 32px;
+            }
+        }
+        .product-modal,
+        .track-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+        .product-modal.active,
+        .track-modal.active {
+            display: flex;
+        }
+        .product-modal-content,
+        .track-modal-content {
+            background: white;
+            border-radius: 2rem;
+            max-width: 600px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        }
+        .product-modal-close,
+        .track-modal-close {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: white;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            z-index: 10;
+        }
+        .search-container {
+            position: relative;
+        }
+        .search-clear {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #9ca3af;
+            cursor: pointer;
+            display: none;
+        }
+        .search-clear:hover {
+            color: #f97316;
+        }
+        .ticket-card {
+            transition: all 0.2s;
+        }
+        .ticket-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+        .category-select {
+            background-color: white;
+            border-radius: 9999px;
+            padding: 0.5rem 2rem 0.5rem 1rem;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23f97316'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.75rem center;
+            background-size: 1rem;
+        }
+        .loader-small {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #f97316;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            margin-left: 6px;
+            vertical-align: middle;
+        }
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+        .category-refresh-btn {
+            background: #f59e0b20;
+            border: 1px solid #f59e0b;
+            border-radius: 9999px;
+            padding: 0.25rem 0.75rem;
+            font-size: 0.75rem;
+            color: #f59e0b;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .category-refresh-btn:hover {
+            background: #f59e0b;
+            color: white;
+        }
+        .thinking-dots {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: #e5e7eb;
+            padding: 8px 12px;
+            border-radius: 18px;
+        }
+        .thinking-dots span {
+            width: 6px;
+            height: 6px;
+            background-color: #4b5563;
+            border-radius: 50%;
+            display: inline-block;
+            animation: dotPulse 1.2s infinite ease-in-out;
+        }
+        .thinking-dots span:nth-child(1) {
+            animation-delay: 0s;
+        }
+        .thinking-dots span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        .thinking-dots span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+        @keyframes dotPulse {
+            0%,
+            60%,
+            100% {
+                transform: scale(0.8);
+                opacity: 0.5;
+            }
+            30% {
+                transform: scale(1.2);
+                opacity: 1;
+            }
+        }
+        .dummy-autofill {
+            position: absolute;
+            left: -9999px;
+            top: -9999px;
+            height: 0;
+            width: 0;
+            overflow: hidden;
+            opacity: 0;
+            pointer-events: none;
+        }
+        .page-btn {
+            min-width: 36px;
+            height: 36px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 9999px;
+            font-weight: 500;
+            transition: all 0.15s;
+        }
+        .page-btn:hover {
+            transform: scale(1.05);
+        }
+        #pagination-container {
+            margin-top: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .pagination-info {
+            font-size: 0.9rem;
+            color: #6b7280;
+            margin-bottom: 0.5rem;
+        }
+
+        /* ============================================= */
+        /* QUANTITY CONTROLS – shared styles             */
+        /* ============================================= */
+        .qty-btn {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1rem;
+            background: #f1f5f9;
+            color: #1e293b;
+            border: none;
+            cursor: pointer;
+            transition: background 0.15s, transform 0.15s;
+            flex-shrink: 0;
+        }
+        .qty-btn:hover {
+            background: #e2e8f0;
+            transform: scale(1.05);
+        }
+        .qty-btn.orange {
+            background: #f97316;
+            color: white;
+        }
+        .qty-btn.orange:hover {
+            background: #ea580c;
+        }
+        .qty-display {
+            min-width: 28px;
+            text-align: center;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .modal-qty-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.25rem;
+            background: #f1f5f9;
+            color: #1e293b;
+            border: none;
+            cursor: pointer;
+            transition: background 0.15s, transform 0.15s;
+            flex-shrink: 0;
+        }
+        .modal-qty-btn:hover {
+            background: #e2e8f0;
+            transform: scale(1.05);
+        }
+        .modal-qty-btn.orange {
+            background: #f97316;
+            color: white;
+        }
+        .modal-qty-btn.orange:hover {
+            background: #ea580c;
+        }
+        .modal-qty-display {
+            min-width: 40px;
+            text-align: center;
+            font-weight: 700;
+            font-size: 1.25rem;
+        }
+
+        /* ============================================= */
+        /* MOBILE FIX: product card quantity & price     */
+        /* ============================================= */
+        @media (max-width: 480px) {
+            .product-card .qty-btn {
+                width: 24px;
+                height: 24px;
+                font-size: 0.85rem;
+            }
+            .product-card .qty-display {
+                min-width: 20px;
+                font-size: 0.85rem;
+            }
+            .product-card .flex.items-center.gap-2.mt-2 {
+                flex-wrap: wrap;
+                gap: 4px;
+            }
+            .product-card .text-xs.text-gray-400.ml-1 {
+                font-size: 0.65rem;
+                margin-left: 2px;
+            }
+            .product-card .flex.gap-2.mt-3 {
+                flex-direction: column;
+                gap: 6px;
+            }
+            .product-card .flex.gap-2.mt-3 button {
+                padding: 6px 8px;
+                font-size: 0.75rem;
+            }
+            .product-card .text-orange-600.font-bold.text-xl {
+                font-size: 1rem;
+            }
+            .product-card .text-xs.bg-gray-100.px-2.py-1.rounded-full {
+                font-size: 0.6rem;
+                padding: 2px 6px;
+            }
+            .product-card .h-28 {
+                height: 80px;
+            }
+            .product-card .h-28 img {
+                height: 60px;
+            }
+            .product-card .h-28 i {
+                font-size: 2rem;
+            }
+        }
+
+        /* ============================================= */
+        /* APP-ONLY FEATURES – hidden on web, shown in app */
+        /* ============================================= */
+        .app-only-feature {
+            display: none;
+        }
+
+        @media all and (display-mode: standalone) {
+            .app-only-feature {
+                display: block;
+            }
+
+            #bottom-nav {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                background: #ffffff;
+                box-shadow: 0 -2px 15px rgba(0, 0, 0, 0.08);
+                display: flex;
+                justify-content: space-around;
+                align-items: center;
+                padding: 8px 0 env(safe-area-inset-bottom, 8px) 0;
+                border-top: 1px solid #f0e6d8;
+                z-index: 100;
+                backdrop-filter: blur(6px);
+                background-color: rgba(255, 255, 255, 0.95);
+            }
+
+            .nav-item {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                cursor: pointer;
+                padding: 4px 12px;
+                border-radius: 30px;
+                transition: background 0.2s;
+                text-decoration: none;
+                min-width: 64px;
+                flex: 1;
+                -webkit-tap-highlight-color: transparent;
+            }
+
+            .nav-item:active {
+                background-color: #fef3e8;
+            }
+
+            .nav-icon {
+                font-size: 24px;
+                line-height: 1.2;
+                transition: transform 0.2s;
+            }
+
+            .nav-item:active .nav-icon {
+                transform: scale(0.9);
+            }
+
+            .nav-label {
+                font-size: 11px;
+                font-weight: 500;
+                color: #4b5563;
+                margin-top: 2px;
+                letter-spacing: 0.3px;
+            }
+
+            .nav-item:active .nav-label {
+                color: #f97316;
+            }
+
+            #dynamic-main {
+                padding-bottom: 80px;
+            }
+
+            #chat-bubble {
+                bottom: 90px;
+            }
+
+            .app-only-feature:not(#bottom-nav) {
+                display: none;
+            }
         }
     </style>
 </head>
-<body class="bg-gray-100 p-4 font-sans">
+<body class="text-gray-800">
 
-    <!-- GLOBAL NAVIGATION -->
-    <div id="kevs-nav-container"></div>
-    <script>
-        (function() {
-            const APP_NAME = 'Kevs<span class="text-orange-500">BI</span>';
-            const LOGIN_URL = '/kdsiginin';
-            const navItems = [
-                { path: '/kdbi', name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy',
-                    roles: ['owner', 'admin', 'sales_rep', 'finance'] },
-                { path: '/kdpos', name: 'POS', icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & loyalty',
-                    roles: ['owner', 'admin', 'sales_rep'] },
-                { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast',
-                    title: 'Order shipping, tracking & dispatch', roles: ['owner', 'admin', 'logistics'] },
-                { path: '/kdsupport', name: 'Support', icon: 'fa-headset', title: 'Ticket management & customer context',
-                    roles: ['owner', 'admin', 'support'] },
-                { path: '/kddashboard', name: 'Exec', icon: 'fa-chart-simple', title: 'Executive revenue & profit overview',
-                    roles: ['owner', 'admin', 'finance'] },
-                { path: '/kdadmin', name: 'Inventory', icon: 'fa-boxes', title: 'Manage products, stock, bulk CSV upload',
-                    roles: ['owner', 'admin', 'inventory_manager'] },
-                { path: '/kdteam', name: 'Team', icon: 'fa-users', title: 'Invite & manage team members',
-                    roles: ['owner', 'admin'] },
-                { path: '/kdknowledge', name: 'Knowledge', icon: 'fa-database',
-                    title: 'Manage AI knowledge base documents', roles: ['owner', 'admin'] }
-            ];
+    <div class="dummy-autofill">
+        <input type="text" id="dummy-email" name="email" value="">
+        <input type="password" id="dummy-password" name="password" value="">
+    </div>
 
-            function getUserRole() {
-                try { return localStorage.getItem('user_role') || 'customer'; } catch (e) { return 'customer'; }
-            }
-
-            function canAccess(requiredRoles) {
-                return requiredRoles.includes(getUserRole());
-            }
-
-            function buildNavbar() {
-                const currentPath = window.location.pathname;
-                let linksHtml = '';
-                navItems.forEach(item => {
-                    if (!canAccess(item.roles)) return;
-                    const isActive = currentPath === item.path;
-                    const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
-                    linksHtml += `
-                            <a href="${item.path}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeClass}" title="${item.title}">
-                                <i class="fa-solid ${item.icon} w-4"></i> ${item.name}
-                            </a>
-                        `;
-                });
-                let userName = 'User';
-                let orgName = 'Loading...';
-                try {
-                    const profileStr = localStorage.getItem('user_profile_display');
-                    if (profileStr) userName = profileStr;
-                    const orgStr = localStorage.getItem('org_name');
-                    if (orgStr) orgName = orgStr;
-                } catch (e) {}
-                return `
-                        <div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40">
-                            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                                <div class="flex flex-wrap items-center justify-between py-3 gap-3">
-                                    <div class="flex items-center gap-2">
-                                        <i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i>
-                                        <span class="text-xl font-bold tracking-tight">${APP_NAME}</span>
-                                        <span class="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span>
-                                    </div>
-                                    <div class="hidden md:flex items-center gap-1 flex-wrap">${linksHtml}</div>
-                                    <div class="flex items-center gap-3">
-                                        <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full hidden sm:inline-block">
-                                            <i class="fa-regular fa-building mr-1"></i> <span id="nav-org-name">${escapeHtml(orgName)}</span>
-                                        </span>
-                                        <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full hidden sm:inline-block">
-                                            <i class="fa-regular fa-user mr-1"></i> <span id="nav-user-name">${escapeHtml(userName)}</span>
-                                        </span>
-                                        <button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition flex items-center gap-1">
-                                            <i class="fa-solid fa-sign-out-alt"></i> <span class="hidden sm:inline">Logout</span>
-                                        </button>
-                                    </div>
-                                </div>
-                                <div class="md:hidden flex overflow-x-auto pb-2 gap-1 snap-x">${linksHtml}</div>
-                            </div>
-                        </div>
-                    `;
-            }
-
-            function escapeHtml(str) {
-                if (!str) return '';
-                return str.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' } [m]));
-            }
-
-            async function globalLogout() {
-                const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
-                const token = localStorage.getItem('access_token');
-                if (token) {
-                    try {
-                        await fetch(`${BACKEND}/auth/logout`, {
-                            method: 'POST',
-                            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-                        });
-                    } catch (e) {}
-                }
-                localStorage.removeItem('access_token');
-                localStorage.removeItem('refresh_token');
-                localStorage.removeItem('user_role');
-                localStorage.removeItem('user_profile_display');
-                localStorage.removeItem('org_name');
-                localStorage.removeItem('selected_org_id');
-                window.location.href = LOGIN_URL;
-            }
-
-            async function updateUserDisplay() {
-                const token = localStorage.getItem('access_token');
-                if (!token) return;
-                try {
-                    const res = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/me', {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    if (res.ok) {
-                        const me = await res.json();
-                        const contextRes = await fetch(
-                            `https://kevsono-kevs-digital-bos.hf.space/support/customer-context?target_user_id=${me.user_id}`,
-                        { headers: { 'Authorization': `Bearer ${token}` } });
-                        if (contextRes.ok) {
-                            const context = await contextRes.json();
-                            const name = context.profile?.first_name || 'User';
-                            localStorage.setItem('user_profile_display', name);
-                            const nameSpan = document.getElementById('nav-user-name');
-                            if (nameSpan) nameSpan.innerText = name;
-                        }
-                    }
-                    const orgRes = await fetch('https://kevsono-kevs-digital-bos.hf.space/auth/org', {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    if (orgRes.ok) {
-                        const orgData = await orgRes.json();
-                        const orgName = orgData.org_name || 'Unknown Org';
-                        localStorage.setItem('org_name', orgName);
-                        const orgSpan = document.getElementById('nav-org-name');
-                        if (orgSpan) orgSpan.innerText = orgName;
-                    }
-                } catch (e) {}
-            }
-
-            function initNavigation() {
-                const container = document.getElementById('kevs-nav-container');
-                if (container) {
-                    container.innerHTML = buildNavbar();
-                    const logoutBtn = document.getElementById('global-logout-btn');
-                    if (logoutBtn) logoutBtn.addEventListener('click', globalLogout);
-                    updateUserDisplay();
-                }
-            }
-
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', initNavigation);
-            } else {
-                initNavigation();
-            }
-        })();
-    </script>
-
-    <!-- Toast container -->
-    <div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
-
-    <!-- Hidden receipt print area -->
-    <div id="receipt-print-area" style="display:none;"></div>
-
-    <!-- Main POS -->
-    <div class="max-w-7xl mx-auto">
-        <div class="bg-white rounded-xl shadow-md p-4 mb-4 flex flex-wrap justify-between items-center gap-3">
-            <div>
-                <h1 class="text-2xl font-bold">💳 Kevs POS Terminal</h1>
-                <p class="text-xs text-gray-500">Offline‑Ready · SKU Search · Scanner · Cashier History · Audit</p>
+    <header class="sticky top-0 z-30 bg-white/90 backdrop-blur-md shadow-sm border-b border-orange-100">
+        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center gap-2 cursor-pointer" id="marketplace-logo">
+                <span class="text-3xl font-extrabold text-orange-500">Market</span>
+                <span class="text-xl font-semibold text-gray-700">Place</span>
             </div>
-            <div class="flex items-center gap-2">
-                <span id="connection-status" class="online-badge"><i class="fa-solid fa-wifi"></i> Online</span>
-                <button id="sync-now-btn" class="sync-btn"><i class="fa-solid fa-rotate"></i> Sync</button>
-                <button id="dashboard-btn" class="bg-gray-200 px-3 py-1 rounded-lg text-sm">
-                    <i class="fa-solid fa-chart-simple"></i> Dashboard
+            <div class="flex items-center gap-3">
+                <button id="cart-icon-btn" class="relative bg-orange-50 p-2 rounded-full hover:bg-orange-100 transition">
+                    <i class="fa-solid fa-bag-shopping text-orange-600 text-xl"></i>
+                    <span id="cart-count-badge" class="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center shadow-md">0</span>
                 </button>
-                <button id="history-btn" class="bg-gray-200 px-3 py-1 rounded-lg text-sm"><i class="fa-regular fa-clock"></i> History</button>
-            </div>
-        </div>
-
-        <!-- TABS -->
-        <div class="flex gap-3 mb-4 border-b border-gray-200 pb-1">
-            <button id="tab1-btn" data-tab="1" class="tab-active px-6 py-2.5 rounded-t-lg font-semibold text-sm transition flex items-center gap-2 shadow-sm border">
-                <i class="fa-solid fa-user"></i> Customer A
-            </button>
-            <button id="tab2-btn" data-tab="2" class="tab-inactive px-6 py-2.5 rounded-t-lg font-semibold text-sm transition flex items-center gap-2 border">
-                <i class="fa-solid fa-user-group"></i> Customer B
-            </button>
-        </div>
-
-        <!-- MAIN LAYOUT -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- CART (LEFT) -->
-            <div class="lg:col-span-2 lg:order-first bg-white rounded-xl shadow-md p-4 flex flex-col min-h-[600px]">
-                <div class="flex justify-between items-center border-b pb-2 mb-2">
-                    <h2 class="text-xl font-semibold"><i class="fa-solid fa-cart-shopping"></i> <span id="active-customer-label">Customer A</span> Sale</h2>
-                    <span class="text-xs bg-gray-100 px-2 py-1 rounded-full" id="tab-badge">Tab 1 active</span>
-                </div>
-
-                <div id="cart-items" class="space-y-2 overflow-y-auto flex-1 max-h-[50vh] lg:max-h-[60vh] min-h-[200px]"></div>
-                
-                <div class="border-t pt-3 mt-2">
-                    <div class="flex justify-between text-lg font-bold">
-                        <span>Total:</span>
-                        <span id="cart-total" class="total-amount">₦0</span>
-                    </div>
-
-                    <div class="mt-3 grid grid-cols-2 gap-3">
-                        <div><label class="block text-sm font-medium">Payment Method</label>
-                            <select id="payment-method" class="w-full border rounded-lg p-2 bg-white">
-                                <option value="cash">💵 Cash</option>
-                                <option value="card">💳 Card</option>
-                                <option value="transfer">🏦 Bank Transfer</option>
-                            </select>
-                        </div>
-                        <div><label class="block text-sm font-medium">Customer Name</label>
-                            <input id="customer-name" class="w-full border rounded-lg p-2" placeholder="Walk-in Customer" autocomplete="off">
-                        </div>
-                        <div><label class="block text-sm font-medium">Phone</label>
-                            <input id="customer-phone" class="w-full border rounded-lg p-2" placeholder="Optional" autocomplete="off">
-                        </div>
-                        <div><label class="block text-sm font-medium">Email</label>
-                            <input id="customer-email" type="email" class="w-full border rounded-lg p-2" placeholder="customer@example.com" autocomplete="off">
-                        </div>
-                    </div>
-
-                    <!-- Customer Search & Loyalty -->
-                    <div class="bg-blue-50 p-3 rounded-lg mt-3 space-y-2">
-                        <div class="relative">
-                            <input type="text" id="customer-search" placeholder="Search customer..." autocomplete="off" class="w-full border rounded-lg p-2 text-sm pr-8">
-                            <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-                            <div id="customer-suggestions" class="absolute z-10 left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto hidden"></div>
-                        </div>
-                        <div id="customer-info" class="text-xs text-gray-700 hidden">
-                            <span id="customer-name-display"></span> ·
-                            <strong>Points: <span id="customer-points">0</span></strong>
-                        </div>
-                        <div id="points-redeem-section" class="hidden border-t border-blue-200 pt-2 mt-1">
-                            <label class="text-xs font-medium">Redeem points (1 pt = ₦1)</label>
-                            <div class="flex gap-2 mt-1">
-                                <input type="number" id="redeem-points-input" min="1" class="w-full border rounded-lg p-1 text-sm" placeholder="Points">
-                                <button id="apply-points-btn" class="bg-emerald-600 text-white px-3 py-1 rounded-lg text-sm hover:bg-emerald-700">Apply</button>
-                            </div>
-                            <p id="offline-points-warning" class="text-red-500 text-xs hidden">⚠️ Points redemption requires internet.</p>
-                        </div>
-                    </div>
-
-                    <button id="checkout-btn" class="mt-4 w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-bold transition shadow-md text-lg">
-                        ✅ Complete Sale
+                <div class="relative">
+                    <button id="user-menu-btn" class="bg-gray-100 p-2 rounded-full w-9 h-9 flex items-center justify-center">
+                        <i class="fa-regular fa-user text-gray-600"></i>
                     </button>
-                </div>
-            </div>
-
-            <!-- PRODUCT CATALOG (RIGHT) -->
-            <div class="lg:col-span-1 bg-white rounded-xl shadow-md p-4 flex flex-col">
-                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
-                    <h2 class="text-lg font-semibold">📦 Products</h2>
-                    <div class="relative w-full">
-                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-                        <input type="text" id="product-search" placeholder="Search SKU or name..." autocomplete="off" class="w-full pl-9 pr-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none">
-                        <div id="search-scanner-hint" class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-green-500 hidden"><i class="fa-solid fa-qrcode"></i></div>
+                    <div id="user-dropdown" class="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 hidden z-40">
+                        <div class="p-3 border-b" id="user-info-dropdown">Guest</div>
+                        <div id="loyalty-info-dropdown" class="px-4 py-2 text-sm border-b hidden">
+                            <span class="font-semibold">⭐ Loyalty Points:</span> <span id="user-points">0</span><br>
+                            <span class="text-xs text-gray-500">Tier: <span id="user-tier">-</span></span>
+                        </div>
+                        <button id="login-dropdown-btn" class="w-full text-left px-4 py-2 hover:bg-gray-100">Sign In / Register</button>
+                        <button id="track-order-dropdown" class="w-full text-left px-4 py-2 hover:bg-gray-100">Track Order</button>
+                        <button id="complaints-dropdown" class="w-full text-left px-4 py-2 hover:bg-gray-100">My Tickets</button>
+                        <button id="logout-dropdown" class="w-full text-left px-4 py-2 text-red-600 hover:bg-gray-100 hidden">Logout</button>
                     </div>
                 </div>
-                <div id="product-list" class="grid grid-cols-2 gap-2 max-h-[70vh] overflow-y-auto flex-1"></div>
-                <div id="product-list-empty" class="hidden text-center py-8 text-gray-400 col-span-full">No products match your search</div>
-                <div id="loading-more" class="hidden text-center py-4 text-gray-500 text-sm"><i class="fa-solid fa-spinner fa-pulse"></i> Loading more...</div>
             </div>
+        </div>
+    </header>
+
+    <!-- Hero Slider -->
+    <section class="hero-slider relative">
+        <div class="slider-container" id="heroSlider">
+            <div class="hero-slide gradient-slide">
+                <div class="container mx-auto px-4 h-full flex items-center">
+                    <div class="slide-content text-white">
+                        <h1 class="text-4xl md:text-6xl font-extrabold leading-tight">Shop Smarter <br>with AI Intelligence</h1>
+                        <p class="text-lg md:text-xl mt-4 opacity-90">Discover thousands of products, instant delivery estimates, and a personal concierge.</p>
+                        <div class="mt-8 flex gap-4">
+                            <button class="hero-shop-btn bg-white text-orange-600 font-semibold px-8 py-3 rounded-full shadow-lg hover:shadow-xl transition">Explore Now →</button>
+                            <button class="hero-chat-btn border border-white text-white px-8 py-3 rounded-full hover:bg-white/10 transition">💬 Ask AI</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="hero-slide image-slide" style="background-image: url('https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=1600&h=500&fit=crop');">
+                <div class="container mx-auto px-4 h-full flex items-center"><div class="slide-content text-white"><h1 class="text-4xl md:text-6xl font-extrabold">Marketplace</h1><p class="text-lg mt-4">Thousands of products at your fingertips.</p><div class="mt-8 flex gap-4"><button class="hero-shop-btn bg-white text-orange-600 font-semibold px-8 py-3 rounded-full shadow-lg">Explore</button><button class="hero-chat-btn border border-white px-8 py-3 rounded-full">💬 Find Products</button></div></div></div>
+            </div>
+            <div class="hero-slide image-slide" style="background-image: url('https://images.unsplash.com/photo-1566576912321-d58ddd7a6088?w=1600&h=500&fit=crop');">
+                <div class="container mx-auto px-4 h-full flex items-center"><div class="slide-content text-white"><h1 class="text-4xl md:text-6xl font-extrabold">Track Your Order</h1><p class="text-lg mt-4">Real‑time updates from dispatch to delivery.</p><div class="mt-8 flex gap-4"><button class="hero-track-btn bg-white text-orange-600 font-semibold px-8 py-3 rounded-full shadow-lg">Track Now</button><button class="hero-chat-btn border border-white px-8 py-3 rounded-full">💬 Order Help</button></div></div></div>
+            </div>
+            <div class="hero-slide image-slide" style="background-image: url('https://images.unsplash.com/photo-1557804506-669a67965ba0?w=1600&h=500&fit=crop');">
+                <div class="container mx-auto px-4 h-full flex items-center"><div class="slide-content text-white"><h1 class="text-4xl md:text-6xl font-extrabold">Support Tickets</h1><p class="text-lg mt-4">File complaints, track resolutions, get help fast.</p><div class="mt-8 flex gap-4"><button class="hero-tickets-btn bg-white text-orange-600 font-semibold px-8 py-3 rounded-full shadow-lg">My Tickets</button><button class="hero-chat-btn border border-white px-8 py-3 rounded-full">💬 Live Support</button></div></div></div>
+            </div>
+            <div class="hero-slide image-slide" style="background-image: url('https://images.unsplash.com/photo-1531746790731-6c087fecd65a?w=1600&h=500&fit=crop');">
+                <div class="container mx-auto px-4 h-full flex items-center"><div class="slide-content text-white"><h1 class="text-4xl md:text-6xl font-extrabold">AI Concierge 24/7</h1><p class="text-lg mt-4">Your personal shopping & support assistant.</p><div class="mt-8 flex gap-4"><button class="hero-chat-btn bg-white text-orange-600 font-semibold px-8 py-3 rounded-full shadow-lg">Chat Now</button><button class="hero-shop-btn border border-white px-8 py-3 rounded-full">Shop</button></div></div></div>
+            </div>
+        </div>
+        <div class="slider-arrow left" id="sliderPrev"><i class="fa-solid fa-chevron-left"></i></div>
+        <div class="slider-arrow right" id="sliderNext"><i class="fa-solid fa-chevron-right"></i></div>
+        <div class="slider-dots" id="sliderDots"></div>
+    </section>
+
+    <!-- ===== MAIN CONTENT ===== -->
+    <main id="dynamic-main" class="container mx-auto px-4 py-12">
+        <div id="shop-view">
+            <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+                <h2 class="text-2xl md:text-3xl font-bold text-gray-800"> Featured Products</h2>
+                <div class="flex flex-wrap gap-3 w-full md:w-auto items-center">
+                    <select id="category-select" class="category-select border border-orange-200 text-sm focus:ring-orange-400">
+                        <option value="">All Categories</option>
+                    </select>
+                    <div class="search-container w-full md:w-72">
+                        <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                        <input type="text" id="product-search" name="search" placeholder="Search products..." autocomplete="off" class="w-full pl-10 pr-8 py-2 border border-gray-300 rounded-full focus:ring-2 focus:ring-orange-400 outline-none">
+                        <span id="search-clear" class="search-clear"><i class="fa-solid fa-times-circle"></i></span>
+                    </div>
+                    <button id="refresh-categories-btn" class="category-refresh-btn" title="Refresh categories from products"><i class="fa-solid fa-rotate-right"></i> Categories</button>
+                </div>
+            </div>
+            <div id="products-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+                <div class="col-span-full text-center py-12 text-gray-500"><i class="fa-solid fa-spinner fa-pulse"></i> Loading amazing deals...</div>
+            </div>
+            <div id="pagination-container" class="mt-6 flex justify-center"></div>
+        </div>
+        <div id="tickets-view" class="hidden">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-2xl md:text-3xl font-bold text-gray-800"><i class="fa-regular fa-ticket-alt text-orange-500"></i> My Support Tickets</h2>
+                <button id="refresh-tickets" class="bg-orange-500 text-white px-4 py-2 rounded-full text-sm hover:bg-orange-600"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
+            </div>
+            <div id="tickets-list" class="space-y-3"><div class="text-center py-10 text-gray-500"><i class="fa-solid fa-spinner fa-pulse"></i> Loading your tickets...</div></div>
+        </div>
+
+        <!-- ===== ORDER CONFIRMATION VIEW ===== -->
+        <div id="confirmation-view" class="hidden">
+            <div class="max-w-3xl mx-auto bg-white rounded-2xl shadow-xl p-6 md:p-8 border border-green-100">
+                <div class="text-center mb-6">
+                    <i class="fa-regular fa-circle-check text-green-500 text-6xl"></i>
+                    <h2 class="text-3xl md:text-4xl font-bold text-gray-800 mt-3">Order Confirmed! 🎉</h2>
+                    <p class="text-gray-600 mt-1">Thank you for your purchase. A receipt has been sent to your email.</p>
+                </div>
+                <div id="confirmation-details" class="space-y-4">
+                    <!-- Dynamically filled -->
+                </div>
+                <div class="mt-8 flex flex-wrap gap-4 justify-center">
+                    <button id="continue-shopping-btn" class="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-full font-semibold transition"><i class="fa-solid fa-arrow-left"></i> Continue Shopping</button>
+                    <button id="track-order-confirm-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-6 py-3 rounded-full font-semibold transition"><i class="fa-solid fa-truck"></i> Track Order</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ===== APP-ONLY: BOTTOM NAVIGATION (fixed) ===== -->
+    <div id="bottom-nav" class="app-only-feature">
+        <div class="nav-item" id="nav-support-chat">
+            <div class="nav-icon">💬</div>
+            <span class="nav-label">Live Help</span>
+        </div>
+        <div class="nav-item" id="nav-track">
+            <div class="nav-icon">📍</div>
+            <span class="nav-label">Track</span>
+        </div>
+        <div class="nav-item" id="nav-ai-helper">
+            <div class="nav-icon"> 🔍 </div>
+            <span class="nav-label">Search</span>
+        </div>
+        <div class="nav-item" id="nav-cart">
+            <div class="nav-icon">🛒</div>
+            <span class="nav-label">Cart</span>
         </div>
     </div>
 
-    <!-- History Modal -->
-    <div id="history-modal">
-        <div class="modal-content">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-bold">📜 Cashier History</h3>
-                <button id="close-history-btn" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
-            </div>
-            <div id="history-list" class="space-y-2 max-h-[60vh] overflow-y-auto"></div>
-        </div>
-    </div>
+    <footer class="bg-gray-800 text-white mt-16 py-8"><div class="container mx-auto px-4 text-center text-sm"><p>© 2026 Kevs Digital bOS – AI‑powered marketplace</p><p class="text-gray-400 mt-2"><i class="fa-regular fa-clock"></i> 24/7 AI Concierge | Fast Delivery</p></div></footer>
 
-    <!-- Sync Dashboard Modal -->
-    <div id="sync-dashboard-modal">
-        <div class="modal-content max-w-md">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-bold">📊 Sync Dashboard</h3>
-                <button id="close-dashboard-btn" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
-            </div>
-            <div id="dashboard-content" class="space-y-2"></div>
-            <button id="refresh-dashboard-btn" class="mt-4 w-full bg-blue-600 text-white py-2 rounded-lg text-sm hover:bg-blue-700">
-                <i class="fa-solid fa-rotate"></i> Refresh
+    <!-- Cart Drawer -->
+    <div id="cart-drawer" class="cart-sidebar fixed top-0 right-0 w-full sm:w-96 h-full bg-white shadow-2xl z-[150] transform translate-x-full transition-transform duration-300 flex flex-col">
+        <div class="p-4 border-b border-orange-100 flex justify-between items-center bg-orange-50"><h3 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-basket-shopping text-orange-500"></i> Your Cart</h3>
+            <button id="close-drawer" class="text-gray-500 hover:text-orange-600 flex items-center gap-1 font-medium transition">
+                <i class="fa-solid fa-arrow-left"></i> Continue Shopping
             </button>
         </div>
+        <div id="cart-items-list" class="flex-1 overflow-y-auto p-4 space-y-3 bg-white"></div>
+        <div class="p-4 border-t border-orange-100 bg-gray-50">
+            <div class="mb-3"><label class="text-xs text-gray-600 block mb-1">Delivery Option</label><div class="flex gap-2 bg-gray-100 rounded-lg p-1"><button id="pickup-option" class="flex-1 py-1.5 text-sm rounded-md transition font-medium">📦 Pickup</button><button id="delivery-option" class="flex-1 py-1.5 text-sm rounded-md transition font-medium">🚚 Delivery</button></div></div>
+            <div id="delivery-address-section" class="mb-3 hidden"><label class="text-xs text-gray-600 block mb-1">Delivery Address</label><div class="relative"><div class="flex gap-2"><input type="text" id="delivery-address" placeholder="Tap GPS to set address..." class="flex-1 bg-white border border-gray-300 rounded-lg p-2 text-sm" autocomplete="off"><button id="gps-locate-cart" class="bg-indigo-600 text-white px-3 rounded-lg text-sm whitespace-nowrap"><i class="fa-solid fa-location-dot"></i> GPS</button></div><div id="cart-address-suggestions" class="address-suggestions hidden"></div></div><button id="save-address-btn" class="mt-2 w-full bg-orange-500 hover:bg-orange-600 text-white py-1.5 rounded-lg text-sm transition">Save & Estimate Delivery</button><div id="delivery-fee-estimate" class="text-xs text-gray-500 mt-1"></div></div>
+            <div class="mb-3"><label class="text-xs text-gray-600 block mb-1">Payment Method</label><select id="payment-method" class="w-full bg-white border border-gray-300 rounded-lg p-2 text-sm"><option value="paystack">Paystack (Card / Bank)</option><option value="cash">Cash (POS Terminal)</option></select></div>
+            <div class="border-t border-gray-200 pt-2 mt-2 space-y-1 text-sm"><div class="flex justify-between"><span>Subtotal</span><span id="cart-subtotal">₦0</span></div><div id="delivery-fee-row" class="flex justify-between text-gray-500 hidden"><span>Delivery fee</span><span id="cart-delivery-fee">₦0</span></div><div class="flex justify-between font-bold text-lg border-t border-gray-200 pt-2 mt-1"><span>Total</span><span id="cart-total" class="text-orange-600">₦0</span></div></div>
+            <button id="checkout-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 py-2.5 rounded-xl font-semibold text-white transition shadow-md mt-2">💳 Proceed to Checkout</button>
+        </div>
     </div>
 
-    <!-- Login Modal -->
-    <div id="auth-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-bold text-gray-800">🔐 Sign In to POS</h3>
-                <button id="close-modal-btn" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
-            </div>
-            <div class="space-y-3">
-                <input id="login-email" type="email" placeholder="Email" class="w-full border rounded-lg p-2 text-sm">
-                <input id="login-password" type="password" placeholder="Password" class="w-full border rounded-lg p-2 text-sm">
-                <button id="modal-login-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white p-2.5 rounded-lg text-sm font-medium">Sign In</button>
-                <button id="demo-login-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white p-2.5 rounded-lg text-sm font-medium">
-                    <i class="fa-solid fa-bolt mr-1"></i> Demo Login
-                </button>
+    <!-- Product Detail Modal -->
+    <div id="product-detail-modal" class="product-modal">
+        <div class="product-modal-content">
+            <div class="product-modal-close" id="close-product-modal"><i class="fa-solid fa-times"></i></div>
+            <div class="p-6">
+                <div id="product-detail-content"></div>
+                <div class="mt-4 flex items-center gap-4 border-t border-gray-200 pt-4">
+                    <span class="font-semibold text-gray-700">Qty:</span>
+                    <button id="modal-qty-minus" class="modal-qty-btn">−</button>
+                    <span id="modal-qty-display" class="modal-qty-display">1</span>
+                    <button id="modal-qty-plus" class="modal-qty-btn orange">+</button>
+                    <span class="ml-auto text-sm text-gray-500" id="modal-qty-total">₦0</span>
+                </div>
+                <div class="mt-6 flex gap-3">
+                    <button id="modal-add-to-cart" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl font-semibold transition"><i class="fa-solid fa-cart-plus mr-2"></i> Add to Cart</button>
+                    <button id="modal-close-btn" class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-3 rounded-xl font-semibold transition">Continue Shopping</button>
+                </div>
             </div>
         </div>
     </div>
 
-    <script>
-        // ================================================================
-        //  OFFLINE‑READY POS – WITH FULL AUDIT TRAIL & IDEMPOTENCY KEY
-        // ================================================================
+    <!-- Track Order Modal -->
+    <div id="track-modal" class="track-modal"><div class="track-modal-content"><div class="track-modal-close" id="close-track-modal"><i class="fa-solid fa-times"></i></div><div class="p-6"><h3 class="text-xl font-bold mb-4"><i class="fa-solid fa-truck-fast text-orange-500"></i> Track Your Order</h3><div class="space-y-4"><div><label class="block text-sm font-medium text-gray-700">Receipt Number</label><input type="text" id="track-receipt" class="w-full border border-gray-300 rounded-lg p-2" placeholder="e.g., REC-12345" autocomplete="off"></div><div><label class="block text-sm font-medium text-gray-700">Email Address</label><input type="email" id="track-email" class="w-full border border-gray-300 rounded-lg p-2" placeholder="your@email.com" autocomplete="off"></div><button id="track-submit" class="w-full bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600">Track Order</button><div id="track-result" class="mt-4 text-sm hidden"></div></div></div></div></div>
 
-        const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
-        let token = localStorage.getItem('access_token');
-        let products = [];
-        let allCustomers = [];
-        let posSearchTerm = '';
-        let posPage = 1;
-        const POS_PAGE_SIZE = 50;
-        let posTotalItems = 0;
-        let posIsLoading = false;
-        let posHasMore = true;
-        let activeTab = 1;
-        let abortController = null;
-        let isOnline = navigator.onLine;
-        let syncInProgress = false;
+    <!-- Floating AI Chat -->
+    <button id="chat-bubble" class="floating-chat fixed bottom-6 right-6 bg-orange-500 text-white p-4 rounded-full shadow-xl z-40"><i class="fa-regular fa-message text-2xl"></i></button>
+    <div id="chat-modal" class="chat-modal"><div class="flex justify-between items-center p-3 border-b border-orange-200 bg-orange-50 rounded-t-2xl"><span class="font-bold"><i class="fa-regular fa-comment-dots text-orange-500"></i> Kevs AI Concierge</span><button id="close-chat-modal" class="text-gray-500">&times;</button></div><div id="chat-messages" class="chat-messages p-3 space-y-2"></div><div class="p-3 border-t border-gray-200 bg-white rounded-b-2xl"><div class="flex gap-2"><input id="chat-input" type="text" placeholder="Ask about products, orders..." class="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm" autocomplete="off"><button id="chat-send" class="bg-orange-500 text-white px-4 rounded-full"><i class="fa-regular fa-paper-plane"></i></button></div></div></div>
 
-        // ---------- UUID generator ----------
-        function generateUUID() {
-            if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-                return crypto.randomUUID();
-            }
-            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-                return v.toString(16);
-            });
-        }
+    <!-- Auth Modal -->
+    <div id="auth-modal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[100]"><div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl"><div class="flex justify-between items-center mb-4"><h3 id="modal-title" class="text-xl font-bold">Sign In</h3><button id="close-auth-modal" class="text-2xl">&times;</button></div><div class="space-y-3"><input id="auth-email" type="email" placeholder="Email address" class="w-full border border-gray-300 rounded-lg p-2.5" autocomplete="off"><input id="auth-password" type="password" placeholder="Password" class="w-full border border-gray-300 rounded-lg p-2.5" autocomplete="off"><div id="reg-extra" class="hidden space-y-3 border-t pt-3"><input id="invite-code" placeholder="Invite code (optional)" class="w-full border border-gray-300 rounded-lg p-2" autocomplete="off"><div class="text-xs text-center">— OR create new org —</div><input id="org-name" placeholder="Organization name *" class="w-full border border-gray-300 rounded-lg p-2" autocomplete="off"><div class="grid grid-cols-2 gap-2"><input id="org-location" placeholder="City, Country *" class="border rounded p-2" autocomplete="off"><input id="org-niche" placeholder="Industry *" class="border rounded p-2" autocomplete="off"></div><input id="budget" type="number" placeholder="Budget (₦)" class="border p-2 rounded" autocomplete="off"><div class="grid grid-cols-2 gap-2"><input id="first-name" placeholder="First name *" class="border p-2 rounded" autocomplete="off"><input id="last-name" placeholder="Last name *" class="border p-2 rounded" autocomplete="off"></div><input id="phone-number" placeholder="Phone number *" class="border p-2 rounded" autocomplete="off"></div><button id="auth-submit" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2.5 rounded-lg">Sign In</button><button id="demo-access" class="w-full bg-emerald-500 text-white py-2.5 rounded-lg flex items-center justify-center gap-2"><i class="fa-solid fa-flask"></i> Demo Access</button><div class="text-center"><button id="toggle-auth-mode" class="text-sm text-orange-500 hover:underline">Don't have an account? Register</button></div></div></div></div>
 
-        // ---------- Dexie IndexedDB (upgraded to version 2) ----------
-        const db = new Dexie('KevsPOSOffline');
-        db.version(2).stores({
-            products: 'id, description, item_code, sku, price_naira, current_qty',
-            customers: 'id, first_name, last_name, phone, email, loyalty_points',
-            orders: '++id, offlineRef, cashierId, createdAt, status, syncedAt, receiptData',
-            syncQueue: '++id, orderId, attempts, lastTry',
-            auditQueue: '++id, eventType, createdAt, retryCount'
-        });
-
-        // ---------- DOM refs ----------
-        const productContainer = document.getElementById('product-list');
-        const emptyMsgDiv = document.getElementById('product-list-empty');
-        const cartContainer = document.getElementById('cart-items');
-        const cartTotalSpan = document.getElementById('cart-total');
-        const paymentMethodSelect = document.getElementById('payment-method');
-        const customerNameInput = document.getElementById('customer-name');
-        const customerPhoneInput = document.getElementById('customer-phone');
-        const customerEmailInput = document.getElementById('customer-email');
-        const activeCustomerLabel = document.getElementById('active-customer-label');
-        const tabBadge = document.getElementById('tab-badge');
-        const tab1Btn = document.getElementById('tab1-btn');
-        const tab2Btn = document.getElementById('tab2-btn');
-        const checkoutBtn = document.getElementById('checkout-btn');
-        const searchInput = document.getElementById('product-search');
-        const customerSearchInput = document.getElementById('customer-search');
-        const suggestionsDiv = document.getElementById('customer-suggestions');
-        const customerInfoDiv = document.getElementById('customer-info');
-        const customerNameDisplay = document.getElementById('customer-name-display');
-        const customerPointsSpan = document.getElementById('customer-points');
-        const pointsRedeemSection = document.getElementById('points-redeem-section');
-        const redeemPointsInput = document.getElementById('redeem-points-input');
-        const applyPointsBtn = document.getElementById('apply-points-btn');
-        const offlinePointsWarning = document.getElementById('offline-points-warning');
-        const scannerHint = document.getElementById('search-scanner-hint');
-        const loadingMoreDiv = document.getElementById('loading-more');
-        const connectionStatus = document.getElementById('connection-status');
-        const syncNowBtn = document.getElementById('sync-now-btn');
-        const historyBtn = document.getElementById('history-btn');
-        const historyModal = document.getElementById('history-modal');
-        const closeHistoryBtn = document.getElementById('close-history-btn');
-        const historyList = document.getElementById('history-list');
-        const dashboardBtn = document.getElementById('dashboard-btn');
-        const dashboardModal = document.getElementById('sync-dashboard-modal');
-        const closeDashboardBtn = document.getElementById('close-dashboard-btn');
-        const refreshDashboardBtn = document.getElementById('refresh-dashboard-btn');
-        const dashboardContent = document.getElementById('dashboard-content');
-
-        // ---------- Tab State ----------
-        const tabState = {
-            1: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '',
-                loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 },
-            2: { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '',
-                loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 }
-        };
-
-        // ---------- Toast ----------
-        function showToast(msg, type = 'success') {
-            const container = document.getElementById('toast-container');
-            const toast = document.createElement('div');
-            toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : type === 'error' ? 'bg-red-600' : 'bg-blue-600'} mb-2 text-sm flex items-center gap-2`;
-            const icon = type === 'success' ? 'fa-circle-check' : type === 'error' ? 'fa-circle-exclamation' : 'fa-info-circle';
-            toast.innerHTML = `<i class="fa-solid ${icon}"></i> ${msg}`;
-            container.appendChild(toast);
-            setTimeout(() => toast.remove(), 3800);
-        }
-
-        // ---------- API Call ----------
-        async function apiCall(endpoint, method = 'GET', body = null, retry = true, signal = null) {
-            const headers = { 'Content-Type': 'application/json' };
-            if (token) headers['Authorization'] = `Bearer ${token}`;
-            const selectedOrgId = localStorage.getItem('selected_org_id');
-            if (selectedOrgId) headers['X-Selected-Org-Id'] = selectedOrgId;
-            const options = { method, headers, signal };
-            if (body) options.body = JSON.stringify(body);
-            let res = await fetch(`${BACKEND}${endpoint}`, options);
-            if (res.status === 401 && retry) {
-                const refresh = localStorage.getItem('refresh_token');
-                if (refresh) {
-                    try {
-                        const refreshRes = await fetch(`${BACKEND}/auth/refresh`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ refresh_token: refresh })
-                        });
-                        if (refreshRes.ok) {
-                            const { access_token, refresh_token } = await refreshRes.json();
-                            localStorage.setItem('access_token', access_token);
-                            localStorage.setItem('refresh_token', refresh_token);
-                            token = access_token;
-                            return apiCall(endpoint, method, body, false, signal);
-                        }
-                    } catch (e) {}
-                }
-                showLoginModal();
-                throw new Error('Session expired');
-            }
-            if (!res.ok) {
-                const err = await res.json().catch(() => ({ detail: 'Request error' }));
-                throw new Error(err.detail || 'API error');
-            }
-            return res.json();
-        }
-
-        function showLoginModal() { document.getElementById('auth-modal').classList.remove('hidden'); }
-        function hideLoginModal() { document.getElementById('auth-modal').classList.add('hidden'); }
-
-        // ---------- Offline Status ----------
-        function updateConnectionStatus() {
-            isOnline = navigator.onLine;
-            connectionStatus.innerHTML = isOnline ? '<i class="fa-solid fa-wifi"></i> Online' : '<i class="fa-solid fa-wifi-slash"></i> Offline';
-            connectionStatus.className = isOnline ? 'online-badge' : 'offline-badge';
-        }
-        window.addEventListener('online', () => {
-            updateConnectionStatus();
-            syncPendingOrders();
-            flushAuditQueue();
-        });
-        window.addEventListener('offline', updateConnectionStatus);
-
-        // ---------- Product Cache & Search ----------
-        async function loadPOSProducts(reset = true) {
-            const trimmed = posSearchTerm.trim();
-            if (trimmed.length < 2) {
-                products = [];
-                productContainer.innerHTML = '';
-                emptyMsgDiv.classList.add('hidden');
-                posPage = 1;
-                posHasMore = true;
-                posTotalItems = 0;
-                if (abortController) abortController.abort();
-                return;
-            }
-            if (reset) {
-                posPage = 1;
-                posTotalItems = 0;
-                posHasMore = true;
-                products = [];
-                productContainer.innerHTML = '';
-                emptyMsgDiv.classList.add('hidden');
-                const oldSentinel = document.getElementById('scroll-sentinel');
-                if (oldSentinel) oldSentinel.remove();
-                if (observer) observer.disconnect();
-                if (abortController) abortController.abort();
-                abortController = new AbortController();
-            }
-            if (posIsLoading || !posHasMore) return;
-            posIsLoading = true;
-            loadingMoreDiv.classList.remove('hidden');
-
-            const offset = (posPage - 1) * POS_PAGE_SIZE;
-            try {
-                let items = [];
-                let total = 0;
-                if (isOnline) {
-                    const url = `/inventory/pos?limit=${POS_PAGE_SIZE}&offset=${offset}&q=${encodeURIComponent(trimmed)}`;
-                    const data = await apiCall(url, 'GET', null, true, abortController.signal);
-                    items = data.items || [];
-                    total = data.total || 0;
-                    for (const p of items) {
-                        await db.products.put({
-                            id: p.id,
-                            description: p.description,
-                            item_code: p.item_code,
-                            sku: p.sku || p.item_code,
-                            price_naira: p.price_naira,
-                            current_qty: p.current_qty,
-                            cost_price_naira: p.cost_price_naira || 0,
-                            handling_category: p.handling_category || 'standard',
-                            weight_kg: p.weight_kg || 0
-                        });
-                    }
-                } else {
-                    let collection = db.products.where('description').startsWithIgnoreCase(trimmed)
-                        .or('item_code').startsWithIgnoreCase(trimmed)
-                        .or('sku').startsWithIgnoreCase(trimmed);
-                    total = await collection.count();
-                    items = await collection.offset(offset).limit(POS_PAGE_SIZE).toArray();
-                    items = items.map(p => ({ ...p, price_naira: p.price_naira, current_qty: p.current_qty }));
-                }
-                posTotalItems = total;
-                posHasMore = (offset + POS_PAGE_SIZE) < total;
-                if (reset) products = items;
-                else products = products.concat(items);
-                appendProductCards(items);
-                posPage++;
-                return products;
-            } catch (err) {
-                if (err.name === 'AbortError') return;
-                showToast('Failed to load products: ' + err.message, 'error');
-            } finally {
-                posIsLoading = false;
-                loadingMoreDiv.classList.add('hidden');
-                if (posHasMore) {
-                    const sentinel = document.createElement('div');
-                    sentinel.id = 'scroll-sentinel';
-                    sentinel.className = 'h-4 w-full';
-                    productContainer.appendChild(sentinel);
-                    observeSentinel();
-                } else {
-                    if (products.length > 0) {
-                        const endMsg = document.createElement('div');
-                        endMsg.className = 'col-span-full text-center py-4 text-gray-400 text-sm';
-                        endMsg.innerText = '— End of catalog —';
-                        productContainer.appendChild(endMsg);
-                    }
-                }
-            }
-        }
-
-        function appendProductCards(items) {
-            if (!items || items.length === 0) {
-                if (products.length === 0) emptyMsgDiv.classList.remove('hidden');
-                return;
-            }
-            emptyMsgDiv.classList.add('hidden');
-            items.forEach(p => {
-                const skuDisplay = p.sku || p.item_code || `ID:${p.id}`;
-                const stock = p.current_qty ?? 0;
-                const price = p.price_naira ?? 0;
-                const descSafe = escapeHtml(p.description || 'Unnamed product');
-                const card = document.createElement('button');
-                card.className = 'product-card bg-gray-50 rounded-lg text-left hover:bg-blue-50 border border-gray-200 transition shadow-sm flex flex-col';
-                card.innerHTML = `
-                    <span class="name">${descSafe}</span>
-                    <span class="sku">📟 ${escapeHtml(skuDisplay)}</span>
-                    <span class="price">₦${price.toLocaleString()}</span>
-                    <span class="stock">📦 ${stock} left</span>
-                `;
-                card.onclick = () => addToCart(p.id, p.description || 'Product', price, stock, skuDisplay);
-                productContainer.appendChild(card);
-            });
-        }
-
-        function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;'); }
-
-        let observer = null;
-        function observeSentinel() {
-            if (observer) observer.disconnect();
-            const sentinel = document.getElementById('scroll-sentinel');
-            if (!sentinel) return;
-            observer = new IntersectionObserver((entries) => {
-                if (entries[0].isIntersecting && posHasMore && !posIsLoading) {
-                    loadPOSProducts(false);
-                }
-            }, { root: null, rootMargin: '0px 0px 100px 0px' });
-            observer.observe(sentinel);
-        }
-
-        // ---------- Search Input (with scanner) ----------
-        let scanBuffer = '', scanTimer = null, isScanning = false, lastKeyTime = 0, searchDebounceTimer = null;
-        searchInput.addEventListener('input', function(e) {
-            if (isScanning) return;
-            clearTimeout(searchDebounceTimer);
-            const val = this.value.trim();
-            searchDebounceTimer = setTimeout(() => {
-                posSearchTerm = val;
-                if (val.length === 0) {
-                    products = [];
-                    productContainer.innerHTML = '';
-                    emptyMsgDiv.classList.add('hidden');
-                    posPage = 1;
-                    posHasMore = true;
-                    posTotalItems = 0;
-                    if (abortController) abortController.abort();
-                    return;
-                }
-                if (val.length >= 2) {
-                    if (abortController) abortController.abort();
-                    loadPOSProducts(true);
-                }
-            }, 500);
-        });
-
-        searchInput.addEventListener('keydown', function(e) {
-            const now = Date.now();
-            const timeDiff = lastKeyTime ? now - lastKeyTime : 0;
-            lastKeyTime = now;
-            if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                if (timeDiff < 60 && timeDiff > 0) {
-                    e.preventDefault();
-                    if (!isScanning) {
-                        isScanning = true;
-                        scanBuffer = '';
-                        searchInput.classList.add('scanner-active');
-                        scannerHint.classList.remove('hidden');
-                    }
-                    scanBuffer += e.key;
-                    clearTimeout(scanTimer);
-                    scanTimer = setTimeout(async () => {
-                        if (scanBuffer.length > 0) {
-                            searchInput.value = scanBuffer;
-                            posSearchTerm = scanBuffer;
-                            if (scanBuffer.length >= 2) {
-                                if (abortController) abortController.abort();
-                                await loadPOSProducts(true);
-                                if (products.length === 1) {
-                                    const p = products[0];
-                                    addToCart(p.id, p.description || 'Product', p.price_naira || 0, p.current_qty || 0, p.sku || p.item_code);
-                                } else if (products.length === 0) {
-                                    showToast('Product not found', 'error');
-                                } else {
-                                    showToast(`${products.length} products found`, 'info');
-                                }
-                            } else {
-                                products = [];
-                                productContainer.innerHTML = '';
-                                emptyMsgDiv.classList.add('hidden');
-                            }
-                        }
-                        isScanning = false;
-                        scanBuffer = '';
-                        searchInput.classList.remove('scanner-active');
-                        scannerHint.classList.add('hidden');
-                    }, 150);
-                    return;
-                }
-                if (isScanning) {
-                    isScanning = false;
-                    scanBuffer = '';
-                    clearTimeout(scanTimer);
-                    searchInput.classList.remove('scanner-active');
-                    scannerHint.classList.add('hidden');
-                }
-            } else {
-                if (isScanning) {
-                    isScanning = false;
-                    scanBuffer = '';
-                    clearTimeout(scanTimer);
-                    searchInput.classList.remove('scanner-active');
-                    scannerHint.classList.add('hidden');
-                }
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const val = searchInput.value.trim();
-                    if (val.length >= 2) {
-                        posSearchTerm = val;
-                        if (abortController) abortController.abort();
-                        loadPOSProducts(true).then(() => {
-                            if (products.length === 1) {
-                                const p = products[0];
-                                addToCart(p.id, p.description || 'Product', p.price_naira || 0, p.current_qty || 0, p.sku || p.item_code);
-                            } else if (products.length === 0) {
-                                showToast('Product not found', 'error');
-                            } else {
-                                showToast(`${products.length} products found`, 'info');
-                            }
-                        });
-                    } else {
-                        products = [];
-                        productContainer.innerHTML = '';
-                        emptyMsgDiv.classList.add('hidden');
-                    }
-                }
-            }
-        });
-
-        // ---------- Customer Search ----------
-        function filterCustomers(searchText) {
-            if (!searchText.trim()) return [];
-            const term = searchText.trim().toLowerCase();
-            return allCustomers.filter(c => {
-                const name = `${c.first_name || ''} ${c.last_name || ''}`.toLowerCase();
-                const phone = (c.phone || '').toLowerCase();
-                const email = (c.email || '').toLowerCase();
-                return name.includes(term) || phone.includes(term) || email.includes(term);
-            });
-        }
-
-        function renderSuggestions() {
-            const searchVal = customerSearchInput.value;
-            const matches = filterCustomers(searchVal);
-            if (matches.length === 0 || !searchVal.trim()) {
-                suggestionsDiv.classList.add('hidden');
-                return;
-            }
-            suggestionsDiv.classList.remove('hidden');
-            suggestionsDiv.innerHTML = matches.map(c => {
-                const fullName = `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'No name';
-                return `
-                    <div class="customer-suggestion px-3 py-2 border-b last:border-0 text-sm hover:bg-blue-50" data-user-id="${c.id}" data-name="${escapeAttr(fullName)}" data-phone="${escapeAttr(c.phone || '')}" data-email="${escapeAttr(c.email || '')}" data-points="${c.loyalty_points || 0}">
-                        <div class="font-medium">${escapeHtml(fullName)}</div>
-                        <div class="text-xs text-gray-500">${escapeHtml(c.phone || '')} · ${escapeHtml(c.email || '')}</div>
-                    </div>
-                `;
-            }).join('');
-            document.querySelectorAll('.customer-suggestion').forEach(el => {
-                el.addEventListener('click', () => {
-                    const userId = el.dataset.userId;
-                    const name = el.dataset.name;
-                    const phone = el.dataset.phone;
-                    const email = el.dataset.email;
-                    const points = parseInt(el.dataset.points, 10);
-                    selectCustomer(userId, name, phone, email, points);
-                    suggestionsDiv.classList.add('hidden');
-                    customerSearchInput.value = name;
-                });
-            });
-        }
-
-        function escapeAttr(str) { if (!str) return ''; return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
-
-        function selectCustomer(userId, name, phone, email, points) {
-            const state = tabState[activeTab];
-            state.loyaltyUserId = userId;
-            state.pointsBalance = points;
-            state.pointsRedeemed = 0;
-            state.customerName = name;
-            state.customerPhone = phone;
-            state.customerEmail = email;
-            customerNameInput.value = name;
-            customerPhoneInput.value = phone;
-            customerEmailInput.value = email;
-            customerNameDisplay.innerText = name;
-            customerPointsSpan.innerText = points;
-            customerInfoDiv.classList.remove('hidden');
-            if (points > 0 && isOnline) {
-                pointsRedeemSection.classList.remove('hidden');
-                offlinePointsWarning.classList.add('hidden');
-                redeemPointsInput.max = points;
-                redeemPointsInput.value = '';
-            } else if (points > 0 && !isOnline) {
-                pointsRedeemSection.classList.add('hidden');
-                offlinePointsWarning.classList.remove('hidden');
-            } else {
-                pointsRedeemSection.classList.add('hidden');
-                offlinePointsWarning.classList.add('hidden');
-            }
-            showToast(`Customer selected: ${name} (${points} points)`, 'success');
-            renderActiveCart();
-        }
-
-        // ---------- Load Customers ----------
-        async function loadCustomers() {
-            try {
-                const data = await apiCall('/organisations/me/users');
-                allCustomers = data.users || [];
-                for (const c of allCustomers) {
-                    await db.customers.put({
-                        id: c.id,
-                        first_name: c.first_name,
-                        last_name: c.last_name,
-                        phone: c.phone,
-                        email: c.email,
-                        loyalty_points: c.loyalty_points || 0
-                    });
-                }
-            } catch (err) {
-                console.warn('Failed to load customers online, using cache:', err);
-                allCustomers = await db.customers.toArray();
-            }
-        }
-
-        // ---------- Cart Controls ----------
-        window.updateCartItemQty = function(index, newQty) {
-            const state = tabState[activeTab];
-            const cart = state.cart;
-            if (index < 0 || index >= cart.length) return;
-            newQty = parseInt(newQty, 10);
-            if (isNaN(newQty) || newQty < 1) newQty = 1;
-            cart[index].qty = newQty;
-            renderActiveCart();
-        };
-
-        window.incrementCartItem = function(index) {
-            const state = tabState[activeTab];
-            const cart = state.cart;
-            if (index < 0 || index >= cart.length) return;
-            const item = cart[index];
-            const productRef = products.find(p => p.id === item.id);
-            const availableStock = productRef ? (productRef.current_qty ?? 0) : 9999;
-            if (item.qty + 1 > availableStock) {
-                showToast(`⚠️ Only ${availableStock} left for "${item.name}"`, 'error');
-                return;
-            }
-            item.qty++;
-            renderActiveCart();
-        };
-
-        window.decrementCartItem = function(index) {
-            const state = tabState[activeTab];
-            const cart = state.cart;
-            if (index < 0 || index >= cart.length) return;
-            if (cart[index].qty > 1) {
-                cart[index].qty--;
-                renderActiveCart();
-            } else {
-                cart.splice(index, 1);
-                renderActiveCart();
-            }
-        };
-
-        window.removeCartItem = function(index) {
-            const state = tabState[activeTab];
-            const cart = state.cart;
-            if (index >= 0 && index < cart.length) {
-                cart.splice(index, 1);
-                renderActiveCart();
-            }
-        };
-
-        window.addToCart = function(productId, productName, price, stock, skuLabel) {
-            const state = tabState[activeTab];
-            const cart = state.cart;
-            const existing = cart.find(i => i.id === productId);
-            const productRef = products.find(p => p.id === productId);
-            const availableStock = productRef ? (productRef.current_qty ?? 0) : stock;
-
-            if (existing) {
-                if (existing.qty + 1 > availableStock) {
-                    showToast(`⚠️ Only ${availableStock} left for "${productName}"`, 'error');
-                    return;
-                }
-                existing.qty++;
-            } else {
-                if (1 > availableStock) {
-                    showToast(`❌ "${productName}" out of stock`, 'error');
-                    return;
-                }
-                cart.push({ id: productId, name: productName, price: price, qty: 1, sku: skuLabel });
-            }
-            renderActiveCart();
-            showToast(`➕ Added ${productName}`, 'success');
-        };
-
-        // ---------- Render Cart ----------
-        function renderActiveCart() {
-            const state = tabState[activeTab];
-            const cart = state.cart;
-            const pointsRedeemed = state.pointsRedeemed || 0;
-            if (!cartContainer) return;
-            let subtotal = 0;
-            let cartHtml = '';
-            cart.forEach((item, idx) => {
-                const itemTotal = item.price * item.qty;
-                subtotal += itemTotal;
-                cartHtml += `
-                    <div class="flex items-center justify-between border-b pb-2 hover:bg-gray-50 px-1 rounded gap-2">
-                        <div class="flex-1 min-w-0">
-                            <div class="cart-item-name truncate">${escapeHtml(item.name)}</div>
-                            <div class="cart-item-price text-gray-500">₦${item.price.toLocaleString()}</div>
-                        </div>
-                        <div class="flex items-center gap-1 flex-shrink-0">
-                            <button onclick="decrementCartItem(${idx})" class="qty-btn">−</button>
-                            <input type="number" min="1" value="${item.qty}" class="qty-input" onchange="updateCartItemQty(${idx}, this.value)" onfocus="this.select()">
-                            <button onclick="incrementCartItem(${idx})" class="qty-btn">+</button>
-                        </div>
-                        <div class="font-semibold text-sm ml-1 w-16 text-right flex-shrink-0">₦${itemTotal.toLocaleString()}</div>
-                        <button onclick="removeCartItem(${idx})" class="text-red-500 hover:text-red-700 text-sm w-6 h-6 rounded-full hover:bg-red-50 flex items-center justify-center flex-shrink-0">
-                            <i class="fa-regular fa-trash-can"></i>
-                        </button>
-                    </div>
-                `;
-            });
-            let finalTotal = subtotal;
-            if (pointsRedeemed > 0) {
-                const discount = pointsRedeemed;
-                if (discount > finalTotal) {
-                    state.pointsRedeemed = Math.min(finalTotal, pointsRedeemed);
-                    finalTotal = 0;
-                } else {
-                    finalTotal = subtotal - discount;
-                }
-                cartHtml += `
-                    <div class="flex justify-between items-center text-green-700 border-t pt-2 mt-1">
-                        <div class="text-sm font-medium">🎁 Points Discount (${state.pointsRedeemed} pts)</div>
-                        <div class="font-semibold">-₦${discount.toLocaleString()}</div>
-                    </div>
-                `;
-            }
-            if (cart.length === 0) {
-                cartContainer.innerHTML = `<div class="text-center text-gray-400 py-6"><i class="fa-regular fa-receipt text-2xl"></i><p class="text-sm mt-1">Cart is empty</p></div>`;
-            } else {
-                cartContainer.innerHTML = cartHtml;
-            }
-            cartTotalSpan.innerText = `₦${finalTotal.toLocaleString()}`;
-        }
-
-        // ---------- Sync UI ----------
-        function syncUIWithActiveTab() {
-            const state = tabState[activeTab];
-            renderActiveCart();
-            paymentMethodSelect.value = state.paymentMethod;
-            customerNameInput.value = state.customerName;
-            customerPhoneInput.value = state.customerPhone;
-            customerEmailInput.value = state.customerEmail;
-            activeCustomerLabel.innerText = activeTab === 1 ? 'Customer A' : 'Customer B';
-            tabBadge.innerText = activeTab === 1 ? 'Tab 1 active' : 'Tab 2 active';
-            if (activeTab === 1) {
-                tab1Btn.classList.add('tab-active');
-                tab1Btn.classList.remove('tab-inactive');
-                tab2Btn.classList.add('tab-inactive');
-                tab2Btn.classList.remove('tab-active');
-            } else {
-                tab2Btn.classList.add('tab-active');
-                tab2Btn.classList.remove('tab-inactive');
-                tab1Btn.classList.add('tab-inactive');
-                tab1Btn.classList.remove('tab-active');
-            }
-            if (state.loyaltyUserId && state.pointsBalance > 0) {
-                customerInfoDiv.classList.remove('hidden');
-                customerNameDisplay.innerText = state.customerName || 'Customer';
-                customerPointsSpan.innerText = state.pointsBalance;
-                if (isOnline) {
-                    pointsRedeemSection.classList.remove('hidden');
-                    offlinePointsWarning.classList.add('hidden');
-                    redeemPointsInput.max = state.pointsBalance;
-                } else {
-                    pointsRedeemSection.classList.add('hidden');
-                    offlinePointsWarning.classList.remove('hidden');
-                }
-            } else {
-                customerInfoDiv.classList.add('hidden');
-                pointsRedeemSection.classList.add('hidden');
-                offlinePointsWarning.classList.add('hidden');
-            }
-        }
-
-        // ---------- Print Receipt (uses receiptData) ----------
-        function printReceipt(receiptData) {
-            const printArea = document.getElementById('receipt-print-area');
-            const orgName = localStorage.getItem('org_name') || 'Kevs Digital';
-            const now = new Date();
-            const dateStr = now.toLocaleString();
-
-            let itemsHtml = '';
-            receiptData.items.forEach(item => {
-                itemsHtml += `
-                    <div class="receipt-item">
-                        <span>${escapeHtml(item.name)} x ${item.quantity}</span>
-                        <span>₦${item.subtotal.toFixed(2)}</span>
-                    </div>
-                `;
-            });
-
-            const receiptHtml = `
-                <div class="receipt-header">${orgName}</div>
-                <div style="text-align:center;font-size:10px;">Receipt #${receiptData.receiptNumber}</div>
-                <div style="text-align:center;font-size:10px;">Cashier: ${escapeHtml(receiptData.cashierName || 'Cashier')}</div>
-                <div style="text-align:center;font-size:10px;">${dateStr}</div>
-                <div class="receipt-divider"></div>
-                ${itemsHtml}
-                <div class="receipt-divider"></div>
-                <div class="receipt-item"><span>Subtotal</span><span>₦${receiptData.subtotal.toFixed(2)}</span></div>
-                ${receiptData.discount > 0 ? `<div class="receipt-item"><span>Discount</span><span>-₦${receiptData.discount.toFixed(2)}</span></div>` : ''}
-                ${receiptData.tax > 0 ? `<div class="receipt-item"><span>Tax</span><span>₦${receiptData.tax.toFixed(2)}</span></div>` : ''}
-                <div class="receipt-item receipt-total"><span>TOTAL</span><span>₦${receiptData.grandTotal.toFixed(2)}</span></div>
-                <div class="receipt-divider"></div>
-                <div style="text-align:center;font-size:10px;">Payment: ${receiptData.payment.method}</div>
-                ${receiptData.customer.name ? `<div style="text-align:center;font-size:10px;">Customer: ${escapeHtml(receiptData.customer.name)}</div>` : ''}
-                ${receiptData.customer.pointsAfter !== undefined ? `<div style="text-align:center;font-size:10px;font-weight:bold;">Loyalty Points: ${receiptData.customer.pointsAfter}</div>` : ''}
-                <div class="receipt-divider"></div>
-                <div class="receipt-footer">Thank you for shopping with us!</div>
-            `;
-
-            printArea.innerHTML = receiptHtml;
-            printArea.style.display = 'block';
-            window.print();
-            setTimeout(() => {
-                printArea.style.display = 'none';
-                printArea.innerHTML = '';
-            }, 1000);
-        }
-
-        // ---------- Audit Event Emitter ----------
-        async function emitAuditEvent(eventType, payload, localCreatedAt = null) {
-            const event = {
-                event_type: eventType,
-                event_version: 1,
-                payload: payload,
-                local_created_at: localCreatedAt || new Date().toISOString(),
-                retryCount: 0
-            };
-
-            if (navigator.onLine) {
-                try {
-                    await apiCall('/api/audit/event', 'POST', event);
-                    return;
-                } catch (e) {
-                    // fall through to queue
-                }
-            }
-            // Offline or failed – store in queue
-            await db.auditQueue.add(event);
-        }
-
-        async function flushAuditQueue() {
-            if (!navigator.onLine) return;
-            const pending = await db.auditQueue.toArray();
-            if (pending.length === 0) return;
-            const events = pending.map(e => ({
-                event_type: e.event_type,
-                event_version: e.event_version,
-                payload: e.payload,
-                local_created_at: e.local_created_at
-            }));
-            try {
-                await apiCall('/api/audit/events', 'POST', { events });
-                await db.auditQueue.clear();
-            } catch (err) {
-                console.warn('Audit batch sync failed', err);
-            }
-        }
-
-        // ---------- Checkout with expanded receipt & audit + idempotency ----------
-        async function processCheckout() {
-            const state = tabState[activeTab];
-            const cart = state.cart;
-            if (cart.length === 0) {
-                showToast('🛒 Cart is empty. Add items first.', 'error');
-                return;
-            }
-            const paymentMethod = state.paymentMethod;
-            const customerName = state.customerName.trim() || null;
-            const customerPhone = state.customerPhone.trim() || null;
-            let customerEmail = state.customerEmail.trim() || null;
-            const pointsRedeemed = state.pointsRedeemed || 0;
-
-            if (paymentMethod !== 'cash' && !customerEmail) {
-                showToast('📧 Email is required for card/transfer payments', 'error');
-                return;
-            }
-
-            if (!isOnline && paymentMethod !== 'cash') {
-                showToast('⚠️ Offline: only cash payments are accepted', 'error');
-                return;
-            }
-
-            const itemsPayload = cart.map(i => ({ inventory_id: i.id, quantity: i.qty }));
-            const cashierId = localStorage.getItem('user_id') || 'unknown';
-            const cashierName = localStorage.getItem('user_profile_display') || 'Cashier';
-            const orgName = localStorage.getItem('org_name') || 'Kevs Digital';
-            const offlineRef = generateUUID();
-
-            // Build receipt data
-            const subtotal = cart.reduce((sum, i) => sum + i.price * i.qty, 0);
-            const discount = pointsRedeemed;
-            const tax = 0;
-            const grandTotal = Math.max(0, subtotal - discount + tax);
-
-            const itemDetails = cart.map(item => {
-                const product = products.find(p => p.id === item.id) || {};
-                return {
-                    productId: item.id,
-                    name: item.name,
-                    sku: item.sku || product.sku || '',
-                    quantity: item.qty,
-                    unitPrice: item.price,
-                    subtotal: item.price * item.qty,
-                    costPrice: product.cost_price_naira || 0,
-                    handlingCategory: product.handling_category || 'standard',
-                    weightKg: product.weight_kg || 0
-                };
-            });
-
-            const receiptData = {
-                receiptNumber: offlineRef,
-                customer: {
-                    name: customerName || '',
-                    phone: customerPhone || '',
-                    email: customerEmail || '',
-                    loyaltyId: state.loyaltyUserId || null,
-                    pointsBefore: state.pointsBalance || 0,
-                    pointsAfter: state.pointsBalance || 0,
-                    pointsRedeemed: pointsRedeemed
-                },
-                items: itemDetails,
-                subtotal: subtotal,
-                discount: discount,
-                tax: tax,
-                grandTotal: grandTotal,
-                payment: {
-                    method: paymentMethod,
-                    reference: null
-                },
-                cashierId: cashierId,
-                cashierName: cashierName,
-                location: orgName,
-                metadata: {
-                    softwareVersion: '1.0.0',
-                    deviceId: 'web-' + (navigator.userAgent || 'unknown'),
-                    printed: false
-                }
-            };
-
-            const order = {
-                offlineRef,
-                cashierId,
-                createdAt: new Date().toISOString(),
-                status: 'pending',
-                syncedAt: null,
-                receiptData: receiptData
-            };
-
-            checkoutBtn.disabled = true;
-            checkoutBtn.innerText = 'Processing...';
-
-            try {
-                if (!isOnline) {
-                    // Offline: save order locally
-                    await db.orders.add(order);
-                    await db.syncQueue.add({ orderId: offlineRef, attempts: 0, lastTry: null });
-                    // Reduce local stock
-                    for (const item of cart) {
-                        const product = await db.products.get(item.id);
-                        if (product) {
-                            await db.products.update(item.id, { current_qty: product.current_qty - item.qty });
-                        }
-                    }
-                    state.cart = [];
-                    state.pointsRedeemed = 0;
-                    renderActiveCart();
-                    showToast(`✅ Order saved offline (Ref: ${offlineRef}). Will sync when online.`, 'success');
-                    receiptData.receiptNumber = offlineRef;
-                    receiptData.customer.pointsAfter = state.pointsBalance || 0;
-                    printReceipt(receiptData);
-                    // Audit event
-                    await emitAuditEvent('sale.created', {
-                        sale_id: offlineRef,
-                        receipt_number: offlineRef,
-                        total: order.receiptData.grandTotal,
-                        payment_method: paymentMethod,
-                        customer_id: state.loyaltyUserId || null,
-                        items_count: cart.length,
-                        offline: true
-                    });
-                    return;
-                }
-
-                // Online: call API with idempotency key
-                const result = await apiCall('/pos/terminal/checkout', 'POST', {
-                    items: itemsPayload,
-                    payment_method: paymentMethod,
-                    customer_name: customerName,
-                    customer_phone: customerPhone,
-                    customer_email: customerEmail,
-                    offline_reference: offlineRef,   // 🔑 idempotency key uncommented
-                    receipt_data: receiptData
-                });
-                // Save synced order
-                order.status = 'synced';
-                order.syncedAt = new Date().toISOString();
-                order.receiptData.receiptNumber = result.receipt_number || offlineRef;
-                order.receiptData.payment.reference = result.payment_reference || null;
-                // Update loyalty points if available
-                if (state.loyaltyUserId) {
-                    try {
-                        const balanceRes = await apiCall('/loyalty/balance');
-                        const finalPoints = balanceRes.points || 0;
-                        state.pointsBalance = finalPoints;
-                        await db.customers.update(state.loyaltyUserId, { loyalty_points: finalPoints });
-                        customerPointsSpan.innerText = finalPoints;
-                        order.receiptData.customer.pointsAfter = finalPoints;
-                    } catch (e) {
-                        order.receiptData.customer.pointsAfter = state.pointsBalance || 0;
-                    }
-                } else {
-                    order.receiptData.customer.pointsAfter = 0;
-                }
-                await db.orders.add(order);
-                state.cart = [];
-                state.pointsRedeemed = 0;
-                renderActiveCart();
-                showToast(`✅ Sale complete! Receipt: ${result.receipt_number}`, 'success');
-                printReceipt(order.receiptData);
-                // Audit event
-                await emitAuditEvent('sale.created', {
-                    sale_id: result.sale_id || offlineRef,
-                    receipt_number: result.receipt_number || offlineRef,
-                    total: order.receiptData.grandTotal,
-                    payment_method: paymentMethod,
-                    customer_id: state.loyaltyUserId || null,
-                    items_count: cart.length,
-                    online: true
-                });
-
-            } catch (err) {
-                if (!isOnline || err.message.includes('offline') || err.message.includes('network')) {
-                    // Fallback to offline
-                    await db.orders.add(order);
-                    await db.syncQueue.add({ orderId: offlineRef, attempts: 0, lastTry: null });
-                    showToast(`Order queued for later sync (Ref: ${offlineRef})`, 'warning');
-                    state.cart = [];
-                    state.pointsRedeemed = 0;
-                    renderActiveCart();
-                    receiptData.receiptNumber = offlineRef;
-                    receiptData.customer.pointsAfter = state.pointsBalance || 0;
-                    printReceipt(receiptData);
-                    // Audit event
-                    await emitAuditEvent('sale.created', {
-                        sale_id: offlineRef,
-                        receipt_number: offlineRef,
-                        total: order.receiptData.grandTotal,
-                        payment_method: paymentMethod,
-                        customer_id: state.loyaltyUserId || null,
-                        items_count: cart.length,
-                        offline: true,
-                        fallback: true
-                    });
-                } else {
-                    showToast(`❌ Checkout failed: ${err.message}`, 'error');
-                }
-            } finally {
-                checkoutBtn.disabled = false;
-                checkoutBtn.innerText = '✅ Complete Sale';
-            }
-        }
-
-        // ---------- Sync Manager (sends full receiptData + idempotency) ----------
-        async function syncPendingOrders() {
-            if (!isOnline || syncInProgress) return;
-            syncInProgress = true;
-            syncNowBtn.disabled = true;
-            syncNowBtn.innerHTML = '<i class="fa-solid fa-spinner fa-pulse"></i> Syncing...';
-            try {
-                const pending = await db.syncQueue.toArray();
-                for (const entry of pending) {
-                    const order = await db.orders.get(entry.orderId);
-                    if (!order || order.status === 'synced') {
-                        await db.syncQueue.delete(entry.id);
-                        continue;
-                    }
-                    try {
-                        const payload = {
-                            items: order.receiptData.items.map(item => ({
-                                inventory_id: item.productId,
-                                quantity: item.quantity
-                            })),
-                            payment_method: order.receiptData.payment.method,
-                            customer_name: order.receiptData.customer.name,
-                            customer_phone: order.receiptData.customer.phone,
-                            customer_email: order.receiptData.customer.email,
-                            receipt_data: order.receiptData,
-                            offline_reference: order.offlineRef   // 🔑 idempotency key uncommented
-                        };
-                        const result = await apiCall('/pos/terminal/checkout', 'POST', payload);
-                        await db.orders.update(order.offlineRef, { status: 'synced', syncedAt: new Date().toISOString() });
-                        await db.syncQueue.delete(entry.id);
-                        showToast(`Order ${order.offlineRef} synced`, 'success');
-                    } catch (err) {
-                        // If duplicate (409 or unique violation), mark as duplicate and stop retrying
-                        if (err.message.includes('duplicate') || err.message.includes('already exists') || err.status === 409) {
-                            await db.orders.update(order.offlineRef, { status: 'duplicate' });
-                            await db.syncQueue.delete(entry.id);
-                            showToast(`Order ${order.offlineRef} already exists (skipped)`, 'warning');
-                        } else {
-                            await db.syncQueue.update(entry.id, { attempts: entry.attempts + 1, lastTry: new Date().toISOString() });
-                            if (entry.attempts >= 5) {
-                                showToast(`Order ${order.offlineRef} failed after 5 attempts`, 'error');
-                            }
-                        }
-                    }
-                }
-                localStorage.setItem('last_sync_time', new Date().toLocaleString());
-                // Audit sync completed
-                await emitAuditEvent('sync.completed', {
-                    synced_count: pending.length,
-                    timestamp: new Date().toISOString()
-                });
-                // Flush any queued audit events
-                await flushAuditQueue();
-                if (dashboardModal.classList.contains('active')) updateDashboard();
-            } catch (e) {
-                showToast('Sync error: ' + e.message, 'error');
-            } finally {
-                syncInProgress = false;
-                syncNowBtn.disabled = false;
-                syncNowBtn.innerHTML = '<i class="fa-solid fa-rotate"></i> Sync';
-            }
-        }
-
-        // ---------- Dashboard ----------
-        async function updateDashboard() {
-            const pending = await db.syncQueue.toArray();
-            const allOrders = await db.orders.toArray();
-            const now = new Date();
-            const today = now.toDateString();
-
-            const syncedToday = allOrders.filter(o => o.status === 'synced' && new Date(o.syncedAt || o.createdAt).toDateString() === today);
-            const failed = allOrders.filter(o => o.status === 'duplicate');
-            const lastSync = localStorage.getItem('last_sync_time') || 'Never';
-
-            dashboardContent.innerHTML = `
-                <div class="dashboard-stat">
-                    <span class="label"><i class="fa-regular fa-clock text-yellow-500"></i> Pending Orders</span>
-                    <span class="value pending">${pending.length}</span>
-                </div>
-                <div class="dashboard-stat">
-                    <span class="label"><i class="fa-regular fa-circle-check text-green-500"></i> Synced Today</span>
-                    <span class="value synced">${syncedToday.length}</span>
-                </div>
-                <div class="dashboard-stat">
-                    <span class="label"><i class="fa-regular fa-circle-xmark text-red-500"></i> Failed Orders</span>
-                    <span class="value failed">${failed.length}</span>
-                </div>
-                <div class="dashboard-stat">
-                    <span class="label"><i class="fa-regular fa-clock"></i> Last Sync</span>
-                    <span class="value">${lastSync}</span>
-                </div>
-                <div class="dashboard-stat">
-                    <span class="label"><i class="fa-regular fa-hard-drive"></i> Total Orders (local)</span>
-                    <span class="value">${allOrders.length}</span>
-                </div>
-                <div class="mt-2 text-xs text-gray-500">
-                    ${isOnline ? '🟢 Online' : '🔴 Offline'} · ${syncInProgress ? '⏳ Syncing...' : '✅ Idle'}
-                </div>
-            `;
-        }
-
-        // ---------- Cashier History (with data-attribute fix for sync button) ----------
-        async function renderHistory() {
-            const cashierId = localStorage.getItem('user_id') || 'unknown';
-            const orders = await db.orders.where('cashierId').equals(cashierId).toArray();
-            if (orders.length === 0) {
-                historyList.innerHTML = '<p class="text-gray-500">No orders found.</p>';
-                return;
-            }
-            historyList.innerHTML = orders.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(o => `
-                <div class="border-b py-2 flex justify-between items-center">
-                    <div>
-                        <div><strong>${escapeHtml(o.offlineRef)}</strong> - ${new Date(o.createdAt).toLocaleString()}</div>
-                        <div class="text-sm">Status: <span class="${o.status === 'synced' ? 'text-green-600' : 'text-yellow-600'}">${o.status}</span> | Total: ₦${o.receiptData?.grandTotal || 0}</div>
-                        <div class="text-xs text-gray-500">Items: ${o.receiptData?.items?.length || 0}</div>
-                    </div>
-                    ${o.status === 'pending' ? `<button data-order-ref="${escapeAttr(o.offlineRef)}" class="sync-order-btn text-blue-500 text-sm"><i class="fa-solid fa-rotate"></i> Sync</button>` : ''}
-                </div>
-            `).join('');
-        }
-
-        // Delegated event listener for sync buttons (data-attribute fix)
-        document.addEventListener('click', function(e) {
-            const btn = e.target.closest('.sync-order-btn');
-            if (btn) {
-                const ref = btn.dataset.orderRef;
-                if (ref) {
-                    syncSingleOrder(ref);
-                }
-            }
-        });
-
-        window.syncSingleOrder = async function(offlineRef) {
-            if (!isOnline) { showToast('Go online to sync.', 'error'); return; }
-            const order = await db.orders.get(offlineRef);
-            if (!order) return;
-            try {
-                const payload = {
-                    items: order.receiptData.items.map(item => ({
-                        inventory_id: item.productId,
-                        quantity: item.quantity
-                    })),
-                    payment_method: order.receiptData.payment.method,
-                    customer_name: order.receiptData.customer.name,
-                    customer_phone: order.receiptData.customer.phone,
-                    customer_email: order.receiptData.customer.email,
-                    receipt_data: order.receiptData,
-                    offline_reference: offlineRef   // idempotency key
-                };
-                const result = await apiCall('/pos/terminal/checkout', 'POST', payload);
-                await db.orders.update(offlineRef, { status: 'synced', syncedAt: new Date().toISOString() });
-                await db.syncQueue.delete(offlineRef);
-                showToast(`Order ${offlineRef} synced`, 'success');
-                renderHistory();
-            } catch (err) {
-                if (err.message.includes('duplicate') || err.message.includes('already exists') || err.status === 409) {
-                    await db.orders.update(offlineRef, { status: 'duplicate' });
-                    await db.syncQueue.delete(offlineRef);
-                    showToast(`Order ${offlineRef} already exists (skipped)`, 'warning');
-                    renderHistory();
-                } else {
-                    showToast('Sync failed: ' + err.message, 'error');
-                }
-            }
-        };
-
-        // ---------- Points Redemption with audit ----------
-        async function applyPoints() {
-            if (!isOnline) {
-                showToast('⚠️ Points redemption requires internet.', 'error');
-                return;
-            }
-            const state = tabState[activeTab];
-            if (!state.loyaltyUserId) {
-                showToast('Please search and select a customer first', 'error');
-                return;
-            }
-            let pointsToRedeem = parseInt(redeemPointsInput.value, 10);
-            if (isNaN(pointsToRedeem) || pointsToRedeem <= 0) {
-                showToast('Enter a valid number of points', 'error');
-                return;
-            }
-            if (pointsToRedeem > state.pointsBalance) {
-                showToast(`You only have ${state.pointsBalance} points`, 'error');
-                return;
-            }
-            try {
-                await apiCall('/loyalty/redeem', 'POST', { points: pointsToRedeem });
-                state.pointsRedeemed = (state.pointsRedeemed || 0) + pointsToRedeem;
-                state.pointsBalance -= pointsToRedeem;
-                redeemPointsInput.value = '';
-                renderActiveCart();
-                showToast(`✅ ${pointsToRedeem} points redeemed – ₦${pointsToRedeem} off this order!`, 'success');
-                syncUIWithActiveTab();
-                const cust = await db.customers.get(state.loyaltyUserId);
-                if (cust) {
-                    await db.customers.update(state.loyaltyUserId, { loyalty_points: state.pointsBalance });
-                }
-                // Audit event
-                await emitAuditEvent('points.redeemed', {
-                    user_id: state.loyaltyUserId,
-                    points: pointsToRedeem,
-                    balance_after: state.pointsBalance
-                });
-            } catch (err) {
-                showToast(`Redemption failed: ${err.message}`, 'error');
-            }
-        }
-
-        // ---------- Tab navigation ----------
-        function setActiveTab(tabId) {
-            if (tabId === activeTab) return;
-            tabState[activeTab].paymentMethod = paymentMethodSelect.value;
-            tabState[activeTab].customerName = customerNameInput.value;
-            tabState[activeTab].customerPhone = customerPhoneInput.value;
-            tabState[activeTab].customerEmail = customerEmailInput.value;
-            activeTab = tabId;
-            syncUIWithActiveTab();
-            customerSearchInput.value = '';
-            suggestionsDiv.classList.add('hidden');
-        }
-
-        // ---------- Login / Demo with audit ----------
-        async function demoLogin() {
-            const btn = document.getElementById('demo-login-btn');
-            btn.disabled = true;
-            try {
-                const res = await fetch(`${BACKEND}/auth/login`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' })
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.detail);
-                token = data.access_token;
-                localStorage.setItem('access_token', token);
-                localStorage.setItem('refresh_token', data.refresh_token);
-                localStorage.removeItem('selected_org_id');
-                const me = await apiCall('/auth/me');
-                localStorage.setItem('user_id', me.user_id);
-                localStorage.setItem('user_role', me.role || 'customer');
-                const orgRes = await fetch(`${BACKEND}/auth/org`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (orgRes.ok) {
-                    const orgData = await orgRes.json();
-                    localStorage.setItem('org_name', orgData.org_name || 'Unknown Org');
-                }
-                await loadCustomers();
-                hideLoginModal();
-                tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
-                tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
-                activeTab = 1;
-                syncUIWithActiveTab();
-                products = [];
-                productContainer.innerHTML = '';
-                emptyMsgDiv.classList.add('hidden');
-                showToast('Demo login — Offline‑ready POS', 'success');
-                const navOrg = document.getElementById('nav-org-name');
-                if (navOrg) navOrg.innerText = localStorage.getItem('org_name') || 'Unknown Org';
-                // Audit event
-                await emitAuditEvent('user.login', {
-                    email: 'demo@kevsdigital.com',
-                    method: 'demo'
-                });
-            } catch (err) { showToast(err.message, 'error'); } finally { btn.disabled = false; }
-        }
-
-        async function handleLogin() {
-            const email = document.getElementById('login-email').value.trim();
-            const pwd = document.getElementById('login-password').value.trim();
-            if (!email || !pwd) { showToast('Enter email and password', 'error'); return; }
-            try {
-                const res = await fetch(`${BACKEND}/auth/login`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, password: pwd })
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.detail);
-                token = data.access_token;
-                localStorage.setItem('access_token', token);
-                localStorage.setItem('refresh_token', data.refresh_token);
-                localStorage.removeItem('selected_org_id');
-                const me = await apiCall('/auth/me');
-                localStorage.setItem('user_id', me.user_id);
-                localStorage.setItem('user_role', me.role || 'customer');
-                const orgRes = await fetch(`${BACKEND}/auth/org`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (orgRes.ok) {
-                    const orgData = await orgRes.json();
-                    localStorage.setItem('org_name', orgData.org_name || 'Unknown Org');
-                }
-                await loadCustomers();
-                hideLoginModal();
-                tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
-                tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
-                activeTab = 1;
-                syncUIWithActiveTab();
-                products = [];
-                productContainer.innerHTML = '';
-                emptyMsgDiv.classList.add('hidden');
-                showToast('Login successful', 'success');
-                const navOrg = document.getElementById('nav-org-name');
-                if (navOrg) navOrg.innerText = localStorage.getItem('org_name') || 'Unknown Org';
-                // Audit event
-                await emitAuditEvent('user.login', {
-                    email: email,
-                    method: 'password'
-                });
-            } catch (err) { showToast(err.message, 'error'); }
-        }
-
-        // ---------- Init ----------
-        function initTabs() {
-            tab1Btn.onclick = () => setActiveTab(1);
-            tab2Btn.onclick = () => setActiveTab(2);
-        }
-
-        function initCustomerSearch() {
-            customerSearchInput.addEventListener('input', renderSuggestions);
-            document.addEventListener('click', (e) => {
-                if (!customerSearchInput.contains(e.target) && !suggestionsDiv.contains(e.target)) {
-                    suggestionsDiv.classList.add('hidden');
-                }
-            });
-        }
-
-        // ---------- Event listeners ----------
-        checkoutBtn.addEventListener('click', processCheckout);
-        applyPointsBtn.addEventListener('click', applyPoints);
-        document.getElementById('modal-login-btn')?.addEventListener('click', handleLogin);
-        document.getElementById('demo-login-btn')?.addEventListener('click', demoLogin);
-        document.getElementById('close-modal-btn')?.addEventListener('click', hideLoginModal);
-        syncNowBtn.addEventListener('click', syncPendingOrders);
-        historyBtn.addEventListener('click', async () => {
-            historyModal.classList.add('active');
-            await renderHistory();
-        });
-        closeHistoryBtn.addEventListener('click', () => historyModal.classList.remove('active'));
-        historyModal.addEventListener('click', (e) => { if (e.target === historyModal) historyModal.classList.remove('active'); });
-
-        dashboardBtn.addEventListener('click', async () => {
-            dashboardModal.classList.add('active');
-            await updateDashboard();
-        });
-        closeDashboardBtn.addEventListener('click', () => dashboardModal.classList.remove('active'));
-        dashboardModal.addEventListener('click', (e) => {
-            if (e.target === dashboardModal) dashboardModal.classList.remove('active');
-        });
-        refreshDashboardBtn.addEventListener('click', updateDashboard);
-
-        paymentMethodSelect.onchange = () => { tabState[activeTab].paymentMethod = paymentMethodSelect.value; };
-        customerNameInput.addEventListener('input', () => { tabState[activeTab].customerName = customerNameInput.value; });
-        customerPhoneInput.addEventListener('input', () => { tabState[activeTab].customerPhone = customerPhoneInput.value; });
-        customerEmailInput.addEventListener('input', () => { tabState[activeTab].customerEmail = customerEmailInput.value; });
-
-        // ---------- Start ----------
-        (async () => {
-            updateConnectionStatus();
-            initTabs();
-            initCustomerSearch();
-            if (token) {
-                try {
-                    await loadCustomers();
-                    if (!tabState[1].cart.length && !tabState[2].cart.length) {
-                        tabState[1] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
-                        tabState[2] = { cart: [], paymentMethod: 'cash', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
-                    }
-                    activeTab = 1;
-                    syncUIWithActiveTab();
-                    productContainer.innerHTML = '';
-                    emptyMsgDiv.classList.add('hidden');
-                } catch (e) { token = null; showLoginModal(); }
-            } else { showLoginModal(); }
-
-            if (isOnline) {
-                await syncPendingOrders();
-                await flushAuditQueue();
-            }
-        })();
-
-        console.log('✅ Offline‑Ready POS with idempotency key and safe sync buttons loaded');
-    </script>
+    <!-- Secure external script -->
+    <script src="kdstore.js" defer></script>
 </body>
 </html>
