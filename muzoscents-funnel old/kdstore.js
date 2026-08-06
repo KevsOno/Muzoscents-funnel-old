@@ -24,6 +24,9 @@ let lastCalculatedCartState = '';
 let modalQuantity = 1;
 let productQuantities = {};
 
+// 🆕 Flag to track if delivery estimation has been successfully performed
+let isDeliveryEstimated = false;
+
 // ========== PAGINATION ==========
 let currentPage = 1;
 const PAGE_SIZE = 101;
@@ -423,10 +426,12 @@ function updateCartUI() {
     }).join('');
 }
 
+// 🆕 Modified: Now sets isDeliveryEstimated = true on success
 async function recalcDeliveryFee(showFeedback = true) {
     if (deliveryOption !== 'delivery' || !deliveryAddress || cart.length === 0) {
         if (cart.length === 0) { deliveryFee = 0;
             handlingFee = 0;
+            isDeliveryEstimated = false; // reset if cart empty
             updateCartUI(); }
         return;
     }
@@ -442,6 +447,8 @@ async function recalcDeliveryFee(showFeedback = true) {
         });
         deliveryFee = res.delivery_fee_naira || 0;
         handlingFee = res.handling_fee_naira || 0;
+        // 🆕 Mark that estimation was successful
+        isDeliveryEstimated = true;
         const feeDiv = document.getElementById('delivery-fee-estimate');
         if (feeDiv && showFeedback) feeDiv.innerHTML = `🚚 Delivery fee: ₦${deliveryFee.toLocaleString()} | Handling: ₦${handlingFee.toLocaleString()}`;
         updateCartUI();
@@ -449,6 +456,8 @@ async function recalcDeliveryFee(showFeedback = true) {
     } catch (e) {
         if (showFeedback) showToast(e.message, 'error');
         else console.warn("Delivery recalc failed:", e);
+        // 🆕 Reset estimation flag on failure
+        isDeliveryEstimated = false;
     } finally {
         isRecalcInProgress = false;
         if (JSON.stringify(cart) !== currentCartSnapshot && cart.length > 0) {
@@ -505,24 +514,42 @@ function showConfirmation(orderData) {
     showView('confirmation');
 }
 
+// 🆕 Modified checkout: checks isDeliveryEstimated before showing spinner
 async function checkout() {
     const btn = document.getElementById('checkout-btn');
+    
+    // --- Early validations (no spinner) ---
+    if (!cart.length) {
+        showToast("Cart is empty", 'error');
+        return;
+    }
+    if (!token) {
+        showAuthModal();
+        return;
+    }
+
+    // 🆕 If delivery is selected, ensure the address has been estimated
+    if (deliveryOption === 'delivery') {
+        if (!deliveryAddress) {
+            showToast("Please enter your delivery address first.", 'error');
+            return;
+        }
+        if (!isDeliveryEstimated) {
+            showToast("Please click 'Save & Estimate Delivery' to calculate your delivery fee.", 'error');
+            return;
+        }
+        // Optionally, if fee is zero but estimation was done, we allow it (free delivery)
+    }
+
+    // --- All checks passed: show spinner and proceed ---
     setButtonLoading(btn, true);
     try {
-        if (!cart.length) { showToast("Cart empty", 'error'); return; }
-        if (!token) { showAuthModal(); return; }
-
         if (token && !userProfile?.email) {
             try {
                 await loadUser();
             } catch (e) {
                 console.warn("Profile refresh failed", e);
             }
-        }
-
-        if (deliveryOption === 'delivery' && (!deliveryAddress || deliveryFee === 0)) {
-            showToast("Save delivery address first", 'error');
-            return;
         }
 
         const payMethod = document.getElementById('payment-method').value;
@@ -748,6 +775,7 @@ function initChat() {
 // ============================================================
 //  DELIVERY OPTIONS / GPS
 // ============================================================
+// 🆕 Modified to reset isDeliveryEstimated when switching options
 function setDeliveryOpt(opt) {
     deliveryOption = opt;
     const pickup = document.getElementById('pickup-option'),
@@ -759,12 +787,15 @@ function setDeliveryOpt(opt) {
         document.getElementById('delivery-address-section').classList.add('hidden');
         deliveryFee = 0;
         deliveryAddress = '';
+        isDeliveryEstimated = false; // reset
         updateCartUI();
     } else {
         deliv.classList.add('bg-orange-500', 'text-white');
         pickup.classList.remove('bg-orange-500', 'text-white');
         pickup.classList.add('bg-gray-200');
         document.getElementById('delivery-address-section').classList.remove('hidden');
+        // Reset estimation flag when switching to delivery (address may change)
+        isDeliveryEstimated = false;
         if (deliveryAddress) recalcDeliveryFee(true);
         updateCartUI();
     }
@@ -857,6 +888,7 @@ function initHeroSlider() {
 // ============================================================
 //  PAYMENT RETURN HANDLER
 // ============================================================
+// 🆕 Improved to always show confirmation and clear flags
 function handlePaymentReturn() {
     const urlParams = new URLSearchParams(window.location.search);
     const reference = urlParams.get('reference') || urlParams.get('trxref');
@@ -870,6 +902,7 @@ function handlePaymentReturn() {
             if (reference && orderData.receiptNumber === 'PENDING') {
                 orderData.receiptNumber = 'PAYSTACK-' + reference.slice(0, 10);
             }
+            // Clear cart & reset delivery state
             cart = [];
             saveCart();
             setDeliveryOpt('pickup');
@@ -878,6 +911,8 @@ function handlePaymentReturn() {
             showToast("✅ Payment successful! Your order is confirmed.", 'success');
             localStorage.removeItem('pending_order');
             localStorage.removeItem('pending_payment');
+            // Reset estimation flag
+            isDeliveryEstimated = false;
             window.history.replaceState({}, '', window.location.pathname);
         } catch (e) {
             console.warn("Failed to parse pending order", e);
