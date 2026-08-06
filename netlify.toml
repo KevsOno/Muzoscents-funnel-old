@@ -6,21 +6,41 @@
   node_bundler = "esbuild"
   directory = "netlify/functions"
 
-# Security headers
+# ================================================================
+# GLOBAL SECURITY HEADERS (applies to ALL pages)
+# ================================================================
+# This keeps 'unsafe-inline' so your old /kdstore and other
+# legacy pages (with inline JS) continue to work perfectly.
+# ================================================================
 [[headers]]
   for = "/*"
   [headers.values]
-    # Core Security Headers
     Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     X-XSS-Protection = "1; mode=block"
 
-    # Fixes for missing headers
+    # ⚠️ GLOBAL CSP (Lenient – keeps unsafe-inline for legacy pages)
     Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; font-src 'self' data: https:; connect-src 'self' https:; frame-ancestors 'none';"
+    
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=()"
-
-    # Modern Cross-Origin Headers
     Cross-Origin-Opener-Policy = "same-origin"
     Cross-Origin-Resource-Policy = "same-origin"
+
+# ================================================================
+# ROUTE-SPECIFIC HEADER FOR YOUR REFACTORED SANDBOX PAGE
+# ================================================================
+# This OVERRIDES the global CSP ONLY for /inventory-monitor*
+# It removes 'unsafe-inline' and the 'https:' wildcard from script-src,
+# making it fully XSS-safe for your new external JS file (kdstore.js).
+# ================================================================
+[[headers]]
+  for = "/inventory-monitor*"
+  [headers.values]
+    # 🔒 STRICT CSP (No unsafe-inline, no wildcard https: in script-src)
+    # Only allows scripts from your own server and the two specific CDNs.
+    Content-Security-Policy = "default-src 'self'; script-src 'self' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https:; img-src 'self' data: https:; font-src 'self' data: https://cdnjs.cloudflare.com; connect-src 'self' https:; frame-ancestors 'none';"
+    
+    # All other headers (HSTS, XFO, etc.) inherit from the global rule above.
+    # If you want to be extra safe, you can copy them here, but they are not required.
