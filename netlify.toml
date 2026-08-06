@@ -9,8 +9,8 @@
 # ================================================================
 # GLOBAL SECURITY HEADERS (applies to ALL pages)
 # ================================================================
-# These keep your legacy pages (like /kdstore) working with their
-# inline scripts. They also set a baseline for all security headers.
+# These set a baseline for all security headers. They keep your
+# legacy pages (with inline scripts) working.
 # ================================================================
 [[headers]]
   for = "/*"
@@ -23,7 +23,7 @@
     # ⚠️ GLOBAL CSP (Lenient – keeps unsafe-inline for legacy pages)
     Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; font-src 'self' data: https:; connect-src 'self' https:; frame-ancestors 'none';"
     
-    # Global Permissions-Policy (blocks GPS on all legacy pages)
+    # Global Permissions-Policy (blocks GPS on all legacy pages by default)
     Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=()"
     
     Referrer-Policy = "strict-origin-when-cross-origin"
@@ -31,13 +31,42 @@
     Cross-Origin-Resource-Policy = "same-origin"
 
 # ================================================================
-# ROUTE-SPECIFIC HEADER FOR YOUR REFACTORED SANDBOX PAGE
+# ROUTE-SPECIFIC HEADER FOR YOUR ACTUAL STORE
 # ================================================================
-# This overrides the global CSP and Permissions-Policy ONLY for
-# the /inventory-monitor* path.
+# This applies to https://mzfunnels.netlify.app/kdstore and any sub-paths.
 #
 # Changes from global:
-#   - CSP: Removes 'unsafe-inline' and 'https:' wildcard from script-src.
+#   - Permissions-Policy: Allows geolocation=(self) so your GPS button works.
+#   - CSP: Keeps the lenient policy (with 'unsafe-inline') because your store
+#     still has inline JavaScript and hasn't been refactored yet.
+#   - connect-src: Explicitly allows nominatim.openstreetmap.org for reverse geocoding.
+# ================================================================
+[[headers]]
+  for = "/kdstore*"
+  [headers.values]
+    # 📍 PERMISSIONS-POLICY – Enable GPS for your store
+    Permissions-Policy = "geolocation=(self), camera=(), microphone=(), payment=()"
+    
+    # ⚠️ CSP – Lenient (keeps 'unsafe-inline' so your store works)
+    # You can make this strict later once you refactor /kdstore to use external JS.
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; font-src 'self' data: https:; connect-src 'self' https://nominatim.openstreetmap.org https:; frame-ancestors 'none';"
+    
+    # All other security headers are repeated for completeness
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    X-XSS-Protection = "1; mode=block"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Cross-Origin-Opener-Policy = "same-origin"
+    Cross-Origin-Resource-Policy = "same-origin"
+
+# ================================================================
+# ROUTE-SPECIFIC HEADER FOR YOUR REFACTORED SANDBOX PAGE
+# ================================================================
+# This applies to https://mzfunnels.netlify.app/inventory-monitor and any sub-paths.
+#
+# Changes from global:
+#   - CSP: Removes 'unsafe-inline' and 'https:' wildcard from script-src (STRICT).
 #   - Permissions-Policy: Allows geolocation=(self) so your GPS button works.
 #   - connect-src: Explicitly allows nominatim.openstreetmap.org for reverse geocoding.
 # ================================================================
@@ -47,11 +76,10 @@
     # 🔒 STRICT CSP – Fully secure, no unsafe-inline
     Content-Security-Policy = "default-src 'self'; script-src 'self' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https:; img-src 'self' data: https:; font-src 'self' data: https://cdnjs.cloudflare.com; connect-src 'self' https://nominatim.openstreetmap.org https:; frame-ancestors 'none';"
     
-    # 📍 PERMISSIONS-POLICY – Enable GPS for this page only
+    # 📍 PERMISSIONS-POLICY – Enable GPS for your sandbox
     Permissions-Policy = "geolocation=(self), camera=(), microphone=(), payment=()"
     
     # All other security headers are repeated for completeness
-    # (Netlify will merge these with the global ones, but we explicitly set them here)
     Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
