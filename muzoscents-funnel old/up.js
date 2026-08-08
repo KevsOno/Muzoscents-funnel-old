@@ -1495,3 +1495,14 @@ document.addEventListener('DOMContentLoaded', async function() {
             .catch(err => console.warn('❌ SW registration failed', err));
     }
 });
+
+document.addEventListener('DOMContentLoaded', function(){
+  document.querySelectorAll('.hero-shop-btn, #hero-shop-btn').forEach(function(btn){
+    btn.addEventListener('click', function(e){
+      e.preventDefault();
+      const target=document.getElementById('products-grid') || document.getElementById('shop-view');
+      if(target) target.scrollIntoView({behavior:'smooth', block:'start'});
+      setTimeout(function(){ const input=document.getElementById('product-search'); if(input && window.innerWidth < 768) input.focus({preventScroll:true}); }, 500);
+    });
+  });
+});
