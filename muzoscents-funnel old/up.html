@@ -1,0 +1,1483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>Penafort Supermarket – Storefront</title>
+    <link rel="manifest" href="/manifest.json">
+    <script src="https://cdn.tailwindcss.com">
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        /* ── all existing styles (unchanged) ── */
+        body {
+            background: linear-gradient(135deg, #fff9f0 0%, #fff5e6 100%);
+            font-family: 'Inter', system-ui;
+        }
+        .product-card {
+            transition: all 0.25s ease;
+            border: 1px solid #d1fae5; /* light green */
+            cursor: pointer;
+        }
+        .product-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 25px -12px rgba(0, 0, 0, 0.15);
+            border-color: #15803d; /* dark green */
+        }
+        .cart-sidebar {
+            transition: transform 0.3s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+        }
+        .floating-chat {
+            box-shadow: 0 14px 32px rgba(5, 70, 35, 0.28);
+            transition: transform 0.2s, box-shadow 0.2s;
+            border: 3px solid rgba(255,255,255,0.9);
+        }
+        .floating-chat:hover {
+            transform: translateY(-3px) scale(1.03);
+            box-shadow: 0 18px 38px rgba(5, 70, 35, 0.34);
+        }
+        .chat-launcher-label {
+            position: fixed;
+            right: 88px;
+            bottom: 23px;
+            z-index: 40;
+            background: #fff;
+            color: #064e2d;
+            border: 1px solid #d1fae5;
+            border-radius: 9999px;
+            padding: 8px 13px;
+            font-size: 12px;
+            font-weight: 700;
+            box-shadow: 0 8px 22px rgba(0,0,0,.10);
+        }
+        .chat-modal {
+            display: none;
+            position: fixed;
+            bottom: 88px;
+            right: 24px;
+            width: 410px;
+            max-width: calc(100vw - 32px);
+            height: min(650px, calc(100vh - 120px));
+            background: white;
+            border-radius: 24px;
+            box-shadow: 0 28px 70px rgba(0,0,0,.22);
+            z-index: 1000;
+            flex-direction: column;
+            overflow: hidden;
+            border: 1px solid #d1fae5;
+        }
+        .chat-modal.active { display: flex; animation: chatIn .18s ease-out; }
+        @keyframes chatIn { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        .chat-header {
+            background: linear-gradient(135deg, #064e2d 0%, #15803d 100%);
+            color: white;
+            padding: 15px 16px;
+        }
+        .chat-avatar {
+            width: 40px; height: 40px; border-radius: 13px;
+            background: rgba(255,255,255,.14);
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+        }
+        .chat-online-dot {
+            width: 8px; height: 8px; border-radius: 50%; background: #a3e635;
+            display: inline-block; margin-right: 5px; box-shadow: 0 0 0 3px rgba(163,230,53,.15);
+        }
+        .chat-messages {
+            flex: 1; min-height: 0; height: auto; overflow-y: auto;
+            background: #f8faf9; padding: 16px;
+            scroll-behavior: smooth;
+        }
+        .chat-msg { display: flex; gap: 8px; margin-bottom: 12px; align-items: flex-end; }
+        .chat-msg.user { justify-content: flex-end; }
+        .chat-msg-avatar { width: 27px; height: 27px; border-radius: 9px; background: #dcfce7; color: #15803d; display:flex; align-items:center; justify-content:center; font-size:11px; flex-shrink:0; }
+        .chat-msg-bubble { max-width: 82%; padding: 10px 12px; border-radius: 15px; font-size: 13px; line-height: 1.45; white-space: pre-wrap; }
+        .chat-msg.assistant .chat-msg-bubble { background: white; color: #1f2937; border: 1px solid #e5e7eb; border-bottom-left-radius: 5px; box-shadow: 0 2px 8px rgba(0,0,0,.035); }
+        .chat-msg.user .chat-msg-bubble { background: #15803d; color: white; border-bottom-right-radius: 5px; }
+        .chat-quick-prompts { padding: 0 14px 10px; background: #f8faf9; display:flex; gap:7px; overflow-x:auto; }
+        .chat-quick-prompt { white-space:nowrap; border:1px solid #bbf7d0; background:white; color:#166534; border-radius:9999px; padding:7px 10px; font-size:11px; font-weight:600; cursor:pointer; }
+        .chat-quick-prompt:hover { background:#ecfdf5; }
+        .chat-compose { padding: 12px; border-top: 1px solid #e5e7eb; background: white; }
+        .chat-input-wrap { display:flex; gap:8px; align-items:center; background:#f8fafc; border:1px solid #dbe4df; border-radius:15px; padding:5px 5px 5px 12px; }
+        .chat-input-wrap:focus-within { border-color:#86efac; box-shadow:0 0 0 3px rgba(34,197,94,.10); }
+        .chat-input-wrap input { flex:1; border:0; outline:0; background:transparent; font-size:13px; min-width:0; }
+        .chat-send-btn { width:38px; height:38px; border-radius:12px; background:#15803d; color:white; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .chat-send-btn:hover { background:#166534; }
+        .chat-disclaimer { font-size:10px; color:#9ca3af; text-align:center; margin-top:7px; }
+        @media (max-width: 640px), (display-mode: standalone) and (pointer: coarse) {
+            .chat-modal { right: 8px; left: 8px; bottom: 74px; width: auto; max-width: none; height: min(70vh, 620px); border-radius: 22px; }
+            .chat-launcher-label { display:none; }
+            #chat-bubble { right: 16px; bottom: 16px; }
+        }
+        .address-suggestions {
+            position: absolute;
+            z-index: 1000;
+            background: white;
+            border: 1px solid #84cc16; /* lime green */
+            border-radius: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            width: 100%;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        .suggestion-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #f0e6d8;
+            color: #1e293b;
+        }
+        .suggestion-item:hover {
+            background-color: #ecfdf5; /* light green */
+        }
+        .chat-modal {
+            display: none;
+            position: fixed;
+            bottom: 90px;
+            right: 20px;
+            width: 350px;
+            max-width: calc(100vw - 40px);
+            background: white;
+            border-radius: 24px;
+            box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+            flex-direction: column;
+            border: 1px solid #15803d;
+        }
+        .chat-modal.active {
+            display: flex;
+        }
+        .chat-messages {
+            height: 350px;
+            overflow-y: auto;
+            background: #f0fdf4;
+        }
+        .hero-slider {
+            position: relative;
+            overflow: hidden;
+            width: 100%;
+        }
+        .slider-container {
+            display: flex;
+            width: 100%;
+            transition: transform 0.5s ease-in-out;
+            will-change: transform;
+        }
+        .hero-slide {
+            flex: 0 0 100%;
+            min-height: 500px;
+            position: relative;
+            width: 100%;
+        }
+        .hero-slide.image-slide {
+            background-size: cover;
+            background-position: center;
+        }
+        .hero-slide.image-slide::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0.3) 100%);
+        }
+        .hero-slide.gradient-slide {
+            background: linear-gradient(90deg, #15803d 0%, #22c55e 100%);
+        }
+        .slide-content {
+            position: relative;
+            z-index: 10;
+            max-width: 600px;
+        }
+        .slider-dots {
+            position: absolute;
+            bottom: 20px;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            z-index: 20;
+        }
+        .slider-dot {
+            width: 12px;
+            height: 12px;
+            background-color: rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .slider-dot.active {
+            background-color: #15803d;
+            width: 28px;
+            border-radius: 20px;
+        }
+        .slider-arrow {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(0, 0, 0, 0.5);
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 20;
+            transition: background 0.2s;
+        }
+        .slider-arrow:hover {
+            background: rgba(0, 0, 0, 0.8);
+        }
+        .slider-arrow.left {
+            left: 20px;
+        }
+        .slider-arrow.right {
+            right: 20px;
+        }
+        @media (max-width: 768px), (display-mode: standalone) and (pointer: coarse) {
+            .hero-slide {
+                min-height: 400px;
+            }
+            .slide-content h1 {
+                font-size: 2rem;
+            }
+            .slider-arrow {
+                width: 32px;
+                height: 32px;
+            }
+        }
+        .product-modal,
+        .track-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+        .product-modal.active,
+        .track-modal.active {
+            display: flex;
+        }
+        .product-modal-content,
+        .track-modal-content {
+            background: white;
+            border-radius: 2rem;
+            max-width: 600px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        }
+        .product-modal-close,
+        .track-modal-close {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: white;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            z-index: 10;
+        }
+        .search-container {
+            position: relative;
+        }
+        .search-clear {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #9ca3af;
+            cursor: pointer;
+            display: none;
+        }
+        .search-clear:hover {
+            color: #15803d;
+        }
+        .ticket-card {
+            transition: all 0.2s;
+        }
+        .ticket-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+        .category-select {
+            background-color: white;
+            border-radius: 9999px;
+            padding: 0.5rem 2rem 0.5rem 1rem;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2315803d'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.75rem center;
+            background-size: 1rem;
+        }
+        .loader-small {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #15803d;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            margin-left: 6px;
+            vertical-align: middle;
+        }
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+        .category-refresh-btn {
+            background: #84cc1620;
+            border: 1px solid #84cc16;
+            border-radius: 9999px;
+            padding: 0.25rem 0.75rem;
+            font-size: 0.75rem;
+            color: #84cc16;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .category-refresh-btn:hover {
+            background: #84cc16;
+            color: white;
+        }
+        .thinking-dots {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: #e5e7eb;
+            padding: 8px 12px;
+            border-radius: 18px;
+        }
+        .thinking-dots span {
+            width: 6px;
+            height: 6px;
+            background-color: #4b5563;
+            border-radius: 50%;
+            display: inline-block;
+            animation: dotPulse 1.2s infinite ease-in-out;
+        }
+        .thinking-dots span:nth-child(1) {
+            animation-delay: 0s;
+        }
+        .thinking-dots span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        .thinking-dots span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+        @keyframes dotPulse {
+            0%,
+            60%,
+            100% {
+                transform: scale(0.8);
+                opacity: 0.5;
+            }
+            30% {
+                transform: scale(1.2);
+                opacity: 1;
+            }
+        }
+        .dummy-autofill {
+            position: absolute;
+            left: -9999px;
+            top: -9999px;
+            height: 0;
+            width: 0;
+            overflow: hidden;
+            opacity: 0;
+            pointer-events: none;
+        }
+        .page-btn {
+            min-width: 36px;
+            height: 36px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 9999px;
+            font-weight: 500;
+            transition: all 0.15s;
+        }
+        .page-btn:hover {
+            transform: scale(1.05);
+        }
+        #pagination-container {
+            margin-top: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .pagination-info {
+            font-size: 0.9rem;
+            color: #6b7280;
+            margin-bottom: 0.5rem;
+        }
+
+        /* ============================================= */
+        /* QUANTITY CONTROLS – shared styles             */
+        /* ============================================= */
+        .qty-btn {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1rem;
+            background: #f1f5f9;
+            color: #1e293b;
+            border: none;
+            cursor: pointer;
+            transition: background 0.15s, transform 0.15s;
+            flex-shrink: 0;
+        }
+        .qty-btn:hover {
+            background: #e2e8f0;
+            transform: scale(1.05);
+        }
+        .qty-btn.green {
+            background: #15803d;
+            color: white;
+        }
+        .qty-btn.green:hover {
+            background: #166534;
+        }
+        .qty-display {
+            min-width: 28px;
+            text-align: center;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .modal-qty-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.25rem;
+            background: #f1f5f9;
+            color: #1e293b;
+            border: none;
+            cursor: pointer;
+            transition: background 0.15s, transform 0.15s;
+            flex-shrink: 0;
+        }
+        .modal-qty-btn:hover {
+            background: #e2e8f0;
+            transform: scale(1.05);
+        }
+        .modal-qty-btn.green {
+            background: #15803d;
+            color: white;
+        }
+        .modal-qty-btn.green:hover {
+            background: #166534;
+        }
+        .modal-qty-display {
+            min-width: 40px;
+            text-align: center;
+            font-weight: 700;
+            font-size: 1.25rem;
+        }
+
+        /* ============================================= */
+        /* MOBILE FIX: product card quantity & price     */
+        /* ============================================= */
+        @media (max-width: 480px), (display-mode: standalone) and (pointer: coarse) {
+            .product-card .qty-btn {
+                width: 24px;
+                height: 24px;
+                font-size: 0.85rem;
+            }
+            .product-card .qty-display {
+                min-width: 20px;
+                font-size: 0.85rem;
+            }
+            .product-card .flex.items-center.gap-2.mt-2 {
+                flex-wrap: wrap;
+                gap: 4px;
+            }
+            .product-card .text-xs.text-gray-400.ml-1 {
+                font-size: 0.65rem;
+                margin-left: 2px;
+            }
+            .product-card .flex.gap-2.mt-3 {
+                flex-direction: column;
+                gap: 6px;
+            }
+            .product-card .flex.gap-2.mt-3 button {
+                padding: 6px 8px;
+                font-size: 0.75rem;
+            }
+            .product-card .text-green-600.font-bold.text-xl {
+                font-size: 1rem;
+            }
+            .product-card .text-xs.bg-gray-100.px-2.py-1.rounded-full {
+                font-size: 0.6rem;
+                padding: 2px 6px;
+            }
+            .product-card .h-28 {
+                height: 80px;
+            }
+            .product-card .h-28 img {
+                height: 60px;
+            }
+            .product-card .h-28 i {
+                font-size: 2rem;
+            }
+        }
+
+        /* ============================================= */
+        /* APP-ONLY FEATURES – hidden on web, shown in app */
+        /* ============================================= */
+        .app-only-feature {
+            display: none;
+        }
+
+        @media all and (display-mode: standalone) {
+            .app-only-feature {
+                display: block;
+            }
+
+            #bottom-nav {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                background: #ffffff;
+                box-shadow: 0 -2px 15px rgba(0, 0, 0, 0.08);
+                display: flex;
+                justify-content: space-around;
+                align-items: center;
+                padding: 8px 0 env(safe-area-inset-bottom, 8px) 0;
+                border-top: 1px solid #d1fae5;
+                z-index: 100;
+                backdrop-filter: blur(6px);
+                background-color: rgba(255, 255, 255, 0.95);
+            }
+
+            .nav-item {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                cursor: pointer;
+                padding: 4px 12px;
+                border-radius: 30px;
+                transition: background 0.2s;
+                text-decoration: none;
+                min-width: 64px;
+                flex: 1;
+                -webkit-tap-highlight-color: transparent;
+            }
+
+            .nav-item:active {
+                background-color: #ecfdf5;
+            }
+
+            .nav-icon {
+                font-size: 24px;
+                line-height: 1.2;
+                transition: transform 0.2s;
+            }
+
+            .nav-item:active .nav-icon {
+                transform: scale(0.9);
+            }
+
+            .nav-label {
+                font-size: 11px;
+                font-weight: 500;
+                color: #4b5563;
+                margin-top: 2px;
+                letter-spacing: 0.3px;
+            }
+
+            .nav-item:active .nav-label {
+                color: #15803d;
+            }
+
+            #dynamic-main {
+                padding-bottom: 80px;
+            }
+
+            #chat-bubble {
+                bottom: 90px;
+            }
+
+            .app-only-feature:not(#bottom-nav) {
+                display: none;
+            }
+        }
+
+        /* =========================================================
+           PENAFORT STOREFRONT REDESIGN
+           Keeps existing functionality while refreshing the UI.
+        ========================================================= */
+        :root {
+            --pf-green: #075c3a;
+            --pf-green-2: #0b7448;
+            --pf-lime: #d9ed72;
+            --pf-cream: #f6f8f1;
+            --pf-ink: #17211b;
+            --pf-muted: #647067;
+            --pf-line: #e6ebe5;
+        }
+
+        body {
+            background: #f8faf7;
+            color: var(--pf-ink);
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        .pf-announcement {
+            background: var(--pf-green);
+            color: #fff;
+            font-size: .78rem;
+            letter-spacing: .01em;
+        }
+
+        .pf-header {
+            background: rgba(255,255,255,.96);
+            border-bottom: 1px solid var(--pf-line);
+            position: sticky;
+            top: 0;
+            z-index: 80;
+            backdrop-filter: blur(14px);
+        }
+
+        .pf-logo img { height: 48px; width: auto; object-fit: contain; }
+        .pf-logo-wordmark { color: var(--pf-green); letter-spacing: -.04em; line-height: .95; }
+        .pf-logo-tagline { color: #86a20c; font-size: .58rem; font-weight: 800; letter-spacing: .18em; }
+
+        .pf-search {
+            border: 1px solid #dce3dc;
+            background: #f8faf8;
+            transition: border-color .2s, box-shadow .2s, background .2s;
+        }
+        .pf-search:focus-within {
+            border-color: var(--pf-green-2);
+            background: #fff;
+            box-shadow: 0 0 0 4px rgba(11,116,72,.08);
+        }
+        .pf-search input { background: transparent; outline: none; }
+
+        .pf-nav {
+            border-top: 1px solid #f1f3ef;
+            background: #fff;
+        }
+        .pf-nav a, .pf-nav button {
+            color: #3d4a42;
+            font-size: .83rem;
+            font-weight: 650;
+        }
+        .pf-nav a:hover, .pf-nav button:hover { color: var(--pf-green); }
+
+        .pf-hero {
+            background: linear-gradient(135deg, #f1f6ea 0%, #fbfcf7 55%, #eef5e6 100%);
+            border: 1px solid #e8eee3;
+            overflow: hidden;
+        }
+        .pf-hero-copy h1 {
+            color: var(--pf-green);
+            letter-spacing: -.055em;
+        }
+        .pf-hero-copy p { color: #4f5d54; }
+        .pf-hero-collage {
+            min-height: 350px;
+            position: relative;
+        }
+        .pf-hero-product {
+            position: absolute;
+            background: #fff;
+            border: 1px solid #e6ece4;
+            box-shadow: 0 20px 45px rgba(22,55,37,.12);
+            border-radius: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        .pf-hero-product img { width: 100%; height: 100%; object-fit: contain; padding: 18px; }
+        .pf-hero-product:nth-child(1) { width: 43%; height: 58%; right: 36%; top: 9%; transform: rotate(-4deg); }
+        .pf-hero-product:nth-child(2) { width: 40%; height: 55%; right: 3%; top: 3%; transform: rotate(5deg); }
+        .pf-hero-product:nth-child(3) { width: 43%; height: 52%; right: 29%; bottom: 0; transform: rotate(3deg); }
+        .pf-hero-product:nth-child(4) { width: 35%; height: 47%; right: 0; bottom: 4%; transform: rotate(-5deg); }
+
+        .pf-hero-badge {
+            position: absolute;
+            left: 5%;
+            bottom: 7%;
+            background: var(--pf-green);
+            color: white;
+            border-radius: 999px;
+            padding: .65rem 1rem;
+            font-size: .78rem;
+            font-weight: 750;
+            box-shadow: 0 12px 25px rgba(7,92,58,.22);
+        }
+
+        .pf-primary-btn {
+            background: var(--pf-green);
+            color: #fff;
+            transition: transform .18s, background .18s, box-shadow .18s;
+        }
+        .pf-primary-btn:hover { background: #04492e; transform: translateY(-1px); box-shadow: 0 10px 20px rgba(7,92,58,.18); }
+        .pf-secondary-btn {
+            border: 1px solid #b8c7bd;
+            color: var(--pf-green);
+            background: #fff;
+        }
+        .pf-secondary-btn:hover { background: #f4f8f3; }
+
+        .pf-benefits {
+            background: #fff;
+            border: 1px solid var(--pf-line);
+            box-shadow: 0 12px 35px rgba(20,55,35,.05);
+        }
+        .pf-benefit-icon {
+            width: 44px; height: 44px; border-radius: 50%;
+            background: #edf5e9; color: var(--pf-green);
+            display: flex; align-items: center; justify-content: center;
+            flex: 0 0 auto;
+        }
+
+        .pf-section-title { color: #17211b; letter-spacing: -.025em; }
+        .pf-section-link { color: var(--pf-green); font-size: .82rem; font-weight: 750; }
+
+        .pf-category-card {
+            background: #fff;
+            border: 1px solid var(--pf-line);
+            transition: transform .18s, box-shadow .18s, border-color .18s;
+        }
+        .pf-category-card:hover {
+            transform: translateY(-3px);
+            border-color: #c8d9cb;
+            box-shadow: 0 14px 30px rgba(25,55,37,.08);
+        }
+        .pf-category-image {
+            height: 96px;
+            background: #f4f6f1;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        .pf-category-image img { width: 100%; height: 100%; object-fit: contain; padding: 10px; }
+
+        .pf-product-grid { display: grid; gap: 14px; }
+        .pf-product-card {
+            background: #fff;
+            border: 1px solid var(--pf-line);
+            border-radius: 16px;
+            overflow: hidden;
+            transition: transform .18s, box-shadow .18s, border-color .18s;
+        }
+        .pf-product-card:hover {
+            transform: translateY(-3px);
+            border-color: #cbd8ce;
+            box-shadow: 0 16px 30px rgba(25,55,37,.09);
+        }
+        .pf-product-image {
+            height: 165px;
+            background: #f7f8f5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        .pf-product-image img { max-width: 88%; max-height: 88%; object-fit: contain; }
+        .pf-stock {
+            color: #16804f;
+            font-size: .72rem;
+            font-weight: 700;
+        }
+        .pf-price { color: var(--pf-green); }
+        .pf-add-btn {
+            background: var(--pf-green);
+            color: #fff;
+            min-width: 44px;
+            height: 38px;
+            border-radius: 10px;
+            transition: background .15s, transform .15s;
+        }
+        .pf-add-btn:hover { background: #04492e; transform: translateY(-1px); }
+        .pf-qty {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 34px; height: 34px; border-radius: 9px;
+            background: #f1f4ef; color: #26332b; font-weight: 750;
+        }
+        .pf-qty-btn {
+            width: 30px; height: 30px; border-radius: 8px;
+            border: 1px solid #dfe6df; background: #fff;
+            color: var(--pf-green); font-weight: 800;
+        }
+
+        .pf-need-card {
+            min-height: 150px;
+            border-radius: 18px;
+            overflow: hidden;
+            position: relative;
+            background: #edf3e9;
+            border: 1px solid #e0e8de;
+        }
+        .pf-need-copy { position: relative; z-index: 2; max-width: 70%; }
+        .pf-need-art {
+            position: absolute; right: -3%; bottom: -7%; width: 48%; height: 90%;
+            object-fit: contain; opacity: .96;
+        }
+
+        .pf-footer {
+            background: #073e2a;
+            color: #dfeee5;
+        }
+        .pf-footer a { color: #dfeee5; }
+        .pf-footer a:hover { color: #fff; }
+
+        .pf-hidden-control { display: none !important; }
+
+        @media (max-width: 767px), (display-mode: standalone) and (pointer: coarse) {
+            .pf-logo img { height: 38px; }
+            .pf-hero-collage { min-height: 240px; margin-top: 12px; }
+            .pf-hero-product:nth-child(1) { width: 43%; height: 58%; right: 36%; top: 7%; }
+            .pf-hero-product:nth-child(2) { width: 40%; height: 55%; right: 3%; top: 1%; }
+            .pf-hero-product:nth-child(3) { width: 43%; height: 52%; right: 29%; bottom: 0; }
+            .pf-hero-product:nth-child(4) { width: 35%; height: 47%; right: 0; bottom: 2%; }
+            .pf-product-image { height: 125px; }
+            .pf-category-image { height: 74px; }
+            .pf-nav { display: none; }
+        }
+
+        @media (min-width: 768px) {
+            .pf-product-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+            .pf-product-grid.pf-featured-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+        }
+
+        @media (max-width: 767px), (display-mode: standalone) and (pointer: coarse) {
+            .pf-product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .pf-product-grid.pf-featured-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+
+        .pf-horizontal-scroll {
+            display: flex; gap: 12px; overflow-x: auto; padding-bottom: 4px;
+            scrollbar-width: none;
+        }
+        .pf-horizontal-scroll::-webkit-scrollbar { display: none; }
+        .pf-horizontal-scroll > * { flex: 0 0 135px; }
+
+
+
+        /* =============================================
+           DEVICE-VIEW MOBILE PASS
+           Tested around 390px / 412px phone widths.
+           ============================================= */
+        html, body { overflow-x: hidden; }
+
+        @media (max-width: 767px), (display-mode: standalone) and (pointer: coarse) {
+            /* Header becomes a deliberate two-row mobile header */
+            .pf-header > div > .flex:first-child {
+                flex-wrap: wrap;
+                row-gap: 10px;
+            }
+            .pf-logo {
+                flex: 1 1 auto;
+                min-width: 0;
+            }
+            .pf-logo img { height: 36px; max-width: 150px; }
+            .pf-header .pf-search {
+                order: 3;
+                flex: 0 0 100%;
+                width: 100%;
+                max-width: none;
+                height: 46px;
+            }
+            .pf-search input { font-size: 14px; }
+            .pf-search select { display: none !important; }
+            .pf-search button {
+                width: 38px;
+                height: 38px;
+                flex: 0 0 38px;
+            }
+            #user-menu-btn, #cart-icon-btn {
+                width: 38px;
+                height: 38px;
+            }
+
+            /* Hero is intentionally stacked instead of compressed */
+            .pf-hero { border-radius: 20px; }
+            .pf-hero > .grid {
+                display: block;
+                padding: 22px 18px 18px;
+            }
+            .pf-hero-copy h1 {
+                font-size: 2.65rem;
+                line-height: .95;
+            }
+            .pf-hero-copy p.text-xl {
+                font-size: 1.1rem;
+                line-height: 1.35;
+            }
+            .pf-hero-copy .mt-7 {
+                margin-top: 18px;
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+            }
+            .pf-hero-copy .mt-7 button {
+                width: 100%;
+                padding: 11px 10px;
+                font-size: 13px;
+            }
+
+            /* Compact 2x2 product collage on phones */
+            .pf-hero-collage {
+                height: 205px;
+                min-height: 205px;
+                margin-top: 18px;
+            }
+            .pf-hero-product {
+                border-radius: 16px;
+                box-shadow: 0 10px 24px rgba(22,55,37,.10);
+                transform: none !important;
+            }
+            .pf-hero-product img { padding: 10px; }
+            .pf-hero-product:nth-child(1) { width: 43%; height: 48%; left: 4%; right: auto; top: 3%; }
+            .pf-hero-product:nth-child(2) { width: 43%; height: 48%; right: 4%; left: auto; top: 3%; }
+            .pf-hero-product:nth-child(3) { width: 43%; height: 48%; left: 4%; right: auto; bottom: 3%; }
+            .pf-hero-product:nth-child(4) { width: 43%; height: 48%; right: 4%; left: auto; bottom: 3%; }
+            .pf-hero-badge {
+                left: 50%;
+                bottom: 50%;
+                transform: translate(-50%, 50%);
+                padding: 6px 9px;
+                font-size: 10px;
+                white-space: nowrap;
+                box-shadow: 0 8px 18px rgba(7,92,58,.18);
+            }
+
+            /* Benefits remain readable in a 2x2 layout */
+            .pf-benefits {
+                padding: 12px;
+                gap: 8px;
+            }
+            .pf-benefit-icon { width: 36px; height: 36px; font-size: 13px; }
+            .pf-benefits > div {
+                min-width: 0;
+                padding: 8px 5px;
+                align-items: flex-start;
+            }
+            .pf-benefits > div > div:last-child { min-width: 0; }
+            .pf-benefits .font-bold {
+                font-size: 11px;
+                line-height: 1.25;
+            }
+            .pf-benefits .text-xs {
+                font-size: 9px;
+                line-height: 1.25;
+            }
+
+            /* Section spacing */
+            #dynamic-main { padding-top: 22px; padding-bottom: 88px; }
+            #categories-section, #deals-section, #needs-section, #products-section { margin-top: 28px; }
+            .pf-section-title { font-size: 19px; }
+
+            /* Category rail: touch-friendly, no squeezed cards */
+            .pf-horizontal-scroll { gap: 9px; margin-right: -16px; padding-right: 16px; }
+            .pf-horizontal-scroll > * { flex: 0 0 118px; }
+            .pf-category-card { border-radius: 14px; padding: 7px; }
+            .pf-category-image { height: 68px; border-radius: 11px; }
+            .pf-category-image img { padding: 7px; }
+
+            /* Product cards: optimized for thumb-friendly 2-column browsing */
+            .pf-product-grid { gap: 9px; }
+            .pf-product-card { border-radius: 13px; }
+            .pf-product-image { height: 112px; }
+            .pf-product-image img { max-width: 82%; max-height: 82%; }
+            .pf-product-card > div:last-child { padding: 10px; }
+            .pf-product-card h3 {
+                font-size: 12px;
+                line-height: 1.3;
+                min-height: 31px;
+            }
+            .pf-price { font-size: 14px !important; }
+            .pf-stock {
+                font-size: 9px;
+                max-width: 72px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            .pf-product-card .mt-3 { margin-top: 8px; }
+            .pf-qty-btn { width: 27px; height: 27px; }
+            .pf-qty { width: 29px; height: 29px; font-size: 12px; }
+            .pf-add-btn { height: 34px; min-width: 36px; padding: 0 9px !important; }
+            .pf-add-btn i { font-size: 12px; }
+
+            /* Need cards become compact horizontal cards */
+            .pf-need-card { min-height: 118px; border-radius: 15px; padding: 14px !important; }
+            .pf-need-copy { max-width: 78%; }
+            .pf-need-copy h3 { font-size: 15px; line-height: 1.2; }
+            .pf-need-copy p { font-size: 10px; line-height: 1.35; }
+            .pf-need-copy span { margin-top: 10px; font-size: 9px; }
+            .pf-need-art { width: 34%; height: 72%; right: 0; bottom: 0; font-size: 44px !important; }
+
+            /* Footer is easier to scan on phones */
+            .pf-footer { margin-top: 34px; padding-top: 30px; }
+            .pf-footer .grid { gap: 22px 14px; }
+            .pf-footer .grid > div { min-width: 0; }
+            .pf-footer p { font-size: 12px; line-height: 1.5; }
+            .pf-footer .space-y-2 { font-size: 12px; }
+
+            /* Make the existing bottom nav useful on mobile web too, not only PWA */
+            #bottom-nav {
+                position: fixed;
+                display: flex;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                height: 64px;
+                padding: 6px 6px max(6px, env(safe-area-inset-bottom));
+                background: rgba(255,255,255,.97);
+                border-top: 1px solid #e4ebe5;
+                box-shadow: 0 -8px 25px rgba(18,45,30,.08);
+                z-index: 90;
+                backdrop-filter: blur(12px);
+            }
+            #bottom-nav .nav-item {
+                display: flex;
+                flex: 1;
+                align-items: center;
+                justify-content: center;
+                min-width: 0;
+                padding: 3px 5px;
+            }
+            #bottom-nav .nav-icon { font-size: 19px; }
+            #bottom-nav .nav-label { font-size: 9px; }
+
+            /* Chat should use almost the full phone viewport */
+            .chat-modal {
+                left: 8px;
+                right: 8px;
+                bottom: 72px;
+                width: auto;
+                height: min(76vh, 610px);
+                max-height: calc(100vh - 92px);
+                border-radius: 20px;
+            }
+            .chat-header { padding: 13px 14px; }
+            .chat-messages { padding: 12px; }
+            .chat-msg-bubble { max-width: 88%; font-size: 12px; }
+            .chat-quick-prompts { padding: 0 10px 9px; }
+            .chat-compose { padding: 9px; }
+            #chat-bubble { right: 14px; bottom: 78px; width: 52px; height: 52px; }
+            .chat-launcher-label { display: none; }
+        }
+
+        @media (max-width: 380px), (display-mode: standalone) and (pointer: coarse) {
+            .pf-hero-copy .mt-7 { grid-template-columns: 1fr; }
+            .pf-hero-collage { height: 185px; min-height: 185px; }
+            .pf-product-image { height: 100px; }
+            .pf-product-card > div:last-child { padding: 8px; }
+            .pf-price { font-size: 13px !important; }
+        }
+
+    
+/* Mobile customer support: distinct stacked actions */
+@media (max-width: 767px), (display-mode: standalone) and (pointer: coarse) {
+  .customer-support-mobile { display:flex !important; flex-direction:column !important; gap:10px !important; }
+  .customer-support-mobile > * { width:100% !important; min-height:64px; display:flex !important; align-items:center; justify-content:space-between; text-align:left; }
+  .customer-support-mobile .support-action-copy { flex:1; margin-left:12px; }
+  .customer-support-mobile .support-action-title { display:block; font-weight:700; }
+  .customer-support-mobile .support-action-desc { display:block; font-size:.78rem; color:#64748b; margin-top:2px; }
+}
+
+
+        /* =========================================================
+           PWA PHONE MODE
+           Some installed PWAs expose a wider CSS viewport than the
+           physical phone. The coarse-pointer standalone media query
+           therefore gets the same mobile layout as a narrow browser.
+        ========================================================= */
+        @media (display-mode: standalone) and (pointer: coarse) {
+            html, body { width: 100%; max-width: 100%; overflow-x: hidden; }
+            #dynamic-main { padding-bottom: 80px !important; }
+            .pf-product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+            .pf-product-grid.pf-featured-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+            .pf-horizontal-scroll { display: flex !important; overflow-x: auto !important; }
+            .pf-nav { display: none !important; }
+        }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <div class="dummy-autofill">
+        <input type="text" id="dummy-email" name="email" value="">
+        <input type="password" id="dummy-password" name="password" value="">
+    </div>
+
+    <!-- PENAFORT STORE HEADER -->
+    <div class="pf-announcement">
+        <div class="max-w-7xl mx-auto px-4 py-2 flex items-center justify-center gap-3 text-center">
+            <span><i class="fa-solid fa-truck mr-1"></i> FREE DELIVERY on qualifying orders</span>
+            <span class="opacity-60">|</span>
+            <span>Shop online, pick up in-store</span>
+            <span class="hidden md:inline opacity-60">|</span>
+            <button id="announcement-track-btn" class="hidden md:inline font-bold hover:underline">Track Order</button>
+        </div>
+    </div>
+
+    <header class="pf-header">
+        <div class="max-w-7xl mx-auto px-4 py-3">
+            <div class="flex items-center gap-3 md:gap-7">
+                <div class="pf-logo flex items-center gap-2 cursor-pointer shrink-0" id="marketplace-logo">
+                    <img src="/images/page_logo.webp" alt="Penafort Supermarket logo">
+                    <div class="hidden sm:block">
+                        <div class="pf-logo-wordmark text-2xl md:text-3xl font-black">Penafort</div>
+                        <div class="pf-logo-tagline">MORE FOR LESS</div>
+                    </div>
+                </div>
+
+                <div class="pf-search flex-1 max-w-3xl rounded-xl h-11 md:h-12 flex items-center px-3">
+                    <i class="fa-solid fa-magnifying-glass text-gray-400 mr-3"></i>
+                    <input id="product-search" name="search" type="search" autocomplete="off"
+                        placeholder="Search products, brands or categories..."
+                        class="flex-1 min-w-0 text-sm md:text-base">
+                    <span id="search-clear" class="search-clear static hidden"><i class="fa-solid fa-circle-xmark"></i></span>
+                    <select id="category-select" aria-label="All Categories"
+                        class="hidden md:block border-l border-gray-200 pl-3 ml-3 text-xs font-semibold text-gray-600 bg-transparent outline-none max-w-[150px]">
+                        <option value="">All Categories</option>
+                    </select>
+                    <button id="search-submit-btn" class="ml-2 bg-[#075c3a] text-white w-9 h-9 rounded-lg">
+                        <i class="fa-solid fa-search"></i>
+                    </button>
+                </div>
+
+                <div class="flex items-center gap-2 shrink-0">
+                    <div class="relative">
+                        <button id="user-menu-btn" class="w-10 h-10 rounded-full border border-gray-200 bg-white flex items-center justify-center hover:bg-gray-50">
+                            <i class="fa-regular fa-user text-gray-700"></i>
+                        </button>
+                        <div id="user-dropdown" class="absolute right-0 mt-2 w-60 bg-white rounded-xl shadow-xl border border-gray-200 hidden z-40">
+                            <div class="p-3 border-b" id="user-info-dropdown">Guest</div>
+                            <div id="loyalty-info-dropdown" class="px-4 py-2 text-sm border-b hidden">
+                                <span class="font-semibold">⭐ Loyalty Points:</span> <span id="user-points">0</span><br>
+                                <span class="text-xs text-gray-500">Tier: <span id="user-tier">-</span></span>
+                            </div>
+                            <button id="login-dropdown-btn" class="w-full text-left px-4 py-2.5 hover:bg-gray-50">Sign In / Register</button>
+                            <button id="track-order-dropdown" class="w-full text-left px-4 py-2.5 hover:bg-gray-50">Track Order</button>
+                            <button id="complaints-dropdown" class="w-full text-left px-4 py-2.5 hover:bg-gray-50">My Tickets</button>
+                            <button id="logout-dropdown" class="w-full text-left px-4 py-2.5 text-red-600 hover:bg-gray-50 hidden">Logout</button>
+                        </div>
+                    </div>
+                    <button id="cart-icon-btn" class="relative w-10 h-10 rounded-full border border-gray-200 bg-white flex items-center justify-center hover:bg-gray-50">
+                        <i class="fa-solid fa-cart-shopping text-[#075c3a]"></i>
+                        <span id="cart-count-badge" class="absolute -top-1 -right-1 bg-[#d9ed72] text-[#173a28] text-[10px] font-black rounded-full min-w-5 h-5 px-1 flex items-center justify-center shadow">0</span>
+                    </button>
+                </div>
+            </div>
+
+            <nav class="pf-nav mt-3 -mx-4 px-4">
+                <div class="max-w-7xl mx-auto flex items-center gap-7 py-2">
+                    <button id="nav-shop-categories" class="font-bold flex items-center gap-2">
+                        <i class="fa-solid fa-bars"></i> Shop Categories
+                    </button>
+                    <button id="nav-deals" class="hover:text-[#075c3a]">Today's Picks</button>
+                    <button id="nav-popular" class="hover:text-[#075c3a]">Popular Products</button>
+                    <button id="nav-needs" class="hover:text-[#075c3a]">Shop by Need</button>
+                    <button id="nav-track-order" class="hover:text-[#075c3a]">Track Order</button>
+                    <button id="nav-support" class="hover:text-[#075c3a]">Support</button>
+                    <button id="refresh-categories-btn" class="pf-hidden-control">Refresh</button>
+                </div>
+            </nav>
+        </div>
+    </header>
+
+    <!-- HERO -->
+    <section class="max-w-7xl mx-auto px-4 pt-5 md:pt-7">
+        <div class="pf-hero rounded-3xl">
+            <div class="grid md:grid-cols-[.92fr_1.08fr] items-center px-6 py-8 md:px-12 md:py-10">
+                <div class="pf-hero-copy">
+                    <span class="inline-flex items-center gap-2 bg-white border border-[#dfe9d8] text-[#075c3a] rounded-full px-3 py-1 text-xs font-bold mb-4">
+                        <i class="fa-solid fa-bag-shopping"></i> Everyday value, made easy
+                    </span>
+                    <h1 class="text-4xl md:text-6xl font-black leading-[.98]">More For Less</h1>
+                    <p class="text-xl md:text-2xl font-semibold mt-3">Shopping just got easier.</p>
+                    <p class="text-sm md:text-base mt-4 max-w-lg leading-7">
+                        Everyday essentials, groceries, beverages and more — all in one place.
+                    </p>
+                    <div class="flex flex-wrap gap-3 mt-7">
+                        <button class="hero-shop-btn pf-primary-btn px-6 py-3 rounded-xl font-bold">Shop Now</button>
+                        <button id="hero-categories-btn" class="pf-secondary-btn px-6 py-3 rounded-xl font-bold">Explore Categories</button>
+                    </div>
+                </div>
+                <div id="hero-product-collage" class="pf-hero-collage mt-5 md:mt-0">
+                    <div class="pf-hero-product"><div class="text-gray-300 text-4xl"><i class="fa-solid fa-box-open"></i></div></div>
+                    <div class="pf-hero-product"><div class="text-gray-300 text-4xl"><i class="fa-solid fa-box-open"></i></div></div>
+                    <div class="pf-hero-product"><div class="text-gray-300 text-4xl"><i class="fa-solid fa-box-open"></i></div></div>
+                    <div class="pf-hero-product"><div class="text-gray-300 text-4xl"><i class="fa-solid fa-box-open"></i></div></div>
+                    <div class="pf-hero-badge"><i class="fa-solid fa-store mr-1"></i> Online + In-store</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- SHOP HOME -->
+    <main id="dynamic-main" class="max-w-7xl mx-auto px-4 py-8 md:py-10">
+        <div id="shop-view">
+            <!-- BENEFITS -->
+            <section class="pf-benefits rounded-2xl p-4 md:p-5 grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-0">
+                <div class="flex items-center gap-3 md:px-4 md:border-r border-gray-100">
+                    <div class="pf-benefit-icon"><i class="fa-solid fa-truck"></i></div>
+                    <div><div class="font-bold text-sm">Convenient Delivery</div><div class="text-xs text-gray-500 mt-1">Get essentials delivered.</div></div>
+                </div>
+                <div class="flex items-center gap-3 md:px-4 md:border-r border-gray-100">
+                    <div class="pf-benefit-icon"><i class="fa-solid fa-store"></i></div>
+                    <div><div class="font-bold text-sm">Shop In-Store & Online</div><div class="text-xs text-gray-500 mt-1">Your Penafort, your way.</div></div>
+                </div>
+                <div class="flex items-center gap-3 md:px-4 md:border-r border-gray-100">
+                    <div class="pf-benefit-icon"><i class="fa-solid fa-shield-halved"></i></div>
+                    <div><div class="font-bold text-sm">Secure Payments</div><div class="text-xs text-gray-500 mt-1">Simple & reliable checkout.</div></div>
+                </div>
+                <div class="flex items-center gap-3 md:px-4">
+                    <div class="pf-benefit-icon"><i class="fa-solid fa-tag"></i></div>
+                    <div><div class="font-bold text-sm">Great Value</div><div class="text-xs text-gray-500 mt-1">More products for your money.</div></div>
+                </div>
+            </section>
+
+            <!-- CATEGORIES -->
+            <section id="categories-section" class="mt-10">
+                <div class="flex items-end justify-between mb-4">
+                    <div>
+                        <h2 class="pf-section-title text-xl md:text-2xl font-black">Shop by Category</h2>
+                        <p class="text-sm text-gray-500 mt-1">Find what you need faster.</p>
+                    </div>
+                    <button id="view-all-categories" class="pf-section-link">View all <i class="fa-solid fa-arrow-right ml-1"></i></button>
+                </div>
+                <div id="category-cards" class="pf-horizontal-scroll md:grid md:grid-cols-6 lg:grid-cols-8 md:overflow-visible"></div>
+            </section>
+
+            <!-- FEATURED / TODAY'S PICKS -->
+            <section id="deals-section" class="mt-10">
+                <div class="flex items-end justify-between mb-4">
+                    <div>
+                        <h2 class="pf-section-title text-xl md:text-2xl font-black"><span class="mr-1">🔥</span> Today's Picks</h2>
+                        <p class="text-sm text-gray-500 mt-1">Popular items customers can shop right now.</p>
+                    </div>
+                    <button id="view-all-products" class="pf-section-link">View all <i class="fa-solid fa-arrow-right ml-1"></i></button>
+                </div>
+                <div id="featured-grid" class="pf-product-grid pf-featured-grid"></div>
+            </section>
+
+            <!-- SHOP BY NEED -->
+            <section id="needs-section" class="mt-10">
+                <div class="flex items-end justify-between mb-4">
+                    <div>
+                        <h2 class="pf-section-title text-xl md:text-2xl font-black">Shop by Need</h2>
+                        <p class="text-sm text-gray-500 mt-1">Start with what you're trying to get done.</p>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <button class="pf-need-card text-left p-5" data-need="breakfast">
+                        <div class="pf-need-copy"><h3 class="font-black text-lg">Breakfast Essentials</h3><p class="text-xs text-gray-600 mt-2">Bread • Milk • Cereals • Beverages</p><span class="inline-block mt-5 text-xs font-bold text-[#075c3a]">SHOP NOW →</span></div>
+                        <div class="pf-need-art flex items-center justify-center text-6xl text-[#9ebf82]"><i class="fa-solid fa-mug-hot"></i></div>
+                    </button>
+                    <button class="pf-need-card text-left p-5" data-need="kitchen">
+                        <div class="pf-need-copy"><h3 class="font-black text-lg">Stock Your Kitchen</h3><p class="text-xs text-gray-600 mt-2">Rice • Pasta • Oil • Seasonings</p><span class="inline-block mt-5 text-xs font-bold text-[#075c3a]">SHOP NOW →</span></div>
+                        <div class="pf-need-art flex items-center justify-center text-6xl text-[#b7a56a]"><i class="fa-solid fa-bowl-food"></i></div>
+                    </button>
+                    <button class="pf-need-card text-left p-5" data-need="cleaning">
+                        <div class="pf-need-copy"><h3 class="font-black text-lg">Cleaning Day</h3><p class="text-xs text-gray-600 mt-2">Detergents • Disinfectants • Tissue</p><span class="inline-block mt-5 text-xs font-bold text-[#075c3a]">SHOP NOW →</span></div>
+                        <div class="pf-need-art flex items-center justify-center text-6xl text-[#7aa9a1]"><i class="fa-solid fa-spray-can-sparkles"></i></div>
+                    </button>
+                    <button class="pf-need-card text-left p-5" data-need="party">
+                        <div class="pf-need-copy"><h3 class="font-black text-lg">Party & Events</h3><p class="text-xs text-gray-600 mt-2">Drinks • Snacks • Confectionery</p><span class="inline-block mt-5 text-xs font-bold text-[#075c3a]">SHOP NOW →</span></div>
+                        <div class="pf-need-art flex items-center justify-center text-6xl text-[#c58b65]"><i class="fa-solid fa-champagne-glasses"></i></div>
+                    </button>
+                </div>
+            </section>
+
+            <!-- ALL PRODUCTS -->
+            <section id="products-section" class="mt-10">
+                <div class="flex flex-col md:flex-row md:items-end justify-between gap-3 mb-4">
+                    <div>
+                        <h2 class="pf-section-title text-xl md:text-2xl font-black">Popular Products</h2>
+                        <p id="product-results-summary" class="text-sm text-gray-500 mt-1">Browse our available products.</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="hidden md:inline text-xs text-gray-500">Filter</span>
+                        <select id="category-select-mobile" class="category-select md:hidden border border-gray-200 text-xs">
+                            <option value="">All Categories</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="products-grid" class="pf-product-grid"></div>
+                <div id="pagination-container" class="mt-7 flex justify-center"></div>
+            </section>
+        </div>
+
+        <!-- SUPPORT TICKETS VIEW -->
+        <div id="tickets-view" class="hidden">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-2xl md:text-3xl font-bold text-gray-800"><i class="fa-regular fa-ticket-alt text-green-500"></i> My Support Tickets</h2>
+                <button id="refresh-tickets" class="bg-green-600 text-white px-4 py-2 rounded-full text-sm hover:bg-green-700"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
+            </div>
+            <div id="tickets-list" class="space-y-3"><div class="text-center py-10 text-gray-500"><i class="fa-solid fa-spinner fa-pulse"></i> Loading your tickets...</div></div>
+        </div>
+
+        <!-- ORDER CONFIRMATION VIEW -->
+        <div id="confirmation-view" class="hidden">
+            <div class="max-w-3xl mx-auto bg-white rounded-2xl shadow-xl p-6 md:p-8 border border-green-100">
+                <div class="text-center mb-6">
+                    <i class="fa-regular fa-circle-check text-green-500 text-6xl"></i>
+                    <h2 class="text-3xl md:text-4xl font-bold text-gray-800 mt-3">Order Confirmed! 🎉</h2>
+                    <p class="text-gray-600 mt-1">Thank you for your purchase. A receipt has been sent to your email.</p>
+                </div>
+                <div id="confirmation-details" class="space-y-4"></div>
+                <div class="mt-8 flex flex-wrap gap-4 justify-center">
+                    <button id="continue-shopping-btn" class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-full font-semibold transition"><i class="fa-solid fa-arrow-left"></i> Continue Shopping</button>
+                    <button id="track-order-confirm-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-6 py-3 rounded-full font-semibold transition"><i class="fa-solid fa-truck"></i> Track Order</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ===== APP-ONLY: BOTTOM NAVIGATION (fixed) ===== -->
+    <div id="bottom-nav" class="app-only-feature">
+        <div class="nav-item" id="nav-support-chat">
+            <div class="nav-icon">💬</div>
+            <span class="nav-label">Live Help</span>
+        </div>
+        <div class="nav-item" id="nav-track">
+            <div class="nav-icon">📍</div>
+            <span class="nav-label">Track</span>
+        </div>
+        <div class="nav-item" id="nav-ai-helper">
+            <div class="nav-icon"> 🔍 </div>
+            <span class="nav-label">Search</span>
+        </div>
+        <div class="nav-item" id="nav-cart">
+            <div class="nav-icon">🛒</div>
+            <span class="nav-label">Cart</span>
+        </div>
+    </div>
+
+    <footer class="pf-footer mt-14 pt-10 pb-7">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-8">
+                <div class="col-span-2 md:col-span-1">
+                    <div class="font-black text-2xl text-white">Penafort</div>
+                    <div class="text-[10px] font-bold tracking-[.2em] text-[#d9ed72] mt-1">MORE FOR LESS</div>
+                    <p class="text-sm mt-4 text-[#bcd3c5] leading-6">Your trusted retail partner for everyday products, great value and convenient shopping.</p>
+                </div>
+                <div><h4 class="font-bold text-white">Shop</h4><div class="space-y-2 mt-3 text-sm"><a href="#categories-section">All Categories</a><a href="#deals-section">Today's Picks</a><a href="#products-section">Popular Products</a></div></div>
+                <div><h4 class="font-bold text-white">Customer Service</h4><div class="space-y-2 mt-3 text-sm"><a href="#" id="footer-track">Track Order</a><a href="#" id="footer-support">Support</a><a href="#" id="footer-tickets">My Tickets</a></div></div>
+                <div><h4 class="font-bold text-white">About Penafort</h4><div class="space-y-2 mt-3 text-sm"><a href="#shop-view">Shop Online</a><a href="#shop-view">Shop In-Store</a><a href="#shop-view">Terms & Conditions</a></div></div>
+            </div>
+            <div class="border-t border-white/10 mt-9 pt-5 flex flex-col md:flex-row justify-between gap-3 text-xs text-[#9fb8a9]">
+                <span>© 2026 Penafort. All rights reserved.</span>
+                <span><i class="fa-regular fa-clock mr-1"></i> AI Concierge | Fast Delivery</span>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Cart Drawer -->
+    <div id="cart-drawer" class="cart-sidebar fixed top-0 right-0 w-full sm:w-96 h-full bg-white shadow-2xl z-[150] transform translate-x-full transition-transform duration-300 flex flex-col">
+        <div class="p-4 border-b border-green-100 flex justify-between items-center bg-[#f0f6ed]"><h3 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-cart-shopping text-[#075c3a]"></i> Your Cart</h3>
+            <button id="close-drawer" class="text-gray-500 hover:text-green-600 flex items-center gap-1 font-medium transition">
+                <i class="fa-solid fa-arrow-left"></i> Continue Shopping
+            </button>
+        </div>
+        <div id="cart-items-list" class="flex-1 overflow-y-auto p-4 space-y-3 bg-white"></div>
+        <div class="p-4 border-t border-green-100 bg-gray-50">
+            <div class="mb-3"><label class="text-xs text-gray-600 block mb-1">Delivery Option</label><div class="flex gap-2 bg-gray-100 rounded-lg p-1"><button id="pickup-option" class="flex-1 py-1.5 text-sm rounded-md transition font-medium">📦 Pickup</button><button id="delivery-option" class="flex-1 py-1.5 text-sm rounded-md transition font-medium">🚚 Delivery</button></div></div>
+            <div id="delivery-address-section" class="mb-3 hidden"><label class="text-xs text-gray-600 block mb-1">Delivery Address</label><div class="relative"><div class="flex gap-2"><input type="text" id="delivery-address" placeholder="Tap GPS to set address..." class="flex-1 bg-white border border-gray-300 rounded-lg p-2 text-sm" autocomplete="off"><button id="gps-locate-cart" class="bg-indigo-600 text-white px-3 rounded-lg text-sm whitespace-nowrap"><i class="fa-solid fa-location-dot"></i> GPS</button></div><div id="cart-address-suggestions" class="address-suggestions hidden"></div></div><button id="save-address-btn" class="mt-2 w-full bg-green-500 hover:bg-green-600 text-white py-1.5 rounded-lg text-sm transition">Save & Estimate Delivery</button><div id="delivery-fee-estimate" class="text-xs text-gray-500 mt-1"></div></div>
+            <div class="mb-3"><label class="text-xs text-gray-600 block mb-1">Payment Method</label><select id="payment-method" class="w-full bg-white border border-gray-300 rounded-lg p-2 text-sm"><option value="paystack">Paystack (Card / Bank)</option><option value="cash">Cash (POS Terminal)</option></select></div>
+            <div class="border-t border-gray-200 pt-2 mt-2 space-y-1 text-sm"><div class="flex justify-between"><span>Subtotal</span><span id="cart-subtotal">₦0</span></div><div id="delivery-fee-row" class="flex justify-between text-gray-500 hidden"><span>Delivery fee</span><span id="cart-delivery-fee">₦0</span></div><div class="flex justify-between font-bold text-lg border-t border-gray-200 pt-2 mt-1"><span>Total</span><span id="cart-total" class="text-green-600">₦0</span></div></div>
+            <button id="checkout-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 py-2.5 rounded-xl font-semibold text-white transition shadow-md mt-2">💳 Proceed to Checkout</button>
+        </div>
+    </div>
+
+    <!-- Product Detail Modal -->
+    <div id="product-detail-modal" class="product-modal">
+        <div class="product-modal-content">
+            <div class="product-modal-close" id="close-product-modal"><i class="fa-solid fa-times"></i></div>
+            <div class="p-6">
+                <div id="product-detail-content"></div>
+                <div class="mt-4 flex items-center gap-4 border-t border-gray-200 pt-4">
+                    <span class="font-semibold text-gray-700">Qty:</span>
+                    <button id="modal-qty-minus" class="modal-qty-btn">−</button>
+                    <span id="modal-qty-display" class="modal-qty-display">1</span>
+                    <button id="modal-qty-plus" class="modal-qty-btn green">+</button>
+                    <span class="ml-auto text-sm text-gray-500" id="modal-qty-total">₦0</span>
+                </div>
+                <div class="mt-6 flex gap-3">
+                    <button id="modal-add-to-cart" class="flex-1 bg-green-500 hover:bg-green-600 text-white py-3 rounded-xl font-semibold transition"><i class="fa-solid fa-cart-plus mr-2"></i> Add to Cart</button>
+                    <button id="modal-close-btn" class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-3 rounded-xl font-semibold transition">Continue Shopping</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Track Order Modal -->
+    <div id="track-modal" class="track-modal"><div class="track-modal-content"><div class="track-modal-close" id="close-track-modal"><i class="fa-solid fa-times"></i></div><div class="p-6"><h3 class="text-xl font-bold mb-4"><i class="fa-solid fa-truck-fast text-green-500"></i> Track Your Order</h3><div class="space-y-4"><div><label class="block text-sm font-medium text-gray-700">Receipt Number</label><input type="text" id="track-receipt" class="w-full border border-gray-300 rounded-lg p-2" placeholder="e.g., REC-12345" autocomplete="off"></div><div><label class="block text-sm font-medium text-gray-700">Email Address</label><input type="email" id="track-email" class="w-full border border-gray-300 rounded-lg p-2" placeholder="your@email.com" autocomplete="off"></div><button id="track-submit" class="w-full bg-green-500 text-white py-2 rounded-lg hover:bg-green-600">Track Order</button><div id="track-result" class="mt-4 text-sm hidden"></div></div></div></div></div>
+
+    <!-- Penafort AI Shopping Assistant -->
+    <span class="chat-launcher-label">Ask Penafort</span>
+    <button id="chat-bubble" aria-label="Open Penafort AI shopping assistant" class="floating-chat fixed bottom-6 right-6 bg-green-700 text-white w-14 h-14 rounded-full shadow-xl z-40 flex items-center justify-center">
+        <i class="fa-solid fa-sparkles text-xl"></i>
+    </button>
+    <div id="chat-modal" class="chat-modal" role="dialog" aria-label="Penafort AI Shopping Assistant">
+        <div class="chat-header">
+            <div class="flex items-center justify-between gap-3">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="chat-avatar"><i class="fa-solid fa-sparkles"></i></div>
+                    <div class="min-w-0">
+                        <div class="font-extrabold text-sm truncate">Ask Penafort</div>
+                        <div class="text-xs text-green-100 mt-0.5"><span class="chat-online-dot"></span>AI shopping assistant</div>
+                    </div>
+                </div>
+                <button id="close-chat-modal" aria-label="Close chat" class="w-8 h-8 rounded-full hover:bg-white/10 text-white/80 hover:text-white text-xl">&times;</button>
+            </div>
+            <p class="text-xs text-green-50/90 mt-3">Find products, get shopping help, or ask about your order.</p>
+        </div>
+        <div id="chat-messages" class="chat-messages"></div>
+        <div class="chat-quick-prompts" id="chat-quick-prompts">
+            <button class="chat-quick-prompt" data-chat-prompt="Help me find a product">Find a product</button>
+            <button class="chat-quick-prompt" data-chat-prompt="What are the best deals available?">Best deals</button>
+            <button class="chat-quick-prompt" data-chat-prompt="Help me with my order">Order help</button>
+        </div>
+        <div class="chat-compose">
+            <div class="chat-input-wrap">
+                <input id="chat-input" type="text" placeholder="Ask about products, orders..." autocomplete="off" aria-label="Message Penafort AI">
+                <button id="chat-send" aria-label="Send message" class="chat-send-btn"><i class="fa-solid fa-arrow-up"></i></button>
+            </div>
+            <div class="chat-disclaimer">Penafort AI can make mistakes. Check important order details.</div>
+        </div>
+    </div>
+
+    <!-- Auth Modal -->
+    <div id="auth-modal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[100]"><div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl"><div class="flex justify-between items-center mb-4"><h3 id="modal-title" class="text-xl font-bold">Sign In</h3><button id="close-auth-modal" class="text-2xl">&times;</button></div><div class="space-y-3"><input id="auth-email" type="email" placeholder="Email address" class="w-full border border-gray-300 rounded-lg p-2.5" autocomplete="off"><input id="auth-password" type="password" placeholder="Password" class="w-full border border-gray-300 rounded-lg p-2.5" autocomplete="off"><div id="reg-extra" class="hidden space-y-3 border-t pt-3"><input id="invite-code" placeholder="Invite code (optional)" class="w-full border border-gray-300 rounded-lg p-2" autocomplete="off"><div class="text-xs text-center">— OR create new org —</div><input id="org-name" placeholder="Organization name *" class="w-full border border-gray-300 rounded-lg p-2" autocomplete="off"><div class="grid grid-cols-2 gap-2"><input id="org-location" placeholder="City, Country *" class="border rounded p-2" autocomplete="off"><input id="org-niche" placeholder="Industry *" class="border rounded p-2" autocomplete="off"></div><input id="budget" type="number" placeholder="Budget (₦)" class="border p-2 rounded" autocomplete="off"><div class="grid grid-cols-2 gap-2"><input id="first-name" placeholder="First name *" class="border p-2 rounded" autocomplete="off"><input id="last-name" placeholder="Last name *" class="border p-2 rounded" autocomplete="off"></div><input id="phone-number" placeholder="Phone number *" class="border p-2 rounded" autocomplete="off"></div><button id="auth-submit" class="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-2.5 rounded-lg">Sign In</button><button id="demo-access" class="w-full bg-emerald-500 text-white py-2.5 rounded-lg flex items-center justify-center gap-2"><i class="fa-solid fa-flask"></i> Demo Access</button><div class="text-center"><button id="toggle-auth-mode" class="text-sm text-green-500 hover:underline">Don't have an account? Register</button></div></div></div></div>
+
+    <!-- Secure external script -->
+    <script src="kdstore.js" defer></script>
+
+
+</body>
+</html>
