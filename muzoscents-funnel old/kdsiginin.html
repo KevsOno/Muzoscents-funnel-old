@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kevs Digital – Sign In</title>
+    <script src="https://cdn.tailwindcss.com">
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <style>
+        :root {
+            --kevs-orange: #f97316;
+            --kevs-blue: #3b82f6;
+        }
+        body {
+            background-color: #fef9e6;
+            font-family: system-ui, sans-serif;
+        }
+        .loading-spinner {
+            border: 2px solid #e5e7eb;
+            border-top: 2px solid var(--kevs-blue);
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 0.6s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .btn-login {
+            position: relative;
+            overflow: hidden;
+            transition: background 0.3s ease, transform 0.15s ease, box-shadow 0.25s ease;
+            will-change: transform;
+        }
+        .btn-login:active:not(:disabled) { transform: scale(0.96); }
+        .btn-login.loading {
+            pointer-events: none;
+            background-color: #2563eb !important;
+        }
+        .btn-login.loading .btn-text { visibility: hidden; }
+        .btn-login.loading .btn-loader { display: inline-flex; }
+        .btn-login .btn-loader {
+            display: none;
+            position: absolute;
+            inset: 0;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            color: white;
+            font-weight: 500;
+        }
+        .btn-login .btn-loader .spinner {
+            width: 22px;
+            height: 22px;
+            border: 2.5px solid rgba(255,255,255,0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.65s linear infinite;
+        }
+        .btn-login .btn-loader .loader-text { font-size: 0.95rem; }
+        .btn-login .ripple {
+            position: absolute;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.35);
+            transform: scale(0);
+            animation: rippleAnim 0.6s ease-out forwards;
+            pointer-events: none;
+        }
+        @keyframes rippleAnim {
+            to { transform: scale(4); opacity: 0; }
+        }
+        .btn-login.success {
+            background-color: #059669 !important;
+            transition: background 0.3s ease;
+        }
+        .btn-login.success .btn-text { visibility: visible; }
+        .btn-login.success .btn-loader { display: none !important; }
+        .btn-login .btn-text { display: inline-flex; align-items: center; gap: 8px; }
+        .btn-login .btn-text i { font-size: 1rem; }
+        @keyframes shake {
+            0%,100% { transform: translateX(0); }
+            20% { transform: translateX(-8px); }
+            40% { transform: translateX(8px); }
+            60% { transform: translateX(-5px); }
+            80% { transform: translateX(5px); }
+        }
+        .btn-login.error {
+            animation: shake 0.45s ease forwards;
+            background-color: #dc2626 !important;
+        }
+        .btn-login.error .btn-text { visibility: visible; }
+        .btn-login.error .btn-loader { display: none !important; }
+        #toast-container .toast {
+            transform: translateX(120%);
+            animation: slideIn 0.35s ease forwards;
+        }
+        @keyframes slideIn {
+            to { transform: translateX(0); }
+        }
+        #toast-container .toast.removing {
+            animation: slideOut 0.3s ease forwards;
+        }
+        @keyframes slideOut {
+            to { transform: translateX(120%); opacity: 0; }
+        }
+        input:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            background-color: #f3f4f6;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+
+    <div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
+
+    <div class="max-w-md w-full bg-white rounded-2xl shadow-xl p-8">
+        <div class="text-center mb-6">
+            <span class="text-3xl font-bold text-orange-500">Kevs</span><span class="text-2xl font-semibold text-gray-800">BI</span>
+            <p class="text-xs text-gray-400 mt-1">Intelligence dashboard</p>
+        </div>
+
+        <div id="tabs-container" class="flex border-b mb-6">
+            <button id="login-tab" class="flex-1 py-2 font-medium text-blue-600 border-b-2 border-blue-600">Login</button>
+            <button id="register-tab" class="flex-1 py-2 font-medium text-gray-500">Register</button>
+        </div>
+
+        <!-- LOGIN FORM -->
+        <form id="login-form">
+            <input type="email" id="login-email" placeholder="Email" class="w-full mb-3 p-3 border rounded-lg" required />
+            <div class="relative mb-2">
+                <input type="password" id="login-password" placeholder="Password" class="w-full p-3 border rounded-lg pr-10" required />
+                <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="login-password">
+                    <i class="fa-solid fa-eye"></i>
+                </button>
+            </div>
+            <div class="text-right mb-4">
+                <button type="button" id="forgot-pwd-btn" class="text-xs text-blue-500 hover:underline">Forgot password?</button>
+            </div>
+            <button type="submit" id="login-submit-btn" class="btn-login w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium transition">
+                <span class="btn-text"><i class="fa-regular fa-circle-check"></i> Login</span>
+                <span class="btn-loader"><span class="spinner"></span><span class="loader-text">Signing in…</span></span>
+            </button>
+            <div class="flex items-center my-4">
+                <div class="flex-1 border-t border-gray-200"></div>
+                <span class="px-3 text-xs text-gray-400 uppercase">Or</span>
+                <div class="flex-1 border-t border-gray-200"></div>
+            </div>
+            <button type="button" id="demo-login-btn" class="w-full bg-emerald-600 text-white py-2.5 rounded-lg hover:bg-emerald-700 font-medium flex items-center justify-center gap-2 transition">
+                <i class="fa-solid fa-bolt"></i> One-Click Demo Access
+            </button>
+        </form>
+
+        <!-- REGISTER FORM (simplified) -->
+        <form id="register-form" class="hidden">
+            <div class="grid grid-cols-2 gap-2 mb-2">
+                <div><label class="block text-xs text-gray-500 mb-1">First Name *</label><input type="text" id="reg-fname" placeholder="John" class="w-full p-3 border rounded-lg" required /></div>
+                <div><label class="block text-xs text-gray-500 mb-1">Last Name *</label><input type="text" id="reg-lname" placeholder="Doe" class="w-full p-3 border rounded-lg" required /></div>
+            </div>
+            <div><label class="block text-xs text-gray-500 mb-1">Phone Number *</label><input type="tel" id="reg-phone" placeholder="e.g., +2348123456789" class="w-full p-3 border rounded-lg mb-2" required /></div>
+            <div><label class="block text-xs text-gray-500 mb-1">Email *</label><input type="email" id="reg-email" placeholder="Email" class="w-full mb-2 p-3 border rounded-lg" required /></div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Password *</label>
+                <div class="relative mb-2">
+                    <input type="password" id="reg-password" placeholder="Password" class="w-full p-3 border rounded-lg pr-10" required />
+                    <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reg-password"><i class="fa-solid fa-eye"></i></button>
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Confirm Password *</label>
+                <div class="relative mb-4">
+                    <input type="password" id="reg-confirm-password" placeholder="Confirm Password" class="w-full p-3 border rounded-lg pr-10" required />
+                    <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reg-confirm-password"><i class="fa-solid fa-eye"></i></button>
+                </div>
+            </div>
+            <button type="submit" class="w-full bg-green-600 text-white py-2.5 rounded-lg hover:bg-green-700 transition">Register</button>
+        </form>
+
+        <!-- RESET PASSWORD FORM -->
+        <div id="reset-password-form" class="hidden">
+            <h3 class="text-center font-bold text-lg mb-2">Set New Password</h3>
+            <p class="text-sm text-gray-500 mb-4">Enter your new password below.</p>
+            <div class="relative mb-2">
+                <input type="password" id="reset-password" placeholder="New Password" class="w-full p-3 border rounded-lg pr-10" required />
+                <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reset-password"><i class="fa-solid fa-eye"></i></button>
+            </div>
+            <div class="relative mb-4">
+                <input type="password" id="reset-password-confirm" placeholder="Confirm Password" class="w-full p-3 border rounded-lg pr-10" required />
+                <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reset-password-confirm"><i class="fa-solid fa-eye"></i></button>
+            </div>
+            <button type="button" id="reset-password-btn" class="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700 transition">Update Password</button>
+        </div>
+
+        <div id="auth-message" class="text-xs text-center mt-4 text-red-500 hidden"></div>
+    </div>
+
+    <script>
+        const BACKEND_URL = 'https://kevsono-kevs-digital-bos.hf.space';
+        const DASHBOARD_URL = '/kdadmin';
+        const SUPABASE_URL = 'https://crxykdfgexuysngzwulk.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNyeHlrZGZ4YWRlbnN5bnh6Z3VsdGsiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTc0MjU3MTA5OSwiZXhwIjoyMDU4MTQ3MDk5fQ.fLtH3AHm7ZSn3T9Tc7HtQkBycyG58XkfDrFrbhTgTPg';
+
+        // Toast
+        function showToast(msg, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast px-4 py-2 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} mb-2 text-sm`;
+            toast.innerText = msg;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.classList.add('removing');
+                setTimeout(() => toast.remove(), 350);
+            }, 3500);
+        }
+
+        async function apiCall(endpoint, method = 'GET', body = null, token = null) {
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+            const res = await fetch(`${BACKEND_URL}${endpoint}`, {
+                method,
+                headers,
+                body: body ? JSON.stringify(body) : undefined
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: 'API error' }));
+                throw new Error(err.detail || 'API error');
+            }
+            return res.json();
+        }
+
+        async function fetchAndStoreRole(accessToken) {
+            try {
+                const me = await apiCall('/auth/me', 'GET', null, accessToken);
+                const role = me.role || 'customer';
+                localStorage.setItem('user_role', role);
+                return role;
+            } catch (_) {
+                localStorage.setItem('user_role', 'customer');
+                return 'customer';
+            }
+        }
+
+        async function login(email, password) {
+            const data = await apiCall('/auth/login', 'POST', { email, password });
+            localStorage.setItem('access_token', data.access_token);
+            localStorage.setItem('refresh_token', data.refresh_token);
+            localStorage.setItem('user_id', data.user_id);
+            await fetchAndStoreRole(data.access_token);
+            showToast('Login successful, redirecting…');
+            setTimeout(() => { window.location.href = DASHBOARD_URL; }, 1000);
+        }
+
+        async function resetPassword(email) {
+            await apiCall('/auth/reset-password', 'POST', { email });
+            showToast('Password reset email sent. Check your inbox.');
+        }
+
+        // Password toggle
+        document.querySelectorAll('.toggle-password-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const input = document.getElementById(btn.dataset.target);
+                const icon = btn.querySelector('i');
+                if (input.type === 'password') {
+                    input.type = 'text';
+                    icon.classList.replace('fa-eye', 'fa-eye-slash');
+                } else {
+                    input.type = 'password';
+                    icon.classList.replace('fa-eye-slash', 'fa-eye');
+                }
+            });
+        });
+
+        // Login button animation helpers (same as before)
+        const loginBtn = document.getElementById('login-submit-btn');
+        const loginForm = document.getElementById('login-form');
+
+        function resetLoginBtn() {
+            loginBtn.classList.remove('loading', 'success', 'error');
+            loginBtn.disabled = false;
+            const text = loginBtn.querySelector('.btn-text');
+            if (text) text.style.visibility = 'visible';
+            const loader = loginBtn.querySelector('.btn-loader');
+            if (loader) loader.style.display = 'none';
+        }
+        function setLoginLoading() {
+            loginBtn.classList.remove('success', 'error');
+            loginBtn.classList.add('loading');
+            loginBtn.disabled = true;
+            const text = loginBtn.querySelector('.btn-text');
+            if (text) text.style.visibility = 'hidden';
+            const loader = loginBtn.querySelector('.btn-loader');
+            if (loader) loader.style.display = 'inline-flex';
+        }
+        function setLoginSuccess() {
+            loginBtn.classList.remove('loading', 'error');
+            loginBtn.classList.add('success');
+            loginBtn.disabled = false;
+            const text = loginBtn.querySelector('.btn-text');
+            if (text) {
+                text.style.visibility = 'visible';
+                text.innerHTML = '<i class="fa-regular fa-circle-check"></i> Logged in!';
+            }
+            const loader = loginBtn.querySelector('.btn-loader');
+            if (loader) loader.style.display = 'none';
+            setTimeout(() => {
+                resetLoginBtn();
+                const text2 = loginBtn.querySelector('.btn-text');
+                if (text2) text2.innerHTML = '<i class="fa-regular fa-circle-check"></i> Login';
+            }, 1800);
+        }
+        function setLoginError() {
+            loginBtn.classList.remove('loading', 'success');
+            loginBtn.classList.add('error');
+            loginBtn.disabled = false;
+            const text = loginBtn.querySelector('.btn-text');
+            if (text) {
+                text.style.visibility = 'visible';
+                text.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Error';
+            }
+            const loader = loginBtn.querySelector('.btn-loader');
+            if (loader) loader.style.display = 'none';
+            setTimeout(() => {
+                resetLoginBtn();
+                const text2 = loginBtn.querySelector('.btn-text');
+                if (text2) text2.innerHTML = '<i class="fa-regular fa-circle-check"></i> Login';
+            }, 1200);
+        }
+
+        // Login submit
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('login-email').value;
+            const pwd = document.getElementById('login-password').value;
+            if (!email || !pwd) {
+                showToast('Please fill in both email and password.', 'error');
+                setLoginError();
+                return;
+            }
+            setLoginLoading();
+            try {
+                await login(email, pwd);
+                setLoginSuccess();
+            } catch (err) {
+                showToast(err.message || 'Login failed.', 'error');
+                setLoginError();
+            }
+        });
+
+        // Demo login
+        document.getElementById('demo-login-btn')?.addEventListener('click', async () => {
+            const btn = document.getElementById('demo-login-btn');
+            const original = btn.innerHTML;
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Authenticating…';
+            btn.disabled = true;
+            try {
+                const data = await apiCall('/auth/login', 'POST', { email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' });
+                localStorage.setItem('access_token', data.access_token);
+                localStorage.setItem('refresh_token', data.refresh_token);
+                localStorage.setItem('user_id', data.user_id);
+                await fetchAndStoreRole(data.access_token);
+                showToast('Demo login successful!');
+                setTimeout(() => window.location.href = DASHBOARD_URL, 1000);
+            } catch (err) {
+                showToast('Demo failed: ' + err.message, 'error');
+                btn.innerHTML = original;
+                btn.disabled = false;
+            }
+        });
+
+        // Forgot password
+        document.getElementById('forgot-pwd-btn')?.addEventListener('click', async () => {
+            const email = document.getElementById('login-email').value;
+            if (!email) { showToast('Enter your email first.', 'error'); return; }
+            try { await resetPassword(email); } catch (err) { showToast(err.message, 'error'); }
+        });
+
+        // Tab switching
+        const loginTab = document.getElementById('login-tab');
+        const registerTab = document.getElementById('register-tab');
+
+        loginTab?.addEventListener('click', () => {
+            document.getElementById('login-form').classList.remove('hidden');
+            document.getElementById('register-form').classList.add('hidden');
+            document.getElementById('reset-password-form').classList.add('hidden');
+            loginTab.classList.add('border-blue-600', 'text-blue-600');
+            registerTab.classList.remove('border-blue-600', 'text-blue-600');
+            registerTab.classList.add('text-gray-500');
+            resetLoginBtn();
+        });
+
+        registerTab?.addEventListener('click', () => {
+            document.getElementById('login-form').classList.add('hidden');
+            document.getElementById('register-form').classList.remove('hidden');
+            document.getElementById('reset-password-form').classList.add('hidden');
+            registerTab.classList.add('border-blue-600', 'text-blue-600');
+            loginTab.classList.remove('border-blue-600', 'text-blue-600');
+            loginTab.classList.add('text-gray-500');
+            resetLoginBtn();
+        });
+
+        // ---- REGISTER SUBMIT ----
+        document.getElementById('register-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('reg-email').value;
+            const password = document.getElementById('reg-password').value;
+            const confirm = document.getElementById('reg-confirm-password').value;
+            const fname = document.getElementById('reg-fname').value;
+            const lname = document.getElementById('reg-lname').value;
+            const phone = document.getElementById('reg-phone').value;
+
+            if (!email || !password || !fname || !lname || !phone) {
+                showToast('All fields are required.', 'error');
+                return;
+            }
+            if (password !== confirm) {
+                showToast('Passwords do not match.', 'error');
+                return;
+            }
+            if (password.length < 8) {
+                showToast('Password must be at least 8 characters.', 'error');
+                return;
+            }
+
+            const btn = e.target.querySelector('button[type="submit"]');
+            const original = btn.textContent;
+            btn.textContent = 'Registering…';
+            btn.disabled = true;
+
+            try {
+                const payload = {
+                    email,
+                    password,
+                    first_name: fname,
+                    last_name: lname,
+                    phone
+                };
+                // No invite_code, no org fields
+                await apiCall('/auth/register', 'POST', payload);
+                showToast('Registration successful! Please sign in.', 'success');
+                // Switch to login tab
+                loginTab.click();
+                // Pre-fill email
+                document.getElementById('login-email').value = email;
+                document.getElementById('login-password').value = '';
+            } catch (err) {
+                showToast(err.message || 'Registration failed.', 'error');
+            } finally {
+                btn.textContent = original;
+                btn.disabled = false;
+            }
+        });
+
+        // ---- RESET PASSWORD CONFIRM (same as before) ----
+        (function handleResetToken() {
+            let token = null;
+            const hash = window.location.hash;
+            if (hash) {
+                const params = new URLSearchParams(hash.substring(1));
+                token = params.get('access_token') || params.get('refresh_token');
+            }
+            if (!token) {
+                const query = window.location.search;
+                if (query) {
+                    const params = new URLSearchParams(query);
+                    token = params.get('access_token') || params.get('refresh_token');
+                }
+            }
+            if (token) {
+                document.getElementById('login-form').classList.add('hidden');
+                document.getElementById('register-form').classList.add('hidden');
+                document.getElementById('reset-password-form').classList.remove('hidden');
+                document.getElementById('tabs-container').classList.add('hidden');
+                window._resetToken = token;
+            }
+        })();
+
+        document.getElementById('reset-password-btn')?.addEventListener('click', async () => {
+            const password = document.getElementById('reset-password').value;
+            const confirm = document.getElementById('reset-password-confirm').value;
+            if (!password || password.length < 8) {
+                showToast('Password must be at least 8 characters.', 'error');
+                return;
+            }
+            if (password !== confirm) {
+                showToast('Passwords do not match.', 'error');
+                return;
+            }
+            const token = window._resetToken;
+            if (!token) {
+                showToast('No reset token found. Please request a new password reset.', 'error');
+                return;
+            }
+            const btn = document.getElementById('reset-password-btn');
+            const original = btn.textContent;
+            btn.textContent = 'Updating…';
+            btn.disabled = true;
+            try {
+                // Use Supabase PATCH
+                const url = `${SUPABASE_URL}/auth/v1/user`;
+                const headers = {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                };
+                const res = await fetch(url, {
+                    method: 'PATCH',
+                    headers,
+                    body: JSON.stringify({ password })
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.message || 'Failed to update password');
+                }
+                showToast('Password updated successfully. Please login with your new password.', 'success');
+                window.location.hash = '';
+                window._resetToken = null;
+                setTimeout(() => {
+                    window.location.href = '/kdsiginin';
+                }, 2000);
+            } catch (err) {
+                showToast('Failed to update password: ' + err.message, 'error');
+                btn.textContent = original;
+                btn.disabled = false;
+            }
+        });
+
+        console.log('✅ Kevs Digital – Sign In (simplified registration)');
+    </script>
+</body>
+</html>
