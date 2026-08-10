@@ -239,17 +239,19 @@
             <button type="submit" class="w-full bg-green-600 text-white py-2.5 rounded-lg hover:bg-green-700 transition">Register</button>
         </form>
 
-        <!-- RESET PASSWORD FORM (CODE-BASED) -->
+        <!-- RESET PASSWORD FORM (CODE-BASED) - NOW 8‑DIGIT -->
         <div id="reset-password-form" class="hidden">
             <h3 class="text-center font-bold text-lg mb-2">Reset Your Password</h3>
-            <p class="text-sm text-gray-500 mb-4">Enter the email address and the 6‑digit code you received.</p>
+            <p class="text-sm text-gray-500 mb-4">Enter the email address and the 8‑digit code you received.</p>
 
             <div class="mb-3">
                 <input type="email" id="reset-email" placeholder="Your email address" class="w-full p-3 border rounded-lg" required />
             </div>
 
             <div class="mb-3">
-                <input type="text" id="reset-code" placeholder="6‑digit code from email" class="w-full p-3 border rounded-lg text-center text-xl font-mono tracking-widest" required maxlength="6" inputmode="numeric" pattern="[0-9]*" />
+                <input type="text" id="reset-code" placeholder="8‑digit code from email" 
+                       class="w-full p-3 border rounded-lg text-center text-xl font-mono tracking-widest" 
+                       maxlength="8" inputmode="numeric" pattern="[0-9]*" required />
             </div>
 
             <div class="relative mb-2">
@@ -541,7 +543,7 @@
         });
 
         // ══════════════════════════════════════════════════════════════════════
-        // ─── RESET PASSWORD (CODE-BASED) ────────────────────────────────────
+        // ─── RESET PASSWORD (CODE-BASED) - 8‑DIGIT VERSION ────────────────
         // ══════════════════════════════════════════════════════════════════════
 
         const resetForm = document.getElementById('reset-password-form');
@@ -564,7 +566,7 @@
             try {
                 // Your backend sends the reset email via Brevo
                 await apiCall('/auth/reset-password', 'POST', { email });
-                showToast('A 6‑digit reset code has been sent to your email.', 'success');
+                showToast('An 8‑digit reset code has been sent to your email.', 'success');
                 // Pre-fill email in reset form
                 document.getElementById('reset-email').value = email;
                 // Clear any previous code/password fields
@@ -585,11 +587,11 @@
             const confirm = document.getElementById('reset-password-confirm').value;
 
             if (!email || !code) {
-                showToast('Please enter your email and the 6‑digit code.', 'error');
+                showToast('Please enter your email and the 8‑digit code.', 'error');
                 return;
             }
-            if (code.length !== 6 || !/^\d{6}$/.test(code)) {
-                showToast('Please enter a valid 6‑digit numeric code.', 'error');
+            if (code.length !== 8 || !/^\d{8}$/.test(code)) {
+                showToast('Please enter a valid 8‑digit numeric code.', 'error');
                 return;
             }
             if (password.length < 8) {
@@ -660,12 +662,12 @@
                 });
             });
 
-        // ─── Auto‑uppercase code input & restrict to digits ──────────────────
+        // ─── Auto‑sanitise code input: only digits, max 8 ──────────────────
         document.getElementById('reset-code')?.addEventListener('input', function(e) {
-            this.value = this.value.replace(/\D/g, '').slice(0, 6);
+            this.value = this.value.replace(/\D/g, '').slice(0, 8);
         });
 
-        console.log('✅ Kevs Digital – Sign In (code‑based reset with Supabase verifyOtp)');
+        console.log('✅ Kevs Digital – Sign In (8‑digit code‑based reset with Supabase verifyOtp)');
     </script>
 </body>
 </html>
