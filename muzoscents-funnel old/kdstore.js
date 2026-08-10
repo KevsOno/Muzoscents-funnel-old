@@ -57,12 +57,38 @@ let isFeaturedLoading = false;
 let currentPage = 1;
 const PAGE_SIZE = 101;
 
-// ─── SUPABASE CLIENT (same as signin page) ──────────────────
+// ─── SUPABASE CLIENT (dynamic load) ─────────────────────────
 const SUPABASE_URL = 'https://crxykdfgexuysngzwulk.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNyeHlrZGZnZXh1eXNuZ3p3dWxrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAxOTIzMzYsImV4cCI6MjA5NTc2ODMzNn0.EL8CBO7tKSv5mN8RB2-7g0ioOGNc0A5auUr5WCLsuQI';
-const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { persistSession: true, autoRefreshToken: true }
-});
+
+let supabaseClient = null;
+
+async function initSupabase() {
+    if (supabaseClient) return supabaseClient;
+    if (typeof supabase !== 'undefined' && supabase.createClient) {
+        supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            auth: { persistSession: true, autoRefreshToken: true }
+        });
+        return supabaseClient;
+    }
+    // Load Supabase library dynamically
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+        script.onload = () => {
+            if (typeof supabase !== 'undefined' && supabase.createClient) {
+                supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+                    auth: { persistSession: true, autoRefreshToken: true }
+                });
+                resolve(supabaseClient);
+            } else {
+                reject(new Error('Supabase not available after load'));
+            }
+        };
+        script.onerror = () => reject(new Error('Failed to load Supabase library'));
+        document.head.appendChild(script);
+    });
+}
 
 // ========== INDEXEDDB HELPERS ==========
 function openUserDB() {
@@ -1595,9 +1621,15 @@ document.addEventListener('DOMContentLoaded', async function() {
     const resetMessage = document.getElementById('reset-message');
     let resetEmailValue = '';
 
-    // Show reset step 1
-    forgotPasswordLink?.addEventListener('click', function(e) {
+    // Show reset step 1 (ensures Supabase is loaded)
+    forgotPasswordLink?.addEventListener('click', async function(e) {
         e.preventDefault();
+        try {
+            await initSupabase(); // load Supabase if not already
+        } catch (err) {
+            showToast('Failed to load security library. Please try again later.', 'error');
+            return;
+        }
         authMainSection.classList.add('hidden');
         authResetSection.classList.remove('hidden');
         resetStep1.classList.remove('hidden');
@@ -1640,6 +1672,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         setButtonLoading(this, true);
         try {
+            await initSupabase(); // ensure Supabase is ready (though it should be already)
             const response = await fetch(`${API_BASE}/auth/reset-password`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1691,6 +1724,10 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         setButtonLoading(this, true);
         try {
+            // Ensure Supabase client is ready
+            await initSupabase();
+            if (!supabaseClient) throw new Error('Supabase client not initialized');
+
             // 1. Verify OTP
             const { data, error: verifyError } = await supabaseClient.auth.verifyOtp({
                 email: resetEmailValue,
@@ -1702,7 +1739,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
             const accessToken = data.session.access_token;
 
-            // 2. Direct PATCH to update password (same as signin page)
+            // 2. Direct PATCH to update password
             const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
                 method: 'PATCH',
                 headers: {
