@@ -1571,6 +1571,64 @@ document.addEventListener('DOMContentLoaded', async function() {
         document.getElementById('modal-title').innerText = isReg ? "Register Organization" : "Sign In";
     });
 
+    // ---- FORGOT PASSWORD FLOW ----
+    const authMainSection = document.getElementById('auth-main-section');
+    const authResetSection = document.getElementById('auth-reset-section');
+    const forgotPasswordLink = document.getElementById('forgot-password-link');
+    const resetBackToLogin = document.getElementById('reset-back-to-login');
+    const resetSubmit = document.getElementById('reset-submit');
+    const resetEmail = document.getElementById('reset-email');
+    const resetMessage = document.getElementById('reset-message');
+
+    // Show reset view
+    forgotPasswordLink?.addEventListener('click', function(e) {
+        e.preventDefault();
+        authMainSection.classList.add('hidden');
+        authResetSection.classList.add('active');
+        resetMessage.classList.add('hidden');
+        resetMessage.innerText = '';
+    });
+
+    // Back to login
+    resetBackToLogin?.addEventListener('click', function(e) {
+        e.preventDefault();
+        authResetSection.classList.remove('active');
+        authMainSection.classList.remove('hidden');
+        resetMessage.classList.add('hidden');
+        resetMessage.innerText = '';
+    });
+
+    // Submit reset request
+    resetSubmit?.addEventListener('click', async function() {
+        const email = resetEmail.value.trim();
+        if (!email) {
+            alert('Please enter your email address.');
+            return;
+        }
+        setButtonLoading(this, true);
+        try {
+            // Use the existing /auth/reset-password endpoint
+            const response = await fetch(`${API_BASE}/auth/reset-password`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email })
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || 'Reset request failed');
+            resetMessage.classList.remove('hidden');
+            resetMessage.className = 'text-sm text-center text-green-600';
+            resetMessage.innerText = '✅ Reset link sent! Check your email.';
+            // Optionally clear the email field
+            resetEmail.value = '';
+        } catch (e) {
+            resetMessage.classList.remove('hidden');
+            resetMessage.className = 'text-sm text-center text-red-500';
+            resetMessage.innerText = '❌ ' + e.message;
+        } finally {
+            setButtonLoading(this, false);
+        }
+    });
+
     // ---- AUTH MODAL SUBMIT (Login or Register) ----
     document.getElementById('auth-submit')?.addEventListener('click', async function() {
         const btn = this;
