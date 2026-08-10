@@ -111,6 +111,12 @@
             cursor: not-allowed;
             background-color: #f3f4f6;
         }
+        .hidden { display: none !important; }
+        #reset-password-form .manual-token-area {
+            margin-top: 12px;
+            border-top: 1px solid #e5e7eb;
+            padding-top: 12px;
+        }
     </style>
 </head>
 <body class="min-h-screen flex items-center justify-center p-4">
@@ -192,6 +198,15 @@
                 <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reset-password-confirm"><i class="fa-solid fa-eye"></i></button>
             </div>
             <button type="button" id="reset-password-btn" class="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700 transition">Update Password</button>
+            
+            <!-- Manual token entry (fallback) -->
+            <div class="manual-token-area text-center">
+                <button type="button" id="show-manual-token-btn" class="text-xs text-blue-500 hover:underline">I have a reset code (enter manually)</button>
+                <div id="manual-token-input-area" class="hidden mt-2">
+                    <input type="text" id="manual-reset-token" placeholder="Paste your reset token here" class="w-full p-2 border rounded-lg text-sm" />
+                    <button type="button" id="use-manual-token-btn" class="mt-2 text-sm bg-blue-500 text-white px-4 py-1 rounded hover:bg-blue-600">Use this token</button>
+                </div>
+            </div>
         </div>
 
         <div id="auth-message" class="text-xs text-center mt-4 text-red-500 hidden"></div>
@@ -273,7 +288,7 @@
             });
         });
 
-        // Login button animation helpers (same as before)
+        // Login button animation helpers
         const loginBtn = document.getElementById('login-submit-btn');
         const loginForm = document.getElementById('login-form');
 
@@ -437,12 +452,9 @@
                     last_name: lname,
                     phone
                 };
-                // No invite_code, no org fields
                 await apiCall('/auth/register', 'POST', payload);
                 showToast('Registration successful! Please sign in.', 'success');
-                // Switch to login tab
                 loginTab.click();
-                // Pre-fill email
                 document.getElementById('login-email').value = email;
                 document.getElementById('login-password').value = '';
             } catch (err) {
@@ -453,30 +465,68 @@
             }
         });
 
-        // ---- RESET PASSWORD CONFIRM (same as before) ----
-        (function handleResetToken() {
-            let token = null;
-            const hash = window.location.hash;
-            if (hash) {
-                const params = new URLSearchParams(hash.substring(1));
-                token = params.get('access_token') || params.get('refresh_token');
+        // ---- RESET PASSWORD FLOW ----
+        // 1. Token extraction from URL
+        let resetToken = null;
+        const hash = window.location.hash;
+        if (hash) {
+            const params = new URLSearchParams(hash.substring(1));
+            resetToken = params.get('access_token') || params.get('refresh_token');
+        }
+        if (!resetToken) {
+            const query = window.location.search;
+            if (query) {
+                const params = new URLSearchParams(query);
+                resetToken = params.get('access_token') || params.get('refresh_token');
             }
-            if (!token) {
-                const query = window.location.search;
-                if (query) {
-                    const params = new URLSearchParams(query);
-                    token = params.get('access_token') || params.get('refresh_token');
+        }
+        // Also check for token in fragment as 'token' parameter (some providers)
+        if (!resetToken && hash) {
+            const params = new URLSearchParams(hash.substring(1));
+            resetToken = params.get('token');
+        }
+        if (!resetToken && window.location.search) {
+            const params = new URLSearchParams(window.location.search);
+            resetToken = params.get('token');
+        }
+
+        console.log('Reset token detected:', resetToken);
+
+        if (resetToken) {
+            // Show reset form, hide everything else
+            document.getElementById('login-form').classList.add('hidden');
+            document.getElementById('register-form').classList.add('hidden');
+            document.getElementById('reset-password-form').classList.remove('hidden');
+            document.getElementById('tabs-container').classList.add('hidden');
+            window._resetToken = resetToken;
+            showToast('Please enter your new password.', 'success');
+        }
+
+        // 2. Manual token entry toggle
+        document.getElementById('show-manual-token-btn')?.addEventListener('click', function() {
+            const area = document.getElementById('manual-token-input-area');
+            area.classList.toggle('hidden');
+            if (!area.classList.contains('hidden')) {
+                // Pre-fill with the token from URL if any
+                if (resetToken) {
+                    document.getElementById('manual-reset-token').value = resetToken;
                 }
             }
-            if (token) {
-                document.getElementById('login-form').classList.add('hidden');
-                document.getElementById('register-form').classList.add('hidden');
-                document.getElementById('reset-password-form').classList.remove('hidden');
-                document.getElementById('tabs-container').classList.add('hidden');
-                window._resetToken = token;
-            }
-        })();
+        });
 
+        document.getElementById('use-manual-token-btn')?.addEventListener('click', function() {
+            const token = document.getElementById('manual-reset-token').value.trim();
+            if (!token) {
+                showToast('Please paste your reset token.', 'error');
+                return;
+            }
+            window._resetToken = token;
+            showToast('Token set. You can now update your password.', 'success');
+            // Optionally hide the manual area
+            document.getElementById('manual-token-input-area').classList.add('hidden');
+        });
+
+        // 3. Reset password submit
         document.getElementById('reset-password-btn')?.addEventListener('click', async () => {
             const password = document.getElementById('reset-password').value;
             const confirm = document.getElementById('reset-password-confirm').value;
@@ -498,7 +548,7 @@
             btn.textContent = 'Updating…';
             btn.disabled = true;
             try {
-                // Use Supabase PATCH
+                // Use Supabase PATCH to update password with the token
                 const url = `${SUPABASE_URL}/auth/v1/user`;
                 const headers = {
                     'apikey': SUPABASE_ANON_KEY,
@@ -515,10 +565,12 @@
                     throw new Error(err.message || 'Failed to update password');
                 }
                 showToast('Password updated successfully. Please login with your new password.', 'success');
+                // Clear token from URL
                 window.location.hash = '';
                 window._resetToken = null;
+                // Redirect to login after a delay
                 setTimeout(() => {
-                    window.location.href = '/kdsiginin';
+                    window.location.href = '/kdsiginin'; // Reload to login page without token
                 }, 2000);
             } catch (err) {
                 showToast('Failed to update password: ' + err.message, 'error');
@@ -527,7 +579,16 @@
             }
         });
 
-        console.log('✅ Kevs Digital – Sign In (simplified registration)');
+        // Ensure reset form is shown if token exists after page load (redundant but safe)
+        if (resetToken) {
+            // Already handled above, but ensure the form is visible
+            document.getElementById('login-form').classList.add('hidden');
+            document.getElementById('register-form').classList.add('hidden');
+            document.getElementById('reset-password-form').classList.remove('hidden');
+            document.getElementById('tabs-container').classList.add('hidden');
+        }
+
+        console.log('✅ Kevs Digital – Sign In (improved reset flow)');
     </script>
 </body>
 </html>
