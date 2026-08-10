@@ -57,6 +57,13 @@ let isFeaturedLoading = false;
 let currentPage = 1;
 const PAGE_SIZE = 101;
 
+// ─── SUPABASE CLIENT (same as signin page) ──────────────────
+const SUPABASE_URL = 'https://crxykdfgexuysngzwulk.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNyeHlrZGZnZXh1eXNuZ3p3dWxrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAxOTIzMzYsImV4cCI6MjA5NTc2ODMzNn0.EL8CBO7tKSv5mN8RB2-7g0ioOGNc0A5auUr5WCLsuQI';
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true }
+});
+
 // ========== INDEXEDDB HELPERS ==========
 function openUserDB() {
     return new Promise((resolve, reject) => {
@@ -1571,20 +1578,30 @@ document.addEventListener('DOMContentLoaded', async function() {
         document.getElementById('modal-title').innerText = isReg ? "Register Organization" : "Sign In";
     });
 
-    // ---- FORGOT PASSWORD FLOW ----
+    // ---- RESET PASSWORD (two‑step OTP) ----
     const authMainSection = document.getElementById('auth-main-section');
     const authResetSection = document.getElementById('auth-reset-section');
+    const resetStep1 = document.getElementById('reset-step1');
+    const resetStep2 = document.getElementById('reset-step2');
     const forgotPasswordLink = document.getElementById('forgot-password-link');
     const resetBackToLogin = document.getElementById('reset-back-to-login');
-    const resetSubmit = document.getElementById('reset-submit');
-    const resetEmail = document.getElementById('reset-email');
+    const resetBackToStep1 = document.getElementById('reset-back-to-step1');
+    const resetSendCode = document.getElementById('reset-send-code');
+    const resetUpdatePassword = document.getElementById('reset-update-password');
+    const resetEmailInput = document.getElementById('reset-email');
+    const resetCodeInput = document.getElementById('reset-code');
+    const resetNewPassword = document.getElementById('reset-new-password');
+    const resetConfirmPassword = document.getElementById('reset-confirm-password');
     const resetMessage = document.getElementById('reset-message');
+    let resetEmailValue = '';
 
-    // Show reset view
+    // Show reset step 1
     forgotPasswordLink?.addEventListener('click', function(e) {
         e.preventDefault();
         authMainSection.classList.add('hidden');
-        authResetSection.classList.add('active');
+        authResetSection.classList.remove('hidden');
+        resetStep1.classList.remove('hidden');
+        resetStep2.classList.add('hidden');
         resetMessage.classList.add('hidden');
         resetMessage.innerText = '';
     });
@@ -1592,34 +1609,50 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Back to login
     resetBackToLogin?.addEventListener('click', function(e) {
         e.preventDefault();
-        authResetSection.classList.remove('active');
+        authResetSection.classList.add('hidden');
         authMainSection.classList.remove('hidden');
+        resetStep1.classList.remove('hidden');
+        resetStep2.classList.add('hidden');
         resetMessage.classList.add('hidden');
         resetMessage.innerText = '';
     });
 
-    // Submit reset request
-    resetSubmit?.addEventListener('click', async function() {
-        const email = resetEmail.value.trim();
+    // Back to step 1
+    resetBackToStep1?.addEventListener('click', function(e) {
+        e.preventDefault();
+        resetStep1.classList.remove('hidden');
+        resetStep2.classList.add('hidden');
+        resetMessage.classList.add('hidden');
+        resetMessage.innerText = '';
+        resetCodeInput.value = '';
+        resetNewPassword.value = '';
+        resetConfirmPassword.value = '';
+    });
+
+    // Send reset code (Step 1)
+    resetSendCode?.addEventListener('click', async function() {
+        const email = resetEmailInput.value.trim();
         if (!email) {
-            alert('Please enter your email address.');
+            resetMessage.classList.remove('hidden');
+            resetMessage.className = 'text-sm text-center text-red-500';
+            resetMessage.innerText = 'Please enter your email address.';
             return;
         }
         setButtonLoading(this, true);
         try {
-            // Use the existing /auth/reset-password endpoint
             const response = await fetch(`${API_BASE}/auth/reset-password`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email })
             });
             const data = await response.json();
-            if (!response.ok) throw new Error(data.detail || 'Reset request failed');
-            resetMessage.classList.remove('hidden');
-            resetMessage.className = 'text-sm text-center text-green-600';
-            resetMessage.innerText = '✅ Reset link sent! Check your email.';
-            // Optionally clear the email field
-            resetEmail.value = '';
+            if (!response.ok) throw new Error(data.detail || 'Failed to send code');
+            resetEmailValue = email;
+            resetStep1.classList.add('hidden');
+            resetStep2.classList.remove('hidden');
+            resetMessage.classList.add('hidden');
+            showToast('8‑digit code sent to your email.', 'success');
+            resetCodeInput.focus();
         } catch (e) {
             resetMessage.classList.remove('hidden');
             resetMessage.className = 'text-sm text-center text-red-500';
@@ -1627,6 +1660,102 @@ document.addEventListener('DOMContentLoaded', async function() {
         } finally {
             setButtonLoading(this, false);
         }
+    });
+
+    // Update password (Step 2)
+    resetUpdatePassword?.addEventListener('click', async function() {
+        const code = resetCodeInput.value.trim();
+        const newPassword = resetNewPassword.value;
+        const confirm = resetConfirmPassword.value;
+
+        if (!code || code.length !== 8 || !/^\d{8}$/.test(code)) {
+            showToast('Please enter a valid 8‑digit numeric code.', 'error');
+            resetCodeInput.focus();
+            return;
+        }
+        if (newPassword.length < 8) {
+            showToast('Password must be at least 8 characters.', 'error');
+            resetNewPassword.focus();
+            return;
+        }
+        if (newPassword !== confirm) {
+            showToast('Passwords do not match.', 'error');
+            resetConfirmPassword.focus();
+            return;
+        }
+        if (!resetEmailValue) {
+            showToast('Email is missing. Please go back and try again.', 'error');
+            resetBackToStep1.click();
+            return;
+        }
+
+        setButtonLoading(this, true);
+        try {
+            // 1. Verify OTP
+            const { data, error: verifyError } = await supabaseClient.auth.verifyOtp({
+                email: resetEmailValue,
+                token: code,
+                type: 'recovery'
+            });
+            if (verifyError) throw new Error(verifyError.message);
+            if (!data?.session) throw new Error('Code may be expired or already used.');
+
+            const accessToken = data.session.access_token;
+
+            // 2. Direct PATCH to update password
+            const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+                method: 'PATCH',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ password: newPassword })
+            });
+
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({ message: 'Server error' }));
+                throw new Error(err.message || 'Failed to update password');
+            }
+
+            showToast('Password updated successfully! Please log in.', 'success');
+            // Close modal and reset to login
+            setTimeout(() => {
+                hideAuthModal();
+                authResetSection.classList.add('hidden');
+                authMainSection.classList.remove('hidden');
+                resetStep1.classList.remove('hidden');
+                resetStep2.classList.add('hidden');
+                resetEmailInput.value = '';
+                resetCodeInput.value = '';
+                resetNewPassword.value = '';
+                resetConfirmPassword.value = '';
+                resetEmailValue = '';
+                // Optionally fill the email in login form
+                document.getElementById('auth-email').value = resetEmailInput.value;
+            }, 1500);
+
+        } catch (e) {
+            showToast('❌ ' + e.message, 'error');
+        } finally {
+            setButtonLoading(this, false);
+        }
+    });
+
+    // Allow Enter key on reset fields
+    resetCodeInput?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); resetUpdatePassword?.click(); }
+    });
+    resetNewPassword?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); resetUpdatePassword?.click(); }
+    });
+    resetConfirmPassword?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); resetUpdatePassword?.click(); }
+    });
+
+    // Auto‑sanitise code input
+    resetCodeInput?.addEventListener('input', function(e) {
+        this.value = this.value.replace(/\D/g, '').slice(0, 8);
     });
 
     // ---- AUTH MODAL SUBMIT (Login or Register) ----
