@@ -2130,8 +2130,7 @@
     </div>
 
     <!-- ============================================================ -->
-    <!-- UPDATED AUTH MODAL – with password confirmation, show/hide,    -->
-    <!-- and "Forgot password?" flow                                  -->
+    <!-- AUTH MODAL – with two‑step OTP reset                         -->
     <!-- ============================================================ -->
     <div id="auth-modal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[210]">
         <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl">
@@ -2140,40 +2139,28 @@
                 <button id="close-auth-modal" class="text-2xl">&times;</button>
             </div>
 
-            <!-- ─── MAIN AUTH FORM (Login / Register) ─── -->
-            <div id="auth-main-section" class="auth-main-section">
+            <!-- ─── MAIN AUTH (Login / Register) ─── -->
+            <div id="auth-main-section">
                 <div class="space-y-3">
                     <input id="auth-email" type="email" placeholder="Email address" class="w-full border border-gray-300 rounded-lg p-2.5" autocomplete="off">
-
-                    <!-- Password field with toggle -->
                     <div class="password-field-wrapper">
                         <input id="auth-password" type="password" placeholder="Password" class="w-full border border-gray-300 rounded-lg p-2.5 pr-10" autocomplete="new-password">
-                        <span class="password-toggle" id="toggle-password1">
-                            <i class="fa-regular fa-eye-slash"></i>
-                        </span>
+                        <span class="password-toggle" id="toggle-password1"><i class="fa-regular fa-eye-slash"></i></span>
                     </div>
-
-                    <!-- Forgot password link (only visible in login mode) -->
                     <div id="forgot-password-link" class="text-right">
-                        <span class="forgot-password-link">Forgot password?</span>
+                        <span class="forgot-password-link text-sm text-green-600 hover:underline cursor-pointer">Forgot password?</span>
                     </div>
-
                     <div id="reg-extra" class="hidden space-y-3 border-t pt-3">
                         <div class="grid grid-cols-2 gap-2">
                             <input id="first-name" placeholder="First name *" class="border p-2 rounded" autocomplete="off">
                             <input id="last-name" placeholder="Last name *" class="border p-2 rounded" autocomplete="off">
                         </div>
                         <input id="phone-number" placeholder="Phone number *" class="border p-2 rounded w-full" autocomplete="off">
-
-                        <!-- Confirm password field (only in registration) -->
                         <div class="password-field-wrapper">
                             <input id="auth-password-confirm" type="password" placeholder="Confirm Password *" class="w-full border border-gray-300 rounded-lg p-2.5 pr-10" autocomplete="new-password">
-                            <span class="password-toggle" id="toggle-password2">
-                                <i class="fa-regular fa-eye-slash"></i>
-                            </span>
+                            <span class="password-toggle" id="toggle-password2"><i class="fa-regular fa-eye-slash"></i></span>
                         </div>
                     </div>
-
                     <button id="auth-submit" class="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-2.5 rounded-lg">Sign In</button>
                     <button id="demo-access" class="w-full bg-emerald-500 text-white py-2.5 rounded-lg flex items-center justify-center gap-2"><i class="fa-solid fa-flask"></i> Demo Access</button>
                     <div class="text-center">
@@ -2182,16 +2169,34 @@
                 </div>
             </div>
 
-            <!-- ─── RESET PASSWORD SECTION (hidden by default) ─── -->
-            <div id="auth-reset-section" class="auth-reset-section">
-                <div class="space-y-3">
-                    <p class="text-sm text-gray-600">Enter your email address and we'll send you a link to reset your password.</p>
+            <!-- ─── RESET SECTION (two‑step OTP) ─── -->
+            <div id="auth-reset-section" class="hidden">
+                <!-- Step 1: Request code -->
+                <div id="reset-step1">
+                    <p class="text-sm text-gray-600 mb-3">Enter your email address and we'll send you an 8‑digit reset code.</p>
                     <input id="reset-email" type="email" placeholder="Email address" class="w-full border border-gray-300 rounded-lg p-2.5" autocomplete="off">
-                    <button id="reset-submit" class="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-2.5 rounded-lg">Send Reset Link</button>
-                    <div class="text-center">
+                    <button id="reset-send-code" class="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-2.5 rounded-lg mt-3">Send Reset Code</button>
+                    <div id="reset-message" class="text-sm text-center mt-2 hidden"></div>
+                    <div class="text-center mt-2">
                         <button id="reset-back-to-login" class="text-sm text-green-500 hover:underline">← Back to Sign In</button>
                     </div>
-                    <div id="reset-message" class="text-sm text-center hidden"></div>
+                </div>
+                <!-- Step 2: Enter code + new password -->
+                <div id="reset-step2" class="hidden">
+                    <p class="text-sm text-green-600 mb-2"> Check your inbox! Enter your 8‑digit code and new password below.</p>
+                    <input id="reset-code" type="text" placeholder="8‑digit code" maxlength="8" inputmode="numeric" class="w-full border border-gray-300 rounded-lg p-2.5 text-center text-xl font-mono tracking-widest" autocomplete="off">
+                    <div class="password-field-wrapper mt-2">
+                        <input id="reset-new-password" type="password" placeholder="New Password (min 8 chars)" class="w-full border border-gray-300 rounded-lg p-2.5 pr-10" autocomplete="new-password">
+                        <span class="password-toggle" id="toggle-password3"><i class="fa-regular fa-eye-slash"></i></span>
+                    </div>
+                    <div class="password-field-wrapper mt-2">
+                        <input id="reset-confirm-password" type="password" placeholder="Confirm Password" class="w-full border border-gray-300 rounded-lg p-2.5 pr-10" autocomplete="new-password">
+                        <span class="password-toggle" id="toggle-password4"><i class="fa-regular fa-eye-slash"></i></span>
+                    </div>
+                    <button id="reset-update-password" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2.5 rounded-lg mt-3">Update Password</button>
+                    <div class="text-center mt-2">
+                        <button id="reset-back-to-step1" class="text-sm text-blue-500 hover:underline">← Back to email</button>
+                    </div>
                 </div>
             </div>
         </div>
