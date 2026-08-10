@@ -1601,7 +1601,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         const isReg = reg.classList.contains('hidden');
         reg.classList.toggle('hidden');
         document.getElementById('auth-submit').innerText = isReg ? "Create Profile" : "Sign In";
-        document.getElementById('modal-title').innerText = isReg ? "Register Organization" : "Sign In";
+        document.getElementById('modal-title').innerText = isReg ? "Register" : "Sign In";
     });
 
     // ---- RESET PASSWORD (two‑step OTP) ----
