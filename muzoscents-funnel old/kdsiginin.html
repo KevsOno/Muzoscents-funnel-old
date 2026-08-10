@@ -7,6 +7,9 @@
     <script src="https://cdn.tailwindcss.com">
     </script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <!-- Supabase JS library for client-side OTP verification -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
+    </script>
     <style>
         :root {
             --kevs-orange: #f97316;
@@ -159,10 +162,14 @@
         .hidden {
             display: none !important;
         }
-        #reset-password-form .manual-token-area {
-            margin-top: 12px;
-            border-top: 1px solid #e5e7eb;
-            padding-top: 12px;
+        /* Reset form code input styling */
+        #reset-code {
+            letter-spacing: 0.5em;
+            font-size: 1.25rem;
+        }
+        #reset-code::placeholder {
+            letter-spacing: 0.1em;
+            font-size: 0.9rem;
         }
     </style>
 </head>
@@ -232,27 +239,39 @@
             <button type="submit" class="w-full bg-green-600 text-white py-2.5 rounded-lg hover:bg-green-700 transition">Register</button>
         </form>
 
-        <!-- RESET PASSWORD FORM -->
+        <!-- RESET PASSWORD FORM (CODE-BASED) -->
         <div id="reset-password-form" class="hidden">
-            <h3 class="text-center font-bold text-lg mb-2">Set New Password</h3>
-            <p class="text-sm text-gray-500 mb-4">Enter your new password below.</p>
+            <h3 class="text-center font-bold text-lg mb-2">Reset Your Password</h3>
+            <p class="text-sm text-gray-500 mb-4">Enter the email address and the 6‑digit code you received.</p>
+
+            <div class="mb-3">
+                <input type="email" id="reset-email" placeholder="Your email address" class="w-full p-3 border rounded-lg" required />
+            </div>
+
+            <div class="mb-3">
+                <input type="text" id="reset-code" placeholder="6‑digit code from email" class="w-full p-3 border rounded-lg text-center text-xl font-mono tracking-widest" required maxlength="6" inputmode="numeric" pattern="[0-9]*" />
+            </div>
+
             <div class="relative mb-2">
                 <input type="password" id="reset-password" placeholder="New Password" class="w-full p-3 border rounded-lg pr-10" required />
-                <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reset-password"><i class="fa-solid fa-eye"></i></button>
+                <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reset-password">
+                    <i class="fa-solid fa-eye"></i>
+                </button>
             </div>
+
             <div class="relative mb-4">
                 <input type="password" id="reset-password-confirm" placeholder="Confirm Password" class="w-full p-3 border rounded-lg pr-10" required />
-                <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reset-password-confirm"><i class="fa-solid fa-eye"></i></button>
+                <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reset-password-confirm">
+                    <i class="fa-solid fa-eye"></i>
+                </button>
             </div>
-            <button type="button" id="reset-password-btn" class="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700 transition">Update Password</button>
 
-            <!-- Manual token entry (fallback) -->
-            <div class="manual-token-area text-center">
-                <button type="button" id="show-manual-token-btn" class="text-xs text-blue-500 hover:underline">I have a reset code (enter manually)</button>
-                <div id="manual-token-input-area" class="hidden mt-2">
-                    <input type="text" id="manual-reset-token" placeholder="Paste your reset token here" class="w-full p-2 border rounded-lg text-sm" />
-                    <button type="button" id="use-manual-token-btn" class="mt-2 text-sm bg-blue-500 text-white px-4 py-1 rounded hover:bg-blue-600">Use this token</button>
-                </div>
+            <button type="button" id="reset-password-btn" class="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700 transition">
+                Reset Password
+            </button>
+
+            <div class="text-center mt-3">
+                <button type="button" id="back-to-login-from-reset" class="text-xs text-blue-500 hover:underline">Back to login</button>
             </div>
         </div>
 
@@ -264,7 +283,7 @@
         const SUPABASE_URL = 'https://crxykdfgexuysngzwulk.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNyeHlrZGZ4YWRlbnN5bnh6Z3VsdGsiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTc0MjU3MTA5OSwiZXhwIjoyMDU4MTQ3MDk5fQ.fLtH3AHm7ZSn3T9Tc7HtQkBycyG58XkfDrFrbhTgTPg';
 
-        // Toast
+        // ─── TOAST ──────────────────────────────────────────────────────────────
         function showToast(msg, type = 'success') {
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
@@ -278,6 +297,7 @@
             }, 3500);
         }
 
+        // ─── API CALL ──────────────────────────────────────────────────────────
         async function apiCall(endpoint, method = 'GET', body = null, token = null) {
             const headers = { 'Content-Type': 'application/json' };
             if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -293,7 +313,7 @@
             return res.json();
         }
 
-        // ─── UPDATED: fetchAndStoreRole ─────────────────────────────────────────
+        // ─── FETCH & STORE ROLE ──────────────────────────────────────────────
         async function fetchAndStoreRole(accessToken) {
             try {
                 const me = await apiCall('/auth/me', 'GET', null, accessToken);
@@ -306,14 +326,13 @@
             }
         }
 
-        // ─── UPDATED: login with role‑based redirect ──────────────────────────
+        // ─── LOGIN (role‑based redirect) ─────────────────────────────────────
         async function login(email, password) {
             const data = await apiCall('/auth/login', 'POST', { email, password });
             localStorage.setItem('access_token', data.access_token);
             localStorage.setItem('refresh_token', data.refresh_token);
             localStorage.setItem('user_id', data.user_id);
 
-            // Get role and decide redirect
             const role = await fetchAndStoreRole(data.access_token);
             const redirectUrl = role === 'customer' ? '/kdstore' : '/kdadmin';
 
@@ -321,12 +340,7 @@
             setTimeout(() => { window.location.href = redirectUrl; }, 1000);
         }
 
-        async function resetPassword(email) {
-            await apiCall('/auth/reset-password', 'POST', { email });
-            showToast('Password reset email sent. Check your inbox.');
-        }
-
-        // Password toggle
+        // ─── PASSWORD TOGGLE ──────────────────────────────────────────────────
         document.querySelectorAll('.toggle-password-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const input = document.getElementById(btn.dataset.target);
@@ -341,7 +355,7 @@
             });
         });
 
-        // Login button animation helpers
+        // ─── LOGIN BUTTON ANIMATION HELPERS ──────────────────────────────────
         const loginBtn = document.getElementById('login-submit-btn');
         const loginForm = document.getElementById('login-form');
 
@@ -400,7 +414,7 @@
             }, 1200);
         }
 
-        // Login submit
+        // ─── LOGIN SUBMIT ─────────────────────────────────────────────────────
         loginForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const email = document.getElementById('login-email').value;
@@ -420,7 +434,7 @@
             }
         });
 
-        // ─── UPDATED: Demo login with role‑based redirect ────────────────────
+        // ─── DEMO LOGIN ──────────────────────────────────────────────────────
         document.getElementById('demo-login-btn')?.addEventListener('click', async () => {
             const btn = document.getElementById('demo-login-btn');
             const original = btn.innerHTML;
@@ -445,18 +459,11 @@
             }
         });
 
-        // Forgot password
-        document.getElementById('forgot-pwd-btn')?.addEventListener('click', async () => {
-            const email = document.getElementById('login-email').value;
-            if (!email) { showToast('Enter your email first.', 'error'); return; }
-            try { await resetPassword(email); } catch (err) { showToast(err.message, 'error'); }
-        });
-
-        // Tab switching
+        // ─── TAB SWITCHING ──────────────────────────────────────────────────
         const loginTab = document.getElementById('login-tab');
         const registerTab = document.getElementById('register-tab');
 
-        loginTab?.addEventListener('click', () => {
+        function showLoginTab() {
             document.getElementById('login-form').classList.remove('hidden');
             document.getElementById('register-form').classList.add('hidden');
             document.getElementById('reset-password-form').classList.add('hidden');
@@ -464,7 +471,9 @@
             registerTab.classList.remove('border-blue-600', 'text-blue-600');
             registerTab.classList.add('text-gray-500');
             resetLoginBtn();
-        });
+        }
+
+        loginTab?.addEventListener('click', showLoginTab);
 
         registerTab?.addEventListener('click', () => {
             document.getElementById('login-form').classList.add('hidden');
@@ -476,7 +485,7 @@
             resetLoginBtn();
         });
 
-        // ---- REGISTER SUBMIT ----
+        // ─── REGISTER SUBMIT ──────────────────────────────────────────────────
         document.getElementById('register-form')?.addEventListener('submit', async (e) => {
             e.preventDefault();
             const email = document.getElementById('reg-email').value;
@@ -514,7 +523,7 @@
                 };
                 await apiCall('/auth/register', 'POST', payload);
                 showToast('Registration successful! Please sign in.', 'success');
-                loginTab.click();
+                showLoginTab();
                 document.getElementById('login-email').value = email;
                 document.getElementById('login-password').value = '';
             } catch (err) {
@@ -525,65 +534,65 @@
             }
         });
 
-        // ---- RESET PASSWORD FLOW ----
-        let resetToken = null;
-        const hash = window.location.hash;
-        if (hash) {
-            const params = new URLSearchParams(hash.substring(1));
-            resetToken = params.get('access_token') || params.get('refresh_token');
-        }
-        if (!resetToken) {
-            const query = window.location.search;
-            if (query) {
-                const params = new URLSearchParams(query);
-                resetToken = params.get('access_token') || params.get('refresh_token');
-            }
-        }
-        if (!resetToken && hash) {
-            const params = new URLSearchParams(hash.substring(1));
-            resetToken = params.get('token');
-        }
-        if (!resetToken && window.location.search) {
-            const params = new URLSearchParams(window.location.search);
-            resetToken = params.get('token');
-        }
+        // ─── BACK TO LOGIN FROM RESET ────────────────────────────────────────
+        document.getElementById('back-to-login-from-reset')?.addEventListener('click', () => {
+            document.getElementById('tabs-container').classList.remove('hidden');
+            showLoginTab();
+        });
 
-        console.log('Reset token detected:', resetToken);
+        // ══════════════════════════════════════════════════════════════════════
+        // ─── RESET PASSWORD (CODE-BASED) ────────────────────────────────────
+        // ══════════════════════════════════════════════════════════════════════
 
-        if (resetToken) {
+        const resetForm = document.getElementById('reset-password-form');
+        const resetBtn = document.getElementById('reset-password-btn');
+
+        function showResetForm() {
             document.getElementById('login-form').classList.add('hidden');
             document.getElementById('register-form').classList.add('hidden');
             document.getElementById('reset-password-form').classList.remove('hidden');
             document.getElementById('tabs-container').classList.add('hidden');
-            window._resetToken = resetToken;
-            showToast('Please enter your new password.', 'success');
         }
 
-        document.getElementById('show-manual-token-btn')?.addEventListener('click', function() {
-            const area = document.getElementById('manual-token-input-area');
-            area.classList.toggle('hidden');
-            if (!area.classList.contains('hidden')) {
-                if (resetToken) {
-                    document.getElementById('manual-reset-token').value = resetToken;
-                }
-            }
-        });
-
-        document.getElementById('use-manual-token-btn')?.addEventListener('click', function() {
-            const token = document.getElementById('manual-reset-token').value.trim();
-            if (!token) {
-                showToast('Please paste your reset token.', 'error');
+        // ─── "Forgot password?" ── send reset email via backend ─────────────
+        document.getElementById('forgot-pwd-btn')?.addEventListener('click', async () => {
+            const email = document.getElementById('login-email').value;
+            if (!email) {
+                showToast('Enter your email address first.', 'error');
                 return;
             }
-            window._resetToken = token;
-            showToast('Token set. You can now update your password.', 'success');
-            document.getElementById('manual-token-input-area').classList.add('hidden');
+            try {
+                // Your backend sends the reset email via Brevo
+                await apiCall('/auth/reset-password', 'POST', { email });
+                showToast('A 6‑digit reset code has been sent to your email.', 'success');
+                // Pre-fill email in reset form
+                document.getElementById('reset-email').value = email;
+                // Clear any previous code/password fields
+                document.getElementById('reset-code').value = '';
+                document.getElementById('reset-password').value = '';
+                document.getElementById('reset-password-confirm').value = '';
+                showResetForm();
+            } catch (err) {
+                showToast(err.message || 'Failed to send reset code.', 'error');
+            }
         });
 
-        document.getElementById('reset-password-btn')?.addEventListener('click', async () => {
+        // ─── "Reset Password" ── verify OTP + update password ──────────────
+        resetBtn?.addEventListener('click', async () => {
+            const email = document.getElementById('reset-email').value.trim();
+            const code = document.getElementById('reset-code').value.trim();
             const password = document.getElementById('reset-password').value;
             const confirm = document.getElementById('reset-password-confirm').value;
-            if (!password || password.length < 8) {
+
+            if (!email || !code) {
+                showToast('Please enter your email and the 6‑digit code.', 'error');
+                return;
+            }
+            if (code.length !== 6 || !/^\d{6}$/.test(code)) {
+                showToast('Please enter a valid 6‑digit numeric code.', 'error');
+                return;
+            }
+            if (password.length < 8) {
                 showToast('Password must be at least 8 characters.', 'error');
                 return;
             }
@@ -591,52 +600,72 @@
                 showToast('Passwords do not match.', 'error');
                 return;
             }
-            const token = window._resetToken;
-            if (!token) {
-                showToast('No reset token found. Please request a new password reset.', 'error');
-                return;
-            }
-            const btn = document.getElementById('reset-password-btn');
-            const original = btn.textContent;
-            btn.textContent = 'Updating…';
-            btn.disabled = true;
+
+            resetBtn.disabled = true;
+            resetBtn.textContent = 'Verifying…';
+
             try {
-                const url = `${SUPABASE_URL}/auth/v1/user`;
-                const headers = {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                };
-                const res = await fetch(url, {
-                    method: 'PATCH',
-                    headers,
-                    body: JSON.stringify({ password })
+                // 1. Create Supabase client
+                const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+                // 2. Verify the OTP code (recovery type)
+                const { error: verifyError } = await supabaseClient.auth.verifyOtp({
+                    email,
+                    token: code,
+                    type: 'recovery'
                 });
-                if (!res.ok) {
-                    const err = await res.json();
-                    throw new Error(err.message || 'Failed to update password');
-                }
-                showToast('Password updated successfully. Please login with your new password.', 'success');
-                window.location.hash = '';
-                window._resetToken = null;
+
+                if (verifyError) throw new Error(verifyError.message);
+
+                // 3. After verification, the session is now authenticated.
+                //    Update the user's password.
+                const { error: updateError } = await supabaseClient.auth.updateUser({
+                    password: password
+                });
+
+                if (updateError) throw new Error(updateError.message);
+
+                showToast('Password updated successfully! Please log in.', 'success');
+
+                // Reset form and redirect to login
                 setTimeout(() => {
-                    window.location.href = '/kdsiginin';
-                }, 2000);
+                    // Hide reset form, show login
+                    document.getElementById('reset-password-form').classList.add('hidden');
+                    document.getElementById('tabs-container').classList.remove('hidden');
+                    showLoginTab();
+                    // Clear fields
+                    document.getElementById('reset-email').value = '';
+                    document.getElementById('reset-code').value = '';
+                    document.getElementById('reset-password').value = '';
+                    document.getElementById('reset-password-confirm').value = '';
+                    // Focus on login email
+                    document.getElementById('login-email').focus();
+                }, 1500);
+
             } catch (err) {
-                showToast('Failed to update password: ' + err.message, 'error');
-                btn.textContent = original;
-                btn.disabled = false;
+                showToast('Error: ' + err.message, 'error');
+                resetBtn.disabled = false;
+                resetBtn.textContent = 'Reset Password';
             }
         });
 
-        if (resetToken) {
-            document.getElementById('login-form').classList.add('hidden');
-            document.getElementById('register-form').classList.add('hidden');
-            document.getElementById('reset-password-form').classList.remove('hidden');
-            document.getElementById('tabs-container').classList.add('hidden');
-        }
+        // ─── Allow Enter key on reset form fields ────────────────────────────
+        document.querySelectorAll('#reset-email, #reset-code, #reset-password, #reset-password-confirm')
+            .forEach(field => {
+                field.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        resetBtn?.click();
+                    }
+                });
+            });
 
-        console.log('✅ Kevs Digital – Sign In (role‑based redirect)');
+        // ─── Auto‑uppercase code input & restrict to digits ──────────────────
+        document.getElementById('reset-code')?.addEventListener('input', function(e) {
+            this.value = this.value.replace(/\D/g, '').slice(0, 6);
+        });
+
+        console.log('✅ Kevs Digital – Sign In (code‑based reset with Supabase verifyOtp)');
     </script>
 </body>
 </html>
