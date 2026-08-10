@@ -1509,6 +1509,30 @@ function handleDeepLinks() {
 }
 
 // ============================================================
+//  PASSWORD TOGGLE (Show/Hide)
+// ============================================================
+document.addEventListener('click', function(e) {
+    const toggle = e.target.closest('.password-toggle');
+    if (!toggle) return;
+    const wrapper = toggle.closest('.password-field-wrapper');
+    if (!wrapper) return;
+    const input = wrapper.querySelector('input');
+    if (!input) return;
+    const icon = toggle.querySelector('i');
+    if (input.type === 'password') {
+        input.type = 'text';
+        if (icon) {
+            icon.className = 'fa-regular fa-eye';
+        }
+    } else {
+        input.type = 'password';
+        if (icon) {
+            icon.className = 'fa-regular fa-eye-slash';
+        }
+    }
+});
+
+// ============================================================
 //  DOM CONTENT LOADED - INITIALIZATION
 // ============================================================
 document.addEventListener('DOMContentLoaded', async function() {
@@ -1558,7 +1582,12 @@ document.addEventListener('DOMContentLoaded', async function() {
 
             const isReg = !document.getElementById('reg-extra').classList.contains('hidden');
             if (isReg) {
-                // --- REGISTRATION (simplified) ---
+                // --- REGISTRATION (with password confirmation) ---
+                const pwdConfirm = document.getElementById('auth-password-confirm').value;
+                if (pwd !== pwdConfirm) {
+                    alert("Passwords do not match. Please re-enter.");
+                    return;
+                }
                 const fname = document.getElementById('first-name').value;
                 const lname = document.getElementById('last-name').value;
                 const phone = document.getElementById('phone-number').value;
@@ -1566,7 +1595,6 @@ document.addEventListener('DOMContentLoaded', async function() {
                     alert("First name, last name, and phone number are required.");
                     return;
                 }
-                // Build simple payload – no invite code, no org fields
                 const payload = {
                     email,
                     password: pwd,
@@ -1576,11 +1604,9 @@ document.addEventListener('DOMContentLoaded', async function() {
                 };
                 await apiCall('/auth/register', { method: 'POST', body: JSON.stringify(payload) });
                 alert("Registration successful! Please sign in.");
-                // Switch back to login mode
                 document.getElementById('reg-extra').classList.add('hidden');
                 document.getElementById('auth-submit').innerText = "Sign In";
                 document.getElementById('modal-title').innerText = "Sign In";
-                // Optionally clear fields
                 return;
             }
 
