@@ -320,9 +320,12 @@ function updateCategoryDropdown() {
     renderCategoryCards();
 }
 
+// ===== MODIFIED loadProducts with sort =====
 async function loadProducts(page = currentPage, limit = PAGE_SIZE) {
     const offset = (page - 1) * limit;
-    let url = `/inventory/public-list?limit=${limit}&offset=${offset}`;
+    // --- get sort value from dropdown ---
+    const sortBy = document.getElementById('sort-select')?.value || 'newest';
+    let url = `/inventory/public-list?limit=${limit}&offset=${offset}&sort_by=${sortBy}`;
     if (searchQuery.trim()) url += `&q=${encodeURIComponent(searchQuery.trim())}`;
     if (selectedCategory && selectedCategory !== '') url += `&category=${encodeURIComponent(selectedCategory)}`;
 
@@ -1977,6 +1980,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     document.getElementById('refresh-categories-btn')?.addEventListener('click', async () => {
         await loadCategories();
         showToast(`Categories reloaded (${categories.length})`, 'success');
+    });
+
+    // ===== NEW: Sort dropdown listener =====
+    document.getElementById('sort-select')?.addEventListener('change', () => {
+        currentPage = 1; // reset to first page when sorting changes
+        loadProducts();
     });
 
     const goToSection = (id) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
