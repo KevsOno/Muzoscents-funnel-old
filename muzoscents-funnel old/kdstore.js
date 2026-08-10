@@ -1702,7 +1702,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
             const accessToken = data.session.access_token;
 
-            // 2. Direct PATCH to update password
+            // 2. Direct PATCH to update password (same as signin page)
             const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
                 method: 'PATCH',
                 headers: {
