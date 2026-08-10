@@ -4,10 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Kevs Digital – Sign In</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.tailwindcss.com">
+    </script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
+    </script>
     <style>
+        /* ... all styles unchanged ... */
         :root {
             --kevs-orange: #f97316;
             --kevs-blue: #3b82f6;
@@ -209,7 +212,6 @@
                     <input type="text" id="reset-code" placeholder="8‑digit code from email" 
                            class="w-full p-3 border rounded-lg text-center text-xl font-mono tracking-widest" 
                            maxlength="8" inputmode="numeric" pattern="[0-9]*" required />
-                    <!-- Small auto-submit indicator -->
                     <span id="code-auto-submit-hint" class="absolute right-3 top-3 text-xs text-gray-400 hidden">Auto‑verifying…</span>
                 </div>
                 <button type="button" id="verify-code-btn" class="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700 transition">
@@ -220,7 +222,7 @@
                 </div>
             </div>
 
-            <!-- Step 2: New Password (hidden initially) -->
+            <!-- Step 2: New Password -->
             <div id="reset-step2" class="hidden">
                 <p class="text-sm text-green-600 mb-2">✅ Code verified. Now set your new password.</p>
                 <div class="relative mb-2">
@@ -248,8 +250,7 @@
     <script>
         const BACKEND_URL = 'https://kevsono-kevs-digital-bos.hf.space';
         const SUPABASE_URL = 'https://crxykdfgexuysngzwulk.supabase.co';
-        
-        // Updated with matching project ref key!
+        // ─── CORRECT ANON KEY ────────────────────────────────────────────────
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNyeHlrZGZnZXh1eXNuZ3p3dWxrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAxOTIzMzYsImV4cCI6MjA5NTc2ODMzNn0.EL8CBO7tKSv5mN8RB2-7g0ioOGNc0A5auUr5WCLsuQI';
 
         // ─── SINGLE SUPABASE CLIENT ──────────────────────────────────────────
@@ -511,7 +512,7 @@
             showLoginTab();
         });
 
-        // ─── BACK TO STEP 1 FROM STEP 2 ──────────────────────────────────────
+        // ─── BACK TO STEP 1 ──────────────────────────────────────────────────
         document.getElementById('back-to-step1-btn')?.addEventListener('click', () => {
             document.getElementById('reset-step1').classList.remove('hidden');
             document.getElementById('reset-step2').classList.add('hidden');
@@ -519,16 +520,16 @@
             document.getElementById('reset-code').disabled = false;
             document.getElementById('reset-code').value = '';
             document.getElementById('reset-code').focus();
+            verifiedAccessToken = null;
         });
 
         // ══════════════════════════════════════════════════════════════════════
-        // ─── RESET PASSWORD (TWO-STEP) ──────────────────────────────────────
+        // ─── RESET PASSWORD (TWO-STEP, USING CLIENT updateUser) ───────────
         // ══════════════════════════════════════════════════════════════════════
 
         const verifyBtn = document.getElementById('verify-code-btn');
         const setPwdBtn = document.getElementById('set-password-btn');
-
-        let verifiedSession = null;
+        let verifiedAccessToken = null;
 
         function showResetForm() {
             document.getElementById('login-form').classList.add('hidden');
@@ -542,10 +543,10 @@
             document.getElementById('reset-password-confirm').value = '';
             verifyBtn.disabled = false;
             document.getElementById('reset-code').disabled = false;
-            verifiedSession = null;
+            verifiedAccessToken = null;
         }
 
-        // ─── "Forgot password?" ── send reset email ─────────────────────────
+        // ─── "Forgot password?" ─────────────────────────────────────────────
         document.getElementById('forgot-pwd-btn')?.addEventListener('click', async () => {
             const email = document.getElementById('login-email').value;
             if (!email) {
@@ -587,17 +588,18 @@
                 });
 
                 if (error) throw new Error(error.message);
-                if (!data?.session) {
-                    throw new Error('Code may be expired or already used.');
-                }
+                if (!data?.session) throw new Error('Code may be expired or already used.');
 
-                verifiedSession = data.session;
+                // Store the access token in case we need it for fallback
+                verifiedAccessToken = data.session.access_token;
 
+                // Set the session in the client (this is critical)
                 await supabaseClient.auth.setSession({
                     access_token: data.session.access_token,
                     refresh_token: data.session.refresh_token
                 });
 
+                // Show step 2
                 document.getElementById('reset-step1').classList.add('hidden');
                 document.getElementById('reset-step2').classList.remove('hidden');
                 document.getElementById('reset-password').focus();
@@ -615,7 +617,7 @@
 
         verifyBtn?.addEventListener('click', verifyCode);
 
-        // ─── Auto‑submit when 8 digits are entered ──────────────────────────
+        // ─── Auto‑submit on 8 digits ──────────────────────────────────────────
         document.getElementById('reset-code')?.addEventListener('input', function(e) {
             this.value = this.value.replace(/\D/g, '').slice(0, 8);
             if (this.value.length === 8 && !verifyBtn.disabled) {
@@ -623,7 +625,7 @@
             }
         });
 
-        // ─── Set New Password ──────────────────────────────────────────────────
+        // ─── Set New Password (using supabase client updateUser) ────────────
         setPwdBtn?.addEventListener('click', async () => {
             const password = document.getElementById('reset-password').value;
             const confirm = document.getElementById('reset-password-confirm').value;
@@ -641,6 +643,8 @@
             setPwdBtn.textContent = 'Updating…';
 
             try {
+                // Use the supabase client to update the password.
+                // The client should have the session from the verify step.
                 const { error } = await supabaseClient.auth.updateUser({
                     password: password
                 });
@@ -648,6 +652,7 @@
                 if (error) throw new Error(error.message);
 
                 showToast('Password updated successfully! Please log in.', 'success');
+                // Redirect to login
                 setTimeout(() => {
                     document.getElementById('reset-password-form').classList.add('hidden');
                     document.getElementById('tabs-container').classList.remove('hidden');
@@ -661,13 +666,43 @@
 
             } catch (err) {
                 console.error('Update password error:', err);
-                showToast('Failed to update password: ' + err.message, 'error');
+                // Fallback: try direct fetch with the stored token if client method fails
+                if (verifiedAccessToken) {
+                    try {
+                        const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+                            method: 'PATCH',
+                            headers: {
+                                'apikey': SUPABASE_ANON_KEY,
+                                'Authorization': `Bearer ${verifiedAccessToken}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ password })
+                        });
+                        if (!response.ok) {
+                            const errJson = await response.json().catch(() => ({ message: 'Server error' }));
+                            throw new Error(errJson.message || 'Failed to update password');
+                        }
+                        showToast('Password updated successfully! Please log in.', 'success');
+                        setTimeout(() => {
+                            document.getElementById('reset-password-form').classList.add('hidden');
+                            document.getElementById('tabs-container').classList.remove('hidden');
+                            showLoginTab();
+                            // ... reset fields ...
+                        }, 1500);
+                        return;
+                    } catch (fallbackErr) {
+                        console.error('Fallback update also failed:', fallbackErr);
+                        showToast('Both update attempts failed: ' + fallbackErr.message, 'error');
+                    }
+                } else {
+                    showToast('Failed to update password: ' + err.message, 'error');
+                }
                 setPwdBtn.disabled = false;
                 setPwdBtn.textContent = 'Set New Password';
             }
         });
 
-        // ─── Enter key support for both steps ──────────────────────────────
+        // ─── Enter key support ──────────────────────────────────────────────
         document.getElementById('reset-email')?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -689,7 +724,7 @@
             });
         });
 
-        console.log('✅ Kevs Digital – Sign In (two‑step code‑based reset with auto‑submit on 8 digits)');
+        console.log('✅ Kevs Digital – Sign In (two‑step reset using client updateUser, with fallback)');
     </script>
 </body>
 </html>
