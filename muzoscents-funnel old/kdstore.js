@@ -1859,6 +1859,33 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
     });
 
+
+
+// Close cart when clicking outside it
+document.addEventListener('click', function(e) {
+    const drawer = document.getElementById('cart-drawer');
+    const cartBtn = document.getElementById('cart-icon-btn');
+    if (!drawer || !cartBtn) return;
+
+    // If cart is open and the click is outside the drawer and not on the cart button, close it
+    if (!drawer.classList.contains('translate-x-full') &&
+        !drawer.contains(e.target) &&
+        !cartBtn.contains(e.target)) {
+        drawer.classList.add('translate-x-full');
+    }
+});
+
+
+    document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        const drawer = document.getElementById('cart-drawer');
+        if (drawer && !drawer.classList.contains('translate-x-full')) {
+            drawer.classList.add('translate-x-full');
+        }
+    }
+});
+    
+    
     // ─── Auto‑verify code when 8 digits are entered ────────────────
     resetCodeInput?.addEventListener('input', function(e) {
         // Only allow digits
