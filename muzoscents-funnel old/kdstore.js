@@ -1690,8 +1690,9 @@ document.addEventListener('DOMContentLoaded', async function() {
             const data = await response.json();
             if (!response.ok) throw new Error(data.detail || 'Failed to send code');
             resetEmailValue = email;
-            resetStep1.classList.add('hidden');
-            resetStep2.classList.remove('hidden');
+            // ✅ FIX: DO NOT hide step 1 yet – stay on code entry
+            // resetStep1.classList.add('hidden');   // REMOVED
+            // resetStep2.classList.remove('hidden'); // REMOVED
             resetMessage.classList.add('hidden');
             showToast('8‑digit code sent to your email.', 'success');
             resetCodeInput.value = '';
@@ -1749,6 +1750,10 @@ document.addEventListener('DOMContentLoaded', async function() {
                 access_token: data.session.access_token,
                 refresh_token: data.session.refresh_token
             });
+
+            // ✅ FIX: Code verified – now hide step 1 and show step 2
+            resetStep1.classList.add('hidden');
+            resetStep2.classList.remove('hidden');
 
             showToast('✅ Code verified! Enter your new password.', 'success');
             resetCodeInput.disabled = true;          // keep disabled
