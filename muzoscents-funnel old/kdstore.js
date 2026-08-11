@@ -664,7 +664,8 @@ function goToFeaturedSlide(index) {
 // ============================================================
 function showProductDetail(p) {
     currentProductForModal = p;
-    modalQuantity = 1;
+    // Start modal quantity with the quantity currently set on the card
+    modalQuantity = productQuantities[p.id] || 1;
 
     const modal = document.getElementById('product-detail-modal'),
         content = document.getElementById('product-detail-content');
@@ -685,6 +686,13 @@ function updateModalQtyDisplay() {
     if (display) display.innerText = modalQuantity;
     if (totalSpan && currentProductForModal) {
         totalSpan.innerText = `₦${(modalQuantity * currentProductForModal.price_naira).toLocaleString()}`;
+    }
+    // Sync the card's quantity display with the modal quantity
+    if (currentProductForModal) {
+        const id = currentProductForModal.id;
+        productQuantities[id] = modalQuantity;
+        const qtyDisplay = document.getElementById(`qty-${id}`);
+        if (qtyDisplay) qtyDisplay.innerText = modalQuantity;
     }
 }
 
@@ -709,7 +717,21 @@ function loadCart() {
 
 async function addToCart(product, qty = 1) {
     if (qty < 1) qty = 1;
-    let existing = cart.find(i => i.id === product.id);
+    // Find product in allProducts to check stock
+    const productData = allProducts.find(p => p.id === product.id);
+    if (!productData) {
+        showToast("Product not found", 'error');
+        return;
+    }
+    // Calculate current total in cart for this product
+    const existing = cart.find(i => i.id === product.id);
+    const currentQtyInCart = existing ? existing.quantity : 0;
+    const newTotal = currentQtyInCart + qty;
+    if (newTotal > productData.current_qty) {
+        showToast(`Only ${productData.current_qty} available`, 'error');
+        return;
+    }
+    // Proceed to add/update
     if (existing) {
         existing.quantity += qty;
     } else {
@@ -726,12 +748,26 @@ async function addToCart(product, qty = 1) {
 
 async function updateCartQty(idx, delta) {
     if (idx < 0 || idx >= cart.length) return;
-    const newQty = cart[idx].quantity + delta;
+    const item = cart[idx];
+    const newQty = item.quantity + delta;
     if (newQty <= 0) {
         cart.splice(idx, 1);
-    } else {
-        cart[idx].quantity = newQty;
+        saveCart();
+        if (deliveryOption === 'delivery' && deliveryAddress) {
+            await recalcDeliveryFee(true);
+        }
+        renderProducts();
+        return;
     }
+    // Check stock if increasing
+    if (delta > 0) {
+        const productData = allProducts.find(p => p.id === item.id);
+        if (productData && newQty > productData.current_qty) {
+            showToast(`Only ${productData.current_qty} available`, 'error');
+            return;
+        }
+    }
+    item.quantity = newQty;
     saveCart();
     if (deliveryOption === 'delivery' && deliveryAddress) {
         await recalcDeliveryFee(true);
