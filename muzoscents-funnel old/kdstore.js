@@ -1607,7 +1607,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         document.getElementById('modal-title').innerText = isReg ? "Register" : "Sign In";
     });
 
-    // ─── RESET PASSWORD (two‑step OTP) ──────────────────────────────
+    // ─── RESET PASSWORD (three‑step) ──────────────────────────────
     const authMainSection = document.getElementById('auth-main-section');
     const authResetSection = document.getElementById('auth-reset-section');
     const resetStep1 = document.getElementById('reset-step1');
@@ -1624,9 +1624,49 @@ document.addEventListener('DOMContentLoaded', async function() {
     const resetMessage = document.getElementById('reset-message');
 
     let resetEmailValue = '';
-    let verifiedAccessToken = null;   // store token for fallback
+    let verifiedAccessToken = null;
 
-    // ─── Show reset step 1 ──────────────────────────────────────────
+    // Helper to show/hide parts
+    function setResetState(state) {
+        // state: 'email', 'code', 'password'
+        if (state === 'email') {
+            // show email + send, hide code input, hide verify button (if any)
+            resetEmailInput.style.display = 'block';
+            resetSendCode.style.display = 'inline-block';
+            resetCodeInput.style.display = 'none';
+            resetStep2.classList.add('hidden');
+            // ensure step1 is visible
+            resetStep1.classList.remove('hidden');
+            // also hide any verify button if exists
+            const verifyBtn = document.getElementById('verify-code-btn');
+            if (verifyBtn) verifyBtn.style.display = 'none';
+            // clear code value
+            resetCodeInput.value = '';
+        } else if (state === 'code') {
+            // hide email + send, show code input
+            resetEmailInput.style.display = 'none';
+            resetSendCode.style.display = 'none';
+            resetCodeInput.style.display = 'block';
+            resetCodeInput.disabled = false;
+            resetCodeInput.placeholder = '8‑digit code from email';
+            resetCodeInput.value = '';
+            resetCodeInput.focus();
+            // hide step2
+            resetStep2.classList.add('hidden');
+            // step1 remains visible (contains code input)
+            resetStep1.classList.remove('hidden');
+            // hide verify button if present (auto-verify)
+            const verifyBtn = document.getElementById('verify-code-btn');
+            if (verifyBtn) verifyBtn.style.display = 'none';
+        } else if (state === 'password') {
+            // hide entire step1, show step2
+            resetStep1.classList.add('hidden');
+            resetStep2.classList.remove('hidden');
+            resetNewPassword.focus();
+        }
+    }
+
+    // ─── Show reset step 1 (email) ──────────────────────────────
     forgotPasswordLink?.addEventListener('click', async function(e) {
         e.preventDefault();
         try {
@@ -1637,11 +1677,13 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         authMainSection.classList.add('hidden');
         authResetSection.classList.remove('hidden');
-        resetStep1.classList.remove('hidden');
-        resetStep2.classList.add('hidden');
+        setResetState('email');
         resetMessage.classList.add('hidden');
         resetMessage.innerText = '';
         verifiedAccessToken = null;
+        // Pre-fill email from login field if available
+        const loginEmail = document.getElementById('login-email')?.value || '';
+        if (loginEmail) resetEmailInput.value = loginEmail;
     });
 
     // ─── Back to login ──────────────────────────────────────────────
@@ -1655,19 +1697,20 @@ document.addEventListener('DOMContentLoaded', async function() {
         resetMessage.innerText = '';
         resetEmailValue = '';
         verifiedAccessToken = null;
+        setResetState('email');
     });
 
-    // ─── Back to step 1 ─────────────────────────────────────────────
+    // ─── Back to step 1 (from step 2) ─────────────────────────────
     resetBackToStep1?.addEventListener('click', function(e) {
         e.preventDefault();
-        resetStep1.classList.remove('hidden');
-        resetStep2.classList.add('hidden');
+        setResetState('email');
         resetMessage.classList.add('hidden');
         resetMessage.innerText = '';
         resetCodeInput.value = '';
         resetNewPassword.value = '';
         resetConfirmPassword.value = '';
         verifiedAccessToken = null;
+        resetEmailInput.value = resetEmailValue; // keep email
     });
 
     // ─── Send reset code (Step 1) ──────────────────────────────────
@@ -1690,9 +1733,8 @@ document.addEventListener('DOMContentLoaded', async function() {
             const data = await response.json();
             if (!response.ok) throw new Error(data.detail || 'Failed to send code');
             resetEmailValue = email;
-            // ✅ FIX: DO NOT hide step 1 yet – stay on code entry
-            // resetStep1.classList.add('hidden');   // REMOVED
-            // resetStep2.classList.remove('hidden'); // REMOVED
+            // ✅ Switch to code‑only state
+            setResetState('code');
             resetMessage.classList.add('hidden');
             showToast('8‑digit code sent to your email.', 'success');
             resetCodeInput.value = '';
@@ -1751,14 +1793,9 @@ document.addEventListener('DOMContentLoaded', async function() {
                 refresh_token: data.session.refresh_token
             });
 
-            // ✅ FIX: Code verified – now hide step 1 and show step 2
-            resetStep1.classList.add('hidden');
-            resetStep2.classList.remove('hidden');
-
+            // ✅ Switch to password state (step 2)
+            setResetState('password');
             showToast('✅ Code verified! Enter your new password.', 'success');
-            resetCodeInput.disabled = true;          // keep disabled
-            resetCodeInput.style.borderColor = '#22c55e';
-            // Focus on new password field
             resetNewPassword.focus();
 
         } catch (err) {
@@ -1828,10 +1865,8 @@ document.addEventListener('DOMContentLoaded', async function() {
                 hideAuthModal();
                 authResetSection.classList.add('hidden');
                 authMainSection.classList.remove('hidden');
-                resetStep1.classList.remove('hidden');
-                resetStep2.classList.add('hidden');
+                setResetState('email');
                 resetEmailInput.value = resetEmailValue; // fill email for login
-                resetCodeInput.value = '';
                 resetNewPassword.value = '';
                 resetConfirmPassword.value = '';
                 resetEmailValue = '';
