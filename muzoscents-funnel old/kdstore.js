@@ -1607,7 +1607,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         document.getElementById('modal-title').innerText = isReg ? "Register" : "Sign In";
     });
 
-    // ---- RESET PASSWORD (two‑step OTP) ----
+    // ─── RESET PASSWORD (two‑step OTP) ──────────────────────────────
     const authMainSection = document.getElementById('auth-main-section');
     const authResetSection = document.getElementById('auth-reset-section');
     const resetStep1 = document.getElementById('reset-step1');
@@ -1622,13 +1622,15 @@ document.addEventListener('DOMContentLoaded', async function() {
     const resetNewPassword = document.getElementById('reset-new-password');
     const resetConfirmPassword = document.getElementById('reset-confirm-password');
     const resetMessage = document.getElementById('reset-message');
-    let resetEmailValue = '';
 
-    // Show reset step 1 (ensures Supabase is loaded)
+    let resetEmailValue = '';
+    let verifiedAccessToken = null;   // store token for fallback
+
+    // ─── Show reset step 1 ──────────────────────────────────────────
     forgotPasswordLink?.addEventListener('click', async function(e) {
         e.preventDefault();
         try {
-            await initSupabase(); // load Supabase if not already
+            await initSupabase();      // ensure supabase client is loaded
         } catch (err) {
             showToast('Failed to load security library. Please try again later.', 'error');
             return;
@@ -1639,9 +1641,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         resetStep2.classList.add('hidden');
         resetMessage.classList.add('hidden');
         resetMessage.innerText = '';
+        verifiedAccessToken = null;
     });
 
-    // Back to login
+    // ─── Back to login ──────────────────────────────────────────────
     resetBackToLogin?.addEventListener('click', function(e) {
         e.preventDefault();
         authResetSection.classList.add('hidden');
@@ -1650,9 +1653,11 @@ document.addEventListener('DOMContentLoaded', async function() {
         resetStep2.classList.add('hidden');
         resetMessage.classList.add('hidden');
         resetMessage.innerText = '';
+        resetEmailValue = '';
+        verifiedAccessToken = null;
     });
 
-    // Back to step 1
+    // ─── Back to step 1 ─────────────────────────────────────────────
     resetBackToStep1?.addEventListener('click', function(e) {
         e.preventDefault();
         resetStep1.classList.remove('hidden');
@@ -1662,9 +1667,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         resetCodeInput.value = '';
         resetNewPassword.value = '';
         resetConfirmPassword.value = '';
+        verifiedAccessToken = null;
     });
 
-    // Send reset code (Step 1)
+    // ─── Send reset code (Step 1) ──────────────────────────────────
     resetSendCode?.addEventListener('click', async function() {
         const email = resetEmailInput.value.trim();
         if (!email) {
@@ -1675,7 +1681,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         setButtonLoading(this, true);
         try {
-            await initSupabase(); // ensure Supabase is ready (though it should be already)
+            await initSupabase();
             const response = await fetch(`${API_BASE}/auth/reset-password`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1688,7 +1694,9 @@ document.addEventListener('DOMContentLoaded', async function() {
             resetStep2.classList.remove('hidden');
             resetMessage.classList.add('hidden');
             showToast('8‑digit code sent to your email.', 'success');
+            resetCodeInput.value = '';
             resetCodeInput.focus();
+            verifiedAccessToken = null;
         } catch (e) {
             resetMessage.classList.remove('hidden');
             resetMessage.className = 'text-sm text-center text-red-500';
@@ -1698,17 +1706,72 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
     });
 
-    // Update password (Step 2)
-    resetUpdatePassword?.addEventListener('click', async function() {
+    // ─── Auto‑verify code when 8 digits are entered ────────────────
+    resetCodeInput?.addEventListener('input', function(e) {
+        // Only allow digits
+        this.value = this.value.replace(/\D/g, '').slice(0, 8);
+        if (this.value.length === 8 && !this.disabled) {
+            autoVerifyCode();
+        }
+    });
+
+    // ─── Auto‑verify function ──────────────────────────────────────
+    async function autoVerifyCode() {
         const code = resetCodeInput.value.trim();
+        if (code.length !== 8 || !/^\d{8}$/.test(code)) return;
+        const email = resetEmailValue;
+        if (!email) {
+            showToast('Email is missing. Please go back and try again.', 'error');
+            return;
+        }
+        // Disable input while verifying
+        resetCodeInput.disabled = true;
+        const originalPlaceholder = resetCodeInput.placeholder;
+        resetCodeInput.placeholder = 'Verifying…';
+
+        try {
+            await initSupabase();
+            if (!supabaseClient) throw new Error('Supabase client not initialized');
+
+            const { data, error } = await supabaseClient.auth.verifyOtp({
+                email,
+                token: code,
+                type: 'recovery'
+            });
+            if (error) throw new Error(error.message);
+            if (!data?.session) throw new Error('Code may be expired or already used.');
+
+            // Store access token for fallback
+            verifiedAccessToken = data.session.access_token;
+
+            // Set the session so updateUser works
+            await supabaseClient.auth.setSession({
+                access_token: data.session.access_token,
+                refresh_token: data.session.refresh_token
+            });
+
+            showToast('✅ Code verified! Enter your new password.', 'success');
+            resetCodeInput.disabled = true;          // keep disabled
+            resetCodeInput.style.borderColor = '#22c55e';
+            // Focus on new password field
+            resetNewPassword.focus();
+
+        } catch (err) {
+            console.error('Verification error:', err);
+            showToast('Verification failed: ' + err.message, 'error');
+            resetCodeInput.value = '';
+            resetCodeInput.disabled = false;
+            resetCodeInput.placeholder = originalPlaceholder;
+            resetCodeInput.focus();
+            verifiedAccessToken = null;
+        }
+    }
+
+    // ─── Update password (Step 2) ──────────────────────────────────
+    resetUpdatePassword?.addEventListener('click', async function() {
         const newPassword = resetNewPassword.value;
         const confirm = resetConfirmPassword.value;
 
-        if (!code || code.length !== 8 || !/^\d{8}$/.test(code)) {
-            showToast('Please enter a valid 8‑digit numeric code.', 'error');
-            resetCodeInput.focus();
-            return;
-        }
         if (newPassword.length < 8) {
             showToast('Password must be at least 8 characters.', 'error');
             resetNewPassword.focus();
@@ -1719,60 +1782,58 @@ document.addEventListener('DOMContentLoaded', async function() {
             resetConfirmPassword.focus();
             return;
         }
-        if (!resetEmailValue) {
-            showToast('Email is missing. Please go back and try again.', 'error');
-            resetBackToStep1.click();
+        if (!verifiedAccessToken) {
+            showToast('Please verify your code first.', 'error');
+            resetCodeInput.focus();
             return;
         }
 
         setButtonLoading(this, true);
         try {
-            // Ensure Supabase client is ready
             await initSupabase();
             if (!supabaseClient) throw new Error('Supabase client not initialized');
 
-            // 1. Verify OTP
-            const { data, error: verifyError } = await supabaseClient.auth.verifyOtp({
-                email: resetEmailValue,
-                token: code,
-                type: 'recovery'
-            });
-            if (verifyError) throw new Error(verifyError.message);
-            if (!data?.session) throw new Error('Code may be expired or already used.');
-
-            const accessToken = data.session.access_token;
-
-            // 2. Direct PATCH to update password
-            const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
-                method: 'PATCH',
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ password: newPassword })
+            // 1️⃣ Try using the client with the session we set earlier
+            const { error } = await supabaseClient.auth.updateUser({
+                password: newPassword
             });
 
-            if (!response.ok) {
-                const err = await response.json().catch(() => ({ message: 'Server error' }));
-                throw new Error(err.message || 'Failed to update password');
+            if (error) {
+                // 2️⃣ Fallback: direct PATCH using the stored token
+                console.warn('updateUser failed, falling back to direct PATCH');
+                const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+                    method: 'PATCH',
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${verifiedAccessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ password: newPassword })
+                });
+                if (!response.ok) {
+                    const errJson = await response.json().catch(() => ({ message: 'Server error' }));
+                    throw new Error(errJson.message || 'Failed to update password');
+                }
             }
 
-            showToast('Password updated successfully! Please log in.', 'success');
-            // Close modal and reset to login
+            showToast('✅ Password updated successfully! Please log in.', 'success');
+
+            // Reset and close modal after short delay
             setTimeout(() => {
                 hideAuthModal();
                 authResetSection.classList.add('hidden');
                 authMainSection.classList.remove('hidden');
                 resetStep1.classList.remove('hidden');
                 resetStep2.classList.add('hidden');
-                resetEmailInput.value = '';
+                resetEmailInput.value = resetEmailValue; // fill email for login
                 resetCodeInput.value = '';
                 resetNewPassword.value = '';
                 resetConfirmPassword.value = '';
                 resetEmailValue = '';
-                // Optionally fill the email in login form
-                document.getElementById('auth-email').value = resetEmailInput.value;
+                verifiedAccessToken = null;
+                resetCodeInput.disabled = false;
+                resetCodeInput.style.borderColor = '';
+                resetCodeInput.placeholder = '8‑digit code';
             }, 1500);
 
         } catch (e) {
@@ -1782,20 +1843,18 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
     });
 
-    // Allow Enter key on reset fields
+    // ─── Allow Enter key on reset fields ──────────────────────────
     resetCodeInput?.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { e.preventDefault(); resetUpdatePassword?.click(); }
+        if (e.key === 'Enter' && resetCodeInput.value.length === 8) {
+            e.preventDefault();
+            autoVerifyCode();
+        }
     });
     resetNewPassword?.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); resetUpdatePassword?.click(); }
     });
     resetConfirmPassword?.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); resetUpdatePassword?.click(); }
-    });
-
-    // Auto‑sanitise code input
-    resetCodeInput?.addEventListener('input', function(e) {
-        this.value = this.value.replace(/\D/g, '').slice(0, 8);
     });
 
     // ---- AUTH MODAL SUBMIT (Login or Register) ----
