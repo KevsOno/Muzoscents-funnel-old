@@ -483,7 +483,7 @@ function renderCategoryCards() {
     const container = document.getElementById('category-cards');
     if (!container) return;
 
-    const cats = (categories || []).filter(Boolean).slice(0, 12);
+    const cats = (categories || []).filter(Boolean); //show all categories
     if (!cats.length) {
         container.innerHTML = '<div class="text-sm text-gray-500">Categories will appear as products load.</div>';
         return;
