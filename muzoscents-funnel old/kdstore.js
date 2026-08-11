@@ -1569,9 +1569,83 @@ document.addEventListener('click', function(e) {
 });
 
 // ============================================================
+//  STICKY HEADER (DESKTOP ONLY)
+// ============================================================
+function initStickyHeader() {
+    const stickyWrap = document.getElementById('pf-top-sticky');
+    if (!stickyWrap) return;
+
+    // Only enable on desktop
+    if (window.innerWidth < 768) return;
+
+    let headerHeight = stickyWrap.offsetHeight;
+    let isFixed = false;
+    const placeholder = document.createElement('div');
+    placeholder.style.display = 'none';
+
+    function onScroll() {
+        const scrollY = window.scrollY || window.pageYOffset;
+        if (scrollY > 10 && !isFixed) {
+            // Switch to fixed
+            stickyWrap.style.position = 'fixed';
+            stickyWrap.style.top = '0';
+            stickyWrap.style.left = '0';
+            stickyWrap.style.right = '0';
+            stickyWrap.style.zIndex = '80';
+            stickyWrap.style.width = '100%';
+            stickyWrap.style.background = 'rgba(255,255,255,0.96)';
+            stickyWrap.style.backdropFilter = 'blur(14px)';
+            stickyWrap.style.boxShadow = '0 2px 12px rgba(0,0,0,0.08)';
+            // Add placeholder to prevent jump
+            placeholder.style.display = 'block';
+            placeholder.style.height = headerHeight + 'px';
+            placeholder.style.width = '100%';
+            stickyWrap.parentNode.insertBefore(placeholder, stickyWrap);
+            isFixed = true;
+        } else if (scrollY <= 10 && isFixed) {
+            // Revert to static
+            stickyWrap.style.position = '';
+            stickyWrap.style.top = '';
+            stickyWrap.style.left = '';
+            stickyWrap.style.right = '';
+            stickyWrap.style.zIndex = '';
+            stickyWrap.style.width = '';
+            stickyWrap.style.background = '';
+            stickyWrap.style.backdropFilter = '';
+            stickyWrap.style.boxShadow = '';
+            if (placeholder.parentNode) placeholder.parentNode.removeChild(placeholder);
+            isFixed = false;
+        }
+    }
+
+    // Debounce scroll for performance
+    let ticking = false;
+    window.addEventListener('scroll', () => {
+        if (!ticking) {
+            window.requestAnimationFrame(() => {
+                onScroll();
+                ticking = false;
+            });
+            ticking = true;
+        }
+    });
+
+    // Also on resize to update header height
+    window.addEventListener('resize', () => {
+        headerHeight = stickyWrap.offsetHeight;
+        if (isFixed) {
+            placeholder.style.height = headerHeight + 'px';
+        }
+    });
+}
+
+// ============================================================
 //  DOM CONTENT LOADED - INITIALIZATION
 // ============================================================
 document.addEventListener('DOMContentLoaded', async function() {
+
+    // Initialize sticky header
+    initStickyHeader();
 
     // --- Static Event Listeners ---
 
