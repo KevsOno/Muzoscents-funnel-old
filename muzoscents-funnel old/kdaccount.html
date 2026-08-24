@@ -4,15 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Kevs bOS · Accounts</title>
-    <!-- Tailwind -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- React + ReactDOM + Babel standalone -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
     <style>
         body { background: #f1f5f9; }
@@ -28,8 +23,43 @@
             display: inline-block;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        /* Scrollable tables */
         .table-scroll { max-height: 400px; overflow-y: auto; }
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+            padding: 1rem;
+        }
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            max-width: 600px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            padding: 1.5rem;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .modal-content h3 { font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem; }
+        .modal-content label { display: block; font-size: 0.875rem; font-weight: 500; margin-top: 0.75rem; }
+        .modal-content input, .modal-content select, .modal-content textarea {
+            width: 100%;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            padding: 0.5rem;
+            margin-top: 0.25rem;
+        }
+        .modal-content .btn-row { display: flex; gap: 0.5rem; margin-top: 1rem; justify-content: flex-end; }
+        .modal-content .btn-primary { background: #3b82f6; color: white; padding: 0.5rem 1.5rem; border-radius: 6px; }
+        .modal-content .btn-secondary { background: #e5e7eb; color: #1f2937; padding: 0.5rem 1.5rem; border-radius: 6px; }
+        .line-row { display: flex; gap: 0.5rem; align-items: end; margin-top: 0.5rem; }
+        .line-row select { flex: 2; }
+        .line-row input { flex: 1; }
+        .line-row button { background: #ef4444; color: white; padding: 0.25rem 0.75rem; border-radius: 4px; }
     </style>
 </head>
 <body>
@@ -47,9 +77,6 @@
         const ORG_ID_KEY = 'selected_org_id';
         const ORG_NAME_KEY = 'selected_org_name';
 
-        // ================================================================
-        // UTILITY FUNCTIONS
-        // ================================================================
         function getToken() { return localStorage.getItem(TOKEN_KEY); }
         function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
         function getRefresh() { return localStorage.getItem(REFRESH_KEY); }
@@ -80,7 +107,7 @@
         }
 
         // ================================================================
-        // API CLIENT (with refresh)
+        // API CLIENT
         // ================================================================
         async function refreshToken() {
             const refresh = getRefresh();
@@ -135,22 +162,22 @@
         }
 
         // ================================================================
-        // NAVIGATION COMPONENT (reused from dashboard)
+        // NAVIGATION
         // ================================================================
         const NavBar = ({ onLogout, userName }) => {
             const currentPath = window.location.pathname;
             const navItems = [
-                { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy', roles: ['owner','admin','sales_rep','finance'] },
-                { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & online payments', roles: ['owner','admin','sales_rep'] },
-                { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', title: 'Order shipping, tracking & dispatch', roles: ['owner','admin','logistics'] },
-                { path: '/kdsupport',     name: 'Support',   icon: 'fa-headset', title: 'Ticket management & customer context', roles: ['owner','admin','support'] },
-                { path: '/kddashboard',   name: 'Exec',      icon: 'fa-chart-simple', title: 'Executive revenue & profit overview', roles: ['owner','admin','finance'] },
-                { path: '/kdadmin',       name: 'Inventory', icon: 'fa-boxes', title: 'Manage products, stock, bulk CSV upload', roles: ['owner','admin','inventory_manager','warehouse'] },
-                { path: '/kdteam',        name: 'Team',      icon: 'fa-users', title: 'Invite & manage team members', roles: ['owner','admin'] },
-                { path: '/kdknowledge',   name: 'Knowledge', icon: 'fa-database', title: 'Manage AI knowledge base documents', roles: ['owner','admin'] },
-                { path: '/kdprocurement', name: 'Procurement', icon: 'fa-truck', title: 'Manage suppliers, purchase orders, and goods received', roles: ['owner','admin','inventory_manager','procurement','warehouse'] },
-                { path: '/kdhr',          name: 'HR',        icon: 'fa-users-gear', title: 'Employee management, attendance, leave, payroll', roles: ['owner','admin','hr','employee'] },
-                { path: '/kdaccount',     name: 'Accounts',  icon: 'fa-book',       title: 'Chart of accounts, journal entries, AR/AP, P&L, export', roles: ['owner','admin','finance','auditor'] }
+                { path: '/kdbi', name: 'Dashboard', icon: 'fa-chart-line', roles: ['owner','admin','sales_rep','finance'] },
+                { path: '/kdpos', name: 'POS', icon: 'fa-cash-register', roles: ['owner','admin','sales_rep'] },
+                { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', roles: ['owner','admin','logistics'] },
+                { path: '/kdsupport', name: 'Support', icon: 'fa-headset', roles: ['owner','admin','support'] },
+                { path: '/kddashboard', name: 'Exec', icon: 'fa-chart-simple', roles: ['owner','admin','finance'] },
+                { path: '/kdadmin', name: 'Inventory', icon: 'fa-boxes', roles: ['owner','admin','inventory_manager','warehouse'] },
+                { path: '/kdteam', name: 'Team', icon: 'fa-users', roles: ['owner','admin'] },
+                { path: '/kdknowledge', name: 'Knowledge', icon: 'fa-database', roles: ['owner','admin'] },
+                { path: '/kdprocurement', name: 'Procurement', icon: 'fa-truck', roles: ['owner','admin','inventory_manager','procurement','warehouse'] },
+                { path: '/kdhr', name: 'HR', icon: 'fa-users-gear', roles: ['owner','admin','hr','employee'] },
+                { path: '/kdaccount', name: 'Accounts', icon: 'fa-book', roles: ['owner','admin','finance','auditor'] }
             ];
             const userRole = localStorage.getItem('user_role') || 'customer';
             const canAccess = (roles) => roles.includes(userRole);
@@ -167,8 +194,7 @@
                             <div className="hidden md:flex items-center gap-1 flex-wrap">
                                 {navItems.filter(item => canAccess(item.roles)).map(item => (
                                     <a key={item.path} href={item.path}
-                                       className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${currentPath === item.path ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10'}`}
-                                       title={item.title}>
+                                       className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${currentPath === item.path ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10'}`}>
                                         <i className={`fa-solid ${item.icon} w-4`}></i> {item.name}
                                     </a>
                                 ))}
@@ -198,19 +224,8 @@
         // ================================================================
         // ORGANISATION SELECTION MODAL
         // ================================================================
-        const OrgSelectionModal = ({ organisations, onSelect, onClose }) => {
+        const OrgSelectionModal = ({ organisations, onSelect }) => {
             const [selected, setSelected] = useState(null);
-            const [loading, setLoading] = useState(false);
-
-            const handleSelect = (org) => {
-                setSelected(org);
-            };
-
-            const confirm = () => {
-                if (selected) {
-                    onSelect(selected);
-                }
-            };
 
             return (
                 <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
@@ -221,20 +236,14 @@
                             <p className="text-slate-400 text-sm mt-1">Choose which organisation you want to view accounting data for</p>
                         </div>
                         <div className="mb-6 max-h-96 overflow-y-auto">
-                            {loading && (
-                                <div className="text-center py-8">
-                                    <div className="loading-spinner mx-auto"></div>
-                                    <p className="text-slate-400 mt-2">Loading...</p>
-                                </div>
-                            )}
-                            {!loading && organisations.length === 0 && (
+                            {organisations.length === 0 && (
                                 <div className="text-center py-8">
                                     <i className="fa-solid fa-store-slash text-4xl text-red-400 mb-2"></i>
                                     <p className="text-slate-400">You are not a member of any organisation.</p>
                                     <a href="/kdsiginin" className="mt-4 inline-block bg-blue-600 px-4 py-2 rounded-lg text-white">Register</a>
                                 </div>
                             )}
-                            {!loading && organisations.length > 0 && (
+                            {organisations.length > 0 && (
                                 <div className="space-y-3">
                                     {organisations.map(org => {
                                         const targetId = org.id || org.org_id;
@@ -243,7 +252,7 @@
                                         return (
                                             <div key={targetId}
                                                  className={`org-card p-4 rounded-xl border border-slate-600 hover:bg-slate-700 transition text-white ${isSelected ? 'selected bg-blue-900/50 border-blue-500' : ''}`}
-                                                 onClick={() => handleSelect({ id: targetId, name: targetName, role: org.role || 'member' })}>
+                                                 onClick={() => setSelected({ id: targetId, name: targetName, role: org.role || 'member' })}>
                                                 <div className="flex items-center justify-between">
                                                     <div className="flex items-center gap-3">
                                                         <i className={`fa-solid fa-building text-2xl ${org.role === 'owner' ? 'text-amber-400' : 'text-blue-400'}`}></i>
@@ -261,7 +270,7 @@
                             )}
                         </div>
                         <button
-                            onClick={confirm}
+                            onClick={() => { if (selected) onSelect(selected); }}
                             disabled={!selected}
                             className={`w-full bg-blue-600 text-white py-3 rounded-lg font-medium transition ${!selected ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-700'}`}
                         >
@@ -273,20 +282,263 @@
         };
 
         // ================================================================
+        // MODAL COMPONENTS
+        // ================================================================
+
+        // Payment Modal (for A/R and A/P)
+        const PaymentModal = ({ isOpen, onClose, onConfirm, title, arId }) => {
+            const [amount, setAmount] = useState('');
+            const [reference, setReference] = useState('');
+            const [notes, setNotes] = useState('');
+            const [loading, setLoading] = useState(false);
+
+            if (!isOpen) return null;
+
+            const handleSubmit = async () => {
+                if (!amount || parseFloat(amount) <= 0) {
+                    alert('Please enter a valid amount');
+                    return;
+                }
+                setLoading(true);
+                try {
+                    await onConfirm(arId, { amount: parseFloat(amount), reference: reference || undefined, notes: notes || undefined });
+                    onClose();
+                } catch (err) {
+                    alert('Payment failed: ' + err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="modal-overlay" onClick={onClose}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()}>
+                        <h3>{title || 'Register Payment'}</h3>
+                        <label>Amount (₦)</label>
+                        <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" />
+                        <label>Reference (optional)</label>
+                        <input type="text" value={reference} onChange={e => setReference(e.target.value)} placeholder="Payment reference" />
+                        <label>Notes (optional)</label>
+                        <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes" rows={2} />
+                        <div className="btn-row">
+                            <button className="btn-secondary" onClick={onClose}>Cancel</button>
+                            <button className="btn-primary" onClick={handleSubmit} disabled={loading}>
+                                {loading ? 'Processing...' : 'Register Payment'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // Chart of Accounts Create Modal
+        const CreateAccountModal = ({ isOpen, onClose, onConfirm }) => {
+            const [code, setCode] = useState('');
+            const [name, setName] = useState('');
+            const [type, setType] = useState('asset');
+            const [description, setDescription] = useState('');
+            const [loading, setLoading] = useState(false);
+
+            if (!isOpen) return null;
+
+            const handleSubmit = async () => {
+                if (!code || !name) {
+                    alert('Code and Name are required');
+                    return;
+                }
+                setLoading(true);
+                try {
+                    await onConfirm({ code, name, type, description: description || undefined });
+                    onClose();
+                } catch (err) {
+                    alert('Failed to create account: ' + err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="modal-overlay" onClick={onClose}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()}>
+                        <h3>Create Chart of Account</h3>
+                        <label>Account Code *</label>
+                        <input type="text" value={code} onChange={e => setCode(e.target.value)} placeholder="e.g. 1000" />
+                        <label>Account Name *</label>
+                        <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Cash" />
+                        <label>Account Type</label>
+                        <select value={type} onChange={e => setType(e.target.value)}>
+                            <option value="asset">Asset</option>
+                            <option value="liability">Liability</option>
+                            <option value="equity">Equity</option>
+                            <option value="revenue">Revenue</option>
+                            <option value="expense">Expense</option>
+                        </select>
+                        <label>Description (optional)</label>
+                        <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Description" rows={2} />
+                        <div className="btn-row">
+                            <button className="btn-secondary" onClick={onClose}>Cancel</button>
+                            <button className="btn-primary" onClick={handleSubmit} disabled={loading}>
+                                {loading ? 'Creating...' : 'Create Account'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // Journal Entry Create Modal
+        const CreateJournalModal = ({ isOpen, onClose, onConfirm, accounts }) => {
+            const [entryDate, setEntryDate] = useState(new Date().toISOString().slice(0,10));
+            const [description, setDescription] = useState('');
+            const [reference, setReference] = useState('');
+            const [lines, setLines] = useState([{ account_id: '', debit: '', credit: '' }]);
+            const [loading, setLoading] = useState(false);
+
+            if (!isOpen) return null;
+
+            const addLine = () => {
+                setLines([...lines, { account_id: '', debit: '', credit: '' }]);
+            };
+
+            const removeLine = (idx) => {
+                if (lines.length <= 1) return;
+                setLines(lines.filter((_, i) => i !== idx));
+            };
+
+            const updateLine = (idx, field, value) => {
+                const newLines = [...lines];
+                newLines[idx][field] = value;
+                // If debit is set, clear credit; if credit is set, clear debit
+                if (field === 'debit' && value) newLines[idx].credit = '';
+                if (field === 'credit' && value) newLines[idx].debit = '';
+                setLines(newLines);
+            };
+
+            const handleSubmit = async () => {
+                if (!description) {
+                    alert('Description is required');
+                    return;
+                }
+                const validLines = lines.filter(l => l.account_id && (parseFloat(l.debit) > 0 || parseFloat(l.credit) > 0));
+                if (validLines.length === 0) {
+                    alert('At least one valid line is required');
+                    return;
+                }
+                // Check if totals balance
+                const totalDebit = validLines.reduce((sum, l) => sum + (parseFloat(l.debit) || 0), 0);
+                const totalCredit = validLines.reduce((sum, l) => sum + (parseFloat(l.credit) || 0), 0);
+                if (Math.abs(totalDebit - totalCredit) > 0.01) {
+                    alert(`Debits (${totalDebit}) and Credits (${totalCredit}) do not balance`);
+                    return;
+                }
+                setLoading(true);
+                try {
+                    const payload = {
+                        entry_date: entryDate,
+                        description,
+                        reference: reference || undefined,
+                        lines: validLines.map(l => ({
+                            account_id: l.account_id,
+                            debit: parseFloat(l.debit) || 0,
+                            credit: parseFloat(l.credit) || 0,
+                        }))
+                    };
+                    await onConfirm(payload);
+                    onClose();
+                } catch (err) {
+                    alert('Failed to create journal entry: ' + err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="modal-overlay" onClick={onClose}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()}>
+                        <h3>Create Journal Entry</h3>
+                        <label>Entry Date</label>
+                        <input type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)} />
+                        <label>Description *</label>
+                        <input type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="Journal entry description" />
+                        <label>Reference (optional)</label>
+                        <input type="text" value={reference} onChange={e => setReference(e.target.value)} placeholder="e.g. INV-001" />
+
+                        <label className="mt-3 font-medium">Journal Lines</label>
+                        {lines.map((line, idx) => (
+                            <div key={idx} className="line-row">
+                                <select value={line.account_id} onChange={e => updateLine(idx, 'account_id', e.target.value)}>
+                                    <option value="">Select Account</option>
+                                    {accounts.map(acc => (
+                                        <option key={acc.id} value={acc.id}>{acc.code} - {acc.name}</option>
+                                    ))}
+                                </select>
+                                <input type="number" step="0.01" placeholder="Debit" value={line.debit} onChange={e => updateLine(idx, 'debit', e.target.value)} />
+                                <input type="number" step="0.01" placeholder="Credit" value={line.credit} onChange={e => updateLine(idx, 'credit', e.target.value)} />
+                                <button onClick={() => removeLine(idx)}><i className="fa-solid fa-times"></i></button>
+                            </div>
+                        ))}
+                        <button onClick={addLine} className="text-blue-600 hover:underline text-sm mt-1">+ Add Line</button>
+
+                        <div className="btn-row">
+                            <button className="btn-secondary" onClick={onClose}>Cancel</button>
+                            <button className="btn-primary" onClick={handleSubmit} disabled={loading}>
+                                {loading ? 'Creating...' : 'Create Journal Entry'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // View Journal Entry Modal
+        const ViewJournalModal = ({ isOpen, onClose, entry }) => {
+            if (!isOpen || !entry) return null;
+
+            return (
+                <div className="modal-overlay" onClick={onClose}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()}>
+                        <h3>Journal Entry Details</h3>
+                        <p><strong>Date:</strong> {formatDate(entry.entry_date)}</p>
+                        <p><strong>Description:</strong> {entry.description}</p>
+                        <p><strong>Reference:</strong> {entry.reference || '-'}</p>
+                        <p><strong>Status:</strong> {entry.status}</p>
+                        <p><strong>Created:</strong> {formatDate(entry.created_at)}</p>
+                        <hr className="my-3" />
+                        <h4 className="font-semibold">Lines</h4>
+                        <table className="min-w-full mt-2">
+                            <thead className="bg-gray-100">
+                                <tr><th className="p-2 text-left">Account</th><th className="p-2 text-right">Debit</th><th className="p-2 text-right">Credit</th></tr>
+                            </thead>
+                            <tbody>
+                                {(entry.journal_lines || []).map((line, idx) => (
+                                    <tr key={idx} className="border-b">
+                                        <td className="p-2">{line.account_id}</td>
+                                        <td className="p-2 text-right">{formatCurrency(line.debit)}</td>
+                                        <td className="p-2 text-right">{formatCurrency(line.credit)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        <div className="btn-row">
+                            <button className="btn-secondary" onClick={onClose}>Close</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // ================================================================
         // MAIN APP
         // ================================================================
         const App = () => {
-            const [token, setTokenState] = useState(getToken());
             const [organisations, setOrganisations] = useState([]);
             const [selectedOrg, setSelectedOrg] = useState(null);
             const [showOrgModal, setShowOrgModal] = useState(false);
             const [loading, setLoading] = useState(true);
             const [userName, setUserName] = useState('User');
 
-            // Tab state
             const [activeTab, setActiveTab] = useState('pl');
 
-            // Data states
             const [chartAccounts, setChartAccounts] = useState([]);
             const [journalEntries, setJournalEntries] = useState([]);
             const [arList, setArList] = useState([]);
@@ -294,26 +546,25 @@
             const [plSummary, setPlSummary] = useState(null);
             const [plPeriod, setPlPeriod] = useState({ start: '', end: '' });
 
-            // Loading / error
             const [fetching, setFetching] = useState(false);
             const [error, setError] = useState('');
 
-            // Load organisations on mount
-            useEffect(() => {
-                loadOrganisations();
-            }, []);
+            // Modals
+            const [showPaymentModal, setShowPaymentModal] = useState(false);
+            const [paymentTarget, setPaymentTarget] = useState(null);
+            const [paymentType, setPaymentType] = useState('ar'); // 'ar' or 'ap'
 
-            // When organisation changes, load accounting data
-            useEffect(() => {
-                if (selectedOrg) {
-                    fetchAllData();
-                }
-            }, [selectedOrg]);
+            const [showAccountModal, setShowAccountModal] = useState(false);
+            const [showJournalModal, setShowJournalModal] = useState(false);
+            const [showViewJournal, setShowViewJournal] = useState(false);
+            const [viewingEntry, setViewingEntry] = useState(null);
+
+            useEffect(() => { loadOrganisations(); }, []);
+            useEffect(() => { if (selectedOrg) fetchAllData(); }, [selectedOrg]);
 
             const loadOrganisations = async () => {
                 setLoading(true);
                 try {
-                    // First try /auth/me to get current org
                     const me = await apiCall('/auth/me');
                     const orgId = me.org_id;
                     const role = me.role || 'admin';
@@ -326,7 +577,6 @@
                     const orgs = [{ id: orgId, org_id: orgId, org_name: orgName, role }];
                     setOrganisations(orgs);
 
-                    // Check if user has previously selected an org
                     const savedId = getSelectedOrgId();
                     const savedName = getSelectedOrgName();
                     if (savedId && orgs.some(o => o.id === savedId)) {
@@ -336,8 +586,8 @@
                         setShowOrgModal(true);
                     }
                 } catch (err) {
-                    console.error('Failed to load organisations:', err);
-                    // Fallback: try to fetch list from /auth/user-organisations
+                    console.error(err);
+                    // Fallback to /auth/user-organisations
                     try {
                         const response = await fetch(`${API_BASE}/auth/user-organisations`, {
                             headers: { 'Authorization': `Bearer ${getToken()}` }
@@ -353,8 +603,7 @@
                             setOrganisations(orgs);
                             const savedId = getSelectedOrgId();
                             if (savedId && orgs.some(o => o.id === savedId)) {
-                                const found = orgs.find(o => o.id === savedId);
-                                setSelectedOrg(found);
+                                setSelectedOrg(orgs.find(o => o.id === savedId));
                                 setShowOrgModal(false);
                             } else {
                                 setShowOrgModal(true);
@@ -362,12 +611,8 @@
                         } else {
                             setShowOrgModal(true);
                         }
-                    } catch (e2) {
-                        setShowOrgModal(true);
-                    }
-                } finally {
-                    setLoading(false);
-                }
+                    } catch (e2) { setShowOrgModal(true); }
+                } finally { setLoading(false); }
             };
 
             const handleOrgSelect = (org) => {
@@ -375,7 +620,6 @@
                 setSelectedOrgId(org.id);
                 setSelectedOrgName(org.name);
                 setShowOrgModal(false);
-                // Also set user role from org data if needed
                 localStorage.setItem('user_role', org.role || 'customer');
             };
 
@@ -390,43 +634,31 @@
                 window.location.href = '/kdsiginin';
             };
 
-            // Fetch all accounting data
             const fetchAllData = async () => {
                 if (!selectedOrg) return;
                 setFetching(true);
                 setError('');
                 try {
-                    // Chart of Accounts
                     const coa = await apiCall('/accounts/chart');
                     setChartAccounts(coa.accounts || []);
 
-                    // Journal Entries
                     const je = await apiCall('/accounts/journal-entries');
                     setJournalEntries(je.entries || []);
 
-                    // Accounts Receivable
                     const ar = await apiCall('/accounts/ar');
                     setArList(ar.ar || []);
 
-                    // Accounts Payable
                     const ap = await apiCall('/accounts/ap');
                     setApList(ap.ap || []);
 
-                    // Profit & Loss (get latest summary or default)
-                    // We'll fetch the most recent summary, or prompt user to generate
-                    // For now, set a default period (last 30 days)
                     const today = new Date();
                     const end = today.toISOString().slice(0,10);
                     const start = new Date(today.setDate(today.getDate()-30)).toISOString().slice(0,10);
                     setPlPeriod({ start, end });
-                    // Try to get summary for that period
                     try {
                         const summary = await apiCall(`/accounts/profit-loss/summary?period_start=${start}&period_end=${end}`);
                         setPlSummary(summary);
-                    } catch (e) {
-                        // No summary yet
-                        setPlSummary(null);
-                    }
+                    } catch (e) { setPlSummary(null); }
                 } catch (err) {
                     setError(err.message);
                 } finally {
@@ -434,36 +666,53 @@
                 }
             };
 
-            // Generate P&L
-            const generatePL = async () => {
-                if (!plPeriod.start || !plPeriod.end) {
-                    alert('Please set start and end dates');
-                    return;
-                }
-                setFetching(true);
-                try {
-                    const result = await apiCall('/accounts/profit-loss', {
-                        method: 'POST',
-                        body: JSON.stringify({ period_start: plPeriod.start, period_end: plPeriod.end })
-                    });
-                    setPlSummary(result.profit_loss);
-                    alert('Profit & Loss generated successfully');
-                } catch (err) {
-                    alert('Error: ' + err.message);
-                } finally {
-                    setFetching(false);
-                }
+            // ----- Chart of Accounts Actions -----
+            const createAccount = async (data) => {
+                await apiCall('/accounts/chart', { method: 'POST', body: JSON.stringify(data) });
+                await fetchAllData();
             };
 
-            // Export
+            const deleteAccount = async (id) => {
+                if (!confirm('Delete this account?')) return;
+                await apiCall(`/accounts/chart/${id}`, { method: 'DELETE' });
+                await fetchAllData();
+            };
+
+            // ----- Journal Entry Actions -----
+            const createJournal = async (data) => {
+                await apiCall('/accounts/journal-entries', { method: 'POST', body: JSON.stringify(data) });
+                await fetchAllData();
+            };
+
+            const postJournal = async (id) => {
+                if (!confirm('Post this journal entry?')) return;
+                await apiCall(`/accounts/journal-entries/${id}/post`, { method: 'POST' });
+                await fetchAllData();
+            };
+
+            const deleteJournal = async (id) => {
+                if (!confirm('Delete this journal entry?')) return;
+                await apiCall(`/accounts/journal-entries/${id}`, { method: 'DELETE' });
+                await fetchAllData();
+            };
+
+            // ----- Payment Actions -----
+            const registerPayment = async (id, data) => {
+                const endpoint = paymentType === 'ar' ? `/accounts/ar/${id}/payment` : `/accounts/ap/${id}/payment`;
+                await apiCall(endpoint, { method: 'POST', body: JSON.stringify(data) });
+                await fetchAllData();
+            };
+
+            const openPaymentModal = (id, type) => {
+                setPaymentTarget(id);
+                setPaymentType(type);
+                setShowPaymentModal(true);
+            };
+
+            // ----- Export -----
             const exportData = async (entity, format) => {
                 try {
-                    const body = {
-                        entity,
-                        format,
-                        period_start: plPeriod.start || undefined,
-                        period_end: plPeriod.end || undefined
-                    };
+                    const body = { entity, format, period_start: plPeriod.start || undefined, period_end: plPeriod.end || undefined };
                     const response = await fetch(`${API_BASE}/accounts/export`, {
                         method: 'POST',
                         headers: {
@@ -500,25 +749,30 @@
                 }
             };
 
-            // Render tabs
-            const renderTabContent = () => {
-                switch (activeTab) {
-                    case 'pl':
-                        return renderPLTab();
-                    case 'coa':
-                        return renderCOATab();
-                    case 'journal':
-                        return renderJournalTab();
-                    case 'ar':
-                        return renderARTab();
-                    case 'ap':
-                        return renderAPTab();
-                    case 'export':
-                        return renderExportTab();
-                    default:
-                        return <p>Select a tab</p>;
+            // ----- Generate P&L -----
+            const generatePL = async () => {
+                if (!plPeriod.start || !plPeriod.end) {
+                    alert('Please set start and end dates');
+                    return;
+                }
+                setFetching(true);
+                try {
+                    const result = await apiCall('/accounts/profit-loss', {
+                        method: 'POST',
+                        body: JSON.stringify({ period_start: plPeriod.start, period_end: plPeriod.end })
+                    });
+                    setPlSummary(result.profit_loss);
+                    alert('Profit & Loss generated successfully');
+                } catch (err) {
+                    alert('Error: ' + err.message);
+                } finally {
+                    setFetching(false);
                 }
             };
+
+            // ================================================================
+            // RENDER FUNCTIONS
+            // ================================================================
 
             const renderPLTab = () => (
                 <div>
@@ -557,7 +811,7 @@
                 <div className="bg-white p-4 rounded shadow">
                     <div className="flex justify-between items-center mb-4">
                         <h2 className="text-xl font-semibold">Chart of Accounts</h2>
-                        <button onClick={() => {/* open create modal */}} className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700">
+                        <button onClick={() => setShowAccountModal(true)} className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700">
                             <i className="fa-solid fa-plus mr-1"></i> New Account
                         </button>
                     </div>
@@ -568,7 +822,6 @@
                                     <th className="p-2 text-left">Code</th>
                                     <th className="p-2 text-left">Name</th>
                                     <th className="p-2 text-left">Type</th>
-                                    <th className="p-2 text-left">Parent</th>
                                     <th className="p-2 text-left">Actions</th>
                                 </tr>
                             </thead>
@@ -578,17 +831,20 @@
                                         <td className="p-2">{acc.code}</td>
                                         <td className="p-2">{acc.name}</td>
                                         <td className="p-2 capitalize">{acc.type}</td>
-                                        <td className="p-2">{acc.parent_id || '-'}</td>
                                         <td className="p-2">
-                                            <button className="text-blue-600 hover:underline mr-2">Edit</button>
-                                            <button className="text-red-600 hover:underline">Delete</button>
+                                            <button className="text-red-600 hover:underline" onClick={() => deleteAccount(acc.id)}>Delete</button>
                                         </td>
                                     </tr>
                                 ))}
-                                {chartAccounts.length === 0 && <tr><td colSpan="5" className="text-center p-4 text-gray-400">No accounts</td></tr>}
+                                {chartAccounts.length === 0 && <tr><td colSpan="4" className="text-center p-4 text-gray-400">No accounts</td></tr>}
                             </tbody>
                         </table>
                     </div>
+                    <CreateAccountModal
+                        isOpen={showAccountModal}
+                        onClose={() => setShowAccountModal(false)}
+                        onConfirm={createAccount}
+                    />
                 </div>
             );
 
@@ -596,7 +852,7 @@
                 <div className="bg-white p-4 rounded shadow">
                     <div className="flex justify-between items-center mb-4">
                         <h2 className="text-xl font-semibold">Journal Entries</h2>
-                        <button onClick={() => {/* create journal */}} className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700">
+                        <button onClick={() => setShowJournalModal(true)} className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700">
                             <i className="fa-solid fa-plus mr-1"></i> New Entry
                         </button>
                     </div>
@@ -623,8 +879,11 @@
                                             </span>
                                         </td>
                                         <td className="p-2">
-                                            {je.status === 'draft' && <button className="text-blue-600 hover:underline mr-2">Post</button>}
-                                            <button className="text-blue-600 hover:underline">View</button>
+                                            {je.status === 'draft' && (
+                                                <button className="text-blue-600 hover:underline mr-2" onClick={() => postJournal(je.id)}>Post</button>
+                                            )}
+                                            <button className="text-blue-600 hover:underline mr-2" onClick={() => { setViewingEntry(je); setShowViewJournal(true); }}>View</button>
+                                            <button className="text-red-600 hover:underline" onClick={() => deleteJournal(je.id)}>Delete</button>
                                         </td>
                                     </tr>
                                 ))}
@@ -632,6 +891,17 @@
                             </tbody>
                         </table>
                     </div>
+                    <CreateJournalModal
+                        isOpen={showJournalModal}
+                        onClose={() => setShowJournalModal(false)}
+                        onConfirm={createJournal}
+                        accounts={chartAccounts}
+                    />
+                    <ViewJournalModal
+                        isOpen={showViewJournal}
+                        onClose={() => { setShowViewJournal(false); setViewingEntry(null); }}
+                        entry={viewingEntry}
+                    />
                 </div>
             );
 
@@ -663,7 +933,11 @@
                                             </span>
                                         </td>
                                         <td className="p-2">
-                                            {ar.status !== 'paid' && <button className="text-blue-600 hover:underline">Register Payment</button>}
+                                            {ar.status !== 'paid' && (
+                                                <button className="text-blue-600 hover:underline" onClick={() => openPaymentModal(ar.id, 'ar')}>
+                                                    Register Payment
+                                                </button>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}
@@ -671,6 +945,13 @@
                             </tbody>
                         </table>
                     </div>
+                    <PaymentModal
+                        isOpen={showPaymentModal}
+                        onClose={() => { setShowPaymentModal(false); setPaymentTarget(null); }}
+                        onConfirm={registerPayment}
+                        title={paymentType === 'ar' ? 'Register A/R Payment' : 'Register A/P Payment'}
+                        arId={paymentTarget}
+                    />
                 </div>
             );
 
@@ -702,7 +983,11 @@
                                             </span>
                                         </td>
                                         <td className="p-2">
-                                            {ap.status !== 'paid' && <button className="text-blue-600 hover:underline">Register Payment</button>}
+                                            {ap.status !== 'paid' && (
+                                                <button className="text-blue-600 hover:underline" onClick={() => openPaymentModal(ap.id, 'ap')}>
+                                                    Register Payment
+                                                </button>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}
@@ -710,6 +995,13 @@
                             </tbody>
                         </table>
                     </div>
+                    <PaymentModal
+                        isOpen={showPaymentModal}
+                        onClose={() => { setShowPaymentModal(false); setPaymentTarget(null); }}
+                        onConfirm={registerPayment}
+                        title={paymentType === 'ar' ? 'Register A/R Payment' : 'Register A/P Payment'}
+                        arId={paymentTarget}
+                    />
                 </div>
             );
 
@@ -720,21 +1012,11 @@
                         <div className="border p-4 rounded">
                             <h3 className="font-medium mb-2">Export Data</h3>
                             <div className="flex flex-wrap gap-2">
-                                <button onClick={() => exportData('accounts_receivable', 'csv')} className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">
-                                    A/R CSV
-                                </button>
-                                <button onClick={() => exportData('accounts_payable', 'csv')} className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">
-                                    A/P CSV
-                                </button>
-                                <button onClick={() => exportData('journal_entries', 'csv')} className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">
-                                    Journal CSV
-                                </button>
-                                <button onClick={() => exportData('profit_loss', 'csv')} className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">
-                                    P&L CSV
-                                </button>
-                                <button onClick={() => exportData('accounts_receivable', 'json')} className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700">
-                                    JSON
-                                </button>
+                                <button onClick={() => exportData('accounts_receivable', 'csv')} className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">A/R CSV</button>
+                                <button onClick={() => exportData('accounts_payable', 'csv')} className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">A/P CSV</button>
+                                <button onClick={() => exportData('journal_entries', 'csv')} className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">Journal CSV</button>
+                                <button onClick={() => exportData('profit_loss', 'csv')} className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">P&L CSV</button>
+                                <button onClick={() => exportData('accounts_receivable', 'json')} className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700">JSON</button>
                             </div>
                         </div>
                         <div className="border p-4 rounded">
@@ -748,7 +1030,21 @@
                 </div>
             );
 
-            // Main render
+            const renderTabContent = () => {
+                switch (activeTab) {
+                    case 'pl': return renderPLTab();
+                    case 'coa': return renderCOATab();
+                    case 'journal': return renderJournalTab();
+                    case 'ar': return renderARTab();
+                    case 'ap': return renderAPTab();
+                    case 'export': return renderExportTab();
+                    default: return <p>Select a tab</p>;
+                }
+            };
+
+            // ================================================================
+            // MAIN RENDER
+            // ================================================================
             if (loading) {
                 return <div className="flex justify-center items-center h-screen"><div className="loading-spinner"></div></div>;
             }
@@ -756,15 +1052,10 @@
             return (
                 <div>
                     {showOrgModal && (
-                        <OrgSelectionModal
-                            organisations={organisations}
-                            onSelect={handleOrgSelect}
-                            onClose={() => {}}
-                        />
+                        <OrgSelectionModal organisations={organisations} onSelect={handleOrgSelect} />
                     )}
                     <NavBar onLogout={handleLogout} userName={userName} />
                     <div className="max-w-7xl mx-auto p-4 mt-4">
-                        {/* Org banner */}
                         {selectedOrg && (
                             <div className="mb-4 p-3 bg-blue-900/30 rounded-lg border border-blue-700 flex items-center justify-between" style={{background:'#1e293b', borderColor:'#334155'}}>
                                 <div className="flex items-center gap-3">
@@ -780,10 +1071,8 @@
                             </div>
                         )}
 
-                        {/* Error */}
                         {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>}
 
-                        {/* Tabs */}
                         <div className="flex flex-wrap gap-2 border-b border-gray-300 mb-4">
                             {['pl','coa','journal','ar','ap','export'].map(tab => (
                                 <button
@@ -801,7 +1090,6 @@
                             ))}
                         </div>
 
-                        {/* Tab content */}
                         {fetching ? (
                             <div className="flex justify-center py-8"><div className="loading-spinner"></div></div>
                         ) : (
