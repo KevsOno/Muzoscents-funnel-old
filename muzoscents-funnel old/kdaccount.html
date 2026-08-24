@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kevs bOS · Accounts</title>
+    <!-- Tailwind -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React + ReactDOM + Babel standalone -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <style>
+        body { background: #f1f5f9; }
+        .org-card { transition: all 0.2s ease; cursor: pointer; }
+        .org-card:hover { background: #2d3a5e; transform: translateY(-1px); }
+        .org-card.selected { background: #3b82f6; border-color: #60a5fa; }
+        .loading-spinner {
+            border: 2px solid #e5e7eb;
+            border-top: 2px solid #3b82f6;
+            border-radius: 50%;
+            width: 30px; height: 30px;
+            animation: spin 0.6s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        /* Scrollable tables */
+        .table-scroll { max-height: 400px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+        // ================================================================
+        // CONFIGURATION
+        // ================================================================
+        const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
+        const TOKEN_KEY = 'access_token';
+        const REFRESH_KEY = 'refresh_token';
+        const ORG_ID_KEY = 'selected_org_id';
+        const ORG_NAME_KEY = 'selected_org_name';
+
+        // ================================================================
+        // UTILITY FUNCTIONS
+        // ================================================================
+        function getToken() { return localStorage.getItem(TOKEN_KEY); }
+        function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
+        function getRefresh() { return localStorage.getItem(REFRESH_KEY); }
+        function getSelectedOrgId() { return localStorage.getItem(ORG_ID_KEY); }
+        function setSelectedOrgId(id) { localStorage.setItem(ORG_ID_KEY, id); }
+        function getSelectedOrgName() { return localStorage.getItem(ORG_NAME_KEY); }
+        function setSelectedOrgName(n) { localStorage.setItem(ORG_NAME_KEY, n); }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/[&<>"]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                if (m === '"') return '&quot;';
+                return m;
+            });
+        }
+
+        function formatCurrency(amount) {
+            return '₦' + Number(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            const d = new Date(dateStr);
+            return d.toISOString().slice(0,10);
+        }
+
+        // ================================================================
+        // API CLIENT (with refresh)
+        // ================================================================
+        async function refreshToken() {
+            const refresh = getRefresh();
+            if (!refresh) return false;
+            try {
+                const res = await fetch(`${API_BASE}/auth/refresh`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh_token: refresh })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    setToken(data.access_token);
+                    localStorage.setItem(REFRESH_KEY, data.refresh_token);
+                    return true;
+                }
+            } catch (e) {}
+            return false;
+        }
+
+        async function apiCall(endpoint, options = {}, retry = true) {
+            const token = getToken();
+            const headers = {
+                'Content-Type': 'application/json',
+                ...options.headers,
+            };
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+
+            const orgId = getSelectedOrgId();
+            if (orgId) headers['X-Selected-Org-Id'] = orgId;
+
+            const url = `${API_BASE}${endpoint}`;
+            const res = await fetch(url, { ...options, headers });
+
+            if (res.status === 401 && retry) {
+                const ok = await refreshToken();
+                if (ok) return apiCall(endpoint, options, false);
+                throw new Error('Session expired');
+            }
+            if (!res.ok) {
+                let errorMsg;
+                try {
+                    const err = await res.json();
+                    errorMsg = err.detail || err.message || 'API error';
+                } catch (e) {
+                    const text = await res.text();
+                    errorMsg = text || `HTTP ${res.status}`;
+                }
+                throw new Error(errorMsg);
+            }
+            return res.json();
+        }
+
+        // ================================================================
+        // NAVIGATION COMPONENT (reused from dashboard)
+        // ================================================================
+        const NavBar = ({ onLogout, userName }) => {
+            const currentPath = window.location.pathname;
+            const navItems = [
+                { path: '/kdbi',          name: 'Dashboard', icon: 'fa-chart-line', title: 'Marketing metrics, leads & AI strategy', roles: ['owner','admin','sales_rep','finance'] },
+                { path: '/kdpos',         name: 'POS',       icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & online payments', roles: ['owner','admin','sales_rep'] },
+                { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast', title: 'Order shipping, tracking & dispatch', roles: ['owner','admin','logistics'] },
+                { path: '/kdsupport',     name: 'Support',   icon: 'fa-headset', title: 'Ticket management & customer context', roles: ['owner','admin','support'] },
+                { path: '/kddashboard',   name: 'Exec',      icon: 'fa-chart-simple', title: 'Executive revenue & profit overview', roles: ['owner','admin','finance'] },
+                { path: '/kdadmin',       name: 'Inventory', icon: 'fa-boxes', title: 'Manage products, stock, bulk CSV upload', roles: ['owner','admin','inventory_manager','warehouse'] },
+                { path: '/kdteam',        name: 'Team',      icon: 'fa-users', title: 'Invite & manage team members', roles: ['owner','admin'] },
+                { path: '/kdknowledge',   name: 'Knowledge', icon: 'fa-database', title: 'Manage AI knowledge base documents', roles: ['owner','admin'] },
+                { path: '/kdprocurement', name: 'Procurement', icon: 'fa-truck', title: 'Manage suppliers, purchase orders, and goods received', roles: ['owner','admin','inventory_manager','procurement','warehouse'] },
+                { path: '/kdhr',          name: 'HR',        icon: 'fa-users-gear', title: 'Employee management, attendance, leave, payroll', roles: ['owner','admin','hr','employee'] },
+                { path: '/kdaccount',     name: 'Accounts',  icon: 'fa-book',       title: 'Chart of accounts, journal entries, AR/AP, P&L, export', roles: ['owner','admin','finance','auditor'] }
+            ];
+            const userRole = localStorage.getItem('user_role') || 'customer';
+            const canAccess = (roles) => roles.includes(userRole);
+
+            return (
+                <div className="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40">
+                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                        <div className="flex flex-wrap items-center justify-between py-3 gap-3">
+                            <div className="flex items-center gap-2">
+                                <i className="fa-solid fa-chart-pie text-orange-400 text-xl"></i>
+                                <span className="text-xl font-bold tracking-tight">Kevs<span className="text-orange-500">BI</span></span>
+                                <span className="hidden sm:inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full">bOS</span>
+                            </div>
+                            <div className="hidden md:flex items-center gap-1 flex-wrap">
+                                {navItems.filter(item => canAccess(item.roles)).map(item => (
+                                    <a key={item.path} href={item.path}
+                                       className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${currentPath === item.path ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10'}`}
+                                       title={item.title}>
+                                        <i className={`fa-solid ${item.icon} w-4`}></i> {item.name}
+                                    </a>
+                                ))}
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <span className="text-xs bg-white/10 px-3 py-1.5 rounded-full hidden sm:inline-block">
+                                    <i className="fa-regular fa-user mr-1"></i> <span>{escapeHtml(userName || 'User')}</span>
+                                </span>
+                                <button onClick={onLogout} className="bg-red-500/80 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition flex items-center gap-1">
+                                    <i className="fa-solid fa-sign-out-alt"></i> <span className="hidden sm:inline">Logout</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div className="md:hidden flex overflow-x-auto pb-2 gap-1 snap-x">
+                            {navItems.filter(item => canAccess(item.roles)).map(item => (
+                                <a key={item.path} href={item.path}
+                                   className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${currentPath === item.path ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10'}`}>
+                                    <i className={`fa-solid ${item.icon} w-4`}></i> {item.name}
+                                </a>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // ================================================================
+        // ORGANISATION SELECTION MODAL
+        // ================================================================
+        const OrgSelectionModal = ({ organisations, onSelect, onClose }) => {
+            const [selected, setSelected] = useState(null);
+            const [loading, setLoading] = useState(false);
+
+            const handleSelect = (org) => {
+                setSelected(org);
+            };
+
+            const confirm = () => {
+                if (selected) {
+                    onSelect(selected);
+                }
+            };
+
+            return (
+                <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
+                    <div className="bg-slate-800 rounded-2xl max-w-2xl w-full p-6 border border-slate-700 shadow-2xl">
+                        <div className="text-center mb-6">
+                            <i className="fa-solid fa-building text-4xl text-blue-400 mb-2"></i>
+                            <h2 className="text-2xl font-bold text-white">Select Organisation</h2>
+                            <p className="text-slate-400 text-sm mt-1">Choose which organisation you want to view accounting data for</p>
+                        </div>
+                        <div className="mb-6 max-h-96 overflow-y-auto">
+                            {loading && (
+                                <div className="text-center py-8">
+                                    <div className="loading-spinner mx-auto"></div>
+                                    <p className="text-slate-400 mt-2">Loading...</p>
+                                </div>
+                            )}
+                            {!loading && organisations.length === 0 && (
+                                <div className="text-center py-8">
+                                    <i className="fa-solid fa-store-slash text-4xl text-red-400 mb-2"></i>
+                                    <p className="text-slate-400">You are not a member of any organisation.</p>
+                                    <a href="/kdsiginin" className="mt-4 inline-block bg-blue-600 px-4 py-2 rounded-lg text-white">Register</a>
+                                </div>
+                            )}
+                            {!loading && organisations.length > 0 && (
+                                <div className="space-y-3">
+                                    {organisations.map(org => {
+                                        const targetId = org.id || org.org_id;
+                                        const targetName = org.org_name || `Org: ${targetId}`;
+                                        const isSelected = selected && (selected.id === targetId);
+                                        return (
+                                            <div key={targetId}
+                                                 className={`org-card p-4 rounded-xl border border-slate-600 hover:bg-slate-700 transition text-white ${isSelected ? 'selected bg-blue-900/50 border-blue-500' : ''}`}
+                                                 onClick={() => handleSelect({ id: targetId, name: targetName, role: org.role || 'member' })}>
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-3">
+                                                        <i className={`fa-solid fa-building text-2xl ${org.role === 'owner' ? 'text-amber-400' : 'text-blue-400'}`}></i>
+                                                        <div>
+                                                            <h3 className="font-semibold text-white">{escapeHtml(targetName)}</h3>
+                                                            <span className={`text-xs px-2 py-0.5 rounded-full ${org.role === 'owner' ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-600 text-slate-300'}`}>{org.role || 'member'}</span>
+                                                        </div>
+                                                    </div>
+                                                    <i className={`fa-regular ${isSelected ? 'fa-circle-check text-blue-400' : 'fa-circle text-slate-500'} text-xl`}></i>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                        <button
+                            onClick={confirm}
+                            disabled={!selected}
+                            className={`w-full bg-blue-600 text-white py-3 rounded-lg font-medium transition ${!selected ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-700'}`}
+                        >
+                            Continue to Accounts
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        // ================================================================
+        // MAIN APP
+        // ================================================================
+        const App = () => {
+            const [token, setTokenState] = useState(getToken());
+            const [organisations, setOrganisations] = useState([]);
+            const [selectedOrg, setSelectedOrg] = useState(null);
+            const [showOrgModal, setShowOrgModal] = useState(false);
+            const [loading, setLoading] = useState(true);
+            const [userName, setUserName] = useState('User');
+
+            // Tab state
+            const [activeTab, setActiveTab] = useState('pl');
+
+            // Data states
+            const [chartAccounts, setChartAccounts] = useState([]);
+            const [journalEntries, setJournalEntries] = useState([]);
+            const [arList, setArList] = useState([]);
+            const [apList, setApList] = useState([]);
+            const [plSummary, setPlSummary] = useState(null);
+            const [plPeriod, setPlPeriod] = useState({ start: '', end: '' });
+
+            // Loading / error
+            const [fetching, setFetching] = useState(false);
+            const [error, setError] = useState('');
+
+            // Load organisations on mount
+            useEffect(() => {
+                loadOrganisations();
+            }, []);
+
+            // When organisation changes, load accounting data
+            useEffect(() => {
+                if (selectedOrg) {
+                    fetchAllData();
+                }
+            }, [selectedOrg]);
+
+            const loadOrganisations = async () => {
+                setLoading(true);
+                try {
+                    // First try /auth/me to get current org
+                    const me = await apiCall('/auth/me');
+                    const orgId = me.org_id;
+                    const role = me.role || 'admin';
+                    let orgName = null;
+                    try {
+                        const orgInfo = await apiCall('/auth/org');
+                        orgName = orgInfo.org_name || null;
+                    } catch (e) {}
+                    if (!orgName) orgName = `Org: ${orgId}`;
+                    const orgs = [{ id: orgId, org_id: orgId, org_name: orgName, role }];
+                    setOrganisations(orgs);
+
+                    // Check if user has previously selected an org
+                    const savedId = getSelectedOrgId();
+                    const savedName = getSelectedOrgName();
+                    if (savedId && orgs.some(o => o.id === savedId)) {
+                        setSelectedOrg({ id: savedId, name: savedName || orgName, role });
+                        setShowOrgModal(false);
+                    } else {
+                        setShowOrgModal(true);
+                    }
+                } catch (err) {
+                    console.error('Failed to load organisations:', err);
+                    // Fallback: try to fetch list from /auth/user-organisations
+                    try {
+                        const response = await fetch(`${API_BASE}/auth/user-organisations`, {
+                            headers: { 'Authorization': `Bearer ${getToken()}` }
+                        });
+                        if (response.ok) {
+                            const data = await response.json();
+                            const orgs = (data.organisations || data || []).map(o => ({
+                                id: o.id || o.org_id,
+                                org_id: o.id || o.org_id,
+                                org_name: o.org_name || `Org: ${o.id}`,
+                                role: o.role || 'member'
+                            }));
+                            setOrganisations(orgs);
+                            const savedId = getSelectedOrgId();
+                            if (savedId && orgs.some(o => o.id === savedId)) {
+                                const found = orgs.find(o => o.id === savedId);
+                                setSelectedOrg(found);
+                                setShowOrgModal(false);
+                            } else {
+                                setShowOrgModal(true);
+                            }
+                        } else {
+                            setShowOrgModal(true);
+                        }
+                    } catch (e2) {
+                        setShowOrgModal(true);
+                    }
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const handleOrgSelect = (org) => {
+                setSelectedOrg(org);
+                setSelectedOrgId(org.id);
+                setSelectedOrgName(org.name);
+                setShowOrgModal(false);
+                // Also set user role from org data if needed
+                localStorage.setItem('user_role', org.role || 'customer');
+            };
+
+            const handleLogout = async () => {
+                try {
+                    await fetch(`${API_BASE}/auth/logout`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' }
+                    });
+                } catch (e) {}
+                localStorage.clear();
+                window.location.href = '/kdsiginin';
+            };
+
+            // Fetch all accounting data
+            const fetchAllData = async () => {
+                if (!selectedOrg) return;
+                setFetching(true);
+                setError('');
+                try {
+                    // Chart of Accounts
+                    const coa = await apiCall('/accounts/chart');
+                    setChartAccounts(coa.accounts || []);
+
+                    // Journal Entries
+                    const je = await apiCall('/accounts/journal-entries');
+                    setJournalEntries(je.entries || []);
+
+                    // Accounts Receivable
+                    const ar = await apiCall('/accounts/ar');
+                    setArList(ar.ar || []);
+
+                    // Accounts Payable
+                    const ap = await apiCall('/accounts/ap');
+                    setApList(ap.ap || []);
+
+                    // Profit & Loss (get latest summary or default)
+                    // We'll fetch the most recent summary, or prompt user to generate
+                    // For now, set a default period (last 30 days)
+                    const today = new Date();
+                    const end = today.toISOString().slice(0,10);
+                    const start = new Date(today.setDate(today.getDate()-30)).toISOString().slice(0,10);
+                    setPlPeriod({ start, end });
+                    // Try to get summary for that period
+                    try {
+                        const summary = await apiCall(`/accounts/profit-loss/summary?period_start=${start}&period_end=${end}`);
+                        setPlSummary(summary);
+                    } catch (e) {
+                        // No summary yet
+                        setPlSummary(null);
+                    }
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setFetching(false);
+                }
+            };
+
+            // Generate P&L
+            const generatePL = async () => {
+                if (!plPeriod.start || !plPeriod.end) {
+                    alert('Please set start and end dates');
+                    return;
+                }
+                setFetching(true);
+                try {
+                    const result = await apiCall('/accounts/profit-loss', {
+                        method: 'POST',
+                        body: JSON.stringify({ period_start: plPeriod.start, period_end: plPeriod.end })
+                    });
+                    setPlSummary(result.profit_loss);
+                    alert('Profit & Loss generated successfully');
+                } catch (err) {
+                    alert('Error: ' + err.message);
+                } finally {
+                    setFetching(false);
+                }
+            };
+
+            // Export
+            const exportData = async (entity, format) => {
+                try {
+                    const body = {
+                        entity,
+                        format,
+                        period_start: plPeriod.start || undefined,
+                        period_end: plPeriod.end || undefined
+                    };
+                    const response = await fetch(`${API_BASE}/accounts/export`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${getToken()}`,
+                            'X-Selected-Org-Id': getSelectedOrgId()
+                        },
+                        body: JSON.stringify(body)
+                    });
+                    if (!response.ok) {
+                        const err = await response.text();
+                        throw new Error(err);
+                    }
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${entity}.${format}`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(url);
+                } catch (err) {
+                    alert('Export failed: ' + err.message);
+                }
+            };
+
+            const triggerSync = async () => {
+                try {
+                    await apiCall('/accounts/sync-webhook', { method: 'POST' });
+                    alert('Sync webhook triggered successfully');
+                } catch (err) {
+                    alert('Sync failed: ' + err.message);
+                }
+            };
+
+            // Render tabs
+            const renderTabContent = () => {
+                switch (activeTab) {
+                    case 'pl':
+                        return renderPLTab();
+                    case 'coa':
+                        return renderCOATab();
+                    case 'journal':
+                        return renderJournalTab();
+                    case 'ar':
+                        return renderARTab();
+                    case 'ap':
+                        return renderAPTab();
+                    case 'export':
+                        return renderExportTab();
+                    default:
+                        return <p>Select a tab</p>;
+                }
+            };
+
+            const renderPLTab = () => (
+                <div>
+                    <div className="bg-white p-4 rounded shadow mb-4">
+                        <h2 className="text-xl font-semibold mb-3">Profit & Loss Statement</h2>
+                        <div className="flex flex-wrap gap-4 items-end mb-4">
+                            <div>
+                                <label className="block text-sm">Start Date</label>
+                                <input type="date" className="border rounded p-2"
+                                       value={plPeriod.start} onChange={e => setPlPeriod({...plPeriod, start: e.target.value})} />
+                            </div>
+                            <div>
+                                <label className="block text-sm">End Date</label>
+                                <input type="date" className="border rounded p-2"
+                                       value={plPeriod.end} onChange={e => setPlPeriod({...plPeriod, end: e.target.value})} />
+                            </div>
+                            <button onClick={generatePL} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                                Generate P&L
+                            </button>
+                        </div>
+                        {plSummary ? (
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div className="bg-gray-100 p-3 rounded"><span className="text-sm text-gray-600">Revenue</span><div className="text-lg font-bold">{formatCurrency(plSummary.revenue)}</div></div>
+                                <div className="bg-gray-100 p-3 rounded"><span className="text-sm text-gray-600">COGS</span><div className="text-lg font-bold">{formatCurrency(plSummary.cogs)}</div></div>
+                                <div className="bg-gray-100 p-3 rounded"><span className="text-sm text-gray-600">Gross Profit</span><div className="text-lg font-bold">{formatCurrency(plSummary.gross_profit)}</div></div>
+                                <div className="bg-gray-100 p-3 rounded"><span className="text-sm text-gray-600">Net Income</span><div className="text-lg font-bold">{formatCurrency(plSummary.net_income)}</div></div>
+                            </div>
+                        ) : (
+                            <p className="text-gray-500">No P&L summary for this period. Click Generate.</p>
+                        )}
+                    </div>
+                </div>
+            );
+
+            const renderCOATab = () => (
+                <div className="bg-white p-4 rounded shadow">
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-xl font-semibold">Chart of Accounts</h2>
+                        <button onClick={() => {/* open create modal */}} className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700">
+                            <i className="fa-solid fa-plus mr-1"></i> New Account
+                        </button>
+                    </div>
+                    <div className="table-scroll">
+                        <table className="min-w-full">
+                            <thead className="sticky top-0 bg-gray-200">
+                                <tr>
+                                    <th className="p-2 text-left">Code</th>
+                                    <th className="p-2 text-left">Name</th>
+                                    <th className="p-2 text-left">Type</th>
+                                    <th className="p-2 text-left">Parent</th>
+                                    <th className="p-2 text-left">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {chartAccounts.map(acc => (
+                                    <tr key={acc.id} className="border-b">
+                                        <td className="p-2">{acc.code}</td>
+                                        <td className="p-2">{acc.name}</td>
+                                        <td className="p-2 capitalize">{acc.type}</td>
+                                        <td className="p-2">{acc.parent_id || '-'}</td>
+                                        <td className="p-2">
+                                            <button className="text-blue-600 hover:underline mr-2">Edit</button>
+                                            <button className="text-red-600 hover:underline">Delete</button>
+                                        </td>
+                                    </tr>
+                                ))}
+                                {chartAccounts.length === 0 && <tr><td colSpan="5" className="text-center p-4 text-gray-400">No accounts</td></tr>}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+
+            const renderJournalTab = () => (
+                <div className="bg-white p-4 rounded shadow">
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-xl font-semibold">Journal Entries</h2>
+                        <button onClick={() => {/* create journal */}} className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700">
+                            <i className="fa-solid fa-plus mr-1"></i> New Entry
+                        </button>
+                    </div>
+                    <div className="table-scroll">
+                        <table className="min-w-full">
+                            <thead className="sticky top-0 bg-gray-200">
+                                <tr>
+                                    <th className="p-2 text-left">Date</th>
+                                    <th className="p-2 text-left">Description</th>
+                                    <th className="p-2 text-left">Reference</th>
+                                    <th className="p-2 text-left">Status</th>
+                                    <th className="p-2 text-left">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {journalEntries.map(je => (
+                                    <tr key={je.id} className="border-b">
+                                        <td className="p-2">{formatDate(je.entry_date)}</td>
+                                        <td className="p-2">{je.description}</td>
+                                        <td className="p-2">{je.reference || '-'}</td>
+                                        <td className="p-2">
+                                            <span className={`px-2 py-0.5 rounded text-xs ${je.status === 'posted' ? 'bg-green-200 text-green-800' : je.status === 'draft' ? 'bg-yellow-200 text-yellow-800' : 'bg-gray-200'}`}>
+                                                {je.status}
+                                            </span>
+                                        </td>
+                                        <td className="p-2">
+                                            {je.status === 'draft' && <button className="text-blue-600 hover:underline mr-2">Post</button>}
+                                            <button className="text-blue-600 hover:underline">View</button>
+                                        </td>
+                                    </tr>
+                                ))}
+                                {journalEntries.length === 0 && <tr><td colSpan="5" className="text-center p-4 text-gray-400">No entries</td></tr>}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+
+            const renderARTab = () => (
+                <div className="bg-white p-4 rounded shadow">
+                    <h2 className="text-xl font-semibold mb-4">Accounts Receivable</h2>
+                    <div className="table-scroll">
+                        <table className="min-w-full">
+                            <thead className="sticky top-0 bg-gray-200">
+                                <tr>
+                                    <th className="p-2 text-left">Sale</th>
+                                    <th className="p-2 text-left">Amount</th>
+                                    <th className="p-2 text-left">Paid</th>
+                                    <th className="p-2 text-left">Due Date</th>
+                                    <th className="p-2 text-left">Status</th>
+                                    <th className="p-2 text-left">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {arList.map(ar => (
+                                    <tr key={ar.id} className="border-b">
+                                        <td className="p-2">{ar.sale_id?.slice(0,8) || '-'}</td>
+                                        <td className="p-2">{formatCurrency(ar.amount)}</td>
+                                        <td className="p-2">{formatCurrency(ar.paid_amount)}</td>
+                                        <td className="p-2">{formatDate(ar.due_date)}</td>
+                                        <td className="p-2">
+                                            <span className={`px-2 py-0.5 rounded text-xs ${ar.status === 'paid' ? 'bg-green-200 text-green-800' : ar.status === 'overdue' ? 'bg-red-200 text-red-800' : 'bg-yellow-200 text-yellow-800'}`}>
+                                                {ar.status}
+                                            </span>
+                                        </td>
+                                        <td className="p-2">
+                                            {ar.status !== 'paid' && <button className="text-blue-600 hover:underline">Register Payment</button>}
+                                        </td>
+                                    </tr>
+                                ))}
+                                {arList.length === 0 && <tr><td colSpan="6" className="text-center p-4 text-gray-400">No A/R records</td></tr>}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+
+            const renderAPTab = () => (
+                <div className="bg-white p-4 rounded shadow">
+                    <h2 className="text-xl font-semibold mb-4">Accounts Payable</h2>
+                    <div className="table-scroll">
+                        <table className="min-w-full">
+                            <thead className="sticky top-0 bg-gray-200">
+                                <tr>
+                                    <th className="p-2 text-left">Supplier</th>
+                                    <th className="p-2 text-left">Amount</th>
+                                    <th className="p-2 text-left">Paid</th>
+                                    <th className="p-2 text-left">Due Date</th>
+                                    <th className="p-2 text-left">Status</th>
+                                    <th className="p-2 text-left">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {apList.map(ap => (
+                                    <tr key={ap.id} className="border-b">
+                                        <td className="p-2">{ap.supplier_id?.slice(0,8) || '-'}</td>
+                                        <td className="p-2">{formatCurrency(ap.amount)}</td>
+                                        <td className="p-2">{formatCurrency(ap.paid_amount)}</td>
+                                        <td className="p-2">{formatDate(ap.due_date)}</td>
+                                        <td className="p-2">
+                                            <span className={`px-2 py-0.5 rounded text-xs ${ap.status === 'paid' ? 'bg-green-200 text-green-800' : ap.status === 'overdue' ? 'bg-red-200 text-red-800' : 'bg-yellow-200 text-yellow-800'}`}>
+                                                {ap.status}
+                                            </span>
+                                        </td>
+                                        <td className="p-2">
+                                            {ap.status !== 'paid' && <button className="text-blue-600 hover:underline">Register Payment</button>}
+                                        </td>
+                                    </tr>
+                                ))}
+                                {apList.length === 0 && <tr><td colSpan="6" className="text-center p-4 text-gray-400">No A/P records</td></tr>}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+
+            const renderExportTab = () => (
+                <div className="bg-white p-4 rounded shadow">
+                    <h2 className="text-xl font-semibold mb-4">Export & Sync</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="border p-4 rounded">
+                            <h3 className="font-medium mb-2">Export Data</h3>
+                            <div className="flex flex-wrap gap-2">
+                                <button onClick={() => exportData('accounts_receivable', 'csv')} className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">
+                                    A/R CSV
+                                </button>
+                                <button onClick={() => exportData('accounts_payable', 'csv')} className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">
+                                    A/P CSV
+                                </button>
+                                <button onClick={() => exportData('journal_entries', 'csv')} className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">
+                                    Journal CSV
+                                </button>
+                                <button onClick={() => exportData('profit_loss', 'csv')} className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">
+                                    P&L CSV
+                                </button>
+                                <button onClick={() => exportData('accounts_receivable', 'json')} className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700">
+                                    JSON
+                                </button>
+                            </div>
+                        </div>
+                        <div className="border p-4 rounded">
+                            <h3 className="font-medium mb-2">Sync with External System</h3>
+                            <p className="text-sm text-gray-600 mb-2">Trigger a webhook to sync data to Sage, QuickBooks, etc.</p>
+                            <button onClick={triggerSync} className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700">
+                                <i className="fa-solid fa-rotate mr-1"></i> Trigger Sync
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+
+            // Main render
+            if (loading) {
+                return <div className="flex justify-center items-center h-screen"><div className="loading-spinner"></div></div>;
+            }
+
+            return (
+                <div>
+                    {showOrgModal && (
+                        <OrgSelectionModal
+                            organisations={organisations}
+                            onSelect={handleOrgSelect}
+                            onClose={() => {}}
+                        />
+                    )}
+                    <NavBar onLogout={handleLogout} userName={userName} />
+                    <div className="max-w-7xl mx-auto p-4 mt-4">
+                        {/* Org banner */}
+                        {selectedOrg && (
+                            <div className="mb-4 p-3 bg-blue-900/30 rounded-lg border border-blue-700 flex items-center justify-between" style={{background:'#1e293b', borderColor:'#334155'}}>
+                                <div className="flex items-center gap-3">
+                                    <i className="fa-solid fa-building text-blue-400"></i>
+                                    <div>
+                                        <p className="text-xs text-slate-400">Currently viewing accounting data for</p>
+                                        <p className="font-semibold text-white">{selectedOrg.name}</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setShowOrgModal(true)} className="text-sm bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg transition text-white">
+                                    <i className="fa-solid fa-arrow-right-arrow-left mr-1"></i> Switch Organisation
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Error */}
+                        {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>}
+
+                        {/* Tabs */}
+                        <div className="flex flex-wrap gap-2 border-b border-gray-300 mb-4">
+                            {['pl','coa','journal','ar','ap','export'].map(tab => (
+                                <button
+                                    key={tab}
+                                    className={`px-4 py-2 rounded-t-lg font-medium transition ${activeTab === tab ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                                    onClick={() => setActiveTab(tab)}
+                                >
+                                    {tab === 'pl' && 'P&L'}
+                                    {tab === 'coa' && 'Chart of Accounts'}
+                                    {tab === 'journal' && 'Journal Entries'}
+                                    {tab === 'ar' && 'A/R'}
+                                    {tab === 'ap' && 'A/P'}
+                                    {tab === 'export' && 'Export & Sync'}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Tab content */}
+                        {fetching ? (
+                            <div className="flex justify-center py-8"><div className="loading-spinner"></div></div>
+                        ) : (
+                            renderTabContent()
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        // ================================================================
+        // RENDER
+        // ================================================================
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
