@@ -1650,25 +1650,32 @@
                 showToast(`Error: ${err.message}`, 'error');
             }
         };
+
+        // ── FIXED: viewPODetail ──
         window.viewPODetail = async function(id) {
             try {
-                const po = await apiCall(`/purchase-orders/${id}`);
+                const response = await apiCall(`/purchase-orders/${id}`);
+                const po = response.purchase_order || {};
                 document.getElementById('po-detail-content').innerHTML = `
-                        <div><strong>PO #:</strong> ${escapeHtml(po.po_number)}</div>
-                        <div><strong>Supplier:</strong> ${escapeHtml(po.supplier?.name || '—')}</div>
-                        <div><strong>Date:</strong> ${po.order_date || '—'}</div>
-                        <div><strong>Expected Delivery:</strong> ${po.expected_delivery_date || '—'}</div>
-                        <div><strong>Status:</strong> <span class="status-badge status-${po.status}">${po.status}</span></div>
-                        <div><strong>Total:</strong> ₦${(po.total_amount || 0).toLocaleString()}</div>
-                        <div><strong>Items:</strong></div>
-                        <div class="table-container"><table>
-                            <thead><tr><th>Product</th><th>Qty Ordered</th><th>Unit Cost</th><th>Total</th><th>Received</th></tr></thead>
-                            <tbody>${(po.purchase_order_items || []).map(item => `
-                                <tr><td>${escapeHtml(item.inventory?.description || 'Product')}</td><td>${item.quantity_ordered}</td><td>₦${(item.unit_cost || 0).toLocaleString()}</td><td>₦${(item.total || (item.unit_cost * item.quantity_ordered)).toLocaleString()}</td><td>${item.received_quantity || 0}</td></tr>
-                            `).join('')}</tbody>
-                        </table></div>
-                    `;
-                document.getElementById('po-detail-title').innerText = `PO ${po.po_number}`;
+                    <div><strong>PO #:</strong> ${escapeHtml(po.po_number || '—')}</div>
+                    <div><strong>Supplier:</strong> ${escapeHtml(po.supplier?.name || '—')}</div>
+                    <div><strong>Date:</strong> ${po.order_date || '—'}</div>
+                    <div><strong>Expected Delivery:</strong> ${po.expected_delivery_date || '—'}</div>
+                    <div><strong>Status:</strong> <span class="status-badge status-${po.status || 'draft'}">${po.status || 'draft'}</span></div>
+                    <div><strong>Total:</strong> ₦${(po.total_amount || 0).toLocaleString()}</div>
+                    <div><strong>Items:</strong></div>
+                    <div class="table-container"><table>
+                        <thead><tr><th>Product</th><th>Qty Ordered</th><th>Unit Cost</th><th>Total</th><th>Received</th></tr></thead>
+                        <tbody>${(po.purchase_order_items || []).map(item => `
+                            <tr><td>${escapeHtml(item.inventory?.description || 'Product')}</td>
+                                <td>${item.quantity_ordered}</td>
+                                <td>₦${(item.unit_cost || 0).toLocaleString()}</td>
+                                <td>₦${((item.unit_cost || 0) * (item.quantity_ordered || 0)).toLocaleString()}</td>
+                                <td>${item.received_quantity || 0}</td></tr>
+                        `).join('')}</tbody>
+                    </table></div>
+                `;
+                document.getElementById('po-detail-title').innerText = `PO ${po.po_number || 'N/A'}`;
                 openModal('po-detail-modal');
             } catch (err) {
                 showToast(`Error: ${err.message}`, 'error');
@@ -1722,6 +1729,7 @@
             window._allGRNs = grns;
         }
 
+        // ── FIXED: openGRNModal ──
         async function openGRNModal(grnId = null) {
             const modal = document.getElementById('grn-modal');
             const form = document.getElementById('grn-form');
@@ -1731,6 +1739,7 @@
             document.getElementById('grn-modal-title').innerText = grnId ? 'Edit GRN' : 'Create GRN';
 
             const poSelect = document.getElementById('grn-po-select');
+            // Populate PO dropdown (always)
             poSelect.innerHTML = '<option value="">Select PO...</option>';
             try {
                 const pos = await apiCall('/purchase-orders?status=sent,partially_received');
@@ -1740,15 +1749,39 @@
                     opt.textContent = `${po.po_number} (${po.supplier?.name || '—'})`;
                     poSelect.appendChild(opt);
                 });
-            } catch (e) {}
+            } catch (e) {
+                console.warn('Failed to load POs:', e);
+            }
 
+            // Populate location dropdown
             populateLocationSelects();
 
+            // Set onchange to load PO items when user selects a PO
+            poSelect.onchange = async function() {
+                const poId = this.value;
+                if (!poId) {
+                    document.getElementById('grn-items-container').innerHTML = '';
+                    return;
+                }
+                try {
+                    const po = await apiCall(`/purchase-orders/${poId}`);
+                    const items = po.purchase_order_items || [];
+                    const container = document.getElementById('grn-items-container');
+                    container.innerHTML = '';
+                    items.forEach(poItem => {
+                        addGRNItem(null, poItem);
+                    });
+                } catch (err) {
+                    showToast(`Error loading PO items: ${err.message}`, 'error');
+                }
+            };
+
+            // If editing an existing GRN, populate form fields and trigger onchange manually
             if (grnId) {
                 try {
                     const grn = await apiCall(`/grn/${grnId}`);
                     document.getElementById('grn-id').value = grn.id;
-                    document.getElementById('grn-po-select').value = grn.po_id || '';
+                    poSelect.value = grn.po_id || '';
                     document.getElementById('grn-received-date').value = grn.received_date || '';
                     document.getElementById('grn-location').value = grn.location_id || '';
                     document.getElementById('grn-notes').value = grn.notes || '';
@@ -1762,31 +1795,18 @@
                         document.getElementById('grn-post-btn').classList.remove('hidden');
                         document.getElementById('grn-post-btn').dataset.grnId = grn.id;
                     }
+                    // Manually trigger onchange to load items (if PO is set)
+                    if (grn.po_id) {
+                        poSelect.dispatchEvent(new Event('change'));
+                    }
                 } catch (err) {
                     showToast(`Error loading GRN: ${err.message}`, 'error');
                     return;
                 }
             } else {
+                // New GRN: ensure we have at least one empty item row
                 document.getElementById('grn-items-container').innerHTML = '';
                 addGRNItem();
-                poSelect.onchange = async function() {
-                    const poId = this.value;
-                    if (!poId) {
-                        document.getElementById('grn-items-container').innerHTML = '';
-                        return;
-                    }
-                    try {
-                        const po = await apiCall(`/purchase-orders/${poId}`);
-                        const items = po.purchase_order_items || [];
-                        const container = document.getElementById('grn-items-container');
-                        container.innerHTML = '';
-                        items.forEach(poItem => {
-                            addGRNItem(null, poItem);
-                        });
-                    } catch (err) {
-                        showToast(`Error loading PO items: ${err.message}`, 'error');
-                    }
-                };
             }
 
             modal.classList.add('active');
