@@ -373,6 +373,13 @@
             border-color: #f59e0b;
             box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
         }
+        .line-item.product-selected {
+            border-color: #3b82f6;
+            background: #141c30;
+        }
+        .line-item.product-selected .product-name-display {
+            color: #60a5fa;
+        }
 
         /* ── pagination ── */
         .pagination-btn {
@@ -515,15 +522,6 @@
         }
         .po-search-input-wrapper input {
             width: 100%;
-        }
-
-        /* ── selected product highlight ── */
-        .line-item.product-selected {
-            border-color: #3b82f6;
-            background: #141c30;
-        }
-        .line-item.product-selected .product-name-display {
-            color: #60a5fa;
         }
 
         /* ── scrollbar ── */
@@ -1437,13 +1435,14 @@
             div.appendChild(hidden);
             container.appendChild(div);
 
-            // ─── Attach the fixed-position search ───
+            // ─── Attach the fixed-position search with improved selection ───
             setupProductSearch(searchInput, hidden, div);
         };
 
-        // ─── Fixed-position search logic ───
+        // ─── Fixed-position search logic with robust selection ───
         function setupProductSearch(input, hiddenInput, lineItem) {
             let debounceTimer;
+            let isSelecting = false; // flag to prevent blur hiding during selection
 
             const resultsDiv = document.createElement('div');
             resultsDiv.className = 'po-search-results';
@@ -1473,7 +1472,9 @@
             }
 
             function hideResults() {
-                resultsDiv.style.display = 'none';
+                if (!isSelecting) {
+                    resultsDiv.style.display = 'none';
+                }
             }
 
             input.addEventListener('input', function() {
@@ -1513,7 +1514,8 @@
             });
 
             input.addEventListener('blur', function() {
-                setTimeout(hideResults, 180);
+                // Delay hiding to allow click on result to register
+                setTimeout(hideResults, 200);
             });
 
             const repositionHandler = function() {
@@ -1541,24 +1543,25 @@
                         </div>
                         <div class="result-stock">${p.current_qty || 0} left</div>
                     `;
-                div.addEventListener('click', function() {
-                    // Auto-fill the selected product
+                // Use mousedown to avoid blur conflict and ensure selection
+                div.addEventListener('mousedown', function(e) {
+                    e.preventDefault(); // prevent input blur from hiding results prematurely
+                    // Set the values
                     hiddenInput.value = p.id;
                     input.value = p.description + ' (' + (p.item_code || p.id) + ')';
+                    // Hide results immediately
                     container.style.display = 'none';
+                    // Trigger change event on hidden input for any listeners
                     hiddenInput.dispatchEvent(new Event('change'));
-
-                    // Highlight the line item as "selected"
+                    // Highlight line item
                     if (lineItem) {
                         lineItem.classList.add('product-selected');
                     }
-
-                    // Trigger a small visual feedback
+                    // Visual feedback on input
                     input.style.borderColor = '#22c55e';
                     setTimeout(() => {
                         input.style.borderColor = '';
                     }, 800);
-
                     showToast(`✅ Selected: ${p.description}`, 'success');
                 });
                 container.appendChild(div);
