@@ -97,6 +97,22 @@
         .section-title { font-size: 1.8rem; font-weight: 800; letter-spacing: -0.02em; color: var(--text-dark); margin-bottom: 6px; }
         .section-sub { color: var(--text-muted); font-size: 0.95rem; margin-bottom: 24px; }
 
+        /* ─── CATEGORIES GRID (NEW) ─── */
+        .categories-grid-section { margin: 16px 0 32px; }
+        .categories-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+        @media (min-width: 640px) { .categories-grid { grid-template-columns: repeat(4, 1fr); gap: 16px; } }
+        @media (min-width: 1024px) { .categories-grid { grid-template-columns: repeat(4, 1fr); gap: 20px; } }
+        .category-card { background: var(--white); border: 1px solid rgba(0,0,0,0.06); border-radius: var(--radius-sm); padding: 20px 16px; text-align: center; cursor: pointer; transition: all 0.25s; box-shadow: var(--shadow); }
+        .category-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-hover); border-color: var(--primary); }
+        .category-card.active { border-color: var(--primary); background: #fde8e4; }
+        .category-card .cat-emoji { font-size: 2.5rem; display: block; margin-bottom: 6px; }
+        .category-card .cat-name { font-weight: 700; font-size: 0.9rem; color: var(--text-dark); }
+        .category-card .cat-count { font-size: 0.7rem; color: var(--text-muted); display: block; margin-top: 2px; }
+        .category-card .cat-arrow { opacity: 0; transition: opacity 0.2s, transform 0.2s; display: inline-block; }
+        .category-card:hover .cat-arrow { opacity: 1; transform: translateX(4px); }
+        .category-reset-btn { display: none; margin: 16px auto 0; }
+        .category-reset-btn.visible { display: inline-flex; }
+
         /* ─── FEATURED CAROUSEL ─── */
         .featured-carousel { position: relative; width: 100%; min-height: 330px; overflow: hidden; margin-bottom: 30px; }
         .featured-slide { display: flex; gap: 14px; opacity: 0; visibility: hidden; transition: opacity 0.7s ease, visibility 0s 0.7s, transform 0.5s ease; position: absolute; top: 0; left: 0; right: 0; transform: translateY(16px); pointer-events: none; }
@@ -431,6 +447,22 @@
             <h2 class="section-title">🔥 Today's Picks</h2>
             <p class="section-sub">Our most popular meals – freshly prepared just for you.</p>
             <div id="featured-grid" class="featured-carousel"></div>
+        </section>
+
+        <!-- ─── CATEGORIES GRID (NEW) ─── -->
+        <section class="categories-grid-section" id="categories-grid-section">
+            <div class="flex items-end justify-between mb-4">
+                <div>
+                    <h2 class="section-title">Browse by Category</h2>
+                    <p class="section-sub">Find your favourite dishes quickly</p>
+                </div>
+                <button class="category-reset-btn btn-outline" id="category-reset-btn" style="display:none;">
+                    <i class="fa-solid fa-rotate-left"></i> Show All
+                </button>
+            </div>
+            <div class="categories-grid" id="categories-grid">
+                <!-- populated by JS -->
+            </div>
         </section>
 
         <!-- ─── MENU ─── -->
@@ -774,6 +806,8 @@
             const searchClear = document.getElementById('search-clear');
             const searchBtn = document.getElementById('search-btn');
             const categorySelect = document.getElementById('category-select');
+            const categoriesGrid = document.getElementById('categories-grid');
+            const categoryResetBtn = document.getElementById('category-reset-btn');
 
             const deliveryOptions = document.querySelectorAll('#delivery-options button');
             const addressGroup = document.getElementById('address-group');
@@ -840,6 +874,89 @@
                     html += `<option value="${cat}">${cat}</option>`;
                 });
                 categorySelect.innerHTML = html;
+            }
+
+            // ─── RENDER CATEGORIES GRID ───
+            function renderCategoriesGrid() {
+                if (!categoriesGrid) return;
+                const emojiMap = {
+                    'Burgers': '🍔',
+                    'Grilled & Roast': '🥩',
+                    'Native Dishes': '🍛',
+                    'Snacks': '🥟',
+                    'Beverages': '🍹',
+                    'Desserts': '🍰',
+                    'Combo Meals': '🍽️',
+                    'Breakfast': '🍳'
+                };
+
+                let html = '';
+                categories.forEach(cat => {
+                    const count = products.filter(p => p.tag === cat).length;
+                    const emoji = emojiMap[cat] || '📦';
+                    const isActive = selectedCategory === cat ? 'active' : '';
+                    html += `
+                        <div class="category-card ${isActive}" data-category="${cat}">
+                            <span class="cat-emoji">${emoji}</span>
+                            <span class="cat-name">${cat}</span>
+                            <span class="cat-count">${count} items</span>
+                            <span class="cat-arrow"><i class="fa-solid fa-arrow-right"></i></span>
+                        </div>
+                    `;
+                });
+                categoriesGrid.innerHTML = html;
+
+                // Add click listeners
+                categoriesGrid.querySelectorAll('.category-card').forEach(card => {
+                    card.addEventListener('click', function() {
+                        const cat = this.dataset.category;
+                        filterByCategory(cat);
+                    });
+                });
+
+                // Show/hide reset button
+                if (selectedCategory) {
+                    categoryResetBtn.style.display = 'inline-flex';
+                    categoryResetBtn.classList.add('visible');
+                } else {
+                    categoryResetBtn.style.display = 'none';
+                    categoryResetBtn.classList.remove('visible');
+                }
+            }
+
+            // ─── FILTER BY CATEGORY ───
+            function filterByCategory(cat) {
+                if (selectedCategory === cat) {
+                    // If same category clicked, reset to show all
+                    selectedCategory = '';
+                    categorySelect.value = '';
+                } else {
+                    selectedCategory = cat;
+                    categorySelect.value = cat;
+                }
+                // Update grid active state
+                renderCategoriesGrid();
+                // Update search query (clear any text search)
+                searchInput.value = '';
+                searchQuery = '';
+                searchClear.style.display = 'none';
+                // Perform search (render products)
+                performSearch();
+                // Scroll to menu
+                document.getElementById('menu-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+
+            // ─── RESET CATEGORY FILTER ───
+            function resetCategoryFilter() {
+                selectedCategory = '';
+                categorySelect.value = '';
+                renderCategoriesGrid();
+                searchInput.value = '';
+                searchQuery = '';
+                searchClear.style.display = 'none';
+                performSearch();
+                // Scroll to menu
+                document.getElementById('menu-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
             }
 
             // ─── RENDER MENU ───
@@ -1486,8 +1603,12 @@
                     performSearch(); } });
             categorySelect.addEventListener('change', function() {
                 selectedCategory = this.value;
+                renderCategoriesGrid();
                 performSearch();
             });
+
+            // Category reset button
+            categoryResetBtn.addEventListener('click', resetCategoryFilter);
 
             function setActiveNav(activeId) {
                 document.querySelectorAll('.bottom-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -1518,6 +1639,7 @@
 
             // ─── INIT ───
             populateCategories();
+            renderCategoriesGrid();
             renderMenu();
             renderFeatured();
             updateCartUI();
