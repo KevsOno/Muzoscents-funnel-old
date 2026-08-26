@@ -164,7 +164,6 @@
             margin-left: 3px;
         }
 
-        /* ─── DESKTOP: show pills as wrap, not scroll ─── */
         @media (min-width: 769px) {
             .sticky-top-bar .categories-pills {
                 flex-wrap: wrap;
@@ -620,9 +619,43 @@
         .chat-send-btn:hover { background: #166534; }
         .chat-disclaimer { font-size: 10px; color: #9ca3af; text-align: center; margin-top: 7px; }
 
-        /* ─── BOTTOM NAV ─── */
-        .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: #ffffff; box-shadow: 0 -2px 15px rgba(0,0,0,0.08); display: flex; justify-content: space-around; align-items: center; padding: 8px 0 calc(8px + var(--safe-bottom)); border-top: 1px solid #e8e8e8; z-index: 90; backdrop-filter: blur(8px); background-color: rgba(255,255,255,0.97); }
-        .bottom-nav .nav-item { display: flex; flex-direction: column; align-items: center; cursor: pointer; padding: 4px 12px; border-radius: 30px; transition: background 0.2s; text-decoration: none; min-width: 56px; flex: 1; -webkit-tap-highlight-color: transparent; border: none; background: transparent; font-family: inherit; }
+        /* ─── BOTTOM NAV (mobile only) ─── */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #ffffff;
+            box-shadow: 0 -2px 15px rgba(0,0,0,0.08);
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            padding: 8px 0 calc(8px + var(--safe-bottom));
+            border-top: 1px solid #e8e8e8;
+            z-index: 90;
+            backdrop-filter: blur(8px);
+            background-color: rgba(255,255,255,0.97);
+        }
+        /* Desktop: hide bottom nav */
+        @media (min-width: 769px) {
+            .bottom-nav { display: none !important; }
+        }
+        .bottom-nav .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            cursor: pointer;
+            padding: 4px 12px;
+            border-radius: 30px;
+            transition: background 0.2s;
+            text-decoration: none;
+            min-width: 56px;
+            flex: 1;
+            -webkit-tap-highlight-color: transparent;
+            border: none;
+            background: transparent;
+            font-family: inherit;
+        }
         .bottom-nav .nav-item:active { background-color: #fce8e4; }
         .bottom-nav .nav-icon { font-size: 22px; line-height: 1.2; transition: transform 0.2s; color: #555; }
         .bottom-nav .nav-item:active .nav-icon { transform: scale(0.9); }
@@ -630,7 +663,22 @@
         .bottom-nav .nav-label { font-size: 10px; font-weight: 600; color: #777; margin-top: 2px; letter-spacing: 0.2px; }
         .bottom-nav .nav-item.active .nav-label { color: var(--primary); }
         .bottom-nav .nav-item .nav-badge { position: relative; }
-        .bottom-nav .nav-item .nav-badge .badge-dot { position: absolute; top: -4px; right: -8px; background: var(--primary); color: #fff; font-size: 0.55rem; font-weight: 800; min-width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
+        .bottom-nav .nav-item .nav-badge .badge-dot {
+            position: absolute;
+            top: -4px;
+            right: -8px;
+            background: var(--primary);
+            color: #fff;
+            font-size: 0.55rem;
+            font-weight: 800;
+            min-width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 4px;
+        }
 
         @media (max-width: 768px) {
             .chat-launcher-wrapper { bottom: calc(72px + var(--safe-bottom)); right: 16px; }
@@ -994,7 +1042,7 @@
         </div>
     </div>
 
-    <!-- ─── BOTTOM NAV ─── -->
+    <!-- ─── BOTTOM NAV (mobile only, no search) ─── -->
     <nav class="bottom-nav" id="bottom-nav">
         <button class="nav-item active" id="nav-home">
             <span class="nav-icon"><i class="fa-solid fa-house"></i></span>
@@ -1003,10 +1051,6 @@
         <button class="nav-item" id="nav-menu">
             <span class="nav-icon"><i class="fa-solid fa-utensils"></i></span>
             <span class="nav-label">Menu</span>
-        </button>
-        <button class="nav-item" id="nav-search">
-            <span class="nav-icon"><i class="fa-solid fa-search"></i></span>
-            <span class="nav-label">Search</span>
         </button>
         <button class="nav-item" id="nav-chat">
             <span class="nav-icon"><i class="fa-regular fa-comment-dots"></i></span>
@@ -1269,7 +1313,6 @@
 
             const navHome = document.getElementById('nav-home');
             const navMenu = document.getElementById('nav-menu');
-            const navSearch = document.getElementById('nav-search');
             const navChat = document.getElementById('nav-chat');
             const navCartBottom = document.getElementById('nav-cart-bottom');
 
@@ -2042,18 +2085,25 @@
                 const el = document.getElementById(activeId);
                 if (el) el.classList.add('active');
             }
-            navHome.addEventListener('click', function() { setActiveNav('nav-home');
-                window.scrollTo({ top: 0, behavior: 'smooth' }); });
-            navMenu.addEventListener('click', function() { setActiveNav('nav-menu');
-                document.getElementById('menu-section').scrollIntoView({ behavior: 'smooth' }); });
-            navSearch.addEventListener('click', function() { setActiveNav('nav-search');
-                document.getElementById('sticky-top-bar').scrollIntoView({ behavior: 'smooth' });
-                searchInput.focus(); });
-            navChat.addEventListener('click', function() { setActiveNav('nav-chat'); if (!chatModal.classList.contains(
-                    'active')) toggleChat();
-                else chatModal.classList.remove('active'); });
-            navCartBottom.addEventListener('click', function() { setActiveNav('nav-cart-bottom');
-                openCart(); });
+
+            // Bottom nav (mobile only – no search)
+            navHome.addEventListener('click', function() {
+                setActiveNav('nav-home');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            });
+            navMenu.addEventListener('click', function() {
+                setActiveNav('nav-menu');
+                document.getElementById('menu-section').scrollIntoView({ behavior: 'smooth' });
+            });
+            navChat.addEventListener('click', function() {
+                setActiveNav('nav-chat');
+                if (!chatModal.classList.contains('active')) toggleChat();
+                else chatModal.classList.remove('active');
+            });
+            navCartBottom.addEventListener('click', function() {
+                setActiveNav('nav-cart-bottom');
+                openCart();
+            });
 
             let resizeTimeout;
             window.addEventListener('resize', function() {
@@ -2076,10 +2126,10 @@
             console.log(`🍔 Hot Portion Grill — ${products.length} meals, ${categories.length} categories`);
             console.log('📦 Categories:', categories);
             console.log('📌 Sticky top bar with search + category pills');
+            console.log('📱 Bottom nav: Home, Menu, Chat, Cart (mobile only)');
             console.log('🔐 Monnify payment integration ready (simulated)');
             console.log('🤖 Context-aware AI assistant active');
             console.log('🎠 Hero slider active with 3 promotions');
-            console.log('📱 PWA-ready with receipt modal & scrollable checkout');
         })();
     </script>
 </body>
