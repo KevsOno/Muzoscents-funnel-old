@@ -3,19 +3,24 @@ name: Deploy to Fly.io
 on:
   push:
     branches:
-      - main  # or master if that's your default branch
+      - main   # or master if that's your default
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
-      - name: Deploy backend
-        run: |
-          cd "muzoscents-funnel old/fastfood/backend"
-          flyctl deploy
+      # Optional: debug – list files to confirm requirements.txt is there
+      - name: List backend files
+        run: ls -la
+        working-directory: muzoscents-funnel old/fastfood/backend
+
+      - name: Deploy to Fly.io
+        run: flyctl deploy
+        working-directory: muzoscents-funnel old/fastfood/backend
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
