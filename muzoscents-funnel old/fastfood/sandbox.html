@@ -10,20 +10,6 @@
     <link rel="apple-touch-icon" href="/fastfood/icons/icon-192.png" />
     <title>Hot Portion Grill – Nigerian Meals</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
-
-    <!-- ─── SUPABASE ─── -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
-    </script>
-    <script>
-        // Supabase client – initialized early so it's ready for the main script
-        const supabaseUrl = 'https://ajmauddonufaryjbiavh.supabase.co';
-        const supabaseKey =
-            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqbWF1ZGRvbnVmYXJ5amJpYXZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg2MTM4NDcsImV4cCI6MjEwNDE4OTg0N30.uqBgJan_20vpOEaWqJD7Lf95WXV5fx-xDDPqTekxTdQ';
-        const supabase = supabase.createClient(supabaseUrl, supabaseKey);
-
-        console.log('🔌 Supabase client initialized');
-    </script>
-
     <style>
         /* ─── RESET & BASE ─── */
         * {
@@ -2007,35 +1993,6 @@
                 transform: rotate(360deg);
             }
         }
-        /* ─── LOADING SHIMMER ─── */
-        .shimmer-wrapper {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 24px;
-            margin-bottom: 48px;
-        }
-        .shimmer-card {
-            background: var(--white);
-            border-radius: var(--radius);
-            overflow: hidden;
-            box-shadow: var(--shadow);
-            border: 1px solid rgba(0, 0, 0, 0.04);
-            min-height: 340px;
-            animation: shimmer-pulse 1.5s ease-in-out infinite;
-            background: linear-gradient(135deg, #f6f6f6 25%, #eaeaea 50%, #f6f6f6 75%);
-            background-size: 400% 400%;
-        }
-        @keyframes shimmer-pulse {
-            0% {
-                background-position: 0% 50%;
-            }
-            50% {
-                background-position: 100% 50%;
-            }
-            100% {
-                background-position: 0% 50%;
-            }
-        }
     </style>
 </head>
 <body>
@@ -2174,17 +2131,7 @@
         <section id="menu-section">
             <h2 class="section-title">Our Menu</h2>
             <p class="section-sub">Freshly prepared with love — order your favourites today.</p>
-            <div class="menu-grid" id="menu-grid">
-                <!-- Shimmer loading state -->
-                <div class="shimmer-wrapper" id="shimmer-wrapper">
-                    <div class="shimmer-card"></div>
-                    <div class="shimmer-card"></div>
-                    <div class="shimmer-card"></div>
-                    <div class="shimmer-card"></div>
-                    <div class="shimmer-card"></div>
-                    <div class="shimmer-card"></div>
-                </div>
-            </div>
+            <div class="menu-grid" id="menu-grid"></div>
         </section>
 
         <!-- ─── CONTACT ─── -->
@@ -2387,7 +2334,7 @@
         }
     </script>
 
-    <!-- ─── MAIN SCRIPT ─── -->
+    <!-- ─── SCRIPT ─── -->
     <script>
         (function() {
             'use strict';
@@ -2403,9 +2350,329 @@
             window.addEventListener('load', setHeaderHeight);
             window.addEventListener('resize', setHeaderHeight);
 
+            // ─── PRODUCT DATA (full menu with suggested prices) ───
+            const products = [
+                // ─── BURGERS ───
+                { id: 'burg1', name: 'Burger', description: 'Classic beef burger with lettuce, tomato, cheese & sauce.',
+                    price: 4500, emoji: '🍔', tag: 'Burgers', tagColor: 'primary',
+                    image: '/fastfood/images/burger.webp' },
+                { id: 'burg2', name: 'Shawarma', description: 'Spiced meat wrapped in flatbread with veggies & garlic sauce.',
+                    price: 4500, emoji: '🌯', tag: 'Burgers', tagColor: 'primary',
+                    image: '/fastfood/images/shawarma.webp' },
+                { id: 'burg3', name: 'Hot Dog', description: 'Grilled sausage in a bun with ketchup, mustard & onions.',
+                    price: 2500, emoji: '🌭', tag: 'Burgers', tagColor: 'primary',
+                    image: '/fastfood/images/hot-dog.webp' },
+
+                // ─── RICE DISHES ───
+                { id: 'rice1', name: 'Jollof Rice + Chicken', description: 'Classic tomato rice with grilled chicken.',
+                    price: 5500, emoji: '🍛', tag: 'Rice Dishes', tagColor: 'primary',
+                    image: '/fastfood/images/jollof-rice-chicken.webp' },
+                { id: 'rice2', name: 'Jollof Rice + Beef', description: 'Classic tomato rice with tender beef.', price: 4500,
+                    emoji: '🍛', tag: 'Rice Dishes', tagColor: 'primary',
+                    image: '/fastfood/images/jollof-rice-beef.webp' },
+                { id: 'rice3', name: 'Jollof Rice + Turkey', description: 'Classic tomato rice with succulent turkey.',
+                    price: 7500, emoji: '🍛', tag: 'Rice Dishes', tagColor: 'primary',
+                    image: '/fastfood/images/jollof-rice-turkey.webp' },
+                { id: 'rice4', name: 'Fried Rice + Chicken', description: 'Vegetable fried rice with seasoned chicken.',
+                    price: 6000, emoji: '🍚', tag: 'Rice Dishes', tagColor: 'primary',
+                    image: '/fastfood/images/fried-rice-chicken.webp' },
+                { id: 'rice5', name: 'Fried Rice + Beef', description: 'Vegetable fried rice with tender beef.', price: 5000,
+                    emoji: '🍚', tag: 'Rice Dishes', tagColor: 'primary',
+                    image: '/fastfood/images/fried-rice-beef.webp' },
+                { id: 'rice6', name: 'White Rice + Stew + Beef', description: 'Steamed rice with rich tomato stew & beef.',
+                    price: 5000, emoji: '🍛', tag: 'Rice Dishes', tagColor: 'primary',
+                    image: '/fastfood/images/white-rice-stew-beef.webp' },
+                { id: 'rice7', name: 'White Rice + Stew + Chicken', description: 'Steamed rice with rich tomato stew & chicken.',
+                    price: 5500, emoji: '🍛', tag: 'Rice Dishes', tagColor: 'primary',
+                    image: '/fastfood/images/white-rice-stew-chicken.webp' },
+                { id: 'rice8', name: 'Ofada Rice + Ayamase', description: 'Ofada rice with spicy green pepper sauce.',
+                    price: 5500, emoji: '🍚', tag: 'Rice Dishes', tagColor: 'primary',
+                    image: '/fastfood/images/ofada-rice-ayamase.webp' },
+                { id: 'rice9', name: 'Coconut Rice + Chicken', description: 'Fragrant coconut rice with grilled chicken.',
+                    price: 6500, emoji: '🍚', tag: 'Rice Dishes', tagColor: 'primary',
+                    image: '/fastfood/images/coconut-rice-chicken.webp' },
+                { id: 'rice10', name: 'Native/Village Rice', description: 'Traditional village-style rice with assorted meat.',
+                    price: 7500, emoji: '🍚', tag: 'Rice Dishes', tagColor: 'primary',
+                    image: '/fastfood/images/native-rice.webp' },
+                { id: 'rice11', name: 'Rice & Beans + Chicken', description: 'Mixed rice and beans with chicken.', price: 5500,
+                    emoji: '🍛', tag: 'Rice Dishes', tagColor: 'primary',
+                    image: '/fastfood/images/rice-beans-chicken.webp' },
+                { id: 'rice12', name: 'Rice & Beans + Beef', description: 'Mixed rice and beans with beef.', price: 5000,
+                    emoji: '🍛', tag: 'Rice Dishes', tagColor: 'primary',
+                    image: '/fastfood/images/rice-beans-beef.webp' },
+                { id: 'rice13', name: 'Concoction Rice', description: 'Spicy one-pot rice with mixed meat and vegetables.',
+                    price: 4500, emoji: '🍚', tag: 'Rice Dishes', tagColor: 'primary',
+                    image: '/fastfood/images/concoction-rice.webp' },
+                { id: 'rice14', name: 'Jollof Spaghetti + Chicken', description: 'Jollof spaghetti with chicken.', price: 5000,
+                    emoji: '🍝', tag: 'Rice Dishes', tagColor: 'primary',
+                    image: '/fastfood/images/jollof-spaghetti-chicken.webp' },
+                { id: 'rice15', name: 'Spaghetti + Egg', description: 'Spaghetti with fried egg and tomato sauce.', price: 4000,
+                    emoji: '🍝', tag: 'Rice Dishes', tagColor: 'primary',
+                    image: '/fastfood/images/spaghetti-egg.webp' },
+                { id: 'rice16', name: 'Fried Noodles + Egg', description: 'Stir-fried noodles with egg and vegetables.',
+                    price: 4000, emoji: '🍜', tag: 'Rice Dishes', tagColor: 'primary',
+                    image: '/fastfood/images/fried-noodles-egg.webp' },
+                { id: 'rice17', name: 'Noodles + Chicken', description: 'Noodles with grilled chicken and vegetables.',
+                    price: 5000, emoji: '🍜', tag: 'Rice Dishes', tagColor: 'primary',
+                    image: '/fastfood/images/noodles-chicken.webp' },
+
+                // ─── SWALLOW & SOUPS ───
+                { id: 'soup1', name: 'Pounded Yam + Egusi', description: 'Smooth pounded yam with melon seed soup & meat.',
+                    price: 6000, emoji: '🍲', tag: 'Swallow & Soups', tagColor: 'primary',
+                    image: '/fastfood/images/pounded-yam-egusi.webp' },
+                { id: 'soup2', name: 'Eba + Egusi Soup', description: 'Eba with melon seed soup and assorted meat.', price: 5000,
+                    emoji: '🍲', tag: 'Swallow & Soups', tagColor: 'primary',
+                    image: '/fastfood/images/eba-egusi.webp' },
+                { id: 'soup3', name: 'Amala + Ewedu + Gbegiri', description: 'Amala with ewedu and gbegiri (bean sauce).',
+                    price: 5000, emoji: '🍲', tag: 'Swallow & Soups', tagColor: 'primary',
+                    image: '/fastfood/images/amala-ewedu-gbegiri.webp' },
+                { id: 'soup4', name: 'Semo + Egusi Soup', description: 'Semo with melon seed soup and meat.', price: 5500,
+                    emoji: '🍲', tag: 'Swallow & Soups', tagColor: 'primary',
+                    image: '/fastfood/images/semo-egusi.webp' },
+                { id: 'soup5', name: 'Wheat + Vegetable Soup', description: 'Wheat meal with vegetable soup and fish.',
+                    price: 5500, emoji: '🍲', tag: 'Swallow & Soups', tagColor: 'primary',
+                    image: '/fastfood/images/wheat-vegetable.webp' },
+                { id: 'soup6', name: 'Fufu + Okra Soup', description: 'Fufu with okra soup and assorted meat.', price: 5000,
+                    emoji: '🍲', tag: 'Swallow & Soups', tagColor: 'primary',
+                    image: '/fastfood/images/fufu-okra.webp' },
+                { id: 'soup7', name: 'Tuwo Shinkafa + Soup', description: 'Tuwo shinkafa with soup and meat.', price: 5000,
+                    emoji: '🍲', tag: 'Swallow & Soups', tagColor: 'primary',
+                    image: '/fastfood/images/tuwo-shinkafa.webp' },
+                { id: 'soup8', name: 'Tuwo Masara + Soup', description: 'Tuwo masara with soup and meat.', price: 5000,
+                    emoji: '🍲', tag: 'Swallow & Soups', tagColor: 'primary',
+                    image: '/fastfood/images/tuwo-masara.webp' },
+                { id: 'soup9', name: 'Egusi Soup + Swallow', description: 'Egusi soup with your choice of swallow.', price: 5500,
+                    emoji: '🍲', tag: 'Swallow & Soups', tagColor: 'primary',
+                    image: '/fastfood/images/egusi-soup-swallow.webp' },
+                { id: 'soup10', name: 'Efo Riro + Swallow', description: 'Efo riro (vegetable soup) with swallow.', price: 5500,
+                    emoji: '🍲', tag: 'Swallow & Soups', tagColor: 'primary',
+                    image: '/fastfood/images/efo-riro-swallow.webp' },
+                { id: 'soup11', name: 'Okra Soup + Swallow', description: 'Okra soup with your choice of swallow.', price: 5000,
+                    emoji: '🍲', tag: 'Swallow & Soups', tagColor: 'primary',
+                    image: '/fastfood/images/okra-soup-swallow.webp' },
+                { id: 'soup12', name: 'Ogbono Soup + Swallow', description: 'Ogbono soup with your choice of swallow.',
+                    price: 5000, emoji: '🍲', tag: 'Swallow & Soups', tagColor: 'primary',
+                    image: '/fastfood/images/ogbono-soup-swallow.webp' },
+                { id: 'soup13', name: 'Vegetable Soup + Swallow', description: 'Vegetable soup with your choice of swallow.',
+                    price: 5000, emoji: '🍲', tag: 'Swallow & Soups', tagColor: 'primary',
+                    image: '/fastfood/images/vegetable-soup-swallow.webp' },
+                { id: 'soup14', name: 'Afang Soup + Swallow', description: 'Afang soup with your choice of swallow.', price: 6000,
+                    emoji: '🍲', tag: 'Swallow & Soups', tagColor: 'primary',
+                    image: '/fastfood/images/afang-soup-swallow.webp' },
+                { id: 'soup15', name: 'Oha Soup + Swallow', description: 'Oha soup with your choice of swallow.', price: 6000,
+                    emoji: '🍲', tag: 'Swallow & Soups', tagColor: 'primary',
+                    image: '/fastfood/images/oha-soup-swallow.webp' },
+                { id: 'soup16', name: 'Banga Soup + Starch', description: 'Banga soup with starch.', price: 6000,
+                    emoji: '🍲', tag: 'Swallow & Soups', tagColor: 'primary',
+                    image: '/fastfood/images/banga-soup-starch.webp' },
+                { id: 'soup17', name: 'Nsala Soup + Swallow', description: 'Nsala (white) soup with your choice of swallow.',
+                    price: 5500, emoji: '🍲', tag: 'Swallow & Soups', tagColor: 'primary',
+                    image: '/fastfood/images/nsala-soup-swallow.webp' },
+                { id: 'soup18', name: 'Edikang Ikong + Swallow', description: 'Edikang ikong soup with swallow.', price: 6500,
+                    emoji: '🍲', tag: 'Swallow & Soups', tagColor: 'primary',
+                    image: '/fastfood/images/edikang-ikong-swallow.webp' },
+                { id: 'soup19', name: 'Bitterleaf Soup + Swallow', description: 'Bitterleaf soup with your choice of swallow.',
+                    price: 5500, emoji: '🍲', tag: 'Swallow & Soups', tagColor: 'primary',
+                    image: '/fastfood/images/bitterleaf-soup-swallow.webp' },
+
+                // ─── SPECIALTIES ───
+                { id: 'spec1', name: 'Nkwobi', description: 'Traditional Igbo cow leg delicacy in rich palm oil sauce.',
+                    price: 5500, emoji: '🍖', tag: 'Specialties', tagColor: 'orange',
+                    image: '/fastfood/images/nkwobi.webp' },
+                { id: 'spec2', name: 'Isi Ewu', description: 'Spicy goat head delicacy with palm oil and herbs.', price: 6500,
+                    emoji: '🍖', tag: 'Specialties', tagColor: 'orange',
+                    image: '/fastfood/images/isi-ewu.webp' },
+                { id: 'spec3', name: 'Goat Meat Pepper Soup', description: 'Spicy goat meat pepper soup.', price: 5500,
+                    emoji: '🥣', tag: 'Specialties', tagColor: 'orange',
+                    image: '/fastfood/images/goat-pepper-soup.webp' },
+                { id: 'spec4', name: 'Catfish Pepper Soup', description: 'Spicy catfish pepper soup.', price: 4500,
+                    emoji: '🥣', tag: 'Specialties', tagColor: 'orange',
+                    image: '/fastfood/images/catfish-pepper-soup.webp' },
+                { id: 'spec5', name: 'Chicken Pepper Soup', description: 'Spicy chicken pepper soup.', price: 4500,
+                    emoji: '🥣', tag: 'Specialties', tagColor: 'orange',
+                    image: '/fastfood/images/chicken-pepper-soup.webp' },
+                { id: 'spec6', name: 'Abacha (African Salad)', description: 'Cassava flakes salad with vegetables and fish.',
+                    price: 4000, emoji: '🥗', tag: 'Specialties', tagColor: 'orange',
+                    image: '/fastfood/images/abacha.webp' },
+                { id: 'spec7', name: 'Ugba & Abacha', description: 'Abacha with ugba (oil bean) and assorted meat.', price: 4500,
+                    emoji: '🥗', tag: 'Specialties', tagColor: 'orange',
+                    image: '/fastfood/images/ugba-abacha.webp' },
+
+                // ─── GRILLED & ROAST ───
+                { id: 'grill1', name: 'Suya (Beef) – 5 sticks', description: 'Spicy grilled beef skewers with onions & pepper.',
+                    price: 3500, emoji: '🥩', tag: 'Grilled & Roast', tagColor: 'orange',
+                    image: '/fastfood/images/beef-suya.webp' },
+                { id: 'grill2', name: 'Kilishi (Beef Jerky)', description: 'Dried spicy beef strips – perfect snack.',
+                    price: 4500, emoji: '🥩', tag: 'Grilled & Roast', tagColor: 'orange',
+                    image: '/fastfood/images/kilishi.webp' },
+                { id: 'grill3', name: 'Asun', description: 'Spicy grilled goat meat with peppers and onions.', price: 4500,
+                    emoji: '🍗', tag: 'Grilled & Roast', tagColor: 'orange',
+                    image: '/fastfood/images/asun.webp' },
+                { id: 'grill4', name: 'Peppered Beef', description: 'Beef sautéed in spicy pepper sauce.', price: 3000,
+                    emoji: '🥩', tag: 'Grilled & Roast', tagColor: 'orange',
+                    image: '/fastfood/images/peppered-beef.webp' },
+                { id: 'grill5', name: 'Peppered Chicken', description: 'Chicken sautéed in spicy pepper sauce.', price: 3500,
+                    emoji: '🍗', tag: 'Grilled & Roast', tagColor: 'orange',
+                    image: '/fastfood/images/peppered-chicken.webp' },
+                { id: 'grill6', name: 'Peppered Snail', description: 'Snail sautéed in spicy pepper sauce.', price: 7000,
+                    emoji: '🐌', tag: 'Grilled & Roast', tagColor: 'orange',
+                    image: '/fastfood/images/peppered-snail.webp' },
+                { id: 'grill7', name: 'Fried Chicken', description: 'Crispy fried chicken pieces.', price: 3500,
+                    emoji: '🍗', tag: 'Grilled & Roast', tagColor: 'orange',
+                    image: '/fastfood/images/fried-chicken.webp' },
+                { id: 'grill8', name: 'Fried Fish', description: 'Crispy fried fish with spicy seasoning.', price: 4000,
+                    emoji: '🐟', tag: 'Grilled & Roast', tagColor: 'orange',
+                    image: '/fastfood/images/fried-fish.webp' },
+                { id: 'grill9', name: 'Grilled Fish (Tilapia)', description: 'Whole grilled tilapia with spicy pepper sauce.',
+                    price: 7000, emoji: '🐟', tag: 'Grilled & Roast', tagColor: 'orange',
+                    image: '/fastfood/images/grilled-tilapia.webp' },
+                { id: 'grill10', name: 'Grilled Chicken', description: 'Juicy grilled chicken with herbs and spices.',
+                    price: 4500, emoji: '🍗', tag: 'Grilled & Roast', tagColor: 'orange',
+                    image: '/fastfood/images/grilled-chicken.webp' },
+                { id: 'grill11', name: 'Peppered Kpomo', description: 'Spicy peppered cow skin.', price: 2500, emoji: '🍢',
+                    tag: 'Grilled & Roast', tagColor: 'orange',
+                    image: '/fastfood/images/peppered-kpomo.webp' },
+                { id: 'grill12', name: 'Gizdodo', description: 'Gizzard and plantain in spicy pepper sauce.', price: 4500,
+                    emoji: '🍢', tag: 'Grilled & Roast', tagColor: 'orange',
+                    image: '/fastfood/images/gizdodo.webp' },
+
+                // ─── BEANS, YAM & PLANTAIN ───
+                { id: 'bip1', name: 'Beans Porridge', description: 'Rich bean porridge with spices and palm oil.', price: 4000,
+                    emoji: '🍛', tag: 'Beans, Yam & Plantain', tagColor: 'primary',
+                    image: '/fastfood/images/beans-porridge.webp' },
+                { id: 'bip2', name: 'Beans + Plantain', description: 'Beans porridge served with fried plantain.', price: 4500,
+                    emoji: '🍛', tag: 'Beans, Yam & Plantain', tagColor: 'primary',
+                    image: '/fastfood/images/beans-plantain.webp' },
+                { id: 'bip3', name: 'Ewa Agoyin + Bread', description: 'Ewa agoyin (mashed beans) with soft bread.', price: 4500,
+                    emoji: '🍞', tag: 'Beans, Yam & Plantain', tagColor: 'primary',
+                    image: '/fastfood/images/ewa-agoyin-bread.webp' },
+                { id: 'bip4', name: 'Yam Porridge', description: 'Yam porridge with vegetables and palm oil.', price: 4000,
+                    emoji: '🍠', tag: 'Beans, Yam & Plantain', tagColor: 'primary',
+                    image: '/fastfood/images/yam-porridge.webp' },
+                { id: 'bip5', name: 'Yam Porridge + Beef', description: 'Yam porridge with tender beef.', price: 4500,
+                    emoji: '🍠', tag: 'Beans, Yam & Plantain', tagColor: 'primary',
+                    image: '/fastfood/images/yam-porridge-beef.webp' },
+                { id: 'bip6', name: 'Fried Yam + Egg Sauce', description: 'Fried yam slices with egg sauce.', price: 4000,
+                    emoji: '🍠', tag: 'Beans, Yam & Plantain', tagColor: 'primary',
+                    image: '/fastfood/images/fried-yam-egg-sauce.webp' },
+                { id: 'bip7', name: 'Boiled Yam + Egg Sauce', description: 'Boiled yam with egg sauce.', price: 4000,
+                    emoji: '🍠', tag: 'Beans, Yam & Plantain', tagColor: 'primary',
+                    image: '/fastfood/images/boiled-yam-egg-sauce.webp' },
+                { id: 'bip8', name: 'Yamarita + Egg Sauce', description: 'Yamarita (yamarita) with egg sauce.', price: 4500,
+                    emoji: '🍠', tag: 'Beans, Yam & Plantain', tagColor: 'primary',
+                    image: '/fastfood/images/yamarita-egg-sauce.webp' },
+                { id: 'bip9', name: 'Dodo + Egg Sauce', description: 'Fried plantain with egg sauce.', price: 3500,
+                    emoji: '🍌', tag: 'Beans, Yam & Plantain', tagColor: 'primary',
+                    image: '/fastfood/images/dodo-egg-sauce.webp' },
+                { id: 'bip10', name: 'Boiled Plantain + Egg Sauce', description: 'Boiled plantain with egg sauce.', price: 4000,
+                    emoji: '🍌', tag: 'Beans, Yam & Plantain', tagColor: 'primary',
+                    image: '/fastfood/images/boiled-plantain-egg-sauce.webp' },
+                { id: 'bip11', name: 'Boli (Roasted Plantain)', description: 'Roasted plantain with groundnut sauce.',
+                    price: 2500, emoji: '🍌', tag: 'Beans, Yam & Plantain', tagColor: 'primary',
+                    image: '/fastfood/images/boli.webp' },
+                { id: 'bip12', name: 'Boli + Fish', description: 'Roasted plantain with grilled fish and sauce.', price: 5500,
+                    emoji: '🍌', tag: 'Beans, Yam & Plantain', tagColor: 'primary',
+                    image: '/fastfood/images/boli-fish.webp' },
+
+                // ─── SNACKS ───
+                { id: 'snk1', name: 'Moi Moi', description: 'Steamed bean pudding with fish and eggs.', price: 2500,
+                    emoji: '🍮', tag: 'Snacks', tagColor: 'orange', image: '/fastfood/images/moi-moi.webp' },
+                { id: 'snk2', name: 'Akara (Fried Bean Cake)', description: 'Crispy fried bean cakes.', price: 2000,
+                    emoji: '🍘', tag: 'Snacks', tagColor: 'orange', image: '/fastfood/images/akara.webp' },
+                { id: 'snk3', name: 'Okpa', description: 'Steamed bambara nut pudding.', price: 2000, emoji: '🍮',
+                    tag: 'Snacks', tagColor: 'orange', image: '/fastfood/images/okpa.webp' },
+                { id: 'snk4', name: 'Adalu (Beans & Corn)', description: 'Beans and corn cooked together with spices.',
+                    price: 3500, emoji: '🍛', tag: 'Snacks', tagColor: 'orange',
+                    image: '/fastfood/images/adalu.webp' },
+                { id: 'snk5', name: 'Akamu/Pap + Akara', description: 'Fermented corn pap with fried bean cakes.', price: 3500,
+                    emoji: '🥣', tag: 'Snacks', tagColor: 'orange', image: '/fastfood/images/akamu-akara.webp' },
+                { id: 'snk6', name: 'Plantain Chips – Large', description: 'Crispy fried plantain strips with seasoning.',
+                    price: 2000, emoji: '🍌', tag: 'Snacks', tagColor: 'orange',
+                    image: '/fastfood/images/plantain-chips.webp' },
+                { id: 'snk7', name: 'Yam Chips', description: 'Crispy fried yam strips with seasoning.', price: 2000,
+                    emoji: '🍠', tag: 'Snacks', tagColor: 'orange', image: '/fastfood/images/yam-chips.webp' },
+                { id: 'snk8', name: 'Chin Chin – Large', description: 'Fried sweet dough sticks – perfect snack.', price: 2000,
+                    emoji: '🥨', tag: 'Snacks', tagColor: 'orange', image: '/fastfood/images/chin-chin.webp' },
+                { id: 'snk9', name: 'Puff-Puff – 6 pcs', description: 'Classic Nigerian fried dough balls with sugar.',
+                    price: 2000, emoji: '🍩', tag: 'Snacks', tagColor: 'orange',
+                    image: '/fastfood/images/puff-puff.webp' },
+                { id: 'snk10', name: 'Pepper Puff-Puff', description: 'Spicy version of classic puff-puff.', price: 2500,
+                    emoji: '🍩', tag: 'Snacks', tagColor: 'orange',
+                    image: '/fastfood/images/pepper-puff-puff.webp' },
+                { id: 'snk11', name: 'Buns – 2 pcs', description: 'Fried sweet buns with a soft center.', price: 1500,
+                    emoji: '🥯', tag: 'Snacks', tagColor: 'orange', image: '/fastfood/images/buns.webp' },
+                { id: 'snk12', name: 'Meat Pie – 2 pcs', description: 'Flaky pastry with minced meat, carrots & peas.',
+                    price: 2000, emoji: '🥧', tag: 'Snacks', tagColor: 'orange',
+                    image: '/fastfood/images/meat-pie.webp' },
+                { id: 'snk13', name: 'Chicken Pie – 2 pcs', description: 'Flaky pastry with chicken filling.', price: 2500,
+                    emoji: '🥧', tag: 'Snacks', tagColor: 'orange',
+                    image: '/fastfood/images/chicken-pie.webp' },
+                { id: 'snk14', name: 'Fish Roll – 2 pcs', description: 'Flaky pastry with spiced fish filling.', price: 1500,
+                    emoji: '🥟', tag: 'Snacks', tagColor: 'orange',
+                    image: '/fastfood/images/fish-roll.webp' },
+                { id: 'snk15', name: 'Sausage Roll – 2 pcs', description: 'Flaky pastry with seasoned sausage.', price: 1500,
+                    emoji: '🥐', tag: 'Snacks', tagColor: 'orange',
+                    image: '/fastfood/images/sausage-roll.webp' },
+                { id: 'snk16', name: 'Egg Roll – 2 pcs', description: 'Boiled egg wrapped in pastry and fried.', price: 1500,
+                    emoji: '🥚', tag: 'Snacks', tagColor: 'orange',
+                    image: '/fastfood/images/egg-roll.webp' },
+                { id: 'snk17', name: 'Scotch Egg – 2 pcs', description: 'Boiled egg wrapped in sausage meat & breadcrumbs.',
+                    price: 1500, emoji: '🥚', tag: 'Snacks', tagColor: 'orange',
+                    image: '/fastfood/images/scotch-egg.webp' },
+                { id: 'snk18', name: 'Samosa (Beef) – 2 pcs', description: 'Crispy pastry filled with minced beef & peas.',
+                    price: 1500, emoji: '🥟', tag: 'Snacks', tagColor: 'orange',
+                    image: '/fastfood/images/beef-samosa.webp' },
+                { id: 'snk19', name: 'Spring Rolls – 3 pcs', description: 'Vegetable and chicken spring rolls with sauce.',
+                    price: 1500, emoji: '🥠', tag: 'Snacks', tagColor: 'orange',
+                    image: '/fastfood/images/spring-rolls.webp' },
+                { id: 'snk20', name: 'Kuli-Kuli', description: 'Spicy peanut snack – perfect with zobo.', price: 2000,
+                    emoji: '🥜', tag: 'Snacks', tagColor: 'orange',
+                    image: '/fastfood/images/kuli-kuli.webp' },
+                { id: 'snk21', name: 'Kokoro', description: 'Crispy fried corn snack.', price: 2000, emoji: '🌽',
+                    tag: 'Snacks', tagColor: 'orange', image: '/fastfood/images/kokoro.webp' },
+                { id: 'snk22', name: 'Donkwa', description: 'Roasted groundnut snack with spices.', price: 2000,
+                    emoji: '🥜', tag: 'Snacks', tagColor: 'orange', image: '/fastfood/images/donkwa.webp' },
+                { id: 'snk23', name: 'Mosa', description: 'Sweet fried dough balls with a twist.', price: 2000,
+                    emoji: '🍩', tag: 'Snacks', tagColor: 'orange', image: '/fastfood/images/mosa.webp' },
+                { id: 'snk24', name: 'Gurundi', description: 'Traditional Nigerian sweet snack.', price: 2000,
+                    emoji: '🍬', tag: 'Snacks', tagColor: 'orange', image: '/fastfood/images/gurundi.webp' },
+                { id: 'snk25', name: 'Coconut Candy', description: 'Sweet coconut candy bites.', price: 2000, emoji: '🥥',
+                    tag: 'Snacks', tagColor: 'orange', image: '/fastfood/images/coconut-candy.webp' },
+                { id: 'snk26', name: 'Groundnut Candy', description: 'Sweet groundnut candy bites.', price: 2000,
+                    emoji: '🥜', tag: 'Snacks', tagColor: 'orange',
+                    image: '/fastfood/images/groundnut-candy.webp' },
+                { id: 'snk27', name: 'Roasted Corn', description: 'Fresh roasted corn on the cob.', price: 1500,
+                    emoji: '🌽', tag: 'Snacks', tagColor: 'orange',
+                    image: '/fastfood/images/roasted-corn.webp' },
+                { id: 'snk28', name: 'Roasted Groundnuts', description: 'Fresh roasted groundnuts.', price: 1500,
+                    emoji: '🥜', tag: 'Snacks', tagColor: 'orange',
+                    image: '/fastfood/images/roasted-groundnuts.webp' },
+
+                // ─── BEVERAGES ───
+                { id: 'bev1', name: 'Zobo Drink – 500ml', description: 'Hibiscus drink with ginger and pineapple.',
+                    price: 800, emoji: '🍹', tag: 'Beverages', tagColor: 'primary',
+                    image: '/fastfood/images/zobo-drink.webp' },
+                { id: 'bev2', name: 'Fresh Coconut Water', description: 'Pure coconut water, chilled.', price: 700,
+                    emoji: '🥥', tag: 'Beverages', tagColor: 'primary',
+                    image: '/fastfood/images/coconut-water.webp' },
+                { id: 'bev3', name: 'Smoothie (Mixed Berry)', description: 'Blended berries with yogurt and honey.',
+                    price: 1200, emoji: '🥤', tag: 'Beverages', tagColor: 'primary',
+                    image: '/fastfood/images/mixed-berry-smoothie.webp' },
+                { id: 'bev4', name: 'Chapman', description: 'Classic Nigerian cocktail with bitters, soda and fruits.',
+                    price: 1500, emoji: '🍸', tag: 'Beverages', tagColor: 'primary',
+                    image: '/fastfood/images/chapman.webp' },
+                { id: 'bev5', name: 'Ginger & Lime Squash', description: 'Refreshing ginger and lime drink.', price: 600,
+                    emoji: '🍋', tag: 'Beverages', tagColor: 'primary',
+                    image: '/fastfood/images/ginger-lime-squash.webp' },
+                { id: 'bev6', name: 'Pure Water (sachet) – 2 pcs', description: 'Clean drinking water.', price: 300,
+                    emoji: '💧', tag: 'Beverages', tagColor: 'primary',
+                    image: '/fastfood/images/pure-water.webp' },
+            ];
+
+            // ─── Extract categories ───
+            const categories = [...new Set(products.map(p => p.tag))].sort();
+
             // ─── STATE ───
-            let products = [];
-            let categories = [];
             let cart = {};
             let cartTotalItems = 0;
             let cartTotalPrice = 0;
@@ -2414,11 +2681,9 @@
             let deliveryMethod = 'pickup';
             let deliveryFee = 0;
             let lastOrderData = null;
-            let isDataLoaded = false;
 
             // ─── DOM REFS ───
             const menuGrid = document.getElementById('menu-grid');
-            const shimmerWrapper = document.getElementById('shimmer-wrapper');
             const cartItemsEl = document.getElementById('cart-items');
             const cartBadge = document.getElementById('cart-badge');
             const navCartBadge = document.getElementById('nav-cart-badge');
@@ -2483,132 +2748,6 @@
                 toastTimer = setTimeout(() => toast.classList.remove('show'), 2500);
             }
 
-            // ─── LOAD PRODUCTS FROM SUPABASE ───
-            async function loadProductsFromSupabase() {
-                try {
-                    const { data, error } = await supabase
-                        .from('products')
-                        .select('*')
-                        .order('name');
-
-                    if (error) {
-                        console.error('❌ Supabase fetch error:', error);
-                        showToast('Could not load menu. Please refresh.', 'fa-solid fa-exclamation-circle');
-                        return false;
-                    }
-
-                    if (data && data.length > 0) {
-                        products = data;
-                        categories = [...new Set(products.map(p => p.tag))].sort();
-                        isDataLoaded = true;
-                        console.log(`✅ Loaded ${products.length} products from Supabase`);
-                        console.log('📦 Categories:', categories);
-                        return true;
-                    } else {
-                        console.warn('⚠️ No products found in Supabase — falling back to hardcoded data');
-                        return false;
-                    }
-                } catch (err) {
-                    console.error('🔥 Supabase connection error:', err);
-                    return false;
-                }
-            }
-
-            // ─── FALLBACK: hardcoded products (used if Supabase fails) ───
-            function getFallbackProducts() {
-                return [
-                    // ─── BURGERS ───
-                    { id: 'burg1', name: 'Burger', description: 'Classic beef burger with lettuce, tomato, cheese & sauce.',
-                        price: 4500, emoji: '🍔', tag: 'Burgers', tagColor: 'primary',
-                        image: '/fastfood/images/burger.webp' },
-                    { id: 'burg2', name: 'Shawarma', description: 'Spiced meat wrapped in flatbread with veggies & garlic sauce.',
-                        price: 4500, emoji: '🌯', tag: 'Burgers', tagColor: 'primary',
-                        image: '/fastfood/images/shawarma.webp' },
-                    { id: 'burg3', name: 'Hot Dog', description: 'Grilled sausage in a bun with ketchup, mustard & onions.',
-                        price: 2500, emoji: '🌭', tag: 'Burgers', tagColor: 'primary',
-                        image: '/fastfood/images/hot-dog.webp' },
-                    // ─── RICE DISHES ───
-                    { id: 'rice1', name: 'Jollof Rice + Chicken', description: 'Classic tomato rice with grilled chicken.',
-                        price: 5500, emoji: '🍛', tag: 'Rice Dishes', tagColor: 'primary',
-                        image: '/fastfood/images/jollof-rice-chicken.webp' },
-                    { id: 'rice2', name: 'Jollof Rice + Beef', description: 'Classic tomato rice with tender beef.',
-                        price: 4500, emoji: '🍛', tag: 'Rice Dishes', tagColor: 'primary',
-                        image: '/fastfood/images/jollof-rice-beef.webp' },
-                    { id: 'rice3', name: 'Jollof Rice + Turkey', description: 'Classic tomato rice with succulent turkey.',
-                        price: 7500, emoji: '🍛', tag: 'Rice Dishes', tagColor: 'primary',
-                        image: '/fastfood/images/jollof-rice-turkey.webp' },
-                    // ─── SWALLOW & SOUPS ───
-                    { id: 'soup1', name: 'Pounded Yam + Egusi', description: 'Smooth pounded yam with melon seed soup & meat.',
-                        price: 6000, emoji: '🍲', tag: 'Swallow & Soups', tagColor: 'primary',
-                        image: '/fastfood/images/pounded-yam-egusi.webp' },
-                    { id: 'soup2', name: 'Eba + Egusi Soup', description: 'Eba with melon seed soup and assorted meat.',
-                        price: 5000, emoji: '🍲', tag: 'Swallow & Soups', tagColor: 'primary',
-                        image: '/fastfood/images/eba-egusi.webp' },
-                    // ─── SPECIALTIES ───
-                    { id: 'spec1', name: 'Nkwobi', description: 'Traditional Igbo cow leg delicacy in rich palm oil sauce.',
-                        price: 5500, emoji: '🍖', tag: 'Specialties', tagColor: 'orange',
-                        image: '/fastfood/images/nkwobi.webp' },
-                    { id: 'spec2', name: 'Isi Ewu', description: 'Spicy goat head delicacy with palm oil and herbs.',
-                        price: 6500, emoji: '🍖', tag: 'Specialties', tagColor: 'orange',
-                        image: '/fastfood/images/isi-ewu.webp' },
-                    // ─── GRILLED & ROAST ───
-                    { id: 'grill1', name: 'Suya (Beef) – 5 sticks',
-                        description: 'Spicy grilled beef skewers with onions & pepper.', price: 3500, emoji: '🥩',
-                        tag: 'Grilled & Roast', tagColor: 'orange', image: '/fastfood/images/beef-suya.webp' },
-                    { id: 'grill2', name: 'Kilishi (Beef Jerky)', description: 'Dried spicy beef strips – perfect snack.',
-                        price: 4500, emoji: '🥩', tag: 'Grilled & Roast', tagColor: 'orange',
-                        image: '/fastfood/images/kilishi.webp' },
-                    // ─── BEANS, YAM & PLANTAIN ───
-                    { id: 'bip1', name: 'Beans Porridge', description: 'Rich bean porridge with spices and palm oil.',
-                        price: 4000, emoji: '🍛', tag: 'Beans, Yam & Plantain', tagColor: 'primary',
-                        image: '/fastfood/images/beans-porridge.webp' },
-                    { id: 'bip2', name: 'Beans + Plantain', description: 'Beans porridge served with fried plantain.',
-                        price: 4500, emoji: '🍛', tag: 'Beans, Yam & Plantain', tagColor: 'primary',
-                        image: '/fastfood/images/beans-plantain.webp' },
-                    // ─── SNACKS ───
-                    { id: 'snk1', name: 'Moi Moi', description: 'Steamed bean pudding with fish and eggs.', price: 2500,
-                        emoji: '🍮', tag: 'Snacks', tagColor: 'orange', image: '/fastfood/images/moi-moi.webp' },
-                    { id: 'snk2', name: 'Akara (Fried Bean Cake)', description: 'Crispy fried bean cakes.', price: 2000,
-                        emoji: '🍘', tag: 'Snacks', tagColor: 'orange', image: '/fastfood/images/akara.webp' },
-                    // ─── BEVERAGES ───
-                    { id: 'bev1', name: 'Zobo Drink – 500ml', description: 'Hibiscus drink with ginger and pineapple.',
-                        price: 800, emoji: '🍹', tag: 'Beverages', tagColor: 'primary',
-                        image: '/fastfood/images/zobo-drink.webp' },
-                    { id: 'bev2', name: 'Fresh Coconut Water', description: 'Pure coconut water, chilled.', price: 700,
-                        emoji: '🥥', tag: 'Beverages', tagColor: 'primary',
-                        image: '/fastfood/images/coconut-water.webp' },
-                ];
-            }
-
-            // ─── INIT DATA ───
-            async function initData() {
-                // Show shimmer
-                if (shimmerWrapper) shimmerWrapper.style.display = 'grid';
-
-                const loaded = await loadProductsFromSupabase();
-
-                if (!loaded || products.length === 0) {
-                    console.warn('⚠️ Using fallback product data');
-                    products = getFallbackProducts();
-                    categories = [...new Set(products.map(p => p.tag))].sort();
-                    isDataLoaded = true;
-                }
-
-                // Hide shimmer
-                if (shimmerWrapper) shimmerWrapper.style.display = 'none';
-
-                // Now render everything
-                renderCategoriesPills();
-                renderMenu();
-                renderFeatured();
-                updateCartUI();
-                initChat();
-
-                console.log(`🍔 Hot Portion Grill — ${products.length} meals, ${categories.length} categories`);
-                console.log('📌 Data source:', loaded ? 'Supabase' : 'Fallback');
-            }
-
-            // ─── FILTERED PRODUCTS ───
             function getFilteredProducts() {
                 let filtered = products;
                 if (searchQuery.trim()) {
@@ -2631,7 +2770,7 @@
                 let html = '';
                 const allActive = selectedCategory === '' ? 'active' : '';
                 html +=
-                    `<span class="cat-pill ${allActive}" data-category="">All <span class="pill-count">(${products.length})</span></span>`;
+                `<span class="cat-pill ${allActive}" data-category="">All <span class="pill-count">(${products.length})</span></span>`;
                 categories.forEach(cat => {
                     const count = products.filter(p => p.tag === cat).length;
                     const isActive = selectedCategory === cat ? 'active' : '';
@@ -2665,7 +2804,6 @@
 
             // ─── RENDER MENU ───
             function renderMenu() {
-                if (!isDataLoaded) return;
                 const filtered = getFilteredProducts();
                 menuGrid.innerHTML = '';
                 if (filtered.length === 0) {
@@ -2680,10 +2818,10 @@
                     const tagColor = p.tagColor === 'orange' ? 'orange' : '';
                     const imageHtml = p.image ?
                         `<img src="${p.image}" alt="${p.name}" loading="lazy" width="300" height="200" onerror="this.style.display='none'">` :
-                        `<span class="food-emoji">${p.emoji || '🍽️'}</span>`;
+                        `<span class="food-emoji">${p.emoji}</span>`;
                     card.innerHTML = `
                         <div class="menu-card-image">
-                            <span class="emoji-bg">${p.emoji || '🍽️'}</span>
+                            <span class="emoji-bg">${p.emoji}</span>
                             ${imageHtml}
                             <span class="tag ${tagColor}">${p.tag}</span>
                         </div>
@@ -2739,7 +2877,7 @@
 
             // ─── RENDER FEATURED CAROUSEL ───
             function renderFeatured() {
-                if (!featuredGrid || !isDataLoaded) return;
+                if (!featuredGrid) return;
                 const featuredItems = products.slice(0, 8);
                 const isMobile = window.innerWidth <= 640;
                 const itemsPerSlide = isMobile ? 1 : 2;
@@ -2764,10 +2902,10 @@
                         const tagColor = p.tagColor === 'orange' ? 'orange' : '';
                         const imageHtml = p.image ?
                             `<img src="${p.image}" alt="${p.name}" loading="lazy" width="300" height="200" onerror="this.style.display='none'">` :
-                            `<span class="food-emoji">${p.emoji || '🍽️'}</span>`;
+                            `<span class="food-emoji">${p.emoji}</span>`;
                         card.innerHTML = `
                             <div class="menu-card-image">
-                                <span class="emoji-bg">${p.emoji || '🍽️'}</span>
+                                <span class="emoji-bg">${p.emoji}</span>
                                 ${imageHtml}
                                 <span class="tag ${tagColor}">${p.tag}</span>
                             </div>
@@ -2892,7 +3030,7 @@
                         const itemTotal = item.price * item.qty;
                         const imageHtml = item.image ?
                             `<img src="${item.image}" alt="${item.name}" class="item-image" loading="lazy" width="48" height="48" onerror="this.style.display='none'">` :
-                            `<span class="item-emoji">${item.emoji || '🍽️'}</span>`;
+                            `<span class="item-emoji">${item.emoji}</span>`;
                         html += `
                             <div class="cart-item" data-id="${item.id}">
                                 ${imageHtml}
@@ -3034,8 +3172,8 @@
             receiptClose.addEventListener('click', closeReceipt);
             receiptOverlay.addEventListener('click', function(e) { if (e.target === this) closeReceipt(); });
 
-            // ─── CHECKOUT (Supabase insert) ───
-            async function checkout() {
+            // ─── CHECKOUT ───
+            function checkout() {
                 const items = Object.values(cart);
                 if (items.length === 0) {
                     showToast('Your cart is empty!', 'fa-solid fa-exclamation-circle');
@@ -3077,44 +3215,13 @@
                 btn.innerHTML = '<span class="loader-small"></span> Processing...';
                 btn.disabled = true;
 
-                try {
-                    // ─── Insert order into Supabase ───
-                    const { error } = await supabase
-                        .from('orders')
-                        .insert([{
-                            payment_reference: orderData.paymentReference,
-                            customer_name: orderData.customerName,
-                            customer_phone: orderData.customerPhone,
-                            total: orderData.amount,
-                            delivery_method: orderData.metaData.deliveryMethod,
-                            delivery_address: orderData.metaData.deliveryAddress,
-                            preferred_time: orderData.metaData.preferredTime,
-                            order_notes: orderData.metaData.orderNotes,
-                            items: orderData.metaData.items,
-                            status: 'confirmed'
-                        }]);
-
-                    if (error) {
-                        console.error('❌ Supabase insert error:', error);
-                        showToast('Order failed. Please try again.', 'fa-solid fa-exclamation-circle');
-                        btn.innerHTML = originalText;
-                        btn.disabled = false;
-                        return;
-                    }
-
-                    console.log('✅ Order saved to Supabase:', orderData.paymentReference);
-
-                    // Show receipt
-                    showReceipt(orderData);
-                    console.log('🔐 Monnify integration ready. Replace with actual API call.');
-
-                } catch (err) {
-                    console.error('🔥 Checkout error:', err);
-                    showToast('Something went wrong. Please try again.', 'fa-solid fa-exclamation-circle');
-                } finally {
+                setTimeout(() => {
                     btn.innerHTML = originalText;
                     btn.disabled = false;
-                }
+                    showReceipt(orderData);
+                    console.log('Order Data:', orderData);
+                    console.log('🔐 Monnify integration ready. Replace with actual API call.');
+                }, 1500);
             }
 
             // ─── CHAT FUNCTIONS ───
@@ -3211,7 +3318,7 @@
             }
 
             function initChat() {
-                if (chatMessages.children.length === 0 && isDataLoaded) {
+                if (chatMessages.children.length === 0) {
                     addChatMsg('assistant',
                         `Hi! I'm your HotPortion AI. We have ${products.length} meals across ${categories.length} categories. Try asking: *'I want something filling under ₦5,000'* or *'What combos do you have?'* 🍔`
                         );
@@ -3428,20 +3535,22 @@
                 }, 300);
             });
 
-            // ─── BOOT ───
+            // ─── INIT ───
             initHeroDots();
             startHeroAutoplay();
 
-            // Load data from Supabase, then render
-            initData().then(() => {
-                console.log('🚀 Hot Portion Grill ready!');
-            });
+            renderCategoriesPills();
+            renderMenu();
+            renderFeatured();
+            updateCartUI();
 
+            console.log(`🍔 Hot Portion Grill — ${products.length} meals, ${categories.length} categories`);
+            console.log('📦 Categories:', categories);
+            console.log('📌 Updated with full menu & suggested prices');
             console.log('📱 Bottom nav: Home, Menu, Chat, Cart (mobile only)');
             console.log('🔐 Monnify payment integration ready (simulated)');
             console.log('🤖 Context-aware AI assistant active');
             console.log('🎠 Hero slider active with 3 promotions');
-
         })();
     </script>
 </body>
