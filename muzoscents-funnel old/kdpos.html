@@ -222,7 +222,8 @@
             <div class="flex items-center gap-2 flex-wrap">
                 <span id="connection-status" class="online-badge"><i class="fa-solid fa-wifi"></i> Online</span>
                 <span id="catalog-badge" class="text-xs bg-gray-100 border border-gray-200 px-3 py-1 rounded-full" title="Products cached locally for offline use">
-                    <i class="fa-solid fa-database mr-1 text-gray-500"></i> <span id="cached-count">0</span> SKUs
+                    <i id="catalog-badge-icon" class="fa-solid fa-database mr-1 text-gray-500"></i>
+                    <span id="cached-count">0</span> / <span id="expected-count">?</span> SKUs
                 </span>
                 <button id="download-catalog-btn" class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded-lg text-sm" title="Download full catalog for offline use">
                     <i class="fa-solid fa-cloud-arrow-down"></i> Catalog
@@ -384,7 +385,7 @@
 
     <script>
         // ================================================================
-        //  OFFLINE‑READY POS – WITH FULL AUDIT TRAIL + FULL CATALOG SYNC
+        //  OFFLINE‑READY POS – FULL AUDIT + FULL CATALOG SYNC
         // ================================================================
 
         const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
@@ -404,10 +405,11 @@
         let catalogSyncInProgress = false;
 
         // ---------- Catalog sync constants ----------
-        const CATALOG_PAGE_SIZE = 500;
-        const CATALOG_LAST_SYNC_KEY = 'catalog_last_sync';
-        const CATALOG_COUNT_KEY = 'catalog_count';
-        const CATALOG_TTL_MS = 24 * 60 * 60 * 1000; // refresh once per day
+        const CATALOG_PAGE_SIZE      = 500;
+        const CATALOG_LAST_SYNC_KEY  = 'catalog_last_sync';
+        const CATALOG_COUNT_KEY      = 'catalog_count';     // last locally-cached count
+        const CATALOG_EXPECTED_KEY   = 'catalog_expected';  // total on the server
+        const CATALOG_TTL_MS         = 24 * 60 * 60 * 1000; // refresh once per day
 
         // ---------- UUID generator ----------
         function generateUUID() {
@@ -420,13 +422,17 @@
             });
         }
 
-        // ---------- Dexie IndexedDB (version 2) ----------
+        // ---------- Dexie IndexedDB (v3 — offlineRef is the primary key of orders) ----------
+        // ⚠️  The `orders` primary key MUST be `offlineRef` (not an auto-increment id).
+        //     Every other part of the code looks orders up by their offlineRef.
+        //     A prior version used '++id' as the primary key — that silently
+        //     dropped every offline order on reconnect. Do not regress this.
         const db = new Dexie('KevsPOSOffline');
-        db.version(2).stores({
-            products: 'id, description, item_code, sku, price_naira, current_qty',
-            customers: 'id, first_name, last_name, phone, email, loyalty_points',
-            orders: '++id, offlineRef, cashierId, createdAt, status, syncedAt, receiptData',
-            syncQueue: '++id, orderId, attempts, lastTry',
+        db.version(3).stores({
+            products:   'id, description, item_code, sku, price_naira, current_qty',
+            customers:  'id, first_name, last_name, phone, email, loyalty_points',
+            orders:     'offlineRef, cashierId, createdAt, status, syncedAt',
+            syncQueue:  '++id, orderId, attempts, lastTry',
             auditQueue: '++id, eventType, createdAt, retryCount'
         });
 
@@ -468,13 +474,15 @@
         const refreshDashboardBtn = document.getElementById('refresh-dashboard-btn');
         const dashboardContent = document.getElementById('dashboard-content');
 
-        // New: catalog sync UI
+        // Catalog sync UI
         const downloadCatalogBtn = document.getElementById('download-catalog-btn');
         const catalogSyncBanner = document.getElementById('catalog-sync-banner');
         const catalogSyncLabel = document.getElementById('catalog-sync-label');
         const catalogProgressBar = document.getElementById('catalog-progress-bar');
         const catalogProgressText = document.getElementById('catalog-progress-text');
         const cachedCountSpan = document.getElementById('cached-count');
+        const expectedCountSpan = document.getElementById('expected-count');
+        const catalogBadgeIcon = document.getElementById('catalog-badge-icon');
 
         // ---------- Tab State ----------
         const tabState = {
@@ -496,6 +504,8 @@
         }
 
         // ---------- API Call ----------
+        // Throws Error with a `.status` field so callers can distinguish
+        // a 4xx rejection (don't queue) from a 5xx / network hiccup (queue).
         async function apiCall(endpoint, method = 'GET', body = null, retry = true, signal = null) {
             const headers = { 'Content-Type': 'application/json' };
             if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -503,7 +513,15 @@
             if (selectedOrgId) headers['X-Selected-Org-Id'] = selectedOrgId;
             const options = { method, headers, signal };
             if (body) options.body = JSON.stringify(body);
-            let res = await fetch(`${BACKEND}${endpoint}`, options);
+            let res;
+            try {
+                res = await fetch(`${BACKEND}${endpoint}`, options);
+            } catch (netErr) {
+                const e = new Error(netErr.message || 'Network error');
+                e.status = 0;
+                e.network = true;
+                throw e;
+            }
             if (res.status === 401 && retry) {
                 const refresh = localStorage.getItem('refresh_token');
                 if (refresh) {
@@ -523,11 +541,15 @@
                     } catch (e) {}
                 }
                 showLoginModal();
-                throw new Error('Session expired');
+                const expired = new Error('Session expired');
+                expired.status = 401;
+                throw expired;
             }
             if (!res.ok) {
                 const err = await res.json().catch(() => ({ detail: 'Request error' }));
-                throw new Error(err.detail || 'API error');
+                const e = new Error(err.detail || 'API error');
+                e.status = res.status;
+                throw e;
             }
             return res.json();
         }
@@ -570,8 +592,25 @@
 
         async function refreshCachedCount() {
             try {
-                const count = await db.products.count();
+                const count    = await db.products.count();
+                const expected = Number(localStorage.getItem(CATALOG_EXPECTED_KEY) || 0);
+
                 if (cachedCountSpan) cachedCountSpan.innerText = count.toLocaleString();
+                if (expectedCountSpan) {
+                    expectedCountSpan.innerText = expected > 0 ? expected.toLocaleString() : '?';
+                }
+
+                // Green tick + green badge when fully synced, amber when partial
+                if (catalogBadgeIcon) {
+                    if (expected > 0 && count >= expected) {
+                        catalogBadgeIcon.className = 'fa-solid fa-circle-check mr-1 text-green-600';
+                    } else if (expected > 0 && count > 0) {
+                        catalogBadgeIcon.className = 'fa-solid fa-database mr-1 text-amber-500';
+                    } else {
+                        catalogBadgeIcon.className = 'fa-solid fa-database mr-1 text-gray-500';
+                    }
+                }
+
                 localStorage.setItem(CATALOG_COUNT_KEY, String(count));
                 return count;
             } catch (e) {
@@ -626,6 +665,7 @@
 
             let processed = 0;
             let total = 0;
+            const seenIds = new Set();   // for stale pruning at the end
             try {
                 // First page gives us the total count
                 const firstRes = await apiCall(
@@ -633,6 +673,13 @@
                     'GET'
                 );
                 total = Number(firstRes.total) || 0;
+
+                // Persist the server total so the badge can show "cached / total"
+                if (total > 0) {
+                    localStorage.setItem(CATALOG_EXPECTED_KEY, String(total));
+                    await refreshCachedCount();
+                }
+
                 const firstItems = (firstRes.items || []).map(normalizeProduct);
 
                 if (total === 0) {
@@ -643,8 +690,10 @@
 
                 // Bulk-insert first page — single transaction, fast
                 await db.products.bulkPut(firstItems);
+                firstItems.forEach(p => seenIds.add(p.id));
                 processed = firstItems.length;
                 updateCatalogProgress(processed, total);
+                await refreshCachedCount();       // live update of "X / Y" badge
 
                 // Loop remaining pages
                 let offset = CATALOG_PAGE_SIZE;
@@ -669,21 +718,31 @@
                     if (items.length === 0) break;
 
                     await db.products.bulkPut(items);
+                    items.forEach(p => seenIds.add(p.id));
                     processed += items.length;
                     offset += CATALOG_PAGE_SIZE;
 
-                    // Refresh UI occasionally
-                    if (offset % (CATALOG_PAGE_SIZE * 4) === 0) {
-                        updateCatalogProgress(processed, total);
-                    }
+                    // Update progress bar + badge on every page
+                    updateCatalogProgress(processed, total);
+                    await refreshCachedCount();
 
                     // Yield to the event loop so UI stays responsive
                     await new Promise(r => setTimeout(r, 0));
                 }
 
+                // ---- Prune stale products (deleted server-side) ----
+                const staleIds = [];
+                await db.products.each(p => {
+                    if (!seenIds.has(p.id)) staleIds.push(p.id);
+                });
+                if (staleIds.length) {
+                    await db.products.bulkDelete(staleIds);
+                    console.log('[Catalog] pruned', staleIds.length, 'stale products');
+                }
+                await refreshCachedCount();
+
                 updateCatalogProgress(processed, total);
                 localStorage.setItem(CATALOG_LAST_SYNC_KEY, new Date().toISOString());
-                await refreshCachedCount();
 
                 showToast(`✅ Catalog ready offline: ${processed.toLocaleString()} products`, 'success');
 
@@ -758,6 +817,9 @@
                     if (event.data.type === 'REFRESH_CATALOG') {
                         console.log('[SW] refresh catalog requested');
                         syncFullCatalog(true);
+                    }
+                    if (event.data.type === 'CATALOG_SYNCED') {
+                        refreshCachedCount();
                     }
                 });
             } catch (err) {
@@ -929,7 +991,11 @@
         }
 
         // ---------- Search Input (with scanner) ----------
+        // Note: lastKeyTime is only updated for PRINTABLE keys, so a cashier
+        // pressing Enter/Tab won't poison the scanner detector for the next
+        // keystroke.
         let scanBuffer = '', scanTimer = null, isScanning = false, lastKeyTime = 0, searchDebounceTimer = null;
+
         searchInput.addEventListener('input', function(e) {
             if (isScanning) return;
             clearTimeout(searchDebounceTimer);
@@ -954,10 +1020,13 @@
         });
 
         searchInput.addEventListener('keydown', function(e) {
-            const now = Date.now();
-            const timeDiff = lastKeyTime ? now - lastKeyTime : 0;
-            lastKeyTime = now;
-            if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+            const isPrintable = e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey;
+
+            if (isPrintable) {
+                const now = Date.now();
+                const timeDiff = lastKeyTime ? now - lastKeyTime : 0;
+                lastKeyTime = now;
+
                 if (timeDiff < 60 && timeDiff > 0) {
                     e.preventDefault();
                     if (!isScanning) {
@@ -1004,6 +1073,8 @@
                     scannerHint.classList.add('hidden');
                 }
             } else {
+                // Non-printable key — reset scanner detector
+                lastKeyTime = 0;
                 if (isScanning) {
                     isScanning = false;
                     scanBuffer = '';
@@ -1132,24 +1203,39 @@
             }
         }
 
+        // ---------- Stock helper (Dexie is source of truth, not the search array) ----------
+        async function getAvailableStock(productId, fallbackStock) {
+            try {
+                const row = await db.products.get(productId);
+                if (row && typeof row.current_qty === 'number') return row.current_qty;
+            } catch (e) { /* ignore, use fallback */ }
+            return (typeof fallbackStock === 'number') ? fallbackStock : 9999;
+        }
+
         // ---------- Cart Controls ----------
-        window.updateCartItemQty = function(index, newQty) {
+        window.updateCartItemQty = async function(index, newQty) {
             const state = tabState[activeTab];
             const cart = state.cart;
             if (index < 0 || index >= cart.length) return;
             newQty = parseInt(newQty, 10);
             if (isNaN(newQty) || newQty < 1) newQty = 1;
-            cart[index].qty = newQty;
+
+            const item = cart[index];
+            const availableStock = await getAvailableStock(item.id, item.stock);
+            if (newQty > availableStock) {
+                showToast(`⚠️ Only ${availableStock} left for "${item.name}"`, 'error');
+                newQty = availableStock;
+            }
+            item.qty = newQty;
             renderActiveCart();
         };
 
-        window.incrementCartItem = function(index) {
+        window.incrementCartItem = async function(index) {
             const state = tabState[activeTab];
             const cart = state.cart;
             if (index < 0 || index >= cart.length) return;
             const item = cart[index];
-            const productRef = products.find(p => p.id === item.id);
-            const availableStock = productRef ? (productRef.current_qty ?? 0) : 9999;
+            const availableStock = await getAvailableStock(item.id, item.stock);
             if (item.qty + 1 > availableStock) {
                 showToast(`⚠️ Only ${availableStock} left for "${item.name}"`, 'error');
                 return;
@@ -1180,12 +1266,11 @@
             }
         };
 
-        window.addToCart = function(productId, productName, price, stock, skuLabel) {
+        window.addToCart = async function(productId, productName, price, stock, skuLabel) {
             const state = tabState[activeTab];
             const cart = state.cart;
             const existing = cart.find(i => i.id === productId);
-            const productRef = products.find(p => p.id === productId);
-            const availableStock = productRef ? (productRef.current_qty ?? 0) : stock;
+            const availableStock = await getAvailableStock(productId, stock);
 
             if (existing) {
                 if (existing.qty + 1 > availableStock) {
@@ -1198,7 +1283,7 @@
                     showToast(`❌ "${productName}" out of stock`, 'error');
                     return;
                 }
-                cart.push({ id: productId, name: productName, price: price, qty: 1, sku: skuLabel });
+                cart.push({ id: productId, name: productName, price: price, qty: 1, sku: skuLabel, stock: availableStock });
             }
             renderActiveCart();
             showToast(`➕ Added ${productName}`, 'success');
@@ -1417,8 +1502,11 @@
             const tax = 0;
             const grandTotal = Math.max(0, subtotal - discount + tax);
 
-            const itemDetails = cart.map(item => {
-                const product = products.find(p => p.id === item.id) || {};
+            // Read cost / weight / handling from Dexie (source of truth), not
+            // the transient `products` search array.
+            const itemDetails = await Promise.all(cart.map(async item => {
+                let product = {};
+                try { product = (await db.products.get(item.id)) || {}; } catch (e) {}
                 return {
                     productId: item.id,
                     name: item.name,
@@ -1430,7 +1518,7 @@
                     handlingCategory: product.handling_category || 'standard',
                     weightKg: product.weight_kg || 0
                 };
-            });
+            }));
 
             const receiptData = {
                 receiptNumber: offlineRef,
@@ -1474,32 +1562,45 @@
             checkoutBtn.disabled = true;
             checkoutBtn.innerText = 'Processing...';
 
+            // Shared helper: persist locally + queue for sync + print receipt.
+            async function saveOfflineAndFinish(reason) {
+                await db.orders.put(order);   // put (upsert) so re-entry is safe
+                await db.syncQueue.add({ orderId: offlineRef, attempts: 0, lastTry: null });
+
+                // Decrement local stock immediately
+                for (const item of cart) {
+                    const product = await db.products.get(item.id);
+                    if (product) {
+                        await db.products.update(item.id, {
+                            current_qty: Math.max(0, (product.current_qty || 0) - item.qty)
+                        });
+                    }
+                }
+                state.cart = [];
+                state.pointsRedeemed = 0;
+                renderActiveCart();
+
+                receiptData.receiptNumber = offlineRef;
+                receiptData.customer.pointsAfter = state.pointsBalance || 0;
+                printReceipt(receiptData);
+
+                showToast(`✅ Order saved offline (Ref: ${offlineRef}). Will sync when online.`, 'success');
+
+                await emitAuditEvent('sale.created', {
+                    sale_id: offlineRef,
+                    receipt_number: offlineRef,
+                    total: order.receiptData.grandTotal,
+                    payment_method: paymentMethod,
+                    customer_id: state.loyaltyUserId || null,
+                    items_count: itemDetails.length,
+                    offline: true,
+                    reason: reason
+                });
+            }
+
             try {
                 if (!isOnline) {
-                    await db.orders.add(order);
-                    await db.syncQueue.add({ orderId: offlineRef, attempts: 0, lastTry: null });
-                    for (const item of cart) {
-                        const product = await db.products.get(item.id);
-                        if (product) {
-                            await db.products.update(item.id, { current_qty: product.current_qty - item.qty });
-                        }
-                    }
-                    state.cart = [];
-                    state.pointsRedeemed = 0;
-                    renderActiveCart();
-                    showToast(`✅ Order saved offline (Ref: ${offlineRef}). Will sync when online.`, 'success');
-                    receiptData.receiptNumber = offlineRef;
-                    receiptData.customer.pointsAfter = state.pointsBalance || 0;
-                    printReceipt(receiptData);
-                    await emitAuditEvent('sale.created', {
-                        sale_id: offlineRef,
-                        receipt_number: offlineRef,
-                        total: order.receiptData.grandTotal,
-                        payment_method: paymentMethod,
-                        customer_id: state.loyaltyUserId || null,
-                        items_count: cart.length,
-                        offline: true
-                    });
+                    await saveOfflineAndFinish('offline');
                     return;
                 }
 
@@ -1530,7 +1631,19 @@
                 } else {
                     order.receiptData.customer.pointsAfter = 0;
                 }
-                await db.orders.add(order);
+                await db.orders.put(order);
+
+                // Decrement local stock too, so an offline search right after
+                // this sale sees the reduced quantity.
+                for (const item of cart) {
+                    const product = await db.products.get(item.id);
+                    if (product) {
+                        await db.products.update(item.id, {
+                            current_qty: Math.max(0, (product.current_qty || 0) - item.qty)
+                        });
+                    }
+                }
+
                 state.cart = [];
                 state.pointsRedeemed = 0;
                 renderActiveCart();
@@ -1542,33 +1655,21 @@
                     total: order.receiptData.grandTotal,
                     payment_method: paymentMethod,
                     customer_id: state.loyaltyUserId || null,
-                    items_count: cart.length,
+                    items_count: itemDetails.length,
                     online: true
                 });
 
             } catch (err) {
-                if (!isOnline || err.message.includes('offline') || err.message.includes('network')) {
-                    await db.orders.add(order);
-                    await db.syncQueue.add({ orderId: offlineRef, attempts: 0, lastTry: null });
-                    showToast(`Order queued for later sync (Ref: ${offlineRef})`, 'warning');
-                    state.cart = [];
-                    state.pointsRedeemed = 0;
-                    renderActiveCart();
-                    receiptData.receiptNumber = offlineRef;
-                    receiptData.customer.pointsAfter = state.pointsBalance || 0;
-                    printReceipt(receiptData);
-                    await emitAuditEvent('sale.created', {
-                        sale_id: offlineRef,
-                        receipt_number: offlineRef,
-                        total: order.receiptData.grandTotal,
-                        payment_method: paymentMethod,
-                        customer_id: state.loyaltyUserId || null,
-                        items_count: cart.length,
-                        offline: true,
-                        fallback: true
-                    });
+                // Queue for retry on ANY failure that isn't an explicit
+                // 4xx rejection. Network errors, 5xx, timeouts, refresh
+                // failures — all lead to a queued order rather than a
+                // discarded one.
+                const is4xx = err && typeof err.status === 'number' &&
+                              err.status >= 400 && err.status < 500 && err.status !== 401;
+                if (is4xx) {
+                    showToast(`❌ Checkout rejected: ${err.message}`, 'error');
                 } else {
-                    showToast(`❌ Checkout failed: ${err.message}`, 'error');
+                    await saveOfflineAndFinish('api_error');
                 }
             } finally {
                 checkoutBtn.disabled = false;
@@ -1586,7 +1687,12 @@
                 const pending = await db.syncQueue.toArray();
                 for (const entry of pending) {
                     const order = await db.orders.get(entry.orderId);
-                    if (!order || order.status === 'synced') {
+                    if (!order) {
+                        // Orphan queue entry — nothing to send
+                        await db.syncQueue.delete(entry.id);
+                        continue;
+                    }
+                    if (order.status === 'synced') {
                         await db.syncQueue.delete(entry.id);
                         continue;
                     }
@@ -1607,7 +1713,8 @@
                         await db.syncQueue.delete(entry.id);
                         showToast(`Order ${order.offlineRef} synced`, 'success');
                     } catch (err) {
-                        if (err.message.includes('duplicate') || err.message.includes('already exists')) {
+                        const msg = (err && err.message) ? err.message : '';
+                        if (msg.includes('duplicate') || msg.includes('already exists')) {
                             await db.orders.update(order.offlineRef, { status: 'duplicate' });
                             await db.syncQueue.delete(entry.id);
                             showToast(`Order ${order.offlineRef} already exists (skipped)`, 'warning');
@@ -1645,7 +1752,12 @@
             const syncedToday = allOrders.filter(o => o.status === 'synced' && new Date(o.syncedAt || o.createdAt).toDateString() === today);
             const failed = allOrders.filter(o => o.status === 'duplicate');
             const lastSync = localStorage.getItem('last_sync_time') || 'Never';
-            const catalogCount = await db.products.count();
+
+            const catalogCount    = await db.products.count();
+            const catalogExpected = Number(localStorage.getItem(CATALOG_EXPECTED_KEY) || 0);
+            const catalogPct      = catalogExpected > 0
+                ? Math.min(100, Math.round((catalogCount / catalogExpected) * 100))
+                : 0;
             const lastCatalogSync = localStorage.getItem(CATALOG_LAST_SYNC_KEY);
 
             dashboardContent.innerHTML = `
@@ -1671,7 +1783,10 @@
                 </div>
                 <div class="dashboard-stat">
                     <span class="label"><i class="fa-solid fa-database"></i> Cached Products</span>
-                    <span class="value">${catalogCount.toLocaleString()}</span>
+                    <span class="value">
+                        ${catalogCount.toLocaleString()} / ${catalogExpected > 0 ? catalogExpected.toLocaleString() : '?'}
+                        ${catalogExpected > 0 ? `<span style="font-weight:400;color:#6b7280;font-size:0.8rem;">(${catalogPct}%)</span>` : ''}
+                    </span>
                 </div>
                 <div class="dashboard-stat">
                     <span class="label"><i class="fa-regular fa-calendar"></i> Catalog Synced</span>
@@ -1695,7 +1810,7 @@
                 <div class="border-b py-2 flex justify-between items-center">
                     <div>
                         <div><strong>${o.offlineRef}</strong> - ${new Date(o.createdAt).toLocaleString()}</div>
-                        <div class="text-sm">Status: <span class="${o.status === 'synced' ? 'text-green-600' : 'text-yellow-600'}">${o.status}</span> | Total: ₦${o.receiptData?.grandTotal || 0}</div>
+                        <div class="text-sm">Status: <span class="${o.status === 'synced' ? 'text-green-600' : o.status === 'duplicate' ? 'text-red-600' : 'text-yellow-600'}">${o.status}</span> | Total: ₦${o.receiptData?.grandTotal || 0}</div>
                         <div class="text-xs text-gray-500">Items: ${o.receiptData?.items?.length || 0}</div>
                     </div>
                     ${o.status === 'pending' ? '<button onclick="syncSingleOrder(\''+o.offlineRef+'\')" class="text-blue-500 text-sm"><i class="fa-solid fa-rotate"></i> Sync</button>' : ''}
@@ -1706,7 +1821,10 @@
         window.syncSingleOrder = async function(offlineRef) {
             if (!isOnline) { showToast('Go online to sync.', 'error'); return; }
             const order = await db.orders.get(offlineRef);
-            if (!order) return;
+            if (!order) {
+                showToast('Order not found locally', 'error');
+                return;
+            }
             try {
                 const payload = {
                     items: order.receiptData.items.map(item => ({
@@ -1721,7 +1839,8 @@
                 };
                 const result = await apiCall('/pos/terminal/checkout', 'POST', payload);
                 await db.orders.update(offlineRef, { status: 'synced', syncedAt: new Date().toISOString() });
-                await db.syncQueue.delete(offlineRef);
+                // Remove the corresponding queue entry by index, not by offlineRef
+                await db.syncQueue.where('orderId').equals(offlineRef).delete();
                 showToast(`Order ${offlineRef} synced`, 'success');
                 renderHistory();
             } catch (err) {
@@ -1827,7 +1946,6 @@
                     email: 'demo@kevsdigital.com',
                     method: 'demo'
                 });
-                // Kick off catalog sync
                 maybeAutoSyncCatalog();
             } catch (err) { showToast(err.message, 'error'); } finally { btn.disabled = false; }
         }
