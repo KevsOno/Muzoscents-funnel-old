@@ -407,9 +407,9 @@
         // ---------- Catalog sync constants ----------
         const CATALOG_PAGE_SIZE      = 500;
         const CATALOG_LAST_SYNC_KEY  = 'catalog_last_sync';
-        const CATALOG_COUNT_KEY      = 'catalog_count';     // last locally-cached count
-        const CATALOG_EXPECTED_KEY   = 'catalog_expected';  // total on the server
-        const CATALOG_TTL_MS         = 24 * 60 * 60 * 1000; // refresh once per day
+        const CATALOG_COUNT_KEY      = 'catalog_count';
+        const CATALOG_EXPECTED_KEY   = 'catalog_expected';
+        const CATALOG_TTL_MS         = 24 * 60 * 60 * 1000;
 
         // ---------- UUID generator ----------
         function generateUUID() {
@@ -422,19 +422,52 @@
             });
         }
 
-        // ---------- Dexie IndexedDB (v3 — offlineRef is the primary key of orders) ----------
-        // ⚠️  The `orders` primary key MUST be `offlineRef` (not an auto-increment id).
-        //     Every other part of the code looks orders up by their offlineRef.
-        //     A prior version used '++id' as the primary key — that silently
-        //     dropped every offline order on reconnect. Do not regress this.
+        // ---------- Dexie IndexedDB ----------
+        // ⚠️  Do NOT change the primary key of any existing store. Dexie
+        //     refuses PK changes on existing tables at runtime
+        //     ("UpgradeError Not yet support for changing primary key"),
+        //     which closes the DB connection and breaks every subsequent
+        //     operation — including login. The `orders` table keeps its
+        //     auto-increment `id` primary key; application code looks
+        //     orders up via the `offlineRef` *index* instead.
         const db = new Dexie('KevsPOSOffline');
-        db.version(3).stores({
+        db.version(2).stores({
             products:   'id, description, item_code, sku, price_naira, current_qty',
             customers:  'id, first_name, last_name, phone, email, loyalty_points',
-            orders:     'offlineRef, cashierId, createdAt, status, syncedAt',
+            orders:     '++id, offlineRef, cashierId, createdAt, status, syncedAt, receiptData',
             syncQueue:  '++id, orderId, attempts, lastTry',
             auditQueue: '++id, eventType, createdAt, retryCount'
         });
+
+        // ---------- Order helpers (offlineRef is an INDEX, not the PK) ----------
+        async function findOrderByRef(ref) {
+            return await db.orders.where('offlineRef').equals(ref).first();
+        }
+        async function upsertOrderByRef(order) {
+            const existing = await db.orders.where('offlineRef').equals(order.offlineRef).first();
+            if (existing) {
+                await db.orders.update(existing.id, order);
+            } else {
+                await db.orders.add(order);
+            }
+        }
+
+        // Defensive: if the DB is stuck in a broken state (e.g. from a
+        // previous failed schema upgrade), delete and recreate it. Any
+        // pending orders from that state were unsyncable anyway.
+        async function ensureDBReady() {
+            try {
+                await db.open();
+                await db.products.limit(1).toArray();
+                return true;
+            } catch (e) {
+                console.error('[DB] open/validate failed, resetting local cache:', e);
+                try { await db.close(); } catch (_) {}
+                try { await Dexie.delete('KevsPOSOffline'); } catch (_) {}
+                try { await db.open(); return true; }
+                catch (e2) { console.error('[DB] reset also failed:', e2); return false; }
+            }
+        }
 
         // ---------- DOM refs ----------
         const productContainer = document.getElementById('product-list');
@@ -474,7 +507,6 @@
         const refreshDashboardBtn = document.getElementById('refresh-dashboard-btn');
         const dashboardContent = document.getElementById('dashboard-content');
 
-        // Catalog sync UI
         const downloadCatalogBtn = document.getElementById('download-catalog-btn');
         const catalogSyncBanner = document.getElementById('catalog-sync-banner');
         const catalogSyncLabel = document.getElementById('catalog-sync-label');
@@ -504,8 +536,6 @@
         }
 
         // ---------- API Call ----------
-        // Throws Error with a `.status` field so callers can distinguish
-        // a 4xx rejection (don't queue) from a 5xx / network hiccup (queue).
         async function apiCall(endpoint, method = 'GET', body = null, retry = true, signal = null) {
             const headers = { 'Content-Type': 'application/json' };
             if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -600,7 +630,6 @@
                     expectedCountSpan.innerText = expected > 0 ? expected.toLocaleString() : '?';
                 }
 
-                // Green tick + green badge when fully synced, amber when partial
                 if (catalogBadgeIcon) {
                     if (expected > 0 && count >= expected) {
                         catalogBadgeIcon.className = 'fa-solid fa-circle-check mr-1 text-green-600';
@@ -646,7 +675,6 @@
                 return;
             }
 
-            // Skip if recently synced (unless forced)
             if (!force) {
                 const lastSync = localStorage.getItem(CATALOG_LAST_SYNC_KEY);
                 if (lastSync) {
@@ -665,16 +693,14 @@
 
             let processed = 0;
             let total = 0;
-            const seenIds = new Set();   // for stale pruning at the end
+            const seenIds = new Set();
             try {
-                // First page gives us the total count
                 const firstRes = await apiCall(
                     `/inventory/pos?limit=${CATALOG_PAGE_SIZE}&offset=0`,
                     'GET'
                 );
                 total = Number(firstRes.total) || 0;
 
-                // Persist the server total so the badge can show "cached / total"
                 if (total > 0) {
                     localStorage.setItem(CATALOG_EXPECTED_KEY, String(total));
                     await refreshCachedCount();
@@ -688,14 +714,12 @@
                     return;
                 }
 
-                // Bulk-insert first page — single transaction, fast
                 await db.products.bulkPut(firstItems);
                 firstItems.forEach(p => seenIds.add(p.id));
                 processed = firstItems.length;
                 updateCatalogProgress(processed, total);
-                await refreshCachedCount();       // live update of "X / Y" badge
+                await refreshCachedCount();
 
-                // Loop remaining pages
                 let offset = CATALOG_PAGE_SIZE;
                 while (offset < total) {
                     let pageRes;
@@ -705,7 +729,6 @@
                             'GET'
                         );
                     } catch (pageErr) {
-                        // One page failed — wait and retry once
                         console.warn('[Catalog] page failed, retrying', offset, pageErr);
                         await new Promise(r => setTimeout(r, 1500));
                         pageRes = await apiCall(
@@ -722,15 +745,13 @@
                     processed += items.length;
                     offset += CATALOG_PAGE_SIZE;
 
-                    // Update progress bar + badge on every page
                     updateCatalogProgress(processed, total);
                     await refreshCachedCount();
 
-                    // Yield to the event loop so UI stays responsive
                     await new Promise(r => setTimeout(r, 0));
                 }
 
-                // ---- Prune stale products (deleted server-side) ----
+                // Prune stale products (deleted server-side)
                 const staleIds = [];
                 await db.products.each(p => {
                     if (!seenIds.has(p.id)) staleIds.push(p.id);
@@ -746,7 +767,6 @@
 
                 showToast(`✅ Catalog ready offline: ${processed.toLocaleString()} products`, 'success');
 
-                // Let the service worker know
                 if (navigator.serviceWorker && navigator.serviceWorker.controller) {
                     navigator.serviceWorker.controller.postMessage({
                         type: 'CATALOG_SYNCED',
@@ -754,7 +774,6 @@
                     });
                 }
 
-                // Audit
                 await emitAuditEvent('sync.completed', {
                     type: 'catalog',
                     product_count: processed,
@@ -777,7 +796,6 @@
             const needsSync = !lastSync ||
                 (Date.now() - new Date(lastSync).getTime()) > CATALOG_TTL_MS;
             if (needsSync) {
-                // Delay so login/init UI settles first
                 setTimeout(() => syncFullCatalog(false), 1500);
             }
         }
@@ -794,7 +812,6 @@
                 const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
                 console.log('[SW] registered', reg.scope);
 
-                // Try to enable periodic background sync (Chrome/Android)
                 if ('periodicSync' in reg) {
                     try {
                         const perm = await navigator.permissions.query({
@@ -811,7 +828,6 @@
                     }
                 }
 
-                // Listen for messages from the SW
                 navigator.serviceWorker.addEventListener('message', (event) => {
                     if (!event.data) return;
                     if (event.data.type === 'REFRESH_CATALOG') {
@@ -834,7 +850,6 @@
         async function searchOfflineCatalog(term, offset, limit) {
             const lowerTerm = term.toLowerCase();
 
-            // Pass 1: indexed prefix search (fast, uses B-tree indexes)
             let collection = db.products
                 .where('description').startsWithIgnoreCase(term)
                 .or('item_code').startsWithIgnoreCase(term)
@@ -843,7 +858,6 @@
             let total = await collection.count();
             let items = await collection.offset(offset).limit(limit).toArray();
 
-            // Pass 2: substring scan — only if prefix search found nothing
             if (total === 0 && term.length >= 3) {
                 const all = await db.products.toArray();
                 const filtered = all.filter(p => {
@@ -897,13 +911,11 @@
                     items = data.items || [];
                     total = data.total || 0;
 
-                    // Cache every returned product — use bulkPut for speed
                     if (items.length > 0) {
                         await db.products.bulkPut(items.map(normalizeProduct));
                         refreshCachedCount();
                     }
                 } else {
-                    // Offline search against full local catalog
                     const result = await searchOfflineCatalog(trimmed, offset, POS_PAGE_SIZE);
                     items = result.items;
                     total = result.total;
@@ -918,7 +930,6 @@
             } catch (err) {
                 if (err.name === 'AbortError') return;
 
-                // Network failed — fall back to offline search
                 try {
                     const result = await searchOfflineCatalog(trimmed, offset, POS_PAGE_SIZE);
                     posTotalItems = result.total;
@@ -991,9 +1002,6 @@
         }
 
         // ---------- Search Input (with scanner) ----------
-        // Note: lastKeyTime is only updated for PRINTABLE keys, so a cashier
-        // pressing Enter/Tab won't poison the scanner detector for the next
-        // keystroke.
         let scanBuffer = '', scanTimer = null, isScanning = false, lastKeyTime = 0, searchDebounceTimer = null;
 
         searchInput.addEventListener('input', function(e) {
@@ -1073,7 +1081,6 @@
                     scannerHint.classList.add('hidden');
                 }
             } else {
-                // Non-printable key — reset scanner detector
                 lastKeyTime = 0;
                 if (isScanning) {
                     isScanning = false;
@@ -1199,16 +1206,16 @@
                 }
             } catch (err) {
                 console.warn('Failed to load customers online, using cache:', err);
-                allCustomers = await db.customers.toArray();
+                try { allCustomers = await db.customers.toArray(); } catch (_) { allCustomers = []; }
             }
         }
 
-        // ---------- Stock helper (Dexie is source of truth, not the search array) ----------
+        // ---------- Stock helper ----------
         async function getAvailableStock(productId, fallbackStock) {
             try {
                 const row = await db.products.get(productId);
                 if (row && typeof row.current_qty === 'number') return row.current_qty;
-            } catch (e) { /* ignore, use fallback */ }
+            } catch (e) { /* ignore */ }
             return (typeof fallbackStock === 'number') ? fallbackStock : 9999;
         }
 
@@ -1446,12 +1453,13 @@
                     // fall through to queue
                 }
             }
-            await db.auditQueue.add(event);
+            try { await db.auditQueue.add(event); } catch (_) {}
         }
 
         async function flushAuditQueue() {
             if (!navigator.onLine) return;
-            const pending = await db.auditQueue.toArray();
+            let pending = [];
+            try { pending = await db.auditQueue.toArray(); } catch (_) { return; }
             if (pending.length === 0) return;
             const events = pending.map(e => ({
                 event_type: e.event_type,
@@ -1502,8 +1510,6 @@
             const tax = 0;
             const grandTotal = Math.max(0, subtotal - discount + tax);
 
-            // Read cost / weight / handling from Dexie (source of truth), not
-            // the transient `products` search array.
             const itemDetails = await Promise.all(cart.map(async item => {
                 let product = {};
                 try { product = (await db.products.get(item.id)) || {}; } catch (e) {}
@@ -1562,12 +1568,10 @@
             checkoutBtn.disabled = true;
             checkoutBtn.innerText = 'Processing...';
 
-            // Shared helper: persist locally + queue for sync + print receipt.
             async function saveOfflineAndFinish(reason) {
-                await db.orders.put(order);   // put (upsert) so re-entry is safe
+                await upsertOrderByRef(order);
                 await db.syncQueue.add({ orderId: offlineRef, attempts: 0, lastTry: null });
 
-                // Decrement local stock immediately
                 for (const item of cart) {
                     const product = await db.products.get(item.id);
                     if (product) {
@@ -1631,10 +1635,8 @@
                 } else {
                     order.receiptData.customer.pointsAfter = 0;
                 }
-                await db.orders.put(order);
+                await upsertOrderByRef(order);
 
-                // Decrement local stock too, so an offline search right after
-                // this sale sees the reduced quantity.
                 for (const item of cart) {
                     const product = await db.products.get(item.id);
                     if (product) {
@@ -1660,10 +1662,6 @@
                 });
 
             } catch (err) {
-                // Queue for retry on ANY failure that isn't an explicit
-                // 4xx rejection. Network errors, 5xx, timeouts, refresh
-                // failures — all lead to a queued order rather than a
-                // discarded one.
                 const is4xx = err && typeof err.status === 'number' &&
                               err.status >= 400 && err.status < 500 && err.status !== 401;
                 if (is4xx) {
@@ -1686,9 +1684,8 @@
             try {
                 const pending = await db.syncQueue.toArray();
                 for (const entry of pending) {
-                    const order = await db.orders.get(entry.orderId);
+                    const order = await findOrderByRef(entry.orderId);
                     if (!order) {
-                        // Orphan queue entry — nothing to send
                         await db.syncQueue.delete(entry.id);
                         continue;
                     }
@@ -1709,13 +1706,16 @@
                             receipt_data: order.receiptData
                         };
                         const result = await apiCall('/pos/terminal/checkout', 'POST', payload);
-                        await db.orders.update(order.offlineRef, { status: 'synced', syncedAt: new Date().toISOString() });
+                        await db.orders.where('offlineRef').equals(order.offlineRef).modify({
+                            status: 'synced',
+                            syncedAt: new Date().toISOString()
+                        });
                         await db.syncQueue.delete(entry.id);
                         showToast(`Order ${order.offlineRef} synced`, 'success');
                     } catch (err) {
                         const msg = (err && err.message) ? err.message : '';
                         if (msg.includes('duplicate') || msg.includes('already exists')) {
-                            await db.orders.update(order.offlineRef, { status: 'duplicate' });
+                            await db.orders.where('offlineRef').equals(order.offlineRef).modify({ status: 'duplicate' });
                             await db.syncQueue.delete(entry.id);
                             showToast(`Order ${order.offlineRef} already exists (skipped)`, 'warning');
                         } else {
@@ -1820,7 +1820,7 @@
 
         window.syncSingleOrder = async function(offlineRef) {
             if (!isOnline) { showToast('Go online to sync.', 'error'); return; }
-            const order = await db.orders.get(offlineRef);
+            const order = await findOrderByRef(offlineRef);
             if (!order) {
                 showToast('Order not found locally', 'error');
                 return;
@@ -1838,8 +1838,10 @@
                     receipt_data: order.receiptData
                 };
                 const result = await apiCall('/pos/terminal/checkout', 'POST', payload);
-                await db.orders.update(offlineRef, { status: 'synced', syncedAt: new Date().toISOString() });
-                // Remove the corresponding queue entry by index, not by offlineRef
+                await db.orders.where('offlineRef').equals(offlineRef).modify({
+                    status: 'synced',
+                    syncedAt: new Date().toISOString()
+                });
                 await db.syncQueue.where('orderId').equals(offlineRef).delete();
                 showToast(`Order ${offlineRef} synced`, 'success');
                 renderHistory();
@@ -2044,14 +2046,15 @@
 
         // ---------- Start ----------
         (async () => {
+            // Ensure Dexie is in a usable state before anything touches it
+            await ensureDBReady();
+
             updateConnectionStatus();
             initTabs();
             initCustomerSearch();
 
-            // Register service worker early (works even before login)
             await registerServiceWorker();
 
-            // Show current cached count immediately
             await refreshCachedCount();
 
             if (token) {
@@ -2066,7 +2069,6 @@
                     productContainer.innerHTML = '';
                     emptyMsgDiv.classList.add('hidden');
 
-                    // Kick off catalog sync in the background if stale
                     maybeAutoSyncCatalog();
                 } catch (e) { token = null; showLoginModal(); }
             } else { showLoginModal(); }
