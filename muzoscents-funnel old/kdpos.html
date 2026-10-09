@@ -219,14 +219,34 @@
                 <h1 class="text-2xl font-bold">💳 Kevs POS Terminal</h1>
                 <p class="text-xs text-gray-500">Offline‑Ready · SKU Search · Scanner · Cashier History · Audit</p>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 flex-wrap">
                 <span id="connection-status" class="online-badge"><i class="fa-solid fa-wifi"></i> Online</span>
+                <span id="catalog-badge" class="text-xs bg-gray-100 border border-gray-200 px-3 py-1 rounded-full" title="Products cached locally for offline use">
+                    <i class="fa-solid fa-database mr-1 text-gray-500"></i> <span id="cached-count">0</span> SKUs
+                </span>
+                <button id="download-catalog-btn" class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded-lg text-sm" title="Download full catalog for offline use">
+                    <i class="fa-solid fa-cloud-arrow-down"></i> Catalog
+                </button>
                 <button id="sync-now-btn" class="sync-btn"><i class="fa-solid fa-rotate"></i> Sync</button>
                 <button id="dashboard-btn" class="bg-gray-200 px-3 py-1 rounded-lg text-sm">
                     <i class="fa-solid fa-chart-simple"></i> Dashboard
                 </button>
                 <button id="history-btn" class="bg-gray-200 px-3 py-1 rounded-lg text-sm"><i class="fa-regular fa-clock"></i> History</button>
             </div>
+        </div>
+
+        <!-- Catalog sync progress banner -->
+        <div id="catalog-sync-banner" class="hidden bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+            <div class="flex justify-between items-center mb-1">
+                <span class="text-sm font-medium text-blue-800">
+                    <i class="fa-solid fa-download"></i> <span id="catalog-sync-label">Downloading catalog for offline use…</span>
+                </span>
+                <span id="catalog-progress-text" class="text-xs text-blue-700 font-mono">0 / 0</span>
+            </div>
+            <div class="w-full bg-blue-200 rounded-full h-2 overflow-hidden">
+                <div id="catalog-progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+            </div>
+            <p class="text-xs text-blue-600 mt-1">You can keep using the POS — this runs in the background.</p>
         </div>
 
         <!-- TABS -->
@@ -364,7 +384,7 @@
 
     <script>
         // ================================================================
-        //  OFFLINE‑READY POS – WITH FULL AUDIT TRAIL
+        //  OFFLINE‑READY POS – WITH FULL AUDIT TRAIL + FULL CATALOG SYNC
         // ================================================================
 
         const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
@@ -381,6 +401,13 @@
         let abortController = null;
         let isOnline = navigator.onLine;
         let syncInProgress = false;
+        let catalogSyncInProgress = false;
+
+        // ---------- Catalog sync constants ----------
+        const CATALOG_PAGE_SIZE = 500;
+        const CATALOG_LAST_SYNC_KEY = 'catalog_last_sync';
+        const CATALOG_COUNT_KEY = 'catalog_count';
+        const CATALOG_TTL_MS = 24 * 60 * 60 * 1000; // refresh once per day
 
         // ---------- UUID generator ----------
         function generateUUID() {
@@ -393,7 +420,7 @@
             });
         }
 
-        // ---------- Dexie IndexedDB (upgraded to version 2) ----------
+        // ---------- Dexie IndexedDB (version 2) ----------
         const db = new Dexie('KevsPOSOffline');
         db.version(2).stores({
             products: 'id, description, item_code, sku, price_naira, current_qty',
@@ -440,6 +467,14 @@
         const closeDashboardBtn = document.getElementById('close-dashboard-btn');
         const refreshDashboardBtn = document.getElementById('refresh-dashboard-btn');
         const dashboardContent = document.getElementById('dashboard-content');
+
+        // New: catalog sync UI
+        const downloadCatalogBtn = document.getElementById('download-catalog-btn');
+        const catalogSyncBanner = document.getElementById('catalog-sync-banner');
+        const catalogSyncLabel = document.getElementById('catalog-sync-label');
+        const catalogProgressBar = document.getElementById('catalog-progress-bar');
+        const catalogProgressText = document.getElementById('catalog-progress-text');
+        const cachedCountSpan = document.getElementById('cached-count');
 
         // ---------- Tab State ----------
         const tabState = {
@@ -510,10 +545,257 @@
             updateConnectionStatus();
             syncPendingOrders();
             flushAuditQueue();
+            maybeAutoSyncCatalog();
         });
         window.addEventListener('offline', updateConnectionStatus);
 
-        // ---------- Product Cache & Search ----------
+        // ================================================================
+        //  FULL CATALOG SYNC — downloads all SKUs into Dexie for offline
+        // ================================================================
+
+        function normalizeProduct(p) {
+            return {
+                id: p.id,
+                description: p.description || '',
+                item_code: p.item_code || '',
+                sku: p.sku || p.item_code || '',
+                price_naira: Number(p.price_naira) || 0,
+                current_qty: Number(p.current_qty) || 0,
+                cost_price_naira: Number(p.cost_price_naira) || 0,
+                handling_category: p.handling_category || 'standard',
+                weight_kg: Number(p.weight_kg) || 0,
+                product_group: p.product_group || ''
+            };
+        }
+
+        async function refreshCachedCount() {
+            try {
+                const count = await db.products.count();
+                if (cachedCountSpan) cachedCountSpan.innerText = count.toLocaleString();
+                localStorage.setItem(CATALOG_COUNT_KEY, String(count));
+                return count;
+            } catch (e) {
+                return 0;
+            }
+        }
+
+        function showCatalogBanner(label) {
+            catalogSyncLabel.innerText = label;
+            catalogSyncBanner.classList.remove('hidden');
+        }
+        function hideCatalogBanner() {
+            catalogSyncBanner.classList.add('hidden');
+        }
+
+        function updateCatalogProgress(processed, total) {
+            const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
+            catalogProgressBar.style.width = pct + '%';
+            catalogProgressText.textContent = `${processed.toLocaleString()} / ${total.toLocaleString()} (${pct}%)`;
+        }
+
+        async function syncFullCatalog(force = false) {
+            if (!isOnline) {
+                showToast('Catalog sync requires internet', 'error');
+                return;
+            }
+            if (catalogSyncInProgress) {
+                showToast('Catalog sync already running', 'info');
+                return;
+            }
+            if (!token) {
+                showToast('Please log in first', 'error');
+                return;
+            }
+
+            // Skip if recently synced (unless forced)
+            if (!force) {
+                const lastSync = localStorage.getItem(CATALOG_LAST_SYNC_KEY);
+                if (lastSync) {
+                    const age = Date.now() - new Date(lastSync).getTime();
+                    if (age < CATALOG_TTL_MS) {
+                        console.log('[Catalog] Fresh enough, skipping');
+                        return;
+                    }
+                }
+            }
+
+            catalogSyncInProgress = true;
+            downloadCatalogBtn.disabled = true;
+            showCatalogBanner('Downloading catalog for offline use…');
+            updateCatalogProgress(0, 0);
+
+            let processed = 0;
+            let total = 0;
+            try {
+                // First page gives us the total count
+                const firstRes = await apiCall(
+                    `/inventory/pos?limit=${CATALOG_PAGE_SIZE}&offset=0`,
+                    'GET'
+                );
+                total = Number(firstRes.total) || 0;
+                const firstItems = (firstRes.items || []).map(normalizeProduct);
+
+                if (total === 0) {
+                    showToast('Catalog is empty', 'info');
+                    hideCatalogBanner();
+                    return;
+                }
+
+                // Bulk-insert first page — single transaction, fast
+                await db.products.bulkPut(firstItems);
+                processed = firstItems.length;
+                updateCatalogProgress(processed, total);
+
+                // Loop remaining pages
+                let offset = CATALOG_PAGE_SIZE;
+                while (offset < total) {
+                    let pageRes;
+                    try {
+                        pageRes = await apiCall(
+                            `/inventory/pos?limit=${CATALOG_PAGE_SIZE}&offset=${offset}`,
+                            'GET'
+                        );
+                    } catch (pageErr) {
+                        // One page failed — wait and retry once
+                        console.warn('[Catalog] page failed, retrying', offset, pageErr);
+                        await new Promise(r => setTimeout(r, 1500));
+                        pageRes = await apiCall(
+                            `/inventory/pos?limit=${CATALOG_PAGE_SIZE}&offset=${offset}`,
+                            'GET'
+                        );
+                    }
+
+                    const items = (pageRes.items || []).map(normalizeProduct);
+                    if (items.length === 0) break;
+
+                    await db.products.bulkPut(items);
+                    processed += items.length;
+                    offset += CATALOG_PAGE_SIZE;
+
+                    // Refresh UI occasionally
+                    if (offset % (CATALOG_PAGE_SIZE * 4) === 0) {
+                        updateCatalogProgress(processed, total);
+                    }
+
+                    // Yield to the event loop so UI stays responsive
+                    await new Promise(r => setTimeout(r, 0));
+                }
+
+                updateCatalogProgress(processed, total);
+                localStorage.setItem(CATALOG_LAST_SYNC_KEY, new Date().toISOString());
+                await refreshCachedCount();
+
+                showToast(`✅ Catalog ready offline: ${processed.toLocaleString()} products`, 'success');
+
+                // Let the service worker know
+                if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+                    navigator.serviceWorker.controller.postMessage({
+                        type: 'CATALOG_SYNCED',
+                        count: processed
+                    });
+                }
+
+                // Audit
+                await emitAuditEvent('sync.completed', {
+                    type: 'catalog',
+                    product_count: processed,
+                    timestamp: new Date().toISOString()
+                });
+
+            } catch (err) {
+                console.error('[Catalog] sync failed', err);
+                showToast('Catalog sync failed: ' + err.message, 'error');
+            } finally {
+                catalogSyncInProgress = false;
+                downloadCatalogBtn.disabled = false;
+                setTimeout(hideCatalogBanner, 1200);
+            }
+        }
+
+        function maybeAutoSyncCatalog() {
+            if (!isOnline || !token) return;
+            const lastSync = localStorage.getItem(CATALOG_LAST_SYNC_KEY);
+            const needsSync = !lastSync ||
+                (Date.now() - new Date(lastSync).getTime()) > CATALOG_TTL_MS;
+            if (needsSync) {
+                // Delay so login/init UI settles first
+                setTimeout(() => syncFullCatalog(false), 1500);
+            }
+        }
+
+        // ================================================================
+        //  SERVICE WORKER REGISTRATION
+        // ================================================================
+        async function registerServiceWorker() {
+            if (!('serviceWorker' in navigator)) {
+                console.warn('[SW] not supported');
+                return;
+            }
+            try {
+                const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+                console.log('[SW] registered', reg.scope);
+
+                // Try to enable periodic background sync (Chrome/Android)
+                if ('periodicSync' in reg) {
+                    try {
+                        const perm = await navigator.permissions.query({
+                            name: 'periodic-background-sync'
+                        });
+                        if (perm.state === 'granted') {
+                            await reg.periodicSync.register('catalog-refresh', {
+                                minInterval: CATALOG_TTL_MS
+                            });
+                            console.log('[SW] periodic sync registered');
+                        }
+                    } catch (e) {
+                        console.warn('[SW] periodic sync not available', e);
+                    }
+                }
+
+                // Listen for messages from the SW
+                navigator.serviceWorker.addEventListener('message', (event) => {
+                    if (!event.data) return;
+                    if (event.data.type === 'REFRESH_CATALOG') {
+                        console.log('[SW] refresh catalog requested');
+                        syncFullCatalog(true);
+                    }
+                });
+            } catch (err) {
+                console.warn('[SW] registration failed', err);
+            }
+        }
+
+        // ================================================================
+        //  Product search
+        // ================================================================
+
+        async function searchOfflineCatalog(term, offset, limit) {
+            const lowerTerm = term.toLowerCase();
+
+            // Pass 1: indexed prefix search (fast, uses B-tree indexes)
+            let collection = db.products
+                .where('description').startsWithIgnoreCase(term)
+                .or('item_code').startsWithIgnoreCase(term)
+                .or('sku').startsWithIgnoreCase(term);
+
+            let total = await collection.count();
+            let items = await collection.offset(offset).limit(limit).toArray();
+
+            // Pass 2: substring scan — only if prefix search found nothing
+            if (total === 0 && term.length >= 3) {
+                const all = await db.products.toArray();
+                const filtered = all.filter(p => {
+                    const d = (p.description || '').toLowerCase();
+                    const c = (p.item_code || '').toLowerCase();
+                    const s = (p.sku || '').toLowerCase();
+                    return d.includes(lowerTerm) || c.includes(lowerTerm) || s.includes(lowerTerm);
+                });
+                total = filtered.length;
+                items = filtered.slice(offset, offset + limit);
+            }
+            return { items, total };
+        }
+
         async function loadPOSProducts(reset = true) {
             const trimmed = posSearchTerm.trim();
             if (trimmed.length < 2) {
@@ -552,26 +834,17 @@
                     const data = await apiCall(url, 'GET', null, true, abortController.signal);
                     items = data.items || [];
                     total = data.total || 0;
-                    for (const p of items) {
-                        await db.products.put({
-                            id: p.id,
-                            description: p.description,
-                            item_code: p.item_code,
-                            sku: p.sku || p.item_code,
-                            price_naira: p.price_naira,
-                            current_qty: p.current_qty,
-                            cost_price_naira: p.cost_price_naira || 0,
-                            handling_category: p.handling_category || 'standard',
-                            weight_kg: p.weight_kg || 0
-                        });
+
+                    // Cache every returned product — use bulkPut for speed
+                    if (items.length > 0) {
+                        await db.products.bulkPut(items.map(normalizeProduct));
+                        refreshCachedCount();
                     }
                 } else {
-                    let collection = db.products.where('description').startsWithIgnoreCase(trimmed)
-                        .or('item_code').startsWithIgnoreCase(trimmed)
-                        .or('sku').startsWithIgnoreCase(trimmed);
-                    total = await collection.count();
-                    items = await collection.offset(offset).limit(POS_PAGE_SIZE).toArray();
-                    items = items.map(p => ({ ...p, price_naira: p.price_naira, current_qty: p.current_qty }));
+                    // Offline search against full local catalog
+                    const result = await searchOfflineCatalog(trimmed, offset, POS_PAGE_SIZE);
+                    items = result.items;
+                    total = result.total;
                 }
                 posTotalItems = total;
                 posHasMore = (offset + POS_PAGE_SIZE) < total;
@@ -582,7 +855,20 @@
                 return products;
             } catch (err) {
                 if (err.name === 'AbortError') return;
-                showToast('Failed to load products: ' + err.message, 'error');
+
+                // Network failed — fall back to offline search
+                try {
+                    const result = await searchOfflineCatalog(trimmed, offset, POS_PAGE_SIZE);
+                    posTotalItems = result.total;
+                    posHasMore = (offset + POS_PAGE_SIZE) < result.total;
+                    if (reset) products = result.items;
+                    else products = products.concat(result.items);
+                    appendProductCards(result.items);
+                    posPage++;
+                    return products;
+                } catch (e2) {
+                    showToast('Search failed: ' + err.message, 'error');
+                }
             } finally {
                 posIsLoading = false;
                 loadingMoreDiv.classList.add('hidden');
@@ -1011,7 +1297,7 @@
             }
         }
 
-        // ---------- Print Receipt (uses receiptData) ----------
+        // ---------- Print Receipt ----------
         function printReceipt(receiptData) {
             const printArea = document.getElementById('receipt-print-area');
             const orgName = localStorage.getItem('org_name') || 'Kevs Digital';
@@ -1075,7 +1361,6 @@
                     // fall through to queue
                 }
             }
-            // Offline or failed – store in queue
             await db.auditQueue.add(event);
         }
 
@@ -1097,7 +1382,7 @@
             }
         }
 
-        // ---------- Checkout with expanded receipt & audit ----------
+        // ---------- Checkout ----------
         async function processCheckout() {
             const state = tabState[activeTab];
             const cart = state.cart;
@@ -1127,7 +1412,6 @@
             const orgName = localStorage.getItem('org_name') || 'Kevs Digital';
             const offlineRef = generateUUID();
 
-            // Build receipt data
             const subtotal = cart.reduce((sum, i) => sum + i.price * i.qty, 0);
             const discount = pointsRedeemed;
             const tax = 0;
@@ -1192,10 +1476,8 @@
 
             try {
                 if (!isOnline) {
-                    // Offline: save order locally
                     await db.orders.add(order);
                     await db.syncQueue.add({ orderId: offlineRef, attempts: 0, lastTry: null });
-                    // Reduce local stock
                     for (const item of cart) {
                         const product = await db.products.get(item.id);
                         if (product) {
@@ -1209,7 +1491,6 @@
                     receiptData.receiptNumber = offlineRef;
                     receiptData.customer.pointsAfter = state.pointsBalance || 0;
                     printReceipt(receiptData);
-                    // Audit event
                     await emitAuditEvent('sale.created', {
                         sale_id: offlineRef,
                         receipt_number: offlineRef,
@@ -1222,7 +1503,6 @@
                     return;
                 }
 
-                // Online: call API
                 const result = await apiCall('/pos/terminal/checkout', 'POST', {
                     items: itemsPayload,
                     payment_method: paymentMethod,
@@ -1232,12 +1512,10 @@
                     offline_reference: offlineRef,
                     receipt_data: receiptData
                 });
-                // Save synced order
                 order.status = 'synced';
                 order.syncedAt = new Date().toISOString();
                 order.receiptData.receiptNumber = result.receipt_number || offlineRef;
                 order.receiptData.payment.reference = result.payment_reference || null;
-                // Update loyalty points if available
                 if (state.loyaltyUserId) {
                     try {
                         const balanceRes = await apiCall('/loyalty/balance');
@@ -1258,7 +1536,6 @@
                 renderActiveCart();
                 showToast(`✅ Sale complete! Receipt: ${result.receipt_number}`, 'success');
                 printReceipt(order.receiptData);
-                // Audit event
                 await emitAuditEvent('sale.created', {
                     sale_id: result.sale_id || offlineRef,
                     receipt_number: result.receipt_number || offlineRef,
@@ -1271,7 +1548,6 @@
 
             } catch (err) {
                 if (!isOnline || err.message.includes('offline') || err.message.includes('network')) {
-                    // Fallback to offline
                     await db.orders.add(order);
                     await db.syncQueue.add({ orderId: offlineRef, attempts: 0, lastTry: null });
                     showToast(`Order queued for later sync (Ref: ${offlineRef})`, 'warning');
@@ -1281,7 +1557,6 @@
                     receiptData.receiptNumber = offlineRef;
                     receiptData.customer.pointsAfter = state.pointsBalance || 0;
                     printReceipt(receiptData);
-                    // Audit event
                     await emitAuditEvent('sale.created', {
                         sale_id: offlineRef,
                         receipt_number: offlineRef,
@@ -1301,7 +1576,7 @@
             }
         }
 
-        // ---------- Sync Manager (sends full receiptData) ----------
+        // ---------- Sync Manager ----------
         async function syncPendingOrders() {
             if (!isOnline || syncInProgress) return;
             syncInProgress = true;
@@ -1326,7 +1601,6 @@
                             customer_phone: order.receiptData.customer.phone,
                             customer_email: order.receiptData.customer.email,
                             receipt_data: order.receiptData
-                            // offline_reference: order.offlineRef
                         };
                         const result = await apiCall('/pos/terminal/checkout', 'POST', payload);
                         await db.orders.update(order.offlineRef, { status: 'synced', syncedAt: new Date().toISOString() });
@@ -1346,12 +1620,10 @@
                     }
                 }
                 localStorage.setItem('last_sync_time', new Date().toLocaleString());
-                // Audit sync completed
                 await emitAuditEvent('sync.completed', {
                     synced_count: pending.length,
                     timestamp: new Date().toISOString()
                 });
-                // Flush any queued audit events
                 await flushAuditQueue();
                 if (dashboardModal.classList.contains('active')) updateDashboard();
             } catch (e) {
@@ -1373,6 +1645,8 @@
             const syncedToday = allOrders.filter(o => o.status === 'synced' && new Date(o.syncedAt || o.createdAt).toDateString() === today);
             const failed = allOrders.filter(o => o.status === 'duplicate');
             const lastSync = localStorage.getItem('last_sync_time') || 'Never';
+            const catalogCount = await db.products.count();
+            const lastCatalogSync = localStorage.getItem(CATALOG_LAST_SYNC_KEY);
 
             dashboardContent.innerHTML = `
                 <div class="dashboard-stat">
@@ -1388,15 +1662,23 @@
                     <span class="value failed">${failed.length}</span>
                 </div>
                 <div class="dashboard-stat">
-                    <span class="label"><i class="fa-regular fa-clock"></i> Last Sync</span>
+                    <span class="label"><i class="fa-regular fa-clock"></i> Last Order Sync</span>
                     <span class="value">${lastSync}</span>
                 </div>
                 <div class="dashboard-stat">
                     <span class="label"><i class="fa-regular fa-hard-drive"></i> Total Orders (local)</span>
                     <span class="value">${allOrders.length}</span>
                 </div>
+                <div class="dashboard-stat">
+                    <span class="label"><i class="fa-solid fa-database"></i> Cached Products</span>
+                    <span class="value">${catalogCount.toLocaleString()}</span>
+                </div>
+                <div class="dashboard-stat">
+                    <span class="label"><i class="fa-regular fa-calendar"></i> Catalog Synced</span>
+                    <span class="value">${lastCatalogSync ? new Date(lastCatalogSync).toLocaleString() : 'Never'}</span>
+                </div>
                 <div class="mt-2 text-xs text-gray-500">
-                    ${isOnline ? '🟢 Online' : '🔴 Offline'} · ${syncInProgress ? '⏳ Syncing...' : '✅ Idle'}
+                    ${isOnline ? '🟢 Online' : '🔴 Offline'} · ${syncInProgress ? '⏳ Syncing orders…' : (catalogSyncInProgress ? '📥 Downloading catalog…' : '✅ Idle')}
                 </div>
             `;
         }
@@ -1447,7 +1729,7 @@
             }
         };
 
-        // ---------- Points Redemption with audit ----------
+        // ---------- Points Redemption ----------
         async function applyPoints() {
             if (!isOnline) {
                 showToast('⚠️ Points redemption requires internet.', 'error');
@@ -1479,7 +1761,6 @@
                 if (cust) {
                     await db.customers.update(state.loyaltyUserId, { loyalty_points: state.pointsBalance });
                 }
-                // Audit event
                 await emitAuditEvent('points.redeemed', {
                     user_id: state.loyaltyUserId,
                     points: pointsToRedeem,
@@ -1503,7 +1784,7 @@
             suggestionsDiv.classList.add('hidden');
         }
 
-        // ---------- Login / Demo with audit ----------
+        // ---------- Login / Demo ----------
         async function demoLogin() {
             const btn = document.getElementById('demo-login-btn');
             btn.disabled = true;
@@ -1538,14 +1819,16 @@
                 products = [];
                 productContainer.innerHTML = '';
                 emptyMsgDiv.classList.add('hidden');
+                await refreshCachedCount();
                 showToast('Demo login — Offline‑ready POS', 'success');
                 const navOrg = document.getElementById('nav-org-name');
                 if (navOrg) navOrg.innerText = localStorage.getItem('org_name') || 'Unknown Org';
-                // Audit event
                 await emitAuditEvent('user.login', {
                     email: 'demo@kevsdigital.com',
                     method: 'demo'
                 });
+                // Kick off catalog sync
+                maybeAutoSyncCatalog();
             } catch (err) { showToast(err.message, 'error'); } finally { btn.disabled = false; }
         }
 
@@ -1584,14 +1867,15 @@
                 products = [];
                 productContainer.innerHTML = '';
                 emptyMsgDiv.classList.add('hidden');
+                await refreshCachedCount();
                 showToast('Login successful', 'success');
                 const navOrg = document.getElementById('nav-org-name');
                 if (navOrg) navOrg.innerText = localStorage.getItem('org_name') || 'Unknown Org';
-                // Audit event
                 await emitAuditEvent('user.login', {
                     email: email,
                     method: 'password'
                 });
+                maybeAutoSyncCatalog();
             } catch (err) { showToast(err.message, 'error'); }
         }
 
@@ -1617,6 +1901,7 @@
         document.getElementById('demo-login-btn')?.addEventListener('click', demoLogin);
         document.getElementById('close-modal-btn')?.addEventListener('click', hideLoginModal);
         syncNowBtn.addEventListener('click', syncPendingOrders);
+        downloadCatalogBtn.addEventListener('click', () => syncFullCatalog(true));
         historyBtn.addEventListener('click', async () => {
             historyModal.classList.add('active');
             await renderHistory();
@@ -1644,6 +1929,13 @@
             updateConnectionStatus();
             initTabs();
             initCustomerSearch();
+
+            // Register service worker early (works even before login)
+            await registerServiceWorker();
+
+            // Show current cached count immediately
+            await refreshCachedCount();
+
             if (token) {
                 try {
                     await loadCustomers();
@@ -1655,6 +1947,9 @@
                     syncUIWithActiveTab();
                     productContainer.innerHTML = '';
                     emptyMsgDiv.classList.add('hidden');
+
+                    // Kick off catalog sync in the background if stale
+                    maybeAutoSyncCatalog();
                 } catch (e) { token = null; showLoginModal(); }
             } else { showLoginModal(); }
 
@@ -1664,7 +1959,7 @@
             }
         })();
 
-        console.log('✅ Offline‑Ready POS with full audit trail loaded');
+        console.log('✅ Offline‑Ready POS with full catalog sync loaded');
     </script>
 </body>
 </html>
