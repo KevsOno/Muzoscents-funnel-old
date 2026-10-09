@@ -1701,18 +1701,28 @@
             // Set onchange to load PO items when user selects a PO
             poSelect.onchange = async function() {
                 const poId = this.value;
+                const container = document.getElementById('grn-items-container');
+
                 if (!poId) {
-                    document.getElementById('grn-items-container').innerHTML = '';
+                    container.innerHTML =
+                        '<div class="text-center py-4 text-slate-500 text-sm">Select a purchase order above to load its items.</div>';
                     return;
                 }
+
                 try {
-                    const po = await apiCall(`/purchase-orders/${poId}`);
+                    const response = await apiCall(`/purchase-orders/${poId}`);
+                    const po   = response.purchase_order || response;
                     const items = po.purchase_order_items || [];
-                    const container = document.getElementById('grn-items-container');
+
                     container.innerHTML = '';
-                    items.forEach(poItem => {
-                        addGRNItem(null, poItem);
-                    });
+
+                    if (items.length === 0) {
+                        container.innerHTML =
+                            '<div class="text-center py-4 text-slate-400 text-sm">This purchase order has no line items.</div>';
+                        return;
+                    }
+
+                    items.forEach(poItem => addGRNItem(null, poItem));
                 } catch (err) {
                     showToast(`Error loading PO items: ${err.message}`, 'error');
                 }
@@ -1720,32 +1730,36 @@
 
             if (grnId) {
                 try {
-                    const grn = await apiCall(`/grn/${grnId}`);
+                    const response = await apiCall(`/grn/${grnId}`);
+                    const grn = response.grn || response;
+
                     document.getElementById('grn-id').value = grn.id;
                     poSelect.value = grn.po_id || '';
                     document.getElementById('grn-received-date').value = grn.received_date || '';
                     document.getElementById('grn-location').value = grn.location_id || '';
                     document.getElementById('grn-notes').value = grn.notes || '';
+
                     if (grn.grn_items) {
                         document.getElementById('grn-items-container').innerHTML = '';
                         grn.grn_items.forEach(item => {
                             addGRNItem(item);
                         });
                     }
+
                     if (grn.status === 'draft') {
                         document.getElementById('grn-post-btn').classList.remove('hidden');
                         document.getElementById('grn-post-btn').dataset.grnId = grn.id;
                     }
-                    if (grn.po_id) {
-                        poSelect.dispatchEvent(new Event('change'));
-                    }
+
+                    // NOTE: do NOT dispatch 'change' here — it would overwrite the freshly loaded
+                    // grn_items with the PO's ordered quantities.
                 } catch (err) {
                     showToast(`Error loading GRN: ${err.message}`, 'error');
                     return;
                 }
             } else {
-                document.getElementById('grn-items-container').innerHTML = '';
-                addGRNItem();
+                document.getElementById('grn-items-container').innerHTML =
+                    '<div class="text-center py-4 text-slate-500 text-sm">Select a purchase order above to load its items.</div>';
             }
 
             modal.classList.add('active');
@@ -2015,7 +2029,8 @@
         };
         window.viewGRNDetail = async function(id) {
             try {
-                const grn = await apiCall(`/grn/${id}`);
+                const response = await apiCall(`/grn/${id}`);
+                const grn = response.grn || response;
                 let msg =
                 `GRN ${grn.grn_number}\nPO: ${grn.po?.po_number || 'N/A'}\nReceived: ${grn.received_date}\nStatus: ${grn.status}\nItems:\n`;
                 (grn.grn_items || []).forEach(item => {
