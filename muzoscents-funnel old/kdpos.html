@@ -1744,8 +1744,17 @@
 
         // ---------- Dashboard ----------
         async function updateDashboard() {
-            const pending = await db.syncQueue.toArray();
-            const allOrders = await db.orders.toArray();
+            let pending = [], allOrders = [], catalogCount = 0;
+            try {
+                pending     = await db.syncQueue.toArray();
+                allOrders   = await db.orders.toArray();
+                catalogCount = await db.products.count();
+            } catch (e) {
+                // DB unavailable — show a friendly message instead of crashing
+                dashboardContent.innerHTML =
+                    `<p class="text-red-600 text-sm">Local database unavailable: ${e.message}</p>`;
+                return;
+            }
             const now = new Date();
             const today = now.toDateString();
 
@@ -1753,7 +1762,6 @@
             const failed = allOrders.filter(o => o.status === 'duplicate');
             const lastSync = localStorage.getItem('last_sync_time') || 'Never';
 
-            const catalogCount    = await db.products.count();
             const catalogExpected = Number(localStorage.getItem(CATALOG_EXPECTED_KEY) || 0);
             const catalogPct      = catalogExpected > 0
                 ? Math.min(100, Math.round((catalogCount / catalogExpected) * 100))
@@ -1806,25 +1814,46 @@
                 historyList.innerHTML = '<p class="text-gray-500">No orders found.</p>';
                 return;
             }
-            historyList.innerHTML = orders.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(o => `
+            historyList.innerHTML = orders.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(o => {
+                const statusColor =
+                    o.status === 'synced'   ? 'text-green-600' :
+                    o.status === 'failed'   ? 'text-red-600'   :
+                    o.status === 'duplicate'? 'text-red-600'   :
+                                              'text-yellow-600';
+                return `
                 <div class="border-b py-2 flex justify-between items-center">
                     <div>
                         <div><strong>${o.offlineRef}</strong> - ${new Date(o.createdAt).toLocaleString()}</div>
-                        <div class="text-sm">Status: <span class="${o.status === 'synced' ? 'text-green-600' : o.status === 'duplicate' ? 'text-red-600' : 'text-yellow-600'}">${o.status}</span> | Total: ₦${o.receiptData?.grandTotal || 0}</div>
+                        <div class="text-sm">Status: <span class="${statusColor}">${o.status}</span> | Total: ₦${o.receiptData?.grandTotal || 0}</div>
                         <div class="text-xs text-gray-500">Items: ${o.receiptData?.items?.length || 0}</div>
                     </div>
-                    ${o.status === 'pending' ? '<button onclick="syncSingleOrder(\''+o.offlineRef+'\')" class="text-blue-500 text-sm"><i class="fa-solid fa-rotate"></i> Sync</button>' : ''}
+                    ${o.status === 'pending'
+                        ? `<button onclick="syncSingleOrder('${o.offlineRef}', this)" class="text-blue-500 text-sm">
+                               <i class="fa-solid fa-rotate"></i> Sync
+                           </button>`
+                        : ''}
                 </div>
-            `).join('');
+            `;
+            }).join('');
         }
 
-        window.syncSingleOrder = async function(offlineRef) {
+        window.syncSingleOrder = async function(offlineRef, btnEl) {
             if (!isOnline) { showToast('Go online to sync.', 'error'); return; }
+
+            // Visual feedback immediately
+            if (btnEl) {
+                btnEl.disabled = true;
+                btnEl.dataset.originalHtml = btnEl.innerHTML;
+                btnEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Syncing…';
+            }
+
             const order = await findOrderByRef(offlineRef);
             if (!order) {
                 showToast('Order not found locally', 'error');
+                if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = btnEl.dataset.originalHtml; }
                 return;
             }
+
             try {
                 const payload = {
                     items: order.receiptData.items.map(item => ({
@@ -1837,16 +1866,39 @@
                     customer_email: order.receiptData.customer.email,
                     receipt_data: order.receiptData
                 };
-                const result = await apiCall('/pos/terminal/checkout', 'POST', payload);
+                await apiCall('/pos/terminal/checkout', 'POST', payload);
+
                 await db.orders.where('offlineRef').equals(offlineRef).modify({
                     status: 'synced',
                     syncedAt: new Date().toISOString()
                 });
                 await db.syncQueue.where('orderId').equals(offlineRef).delete();
                 showToast(`Order ${offlineRef} synced`, 'success');
-                renderHistory();
+
             } catch (err) {
-                showToast('Sync failed: ' + err.message, 'error');
+                // Distinguish "server rejected the data" from "network blip".
+                // 4xx = the payload will never succeed on retry → mark failed so
+                // it stops clogging the queue. 5xx / offline → leave as pending.
+                const is4xx = err && typeof err.status === 'number'
+                              && err.status >= 400 && err.status < 500
+                              && err.status !== 401;
+
+                if (is4xx) {
+                    await db.orders.where('offlineRef').equals(offlineRef).modify({
+                        status: 'failed',
+                        lastError: err.message
+                    });
+                    await db.syncQueue.where('orderId').equals(offlineRef).delete();
+                    showToast(`Order ${offlineRef} rejected: ${err.message}`, 'error');
+                } else {
+                    showToast('Sync failed (will retry): ' + err.message, 'error');
+                }
+            } finally {
+                if (btnEl) {
+                    btnEl.disabled = false;
+                    btnEl.innerHTML = btnEl.dataset.originalHtml;
+                }
+                await renderHistory();
             }
         };
 
@@ -2037,7 +2089,21 @@
         dashboardModal.addEventListener('click', (e) => {
             if (e.target === dashboardModal) dashboardModal.classList.remove('active');
         });
-        refreshDashboardBtn.addEventListener('click', updateDashboard);
+        refreshDashboardBtn.addEventListener('click', async () => {
+            const original = refreshDashboardBtn.innerHTML;
+            refreshDashboardBtn.disabled = true;
+            refreshDashboardBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Refreshing…';
+            try {
+                await updateDashboard();
+            } catch (e) {
+                console.error('Dashboard refresh failed:', e);
+                dashboardContent.innerHTML =
+                    `<p class="text-red-600 text-sm">Dashboard refresh failed: ${e.message}</p>`;
+            } finally {
+                refreshDashboardBtn.disabled = false;
+                refreshDashboardBtn.innerHTML = original;
+            }
+        });
 
         paymentMethodSelect.onchange = () => { tabState[activeTab].paymentMethod = paymentMethodSelect.value; };
         customerNameInput.addEventListener('input', () => { tabState[activeTab].customerName = customerNameInput.value; });
