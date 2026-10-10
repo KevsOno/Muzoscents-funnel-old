@@ -1820,16 +1820,37 @@
                     o.status === 'failed'   ? 'text-red-600'   :
                     o.status === 'duplicate'? 'text-red-600'   :
                                               'text-yellow-600';
+
+                // Show the sync button for anything the server has not
+                // accepted. 'synced' = done. 'duplicate' = server already
+                // had it. Both of those hide the button. 'pending' and
+                // 'failed' keep it so the cashier can (re)attempt.
+                const canSync = (o.status === 'pending' || o.status === 'failed');
+
+                const buttonLabel = o.status === 'failed'
+                    ? '<i class="fa-solid fa-rotate-right"></i> Retry'
+                    : '<i class="fa-solid fa-rotate"></i> Sync';
+                const buttonClass = o.status === 'failed'
+                    ? 'text-red-600 hover:text-red-800'
+                    : 'text-blue-500 hover:text-blue-700';
+
+                const errorLine = (o.status === 'failed' && o.lastError)
+                    ? `<div class="text-xs text-red-500 mt-0.5" title="${escapeAttr(String(o.lastError))}">
+                           <i class="fa-solid fa-circle-exclamation"></i> ${escapeHtml(String(o.lastError).slice(0, 120))}${String(o.lastError).length > 120 ? '…' : ''}
+                       </div>`
+                    : '';
+
                 return `
                 <div class="border-b py-2 flex justify-between items-center">
-                    <div>
-                        <div><strong>${o.offlineRef}</strong> - ${new Date(o.createdAt).toLocaleString()}</div>
-                        <div class="text-sm">Status: <span class="${statusColor}">${o.status}</span> | Total: ₦${o.receiptData?.grandTotal || 0}</div>
+                    <div class="min-w-0 flex-1">
+                        <div><strong>${escapeHtml(o.offlineRef)}</strong> - ${new Date(o.createdAt).toLocaleString()}</div>
+                        <div class="text-sm">Status: <span class="${statusColor}">${escapeHtml(String(o.status))}</span> | Total: ₦${o.receiptData?.grandTotal || 0}</div>
                         <div class="text-xs text-gray-500">Items: ${o.receiptData?.items?.length || 0}</div>
+                        ${errorLine}
                     </div>
-                    ${o.status === 'pending'
-                        ? `<button onclick="syncSingleOrder('${o.offlineRef}', this)" class="text-blue-500 text-sm">
-                               <i class="fa-solid fa-rotate"></i> Sync
+                    ${canSync
+                        ? `<button onclick="syncSingleOrder('${escapeAttr(String(o.offlineRef))}', this)" class="${buttonClass} text-sm flex-shrink-0 ml-2">
+                               ${buttonLabel}
                            </button>`
                         : ''}
                 </div>
@@ -1870,7 +1891,8 @@
 
                 await db.orders.where('offlineRef').equals(offlineRef).modify({
                     status: 'synced',
-                    syncedAt: new Date().toISOString()
+                    syncedAt: new Date().toISOString(),
+                    lastError: null
                 });
                 await db.syncQueue.where('orderId').equals(offlineRef).delete();
                 showToast(`Order ${offlineRef} synced`, 'success');
