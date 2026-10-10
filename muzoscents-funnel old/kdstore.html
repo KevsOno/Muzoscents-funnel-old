@@ -1784,6 +1784,199 @@
             }
         }
     </style>
+
+    <!-- ============================================================
+         MULTI-TENANT CONFIG ADAPTER
+         Runs before kdstore.js. Detects the slug, fetches storefront
+         config, sets globals, applies branding before first paint.
+         ============================================================ -->
+    <script>
+    /* ============================================================
+       MULTI-TENANT CONFIG ADAPTER
+       Runs before kdstore.js. Detects the slug, fetches storefront
+       config, sets globals, applies branding before first paint.
+       ============================================================ */
+    (function () {
+        'use strict';
+
+        // ── Slug detection ─────────────────────────────────────
+        // Matches /store/{slug} or /store/{slug}/
+        var path = window.location.pathname;
+        var match = path.match(/^\/store\/([a-zA-Z0-9_-]+)\/?/);
+        var SLUG = match ? match[1] : null;
+
+        // Fallback for legacy /kdstore URL (single-org mode)
+        if (!SLUG) {
+            window.__KD_ORG__ = null;     // null → endpoints fall back to PUBLIC_STORE_ORG_ID
+            window.__KD_CONFIG__ = null;
+            window.__KD_VERTICAL__ = 'retail';
+            window.__KD_READY__ = Promise.resolve(null);
+            return;
+        }
+
+        // ── Fetch config before render ─────────────────────────
+        // Synchronous-looking, but async — DOMContentLoaded handlers
+        // in kdstore.js must await window.__KD_READY__ before running.
+        window.__KD_SLUG__ = SLUG;
+
+        window.__KD_READY__ = fetch('/public/storefront/' + encodeURIComponent(SLUG))
+            .then(function (res) {
+                if (res.status === 404) {
+                    throw new Error('This store doesn\'t exist or isn\'t live yet.');
+                }
+                if (!res.ok) throw new Error('Could not load store.');
+                return res.json();
+            })
+            .then(function (payload) {
+                window.__KD_ORG__ = payload.org_id;
+                window.__KD_CONFIG__ = payload.config;
+                window.__KD_VERTICAL__ = payload.vertical || 'retail';
+                window.__KD_ORG_NAME__ = payload.org_name;
+                applyBranding(payload);
+                return payload;
+            })
+            .catch(function (err) {
+                window.__KD_ERROR__ = err;
+                console.error('Storefront bootstrap failed:', err);
+                // Render an error page rather than leaving the shell blank.
+                renderFatalError(err.message || 'Unable to load this store.');
+            });
+
+        // ── Branding application ───────────────────────────────
+        function applyBranding(payload) {
+            var cfg = payload.config || {};
+            var branding = cfg.branding || {};
+            var seo = cfg.seo || {};
+            var hero = cfg.hero || {};
+            var contact = cfg.contact || {};
+            var storeName = branding.store_name || payload.org_name || 'Store';
+            var root = document.documentElement;
+
+            // Vertical + theme signals for CSS
+            root.dataset.kdVertical = payload.vertical || 'retail';
+            root.dataset.kdTheme = cfg.theme || 'modern';
+
+            // Colour tokens — override the CSS variables already in the stylesheet
+            if (branding.primary_color) root.style.setProperty('--pf-green', branding.primary_color);
+            if (branding.primary_color) root.style.setProperty('--pf-green-2', branding.primary_color);
+            if (branding.accent_color)  root.style.setProperty('--pf-lime', branding.accent_color);
+            if (branding.background)    root.style.setProperty('--pf-cream', branding.background);
+
+            // Title + meta
+            document.title = seo.meta_title || storeName;
+            upsertMeta('description', seo.meta_description || ('Shop at ' + storeName));
+            upsertMeta('theme-color', branding.primary_color || '#075c3a');
+            upsertLink('manifest', '/store/' + SLUG + '/manifest.json');
+            upsertLink('apple-touch-icon', branding.logo_url || '/images/page_logo.webp');
+
+            // Open Graph
+            upsertMeta('og:title', storeName, 'property');
+            upsertMeta('og:description', seo.meta_description || ('Shop at ' + storeName), 'property');
+            upsertMeta('og:type', 'website', 'property');
+
+            // Favicon
+            if (branding.favicon_url) upsertLink('icon', branding.favicon_url);
+
+            // ── DOM substitutions ──
+            // These run immediately for elements already in the DOM,
+            // and again on DOMContentLoaded to catch anything parsed after.
+            var applyDom = function () {
+                // Logo image
+                var logoImg = document.querySelector('.pf-logo img');
+                if (logoImg && branding.logo_url) {
+                    logoImg.src = branding.logo_url;
+                    logoImg.alt = storeName + ' logo';
+                }
+
+                // Wordmark
+                var wordmark = document.querySelector('.pf-logo-wordmark');
+                if (wordmark) wordmark.textContent = storeName;
+
+                // Tagline
+                var tagline = document.querySelector('.pf-logo-tagline');
+                if (tagline && branding.tagline) tagline.textContent = branding.tagline;
+
+                // Hero headline + subtext
+                var heroH1 = document.querySelector('.pf-hero-copy h1');
+                if (heroH1 && hero.headline) heroH1.textContent = hero.headline;
+
+                var heroSub = document.querySelector('.pf-hero-copy p.text-xl');
+                if (heroSub && hero.subtext) heroSub.textContent = hero.subtext;
+
+                // Footer wordmark + copyright
+                var footerWordmark = document.querySelector('.pf-footer .font-black.text-2xl');
+                if (footerWordmark) footerWordmark.textContent = storeName;
+
+                var copyright = document.querySelector('.pf-footer .border-t span:first-child');
+                if (copyright) {
+                    var year = new Date().getFullYear();
+                    copyright.textContent = '\u00A9 ' + year + ' ' + storeName + '. All rights reserved.';
+                }
+
+                // Contact bar
+                if (contact.phone || contact.email) {
+                    var announcement = document.querySelector('.pf-announcement .max-w-7xl > div');
+                    if (announcement) {
+                        var contactHtml = '';
+                        if (contact.phone) contactHtml += '<span><i class="fa-solid fa-phone mr-1"></i>' + escapeHtml(contact.phone) + '</span>';
+                        if (contact.email) contactHtml += (contactHtml ? '<span class="opacity-60">|</span>' : '') + '<span><i class="fa-solid fa-envelope mr-1"></i>' + escapeHtml(contact.email) + '</span>';
+                        if (contactHtml) announcement.insertAdjacentHTML('afterbegin', contactHtml);
+                    }
+                }
+            };
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', applyDom, { once: true });
+            } else {
+                applyDom();
+            }
+            // Also run immediately to catch pre-DOMContentLoaded paint
+            try { applyDom(); } catch (_) {}
+        }
+
+        function upsertMeta(name, content, attr) {
+            attr = attr || 'name';
+            var sel = 'meta[' + attr + '="' + name + '"]';
+            var el = document.querySelector(sel);
+            if (!el) {
+                el = document.createElement('meta');
+                el.setAttribute(attr, name);
+                document.head.appendChild(el);
+            }
+            el.setAttribute('content', content);
+        }
+
+        function upsertLink(rel, href) {
+            var sel = 'link[rel="' + rel + '"]';
+            var el = document.querySelector(sel);
+            if (!el) {
+                el = document.createElement('link');
+                el.setAttribute('rel', rel);
+                document.head.appendChild(el);
+            }
+            el.setAttribute('href', href);
+        }
+
+        function escapeHtml(s) {
+            return String(s || '').replace(/[&<>"']/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
+        }
+
+        function renderFatalError(message) {
+            // Block the app from rendering, show an error instead.
+            document.addEventListener('DOMContentLoaded', function () {
+                document.body.innerHTML =
+                    '<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:system-ui,sans-serif;">' +
+                        '<h1 style="font-size:1.5rem;margin-bottom:8px;">Store unavailable</h1>' +
+                        '<p style="color:#64748b;max-width:400px;">' + escapeHtml(message) + '</p>' +
+                        '<button onclick="location.reload()" style="margin-top:16px;padding:10px 24px;background:#075c3a;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;">Try again</button>' +
+                    '</div>';
+            });
+        }
+    })();
+    </script>
+    <script src="kdstore.js" defer></script>
 </head>
 <body class="text-gray-800">
 
@@ -2295,7 +2488,5 @@
         </div>
     </div>
 
-    <!-- ===== SCRIPT ===== -->
-    <script src="kdstore.js" defer></script>
 </body>
 </html>
