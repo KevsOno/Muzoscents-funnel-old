@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Organisation Registry · Kevs bOS</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+<style>
+  body { background: #0F172A; }
+  .org-card { transition: border-color 0.15s; }
+  .org-card:hover { border-color: #475569; }
+  .copy-btn:active { transform: scale(0.9); }
+  .modal { backdrop-filter: blur(4px); }
+  .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+</style>
+</head>
+<body class="text-slate-200 min-h-screen">
+
+<!-- ─── AUTH GATE ─── -->
+<div id="gate" class="max-w-md mx-auto mt-24 bg-slate-800/70 rounded-2xl p-8 border border-slate-700 shadow-2xl">
+  <div class="text-center mb-6">
+    <i class="fa-solid fa-building-lock text-3xl text-amber-400 mb-3"></i>
+    <h1 class="text-xl font-bold">Organisation Registry</h1>
+    <p class="text-sm text-slate-400 mt-1">Enter your admin key to continue.</p>
+  </div>
+  <input id="admin-key" type="password" placeholder="X-Admin-Key"
+         class="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm mb-3 kbd focus:border-blue-500 outline-none" />
+  <button id="unlock-btn" class="w-full bg-blue-600 hover:bg-blue-700 py-2.5 rounded-lg font-medium transition">
+    Unlock
+  </button>
+  <p id="gate-error" class="hidden text-red-400 text-xs mt-3 text-center"></p>
+  <p class="text-xs text-slate-500 mt-4 text-center">
+    The key stays in this browser tab only.
+  </p>
+</div>
+
+<!-- ─── PORTAL ─── -->
+<div id="portal" class="hidden max-w-6xl mx-auto p-4 md:p-8">
+
+  <!-- Header -->
+  <div class="flex flex-wrap justify-between items-start gap-4 mb-6 pb-4 border-b border-slate-700">
+    <div>
+      <h1 class="text-2xl font-bold">
+        <i class="fa-solid fa-building text-blue-400 mr-2"></i>Organisation Registry
+      </h1>
+      <div class="text-sm text-slate-400 mt-1" id="summary-line">Loading…</div>
+    </div>
+    <div class="flex gap-2 flex-wrap">
+      <button id="refresh-btn" class="bg-slate-700 hover:bg-slate-600 text-sm px-3 py-2 rounded-lg">
+        <i class="fa-solid fa-rotate-right mr-1"></i>Refresh
+      </button>
+      <button id="new-btn" class="bg-emerald-600 hover:bg-emerald-700 text-sm px-3 py-2 rounded-lg font-medium">
+        <i class="fa-solid fa-plus mr-1"></i>New Organisation
+      </button>
+      <button id="lock-btn" class="bg-slate-800 hover:bg-slate-700 text-sm px-3 py-2 rounded-lg" title="Lock">
+        <i class="fa-solid fa-lock"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- Stats strip -->
+  <div id="stats-strip" class="hidden grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+    <div class="bg-slate-800/60 rounded-xl p-3 border border-slate-700">
+      <div class="text-2xl font-bold text-blue-400" id="stat-total">0</div>
+      <div class="text-xs text-slate-400">Total orgs</div>
+    </div>
+    <div class="bg-slate-800/60 rounded-xl p-3 border border-slate-700">
+      <div class="text-2xl font-bold text-emerald-400" id="stat-published">0</div>
+      <div class="text-xs text-slate-400">Published</div>
+    </div>
+    <div class="bg-slate-800/60 rounded-xl p-3 border border-slate-700">
+      <div class="text-2xl font-bold text-orange-400" id="stat-food">0</div>
+      <div class="text-xs text-slate-400">Food verticals</div>
+    </div>
+    <div class="bg-slate-800/60 rounded-xl p-3 border border-slate-700">
+      <div class="text-2xl font-bold text-purple-400" id="stat-users">0</div>
+      <div class="text-xs text-slate-400">Total users</div>
+    </div>
+  </div>
+
+  <!-- Create panel -->
+  <div id="create-panel" class="hidden mb-6 bg-slate-800/70 rounded-2xl border border-slate-700 p-6">
+    <div class="flex justify-between items-center mb-5">
+      <h2 class="text-lg font-bold">Create organisation</h2>
+      <button id="create-close" class="text-slate-400 hover:text-white">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="md:col-span-2">
+        <label class="block text-xs text-slate-400 mb-1">Business name *</label>
+        <input id="f-org-name" type="text" placeholder="Acme Pharmacy Ltd."
+               class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm focus:border-blue-500 outline-none" />
+      </div>
+
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">
+          URL slug <span class="text-slate-500">— leave blank to auto-generate</span>
+        </label>
+        <div class="flex items-center bg-slate-950 border border-slate-700 rounded-lg overflow-hidden focus-within:border-blue-500">
+          <span class="px-3 py-2.5 text-xs text-slate-500 bg-slate-900 whitespace-nowrap kbd">/store/</span>
+          <input id="f-slug" type="text" placeholder="acme-pharmacy"
+                 class="flex-1 bg-transparent p-2.5 text-sm outline-none kbd" />
+        </div>
+        <p id="slug-preview" class="text-xs text-slate-500 mt-1"></p>
+      </div>
+
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Vertical *</label>
+        <select id="f-vertical" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm focus:border-blue-500 outline-none">
+          <option value="retail">Retail / Pharmacy / Supermarket</option>
+          <option value="food">Food &amp; Beverage / Restaurant</option>
+          <option value="service">Service business</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">City / region *</label>
+        <input id="f-location" type="text" placeholder="Lagos"
+               class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm focus:border-blue-500 outline-none" />
+      </div>
+
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Industry / niche *</label>
+        <select id="f-niche" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm focus:border-blue-500 outline-none">
+          <option value="">Select…</option>
+          <option>Retail</option>
+          <option>E-commerce</option>
+          <option>Pharmacy</option>
+          <option>Grocery</option>
+          <option>Fashion</option>
+          <option>Electronics</option>
+          <option>Restaurant</option>
+          <option>Fast Food</option>
+          <option>Cafe</option>
+          <option>Wholesale</option>
+          <option>Beauty</option>
+          <option>Other</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Monthly budget (₦)</label>
+        <input id="f-budget" type="number" value="0" min="0"
+               class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm focus:border-blue-500 outline-none" />
+      </div>
+
+      <div class="md:col-span-2">
+        <div id="create-error" class="hidden p-2.5 rounded-lg bg-red-900/30 border border-red-700 text-red-200 text-sm"></div>
+      </div>
+    </div>
+
+    <div class="flex gap-3 mt-5">
+      <button id="create-submit" class="bg-emerald-600 hover:bg-emerald-700 px-5 py-2.5 rounded-lg text-sm font-medium transition">
+        <i class="fa-solid fa-check mr-1"></i>Create
+      </button>
+      <button id="create-cancel" class="bg-slate-700 hover:bg-slate-600 px-5 py-2.5 rounded-lg text-sm transition">
+        Cancel
+      </button>
+    </div>
+  </div>
+
+  <!-- Org list -->
+  <div id="org-list" class="space-y-3">
+    <div class="text-center py-12 text-slate-400">
+      <i class="fa-solid fa-spinner fa-pulse mr-2"></i>Loading…
+    </div>
+  </div>
+
+</div>
+
+<!-- ─── CREATE SUCCESS MODAL ─── -->
+<div id="success-modal" class="hidden fixed inset-0 bg-black/70 modal flex items-center justify-center z-50 p-4">
+  <div class="bg-slate-800 rounded-2xl max-w-lg w-full p-6 border border-slate-600 shadow-2xl">
+    <div class="text-center mb-5">
+      <i class="fa-solid fa-circle-check text-4xl text-emerald-400 mb-2"></i>
+      <h3 class="text-xl font-bold">Organisation created</h3>
+    </div>
+    <div id="success-body" class="space-y-3 text-sm"></div>
+    <div class="flex gap-3 mt-6">
+      <button id="success-copy-all" class="flex-1 bg-blue-600 hover:bg-blue-700 py-2.5 rounded-lg text-sm font-medium">
+        <i class="fa-solid fa-copy mr-1"></i>Copy summary
+      </button>
+      <button id="success-close" class="flex-1 bg-slate-700 hover:bg-slate-600 py-2.5 rounded-lg text-sm">
+        Done
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── EDIT MODAL ─── -->
+<div id="edit-modal" class="hidden fixed inset-0 bg-black/70 modal flex items-center justify-center z-50 p-4">
+  <div class="bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-slate-600 shadow-2xl">
+    <div class="flex justify-between items-center mb-5">
+      <h3 class="text-lg font-bold">Edit organisation</h3>
+      <button id="edit-close" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <input type="hidden" id="edit-org-id" />
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Business name</label>
+        <input id="edit-name" type="text"
+               class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
+      </div>
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">URL slug</label>
+        <div class="flex items-center bg-slate-950 border border-slate-700 rounded-lg overflow-hidden">
+          <span class="px-3 py-2.5 text-xs text-slate-500 bg-slate-900 whitespace-nowrap kbd">/store/</span>
+          <input id="edit-slug" type="text" class="flex-1 bg-transparent p-2.5 text-sm outline-none kbd" />
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Vertical</label>
+        <select id="edit-vertical" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+          <option value="retail">Retail / Pharmacy / Supermarket</option>
+          <option value="food">Food &amp; Beverage / Restaurant</option>
+          <option value="service">Service business</option>
+        </select>
+      </div>
+      <div id="edit-error" class="hidden p-2.5 rounded-lg bg-red-900/30 border border-red-700 text-red-200 text-sm"></div>
+    </div>
+    <div class="flex gap-3 mt-6">
+      <button id="edit-submit" class="flex-1 bg-blue-600 hover:bg-blue-700 py-2.5 rounded-lg text-sm font-medium">Save</button>
+      <button id="edit-cancel" class="flex-1 bg-slate-700 hover:bg-slate-600 py-2.5 rounded-lg text-sm">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API_BASE = window.location.origin;
+let ADMIN_KEY = sessionStorage.getItem('kd_admin_key') || '';
+let ORGS = [];
+
+// ─── helpers ───
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function toast(msg, kind = 'success') {
+  const colors = { success: 'bg-green-600', error: 'bg-red-600', info: 'bg-blue-600' };
+  const el = document.createElement('div');
+  el.className = `fixed bottom-4 right-4 ${colors[kind]} text-white px-4 py-2 rounded-lg text-sm shadow-lg z-50`;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2200);
+}
+
+function copy(text, label) {
+  navigator.clipboard.writeText(text).then(() => toast(`${label} copied`));
+}
+
+// ─── auth ───
+async function tryUnlock(key) {
+  const res = await fetch(`${API_BASE}/admin/orgs`, { headers: { 'X-Admin-Key': key } });
+  if (res.status === 403) throw new Error('Invalid admin key');
+  if (!res.ok) throw new Error(`Server returned ${res.status}`);
+  return await res.json();
+}
+
+document.getElementById('unlock-btn').addEventListener('click', async () => {
+  const key = document.getElementById('admin-key').value.trim();
+  if (!key) return;
+  const errEl = document.getElementById('gate-error');
+  errEl.classList.add('hidden');
+  try {
+    const data = await tryUnlock(key);
+    ADMIN_KEY = key;
+    sessionStorage.setItem('kd_admin_key', key);
+    document.getElementById('gate').classList.add('hidden');
+    document.getElementById('portal').classList.remove('hidden');
+    renderOrgs(data.organisations || []);
+    loadStats();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+  }
+});
+
+document.getElementById('admin-key').addEventListener('keypress', e => {
+  if (e.key === 'Enter') document.getElementById('unlock-btn').click();
+});
+
+document.getElementById('lock-btn').addEventListener('click', () => {
+  sessionStorage.removeItem('kd_admin_key');
+  ADMIN_KEY = '';
+  document.getElementById('admin-key').value = '';
+  document.getElementById('portal').classList.add('hidden');
+  document.getElementById('gate').classList.remove('hidden');
+});
+
+// ─── list ───
+async function loadOrgs() {
+  const list = document.getElementById('org-list');
+  list.innerHTML = '<div class="text-center py-12 text-slate-400"><i class="fa-solid fa-spinner fa-pulse mr-2"></i>Loading…</div>';
+  try {
+    const res = await fetch(`${API_BASE}/admin/orgs`, { headers: { 'X-Admin-Key': ADMIN_KEY } });
+    if (res.status === 403) { sessionStorage.removeItem('kd_admin_key'); location.reload(); return; }
+    const data = await res.json();
+    renderOrgs(data.organisations || []);
+    loadStats();
+  } catch (e) {
+    list.innerHTML = `<div class="text-center py-12 text-red-400">Failed to load: ${esc(e.message)}</div>`;
+  }
+}
+
+async function loadStats() {
+  try {
+    const res = await fetch(`${API_BASE}/admin/orgs/stats`, { headers: { 'X-Admin-Key': ADMIN_KEY } });
+    if (!res.ok) return;
+    const s = await res.json();
+    document.getElementById('stat-total').textContent     = s.total_orgs;
+    document.getElementById('stat-published').textContent = s.published_orgs;
+    document.getElementById('stat-food').textContent      = s.by_vertical.food;
+    document.getElementById('stat-users').textContent     = s.total_users;
+    document.getElementById('stats-strip').classList.remove('hidden');
+  } catch {}
+}
+
+function renderOrgs(orgs) {
+  ORGS = orgs;
+  document.getElementById('summary-line').textContent =
+    `${orgs.length} organisation${orgs.length === 1 ? '' : 's'}`;
+
+  const list = document.getElementById('org-list');
+  if (!orgs.length) {
+    list.innerHTML = `
+      <div class="text-center py-16 text-slate-400">
+        <i class="fa-solid fa-building text-3xl mb-3 opacity-50"></i>
+        <p>No organisations yet.</p>
+        <button onclick="document.getElementById('new-btn').click()"
+                class="mt-3 text-sm bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg text-white">
+          Create the first one
+        </button>
+      </div>`;
+    return;
+  }
+
+  list.innerHTML = orgs.map(org => {
+    const slug = org.slug || '';
+    const storeUrl = slug ? `${API_BASE}/store/${slug}` : null;
+    const created = org.created_at ? new Date(org.created_at).toLocaleDateString() : '—';
+    const verticalColor = org.vertical === 'food' ? 'text-orange-400 bg-orange-900/30'
+                        : org.vertical === 'service' ? 'text-purple-400 bg-purple-900/30'
+                        : 'text-blue-400 bg-blue-900/30';
+    const publishedBadge = org.storefront_published
+      ? '<span class="text-xs bg-emerald-900/40 text-emerald-300 px-2 py-0.5 rounded-full"><i class="fa-solid fa-globe mr-1"></i>Live</span>'
+      : '<span class="text-xs bg-slate-700 text-slate-400 px-2 py-0.5 rounded-full"><i class="fa-solid fa-eye-slash mr-1"></i>Unpublished</span>';
+    const owner = org.owner_email
+      ? `<span class="text-slate-300">${esc(org.owner_name || org.owner_email)}</span>
+         <span class="text-slate-500">· ${esc(org.owner_email)}</span>`
+      : '<span class="text-slate-500 italic">no owner yet</span>';
+
+    return `
+      <div class="org-card bg-slate-800/60 border border-slate-700 rounded-xl p-5">
+        <div class="flex flex-wrap justify-between items-start gap-3 mb-3">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <h3 class="font-bold text-white text-lg truncate">${esc(org.org_name)}</h3>
+              <span class="text-xs px-2 py-0.5 rounded-full ${verticalColor}">${esc(org.vertical)}</span>
+              ${publishedBadge}
+            </div>
+            <div class="text-xs text-slate-400 mt-1">
+              ${esc(org.niche || '—')} · ${esc(org.location || '—')} · Created ${created} · ${org.member_count} member${org.member_count === 1 ? '' : 's'}
+            </div>
+            <div class="text-xs text-slate-400 mt-0.5">Owner: ${owner}</div>
+          </div>
+          <div class="flex gap-2 flex-wrap">
+            ${storeUrl ? `<a href="${esc(storeUrl)}" target="_blank"
+                            class="text-xs bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 px-3 py-1.5 rounded-lg">
+                            <i class="fa-solid fa-store mr-1"></i>Storefront</a>` : ''}
+            <button class="edit-btn text-xs bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg"
+                    data-id="${esc(org.id)}"><i class="fa-solid fa-pen-to-square"></i></button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3 border-t border-slate-700">
+          <div>
+            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Slug</div>
+            <div class="flex items-center gap-2">
+              <code class="text-xs kbd text-blue-300 truncate">${esc(slug || '—')}</code>
+              ${slug ? `<button class="copy-btn text-slate-500 hover:text-white text-xs"
+                                data-copy="${esc(slug)}" data-label="Slug"><i class="fa-regular fa-copy"></i></button>` : ''}
+            </div>
+          </div>
+          <div>
+            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Invite code</div>
+            <div class="flex items-center gap-2">
+              <code class="text-xs kbd text-emerald-300">${esc(org.invite_code || '—')}</code>
+              ${org.invite_code ? `<button class="copy-btn text-slate-500 hover:text-white text-xs"
+                                          data-copy="${esc(org.invite_code)}" data-label="Invite code">
+                                          <i class="fa-regular fa-copy"></i></button>` : ''}
+              <button class="regen-btn text-slate-500 hover:text-amber-300 text-xs ml-1"
+                      data-id="${esc(org.id)}" title="Generate new code">
+                <i class="fa-solid fa-rotate"></i>
+              </button>
+            </div>
+          </div>
+          <div>
+            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Storefront</div>
+            <button class="publish-btn text-xs ${org.storefront_published ? 'text-emerald-400 hover:text-emerald-300' : 'text-slate-400 hover:text-slate-200'}"
+                    data-id="${esc(org.id)}" data-published="${org.storefront_published}">
+              <i class="fa-solid ${org.storefront_published ? 'fa-toggle-on' : 'fa-toggle-off'} mr-1"></i>
+              ${org.storefront_published ? 'Unpublish' : 'Publish'}
+            </button>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Wire per-card buttons.
+  list.querySelectorAll('.copy-btn').forEach(b =>
+    b.addEventListener('click', () => copy(b.dataset.copy, b.dataset.label)));
+
+  list.querySelectorAll('.regen-btn').forEach(b =>
+    b.addEventListener('click', async () => {
+      if (!confirm('Generate a new invite code? The current one will stop working.')) return;
+      try {
+        const res = await fetch(`${API_BASE}/admin/orgs/${b.dataset.id}/regenerate-invite`, {
+          method: 'POST', headers: { 'X-Admin-Key': ADMIN_KEY }
+        });
+        if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
+        toast('Invite code regenerated');
+        loadOrgs();
+      } catch (e) { toast(e.message, 'error'); }
+    }));
+
+  list.querySelectorAll('.publish-btn').forEach(b =>
+    b.addEventListener('click', async () => {
+      const next = b.dataset.published !== 'true';
+      try {
+        const res = await fetch(`${API_BASE}/admin/orgs/${b.dataset.id}/publish`, {
+          method: 'POST',
+          headers: { 'X-Admin-Key': ADMIN_KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ published: next })
+        });
+        if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
+        toast(next ? 'Storefront published' : 'Storefront unpublished');
+        loadOrgs();
+      } catch (e) { toast(e.message, 'error'); }
+    }));
+
+  list.querySelectorAll('.edit-btn').forEach(b =>
+    b.addEventListener('click', () => openEdit(b.dataset.id)));
+}
+
+// ─── create ───
+document.getElementById('new-btn').addEventListener('click', () => {
+  document.getElementById('create-panel').classList.remove('hidden');
+  document.getElementById('f-org-name').focus();
+});
+document.getElementById('create-close').addEventListener('click', closeCreate);
+document.getElementById('create-cancel').addEventListener('click', closeCreate);
+function closeCreate() {
+  document.getElementById('create-panel').classList.add('hidden');
+  document.getElementById('create-error').classList.add('hidden');
+}
+
+// Live slug preview from name.
+document.getElementById('f-org-name').addEventListener('input', e => {
+  const slugInput = document.getElementById('f-slug');
+  if (slugInput.dataset.touched === 'true') return;
+  const preview = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+  document.getElementById('slug-preview').textContent = preview ? `Will be: /store/${preview}` : '';
+});
+document.getElementById('f-slug').addEventListener('input', e => {
+  e.target.dataset.touched = 'true';
+  const v = e.target.value.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  e.target.value = v;
+  document.getElementById('slug-preview').textContent = v ? `Preview: /store/${v}` : '';
+});
+
+document.getElementById('create-submit').addEventListener('click', async () => {
+  const errEl = document.getElementById('create-error');
+  errEl.classList.add('hidden');
+
+  const payload = {
+    org_name: document.getElementById('f-org-name').value.trim(),
+    slug:     document.getElementById('f-slug').value.trim() || null,
+    vertical: document.getElementById('f-vertical').value,
+    location: document.getElementById('f-location').value.trim(),
+    niche:    document.getElementById('f-niche').value,
+    budget:   parseInt(document.getElementById('f-budget').value, 10) || 0,
+  };
+
+  if (!payload.org_name || !payload.location || !payload.niche) {
+    errEl.textContent = 'Business name, city, and industry are required.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  const btn = document.getElementById('create-submit');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Creating…';
+
+  try {
+    const res = await fetch(`${API_BASE}/admin/orgs`, {
+      method: 'POST',
+      headers: { 'X-Admin-Key': ADMIN_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+
+    closeCreate();
+    ['f-org-name','f-slug','f-location','f-niche'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el.tagName === 'SELECT') el.value = ''; else el.value = '';
+    });
+    document.getElementById('f-budget').value = '0';
+    document.getElementById('f-slug').dataset.touched = 'false';
+    document.getElementById('slug-preview').textContent = '';
+
+    showSuccess(data);
+    loadOrgs();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-check mr-1"></i>Create';
+  }
+});
+
+function showSuccess(data) {
+  const url = data.storefront_url || '';
+  const invite = data.invite_code || '';
+  document.getElementById('success-body').innerHTML = `
+    <div class="bg-slate-950 rounded-lg p-3 border border-slate-700">
+      <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Organisation</div>
+      <div class="font-medium">${esc(data.org_name)} <span class="text-slate-500 text-xs">(${esc(data.vertical)})</span></div>
+    </div>
+    <div class="bg-slate-950 rounded-lg p-3 border border-slate-700 flex justify-between items-center gap-2">
+      <div class="min-w-0">
+        <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Invite code</div>
+        <code class="text-emerald-300 kbd text-sm">${esc(invite)}</code>
+      </div>
+      <button class="text-slate-400 hover:text-white shrink-0"
+              onclick="copy('${esc(invite)}','Invite code')">
+        <i class="fa-regular fa-copy"></i>
+      </button>
+    </div>
+    <div class="bg-slate-950 rounded-lg p-3 border border-slate-700 flex justify-between items-center gap-2">
+      <div class="min-w-0">
+        <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Storefront URL</div>
+        <code class="text-blue-300 kbd text-xs truncate block">${esc(url)}</code>
+      </div>
+      <button class="text-slate-400 hover:text-white shrink-0"
+              onclick="copy('${esc(url)}','Storefront URL')">
+        <i class="fa-regular fa-copy"></i>
+      </button>
+    </div>
+    <p class="text-xs text-slate-500">
+      The storefront is <strong>unpublished</strong>. Load inventory and configure branding, then publish from the list.
+    </p>
+  `;
+  document.getElementById('success-modal').classList.remove('hidden');
+
+  window._lastSummary =
+    `Organisation: ${data.org_name}\n` +
+    `Vertical:     ${data.vertical}\n` +
+    `Invite code:  ${invite}\n` +
+    `Storefront:   ${url}\n`;
+}
+
+document.getElementById('success-copy-all').addEventListener('click', () => {
+  if (window._lastSummary) copy(window._lastSummary, 'Summary');
+});
+document.getElementById('success-close').addEventListener('click', () => {
+  document.getElementById('success-modal').classList.add('hidden');
+});
+
+// ─── edit ───
+function openEdit(orgId) {
+  const org = ORGS.find(o => o.id === orgId);
+  if (!org) return;
+  document.getElementById('edit-org-id').value = org.id;
+  document.getElementById('edit-name').value = org.org_name || '';
+  document.getElementById('edit-slug').value = org.slug || '';
+  document.getElementById('edit-vertical').value = org.vertical || 'retail';
+  document.getElementById('edit-error').classList.add('hidden');
+  document.getElementById('edit-modal').classList.remove('hidden');
+}
+
+document.getElementById('edit-close').addEventListener('click', closeEdit);
+document.getElementById('edit-cancel').addEventListener('click', closeEdit);
+function closeEdit() {
+  document.getElementById('edit-modal').classList.add('hidden');
+}
+
+document.getElementById('edit-submit').addEventListener('click', async () => {
+  const orgId = document.getElementById('edit-org-id').value;
+  const errEl = document.getElementById('edit-error');
+  errEl.classList.add('hidden');
+
+  const payload = {};
+  const newName = document.getElementById('edit-name').value.trim();
+  const newSlug = document.getElementById('edit-slug').value.trim();
+  const newVert = document.getElementById('edit-vertical').value;
+
+  const existing = ORGS.find(o => o.id === orgId);
+  if (!existing) return;
+
+  if (newName && newName !== existing.org_name) payload.org_name = newName;
+  if (newSlug && newSlug !== existing.slug)     payload.slug = newSlug;
+  if (newVert && newVert !== existing.vertical) payload.vertical = newVert;
+
+  if (!Object.keys(payload).length) { closeEdit(); return; }
+
+  try {
+    const res = await fetch(`${API_BASE}/admin/orgs/${orgId}`, {
+      method: 'PATCH',
+      headers: { 'X-Admin-Key': ADMIN_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+    toast('Saved');
+    closeEdit();
+    loadOrgs();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+  }
+});
+
+// ─── boot ───
+document.getElementById('refresh-btn').addEventListener('click', loadOrgs);
+
+if (ADMIN_KEY) {
+  document.getElementById('admin-key').value = ADMIN_KEY;
+  document.getElementById('unlock-btn').click();
+}
+</script>
+
+</body>
+</html>
