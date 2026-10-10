@@ -282,7 +282,8 @@ function showView(view) {
 // ============================================================
 async function loadCategories() {
     try {
-        const data = await apiCall('/inventory/public-categories');
+        const orgQuery = window.__KD_ORG__ ? `?org_id=${encodeURIComponent(window.__KD_ORG__)}` : '';
+        const data = await apiCall('/inventory/public-categories' + orgQuery);
         if (data.categories && data.categories.length) {
             categories = data.categories;
             console.log("✅ Categories loaded:", categories);
@@ -325,7 +326,8 @@ async function loadProducts(page = currentPage, limit = PAGE_SIZE) {
     const offset = (page - 1) * limit;
     // --- get sort value from dropdown ---
     const sortBy = document.getElementById('sort-select')?.value || 'newest';
-    let url = `/inventory/public-list?limit=${limit}&offset=${offset}&sort_by=${sortBy}`;
+    const orgQuery = window.__KD_ORG__ ? `&org_id=${encodeURIComponent(window.__KD_ORG__)}` : '';
+    let url = `/inventory/public-list?limit=${limit}&offset=${offset}&sort_by=${sortBy}${orgQuery}`;
     if (searchQuery.trim()) url += `&q=${encodeURIComponent(searchQuery.trim())}`;
     if (selectedCategory && selectedCategory !== '') url += `&category=${encodeURIComponent(selectedCategory)}`;
 
@@ -388,7 +390,7 @@ function productCardHtml(p, featured = false) {
     const stock = Number(p.current_qty || 0);
     const safeImageUrl = p.image_url ? escapeHtml(p.image_url) : null;
     const imageHtml = safeImageUrl
-        ? `<img src="${safeImageUrl}" alt="${escapeHtml(p.description)}" loading="lazy">`
+        ? `<img src="${safeImageUrl}" alt="${escapeHtml(p.description)}" width="300" height="165" loading="lazy">`
         : `<i class="fa-solid fa-box-open text-4xl text-gray-300"></i>`;
 
     return `
@@ -419,6 +421,9 @@ function productCardHtml(p, featured = false) {
 }
 
 function renderProducts() {
+    if (window.__KD_VERTICAL__ === 'food') {
+        return renderFoodMenu();
+    }
     const grid = document.getElementById('products-grid');
     const featuredGrid = document.getElementById('featured-grid');
     if (!grid) return;
@@ -453,6 +458,42 @@ function renderProducts() {
     renderCategoryCards();
 }
 
+function renderFoodMenu() {
+    const grid = document.getElementById('products-grid');
+    if (!grid) return;
+    const items = allProducts || [];
+    if (items.length === 0) {
+        grid.innerHTML = '<div class="col-span-full text-center py-12 text-gray-500">Menu coming soon.</div>';
+        return;
+    }
+    // Group by product_group (which for food orgs is the menu section)
+    const groups = {};
+    items.forEach(p => {
+        const g = p.product_group || 'Menu';
+        if (!groups[g]) groups[g] = [];
+        groups[g].push(p);
+    });
+    grid.innerHTML = Object.entries(groups).map(([name, list]) =>
+        `<div class="menu-section col-span-full mb-8">
+            <h2 class="text-2xl font-black mb-4 pb-3 border-b border-gray-200">${escapeHtml(name)}</h2>
+            <div class="space-y-3">
+                ${list.map(p => `
+                    <div class="flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-xl hover:border-[#075c3a] transition cursor-pointer" data-product-id="${p.id}">
+                        <div class="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
+                            ${p.image_url ? `<img src="${escapeHtml(p.image_url)}" alt="" width="64" height="64" class="w-full h-full object-cover">` : '<i class="fa-solid fa-utensils text-2xl text-gray-400"></i>'}
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="font-semibold">${escapeHtml(p.description)}</div>
+                        </div>
+                        <div class="font-bold text-[#075c3a]">₦${Number(p.price_naira || 0).toLocaleString()}</div>
+                        <button class="add-to-cart-btn w-10 h-10 rounded-full bg-[#075c3a] text-white flex items-center justify-center" data-id="${p.id}">+</button>
+                    </div>
+                `).join('')}
+            </div>
+        </div>`
+    ).join('');
+}
+
 function renderHeroProducts() {
     const collage = document.getElementById('hero-product-collage');
     if (!collage || !allProducts?.length) return;
@@ -462,7 +503,7 @@ function renderHeroProducts() {
         const p = products[i];
         const safeImageUrl = p && p.image_url ? escapeHtml(p.image_url) : null;
         slot.innerHTML = safeImageUrl ?
-            `<img src="${safeImageUrl}" alt="${escapeHtml(p.description)}">` :
+            `<img src="${safeImageUrl}" alt="${escapeHtml(p.description)}" width="300" height="300">` :
             `<div class="text-gray-300 text-4xl"><i class="fa-solid fa-box-open"></i></div>`;
     });
 }
@@ -494,7 +535,7 @@ function renderCategoryCards() {
             .toLowerCase() && p.image_url);
         const safeImageUrl = product && product.image_url ? escapeHtml(product.image_url) : null;
         const visual = safeImageUrl ?
-            `<img src="${safeImageUrl}" alt="${escapeHtml(category)}">` :
+            `<img src="${safeImageUrl}" alt="${escapeHtml(category)}" width="200" height="96">` :
             `<i class="fa-solid ${categoryIcon(category)} text-3xl text-[#6d8f69]"></i>`;
         return `<button class="pf-category-card rounded-2xl p-2.5 text-left" data-category="${escapeHtml(category)}">
             <div class="pf-category-image">${visual}</div>
@@ -541,7 +582,8 @@ async function loadTopProducts() {
         `<div class="col-span-full flex items-center justify-center py-10"><span class="loader-small"></span><span class="ml-3 text-gray-500 text-sm">Loading top picks...</span></div>`;
 
     try {
-        const data = await apiCall('/public/top-products');
+        const orgQuery = window.__KD_ORG__ ? `?org_id=${encodeURIComponent(window.__KD_ORG__)}` : '';
+        const data = await apiCall('/public/top-products' + orgQuery);
         const products = data.products || [];
         featuredProducts = products;
         renderFeaturedProducts(products);
@@ -586,7 +628,7 @@ function renderFeaturedProducts(products) {
             const qty = productQuantities[p.inventory_id] || 1;
             const safeImageUrl = p.image_url ? escapeHtml(p.image_url) : null;
             const imageHtml = safeImageUrl ?
-                `<img src="${safeImageUrl}" alt="${escapeHtml(p.product_name)}" loading="lazy">` :
+                `<img src="${safeImageUrl}" alt="${escapeHtml(p.product_name)}" width="300" height="165" loading="lazy">` :
                 `<i class="fa-solid fa-box-open text-4xl text-gray-300"></i>`;
 
             const card = document.createElement('div');
@@ -674,7 +716,7 @@ function showProductDetail(p) {
         'Not specified';
     const safeImageUrl = p.image_url ? escapeHtml(p.image_url) : null;
     content.innerHTML =
-        `<div class="flex flex-col gap-4">${safeImageUrl ? `<img src="${safeImageUrl}" class="w-full h-48 object-contain rounded-xl">` : `<div class="w-full h-48 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl flex items-center justify-center"><i class="fa-solid fa-cube text-5xl text-orange-400"></i></div>`}<h2 class="text-2xl font-bold">${escapeHtml(p.description)}</h2><div class="flex justify-between"><span class="text-3xl font-bold text-orange-600">₦${p.price_naira.toLocaleString()}</span><span class="bg-gray-100 px-3 py-1 rounded-full">Stock: ${p.current_qty||0}</span></div><div class="border-t pt-3 grid grid-cols-2 gap-3 text-sm"><div><span class="text-gray-500">Weight:</span> ${p.weight_kg ? p.weight_kg+' kg' : 'Not specified'}</div><div><span class="text-gray-500">Dimensions:</span> ${dim}</div><div><span class="text-gray-500">Handling:</span> ${p.handling_category || 'Standard'}</div><div><span class="text-gray-500">Size factor:</span> ${p.size_factor || 'Standard'}</div><div class="col-span-2 flex gap-2">${p.fragile ? '<span class="bg-red-100 text-red-700 px-2 py-1 rounded-full text-xs">Fragile</span>' : ''}${p.hazardous ? '<span class="bg-amber-100 text-amber-700 px-2 py-1 rounded-full text-xs">Hazardous</span>' : ''}</div>${p.product_group ? `<div><span class="text-gray-500">Group:</span> ${escapeHtml(p.product_group)}</div>` : ''}${p.item_code ? `<div><span class="text-gray-500">Item code:</span> ${escapeHtml(p.item_code)}</div>` : ''}</div><div class="bg-orange-50 p-3 rounded-xl text-sm"><i class="fa-regular fa-truck-fast text-orange-500 mr-2"></i> Delivery fees calculated based on weight, dimensions, and distance.</div></div>`;
+        `<div class="flex flex-col gap-4">${safeImageUrl ? `<img src="${safeImageUrl}" width="600" height="192" class="w-full h-48 object-contain rounded-xl">` : `<div class="w-full h-48 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl flex items-center justify-center"><i class="fa-solid fa-cube text-5xl text-orange-400"></i></div>`}<h2 class="text-2xl font-bold">${escapeHtml(p.description)}</h2><div class="flex justify-between"><span class="text-3xl font-bold text-orange-600">₦${p.price_naira.toLocaleString()}</span><span class="bg-gray-100 px-3 py-1 rounded-full">Stock: ${p.current_qty||0}</span></div><div class="border-t pt-3 grid grid-cols-2 gap-3 text-sm"><div><span class="text-gray-500">Weight:</span> ${p.weight_kg ? p.weight_kg+' kg' : 'Not specified'}</div><div><span class="text-gray-500">Dimensions:</span> ${dim}</div><div><span class="text-gray-500">Handling:</span> ${p.handling_category || 'Standard'}</div><div><span class="text-gray-500">Size factor:</span> ${p.size_factor || 'Standard'}</div><div class="col-span-2 flex gap-2">${p.fragile ? '<span class="bg-red-100 text-red-700 px-2 py-1 rounded-full text-xs">Fragile</span>' : ''}${p.hazardous ? '<span class="bg-amber-100 text-amber-700 px-2 py-1 rounded-full text-xs">Hazardous</span>' : ''}</div>${p.product_group ? `<div><span class="text-gray-500">Group:</span> ${escapeHtml(p.product_group)}</div>` : ''}${p.item_code ? `<div><span class="text-gray-500">Item code:</span> ${escapeHtml(p.item_code)}</div>` : ''}</div><div class="bg-orange-50 p-3 rounded-xl text-sm"><i class="fa-regular fa-truck-fast text-orange-500 mr-2"></i> Delivery fees calculated based on weight, dimensions, and distance.</div></div>`;
 
     updateModalQtyDisplay();
     modal.classList.add('active');
@@ -841,12 +883,6 @@ async function recalcDeliveryFee(showFeedback = true) {
         return;
     }
 
-    if (!token) {
-        showToast("Please sign in to calculate delivery fees.", 'error');
-        updateCheckoutButton();
-        return;
-    }
-
     if (isRecalcInProgress) return;
     const currentCartSnapshot = JSON.stringify(cart);
     isRecalcInProgress = true;
@@ -994,12 +1030,6 @@ async function fetchAddr(q) {
 function handleGpsLocation() {
     if (!navigator.geolocation) {
         showToast("GPS is not supported on this device.", 'error');
-        return;
-    }
-
-    if (!token) {
-        showToast("Please sign in to set your delivery address.", 'error');
-        showAuthModal();
         return;
     }
 
@@ -1153,11 +1183,6 @@ async function checkout() {
         showToast("Cart is empty", 'error');
         return;
     }
-    if (!token) {
-        showToast("Please sign in to check out.", 'error');
-        showAuthModal();
-        return;
-    }
 
     if (deliveryOption === 'delivery') {
         if (!deliveryAddress) {
@@ -1232,9 +1257,19 @@ async function checkout() {
             createdAt: new Date().toISOString()
         };
 
-        const result = await apiCall('/pos/checkout', {
+        const result = await apiCall('/public/checkout', {
             method: 'POST',
-            body: JSON.stringify(payload)
+            body: JSON.stringify({
+                org_id: window.__KD_ORG__,
+                items: items,
+                customer_name: payload.customer_name || 'Guest',
+                customer_email: payload.customer_email,
+                customer_phone: payload.customer_phone || '0000000000',
+                fulfillment_mode: deliveryOption === 'delivery' ? 'delivery' : 'pickup',
+                shipping_address: deliveryOption === 'delivery' ? deliveryAddress : null,
+                delivery_fee: deliveryOption === 'delivery' ? deliveryFeeToUse : 0,
+                handling_fee: deliveryOption === 'delivery' ? handlingFeeToUse : 0,
+            })
         });
 
         if (result.payment_url) {
@@ -1679,6 +1714,15 @@ function initStickyHeader() {
 //  DOM CONTENT LOADED - INITIALIZATION
 // ============================================================
 document.addEventListener('DOMContentLoaded', async function() {
+    // ─── Wait for the multi-tenant config adapter ───
+    if (window.__KD_READY__) {
+        try {
+            await window.__KD_READY__;
+        } catch (e) {
+            // Error page already rendered by the adapter.
+            return;
+        }
+    }
 
     // Initialize sticky header
     initStickyHeader();
@@ -2425,7 +2469,7 @@ document.addEventListener('click', function(e) {
         if (searchClear) searchClear.style.display = 'none';
     }
 
-    if ('serviceWorker' in navigator) {
+    if ('serviceWorker' in navigator && !window.Capacitor) {
         navigator.serviceWorker.register('/sw.js')
             .then(reg => console.log('✅ Service Worker registered', reg))
             .catch(err => console.warn('❌ SW registration failed', err));
