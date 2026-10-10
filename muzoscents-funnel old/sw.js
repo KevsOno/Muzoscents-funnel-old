@@ -15,7 +15,7 @@
 //    • Push notifications + notification click
 // =====================================================================
 
-const CACHE_VERSION   = 'v4';
+const CACHE_VERSION   = 'v5';
 const CACHE_NAME      = `kevs-cache-${CACHE_VERSION}`;
 const ORDER_CACHE_NAME = 'kevs-orders-v1';
 
