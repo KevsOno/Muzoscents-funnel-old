@@ -1684,7 +1684,7 @@
         document.getElementById('location-form')?.addEventListener('submit', async function(e) {
             e.preventDefault();
             const name = document.getElementById('location-name').value.trim();
-            const locationType = document.getElementById('location-type').value;
+            const type = document.getElementById('location-type').value;
             const address = document.getElementById('location-address').value.trim();
             const manager_email = document.getElementById('location-manager-email').value.trim();
             const inventory_email = document.getElementById('location-inventory-email').value.trim();
@@ -1693,10 +1693,9 @@
             const dev_team = document.getElementById('location-dev-email').value.trim();
 
             if (!name) { showToast('Location name is required', 'error'); return; }
-            const is_warehouse = locationType === 'warehouse' || locationType === 'fulfillment';
 
             try {
-                const payload = { name, address: address || null, is_warehouse };
+                const payload = { name, address: address || null, type };
                 if (manager_email) payload.manager_email = manager_email;
                 if (inventory_email) payload.inventory_email = inventory_email;
                 if (procurement_email) payload.procurement_email = procurement_email;
@@ -1775,10 +1774,9 @@
             const type = document.getElementById('location-modal-type').value;
             const address = document.getElementById('location-modal-address').value.trim();
             if (!name) { showToast('Location name is required', 'error'); return; }
-            const is_warehouse = type === 'warehouse' || type === 'fulfillment';
+            const payload = { name, address: address || null, type };
             try {
-                await apiCall('/locations', { method: 'POST', body: JSON.stringify({ name, address: address ||
-                            null, is_warehouse }) });
+                await apiCall('/locations', { method: 'POST', body: JSON.stringify(payload) });
                 showToast(`Location "${name}" created!`, 'success');
                 document.getElementById('location-modal').classList.add('hidden');
                 await loadLocations();
