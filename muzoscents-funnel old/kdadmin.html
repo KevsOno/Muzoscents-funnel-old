@@ -198,6 +198,11 @@
             font-size: 0.9rem;
             color: #94a3b8;
         }
+
+        /* modal z-index lift — must sit above the search overlay (99999) */
+        .modal-lift {
+            z-index: 100001 !important;
+        }
     </style>
 </head>
 <body class="text-slate-200">
@@ -205,7 +210,7 @@
     <!-- ============================================================ -->
     <!-- ORGANISATION SELECTION MODAL                                   -->
     <!-- ============================================================ -->
-    <div id="org-selection-modal" class="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
+    <div id="org-selection-modal" class="modal-lift fixed inset-0 bg-black/90 flex items-center justify-center p-4">
         <div class="bg-slate-800 rounded-2xl max-w-2xl w-full p-6 border border-slate-700 shadow-2xl">
             <div class="text-center mb-6">
                 <i class="fa-solid fa-building text-4xl text-blue-400 mb-2"></i>
@@ -293,7 +298,8 @@
                 <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="expiry">⏳ Expiry & Batch</button>
                 <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="alerts">🚨 Alerts</button>
                 <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="risk">⚠️ Risk Scores</button>
-                <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="transfers">🔄 Transfers</button>
+                <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="stock-transfers">🔄 Stock Transfers</button>
+                <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="suggestions">💡 Suggestions</button>
                 <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="limits">📊 Stock Limits</button>
                 <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="logs">📋 Logs</button>
                 <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="locations">🏢 Locations</button>
@@ -550,12 +556,39 @@
             </div>
 
             <!-- ========================================================== -->
-            <!-- TAB: TRANSFERS                                              -->
+            <!-- TAB: STOCK TRANSFERS (location-to-location, auto-complete)  -->
             <!-- ========================================================== -->
-            <div id="tab-transfers" class="tab-content hidden">
+            <div id="tab-stock-transfers" class="tab-content hidden">
                 <div class="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
                     <div class="flex flex-wrap justify-between items-center mb-4">
-                        <h2 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-arrow-right-arrow-left text-blue-400"></i> Transfer Suggestions</h2>
+                        <div>
+                            <h2 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-arrow-right-arrow-left text-blue-400"></i> Stock Transfers (Locations)</h2>
+                            <p class="text-xs text-slate-400 mt-1">History of moves between Shelf, Warehouse, and Online Fulfillment. Completed automatically.</p>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <select id="stock-transfer-status-filter" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
+                                <option value="">All Status</option>
+                                <option value="completed">Completed</option>
+                                <option value="pending">Pending</option>
+                                <option value="rejected">Rejected</option>
+                            </select>
+                            <button onclick="loadStockTransfers()" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-sm"><i class="fa-solid fa-refresh"></i></button>
+                        </div>
+                    </div>
+                    <div id="stock-transfers-container"><div class="text-center py-8 text-slate-400">Loading transfers...</div></div>
+                </div>
+            </div>
+
+            <!-- ========================================================== -->
+            <!-- TAB: SUGGESTIONS (branch-to-branch intelligence)            -->
+            <!-- ========================================================== -->
+            <div id="tab-suggestions" class="tab-content hidden">
+                <div class="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
+                    <div class="flex flex-wrap justify-between items-center mb-4">
+                        <div>
+                            <h2 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-lightbulb text-amber-400"></i> Intelligent Transfer Suggestions</h2>
+                            <p class="text-xs text-slate-400 mt-1">Branch-to-branch moves suggested by expiry or slow-mover analysis. Requires approval.</p>
+                        </div>
                         <div class="flex flex-wrap gap-2">
                             <select id="transfer-status-filter" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
                                 <option value="All">All Status</option>
@@ -566,7 +599,7 @@
                             <button onclick="loadTransferSuggestions()" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-sm"><i class="fa-solid fa-refresh"></i></button>
                         </div>
                     </div>
-                    <div id="transfer-container"><div class="text-center py-8 text-slate-400">Loading transfer suggestions...</div></div>
+                    <div id="transfer-container"><div class="text-center py-8 text-slate-400">Loading suggestions...</div></div>
                 </div>
             </div>
 
@@ -619,7 +652,7 @@
                         <h3 class="text-lg font-bold mb-4">Add New Location</h3>
                         <form id="location-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div><label class="block text-xs text-slate-400 mb-1">Location Name *</label><input id="location-name" type="text" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" /></div>
-                            <div><label class="block text-xs text-slate-400 mb-1">Location Type *</label><select id="location-type" required class="...">
+                            <div><label class="block text-xs text-slate-400 mb-1">Location Type *</label><select id="location-type" required class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
     <option value="store">Retail Store (POS / walk-in)</option>
     <option value="warehouse">Warehouse (back-of-house stock hub)</option>
     <option value="online_fulfillment">Online Fulfillment (e-commerce, deliveries)</option>
@@ -643,12 +676,21 @@
     <!-- MODALS                                                        -->
     <!-- ============================================================ -->
 
-    <!-- Transfer Modal -->
-    <div id="transfer-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-        <div class="bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-slate-600">
-            <h3 class="text-xl font-bold mb-4">Transfer Stock</h3>
+    <!-- Transfer Modal (searchable product picker, close button, ESC) -->
+    <div id="transfer-modal" class="modal-lift hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4">
+        <div class="bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-slate-600 relative">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold">Transfer Stock</h3>
+                <button id="transfer-modal-close" type="button" class="text-slate-400 hover:text-white text-2xl leading-none" aria-label="Close">&times;</button>
+            </div>
             <div class="space-y-3">
-                <div><label class="block text-sm mb-1">Product</label><select id="transfer-product" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select></div>
+                <div class="relative">
+                    <label class="block text-sm mb-1">Product *</label>
+                    <input type="text" id="transfer-product-search" placeholder="Type SKU or description..." autocomplete="off" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2" />
+                    <input type="hidden" id="transfer-product-id" value="" />
+                    <div id="transfer-product-results" class="hidden absolute left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-lg max-h-60 overflow-y-auto shadow-2xl"></div>
+                    <div id="transfer-product-selected" class="text-xs text-green-400 mt-1"></div>
+                </div>
                 <div><label class="block text-sm mb-1">From Location</label><select id="transfer-from" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select></div>
                 <div><label class="block text-sm mb-1">To Location</label><select id="transfer-to" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select></div>
                 <div><label class="block text-sm mb-1">Quantity</label><input id="transfer-qty" type="number" min="1" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2" /></div>
@@ -659,12 +701,15 @@
     </div>
 
     <!-- Location Modal (quick add) -->
-    <div id="location-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-        <div class="bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-slate-600">
-            <h3 class="text-xl font-bold mb-4">Add New Location</h3>
+    <div id="location-modal" class="modal-lift hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4">
+        <div class="bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-slate-600 relative">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold">Add New Location</h3>
+                <button id="location-modal-close" type="button" class="text-slate-400 hover:text-white text-2xl leading-none" aria-label="Close">&times;</button>
+            </div>
             <div class="space-y-3">
                 <div><label class="block text-sm mb-1">Location Name *</label><input type="text" id="location-modal-name" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2" /></div>
-                <div><label class="block text-sm mb-1">Location Type</label><select id="location-modal-type" class="...">
+                <div><label class="block text-sm mb-1">Location Type</label><select id="location-modal-type" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
     <option value="store">Retail Store (POS / walk-in)</option>
     <option value="warehouse">Warehouse (back-of-house stock hub)</option>
     <option value="online_fulfillment">Online Fulfillment (e-commerce, deliveries)</option>
@@ -677,9 +722,9 @@
     </div>
 
     <!-- Add Batch Modal -->
-    <div id="add-batch-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+    <div id="add-batch-modal" class="modal-lift hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4">
         <div class="bg-slate-800 rounded-2xl max-w-2xl w-full border border-slate-600 max-h-[90vh] flex flex-col">
-            <div class="p-5 border-b border-slate-700"><h3 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-layer-group text-emerald-400"></i> Add Batch</h3></div>
+            <div class="p-5 border-b border-slate-700 flex justify-between items-center"><h3 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-layer-group text-emerald-400"></i> Add Batch</h3><button id="add-batch-close" type="button" class="text-slate-400 hover:text-white text-2xl leading-none">&times;</button></div>
             <div class="p-5 overflow-y-auto flex-1">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="md:col-span-2"><label class="block text-sm font-medium mb-1">Select Product *</label><select id="batch-product-select" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm"><option value="">Select a product...</option></select></div>
@@ -698,7 +743,7 @@
     </div>
 
     <!-- Batch Details Modal -->
-    <div id="batch-details-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+    <div id="batch-details-modal" class="modal-lift hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4">
         <div class="bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-slate-600">
             <div class="flex justify-between items-center mb-4"><h3 class="text-xl font-bold">Batch Details</h3><button id="batch-details-close" class="text-slate-400 hover:text-white text-xl">&times;</button></div>
             <div id="batch-details-content"><div class="text-center p-4 text-slate-400">Loading...</div></div>
@@ -714,7 +759,7 @@
     </div>
 
     <!-- FEFO Modal -->
-    <div id="fefo-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+    <div id="fefo-modal" class="modal-lift hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4">
         <div class="bg-slate-800 rounded-2xl max-w-3xl w-full p-6 border border-slate-600 max-h-[80vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-4"><h3 class="text-xl font-bold">📦 FEFO Recommendations</h3><button id="fefo-close" class="text-slate-400 hover:text-white text-xl">&times;</button></div>
             <div id="fefo-recommendations-list"><div class="text-center p-8 text-slate-400">Loading...</div></div>
@@ -757,7 +802,7 @@
         function showToast(msg, type) {
             const toastDiv = document.createElement('div');
             toastDiv.className =
-                `fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white ${type === 'success' ? 'bg-green-600' : type === 'error' ? 'bg-red-600' : 'bg-blue-600'} z-50 text-sm shadow-lg max-w-md`;
+                `fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white ${type === 'success' ? 'bg-green-600' : type === 'error' ? 'bg-red-600' : 'bg-blue-600'} z-[100002] text-sm shadow-lg max-w-md`;
             toastDiv.innerText = msg;
             document.body.appendChild(toastDiv);
             setTimeout(() => toastDiv.remove(), 4000);
@@ -791,6 +836,20 @@
                 timer = setTimeout(() => fn.apply(this, args), delay);
             };
         }
+
+        // ================================================================
+        // MODAL Z-INDEX + ESC HANDLING
+        // ================================================================
+        // All modals carry the .modal-lift class so they sit above the search overlay.
+        // ESC closes any open modal.
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                ['transfer-modal', 'location-modal', 'add-batch-modal', 'batch-details-modal', 'fefo-modal']
+                    .forEach(id => document.getElementById(id)?.classList.add('hidden'));
+                // Also close the transfer-product-results dropdown
+                document.getElementById('transfer-product-results')?.classList.add('hidden');
+            }
+        });
 
         // ================================================================
         // API CALLS
@@ -1376,51 +1435,50 @@
         }
 
         function renderAlerts(alerts) {
-    const container = document.getElementById('alerts-container');
-    if (!alerts || alerts.length === 0) {
-        container.innerHTML = '<div class="text-center py-8 text-slate-400">✅ No alerts found</div>';
-        return;
-    }
-    container.innerHTML = alerts.map(alert => {
-        const isResolved = alert.is_resolved || alert.action_taken || alert.status === 'Resolved';
-        const urgencyIcon = alert.alert_type?.includes('CRITICAL') ? '🔴' :
-                            alert.alert_type?.includes('WARNING') ? '🟠' :
-                            alert.alert_type?.includes('MEDIUM') ? '🟡' : '🟢';
-        // Product info (fallback if missing)
-        const productDisplay = alert.product_name ? 
-            `<div class="text-sm font-medium text-white">${escapeHtml(alert.product_name)} ${alert.product_sku ? `(${escapeHtml(alert.product_sku)})` : ''}</div>` :
-            '';
-        return `
-            <div class="border-b border-slate-700 py-3 px-2 hover:bg-slate-800/50 transition rounded-lg" id="alert-${alert.id}">
-                <div class="flex flex-wrap justify-between items-start gap-2">
-                    <div class="flex-1 min-w-0">
-                        ${productDisplay}   <!-- new line -->
-                        <div class="flex items-center gap-2">
-                            <span>${urgencyIcon}</span>
-                            <span class="font-medium">${alert.alert_type || 'Alert'}</span>
-                            ${alert.batch ? `<span class="text-xs text-slate-400 font-mono">Batch: ${alert.batch}</span>` : ''}
-                        </div>
-                        <div class="text-sm text-slate-400">${alert.details || 'No details'}</div>
-                        ${alert.created_at ? `<div class="text-xs text-slate-500">${new Date(alert.created_at).toLocaleString()}</div>` : ''}
-                    </div>
-                    <div class="flex flex-col items-end gap-1 flex-shrink-0">
-                        ${isResolved ? 
-                            `<span class="text-xs bg-green-600/20 text-green-400 px-2 py-0.5 rounded-full">✅ Resolved</span>` :
-                            `<span class="text-xs bg-red-600/20 text-red-400 px-2 py-0.5 rounded-full">⚠️ Active</span>`
-                        }
-                        ${!isResolved ? `
-                            <div class="flex gap-1 mt-1">
-                                <button onclick="resolveAlert(${alert.id}, 'CONSUME', 1)" class="text-xs bg-green-600/20 hover:bg-green-600/40 px-2 py-0.5 rounded">Consume</button>
-                                <button onclick="resolveAlert(${alert.id}, 'DISPOSE', 1)" class="text-xs bg-red-600/20 hover:bg-red-600/40 px-2 py-0.5 rounded">Dispose</button>
-                                <button onclick="resolveAlert(${alert.id}, 'ACKNOWLEDGE', 0)" class="text-xs bg-slate-600/20 hover:bg-slate-600/40 px-2 py-0.5 rounded">Acknowledge</button>
+            const container = document.getElementById('alerts-container');
+            if (!alerts || alerts.length === 0) {
+                container.innerHTML = '<div class="text-center py-8 text-slate-400">✅ No alerts found</div>';
+                return;
+            }
+            container.innerHTML = alerts.map(alert => {
+                const isResolved = alert.is_resolved || alert.action_taken || alert.status === 'Resolved';
+                const urgencyIcon = alert.alert_type?.includes('CRITICAL') ? '🔴' :
+                                    alert.alert_type?.includes('WARNING') ? '🟠' :
+                                    alert.alert_type?.includes('MEDIUM') ? '🟡' : '🟢';
+                const productDisplay = alert.product_name ?
+                    `<div class="text-sm font-medium text-white">${escapeHtml(alert.product_name)} ${alert.product_sku ? `(${escapeHtml(alert.product_sku)})` : ''}</div>` :
+                    '';
+                return `
+                    <div class="border-b border-slate-700 py-3 px-2 hover:bg-slate-800/50 transition rounded-lg" id="alert-${alert.id}">
+                        <div class="flex flex-wrap justify-between items-start gap-2">
+                            <div class="flex-1 min-w-0">
+                                ${productDisplay}
+                                <div class="flex items-center gap-2">
+                                    <span>${urgencyIcon}</span>
+                                    <span class="font-medium">${alert.alert_type || 'Alert'}</span>
+                                    ${alert.batch ? `<span class="text-xs text-slate-400 font-mono">Batch: ${alert.batch}</span>` : ''}
+                                </div>
+                                <div class="text-sm text-slate-400">${alert.details || 'No details'}</div>
+                                ${alert.created_at ? `<div class="text-xs text-slate-500">${new Date(alert.created_at).toLocaleString()}</div>` : ''}
                             </div>
-                        ` : ''}
+                            <div class="flex flex-col items-end gap-1 flex-shrink-0">
+                                ${isResolved ?
+                                    `<span class="text-xs bg-green-600/20 text-green-400 px-2 py-0.5 rounded-full">✅ Resolved</span>` :
+                                    `<span class="text-xs bg-red-600/20 text-red-400 px-2 py-0.5 rounded-full">⚠️ Active</span>`
+                                }
+                                ${!isResolved ? `
+                                    <div class="flex gap-1 mt-1">
+                                        <button onclick="resolveAlert(${alert.id}, 'CONSUME', 1)" class="text-xs bg-green-600/20 hover:bg-green-600/40 px-2 py-0.5 rounded">Consume</button>
+                                        <button onclick="resolveAlert(${alert.id}, 'DISPOSE', 1)" class="text-xs bg-red-600/20 hover:bg-red-600/40 px-2 py-0.5 rounded">Dispose</button>
+                                        <button onclick="resolveAlert(${alert.id}, 'ACKNOWLEDGE', 0)" class="text-xs bg-slate-600/20 hover:bg-slate-600/40 px-2 py-0.5 rounded">Acknowledge</button>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
                     </div>
-                </div>
-            </div>
-        `;
-    }).join('');
-}
+                `;
+            }).join('');
+        }
         window.resolveAlert = async function(alertId, actionType, quantity) {
             try {
                 const result = await apiCall(`/alerts/${alertId}/resolve`, {
@@ -1515,10 +1573,12 @@
         }
 
         // ================================================================
-        // TRANSFER SUGGESTIONS
+        // TRANSFER SUGGESTIONS (branch-to-branch intelligence)
         // ================================================================
         async function loadTransferSuggestions() {
-            const status = document.getElementById('transfer-status-filter').value;
+            const filterEl = document.getElementById('transfer-status-filter');
+            if (!filterEl) return;
+            const status = filterEl.value;
             let url = '/transfer-suggestions?limit=50';
             if (status !== 'All') url += `&status=${status}`;
 
@@ -1527,13 +1587,14 @@
                 const suggestions = data.suggestions || data || [];
                 renderTransferSuggestions(suggestions);
             } catch (err) {
-                document.getElementById('transfer-container').innerHTML =
-                    `<div class="text-center py-8 text-red-400">❌ ${escapeHtml(err.message)}</div>`;
+                const c = document.getElementById('transfer-container');
+                if (c) c.innerHTML = `<div class="text-center py-8 text-red-400">❌ ${escapeHtml(err.message)}</div>`;
             }
         }
 
         function renderTransferSuggestions(suggestions) {
             const container = document.getElementById('transfer-container');
+            if (!container) return;
             if (!suggestions || suggestions.length === 0) {
                 container.innerHTML = '<div class="text-center py-8 text-green-400">✅ No transfer suggestions</div>';
                 return;
@@ -1586,6 +1647,64 @@
                 showToast(`❌ Failed: ${err.message}`, 'error');
             }
         };
+
+        // ================================================================
+        // STOCK TRANSFERS (location-to-location history)
+        // ================================================================
+        async function loadStockTransfers() {
+            const status = document.getElementById('stock-transfer-status-filter')?.value || '';
+            let url = '/stock-transfers?limit=50';
+            if (status) url += `&status=${status}`;
+
+            try {
+                const data = await apiCall(url);
+                renderStockTransfers(data.transfers || data || []);
+            } catch (err) {
+                const c = document.getElementById('stock-transfers-container');
+                if (c) c.innerHTML = `<div class="text-center py-8 text-red-400">❌ ${escapeHtml(err.message)}</div>`;
+            }
+        }
+
+        function renderStockTransfers(transfers) {
+            const container = document.getElementById('stock-transfers-container');
+            if (!container) return;
+            if (!transfers || transfers.length === 0) {
+                container.innerHTML = '<div class="text-center py-8 text-slate-400">No stock transfers yet.</div>';
+                return;
+            }
+
+            container.innerHTML = transfers.map(t => {
+                const statusColor = {
+                    pending:   'bg-blue-600/20 text-blue-400',
+                    approved:  'bg-yellow-600/20 text-yellow-400',
+                    completed: 'bg-green-600/20 text-green-400',
+                    rejected:  'bg-red-600/20 text-red-400'
+                }[t.status] || 'bg-slate-600/20 text-slate-300';
+
+                const fromName = t.from_location?.name || '—';
+                const toName = t.to_location?.name || '—';
+                const item = t.inventory?.description || `Item #${t.inventory_id}`;
+                const itemCode = t.inventory?.item_code || '';
+                const when = t.completed_at || t.created_at;
+
+                return `
+                    <div class="border border-slate-700 rounded-lg p-3 mb-2 hover:bg-slate-800/30 transition">
+                        <div class="flex flex-wrap justify-between items-start gap-2">
+                            <div class="flex-1">
+                                <div class="font-medium">${escapeHtml(item)} ${itemCode ? `<span class="text-xs text-slate-500">(${escapeHtml(itemCode)})</span>` : ''}</div>
+                                <div class="text-sm text-slate-400">
+                                    ${t.quantity} units • ${escapeHtml(fromName)} → ${escapeHtml(toName)}
+                                </div>
+                                <div class="text-xs text-slate-500">${when ? new Date(when).toLocaleString() : ''}</div>
+                            </div>
+                            <span class="text-xs px-2 py-0.5 rounded-full ${statusColor}">${escapeHtml(t.status)}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        document.getElementById('stock-transfer-status-filter')?.addEventListener('change', loadStockTransfers);
 
         // ================================================================
         // STOCK LIMITS
@@ -1712,57 +1831,139 @@
         });
 
         // ================================================================
-        // TRANSFER MODAL - UPDATED ENDPOINT
+        // TRANSFER MODAL — searchable product picker
         // ================================================================
-        function showTransferModal() {
-            if (!allLocations || allLocations.length < 2) { showToast('Need at least 2 locations for transfer',
-                'error'); return; }
-            document.getElementById('transfer-modal').classList.remove('hidden');
-            const productSelect = document.getElementById('transfer-product');
-            productSelect.innerHTML = products.map(p =>
-                `<option value="${p.id}">${escapeHtml(p.description)} (${escapeHtml(p.item_code || p.id)})</option>`
-                ).join('');
+        const transferSearchInput = document.getElementById('transfer-product-search');
+        const transferResultsBox = document.getElementById('transfer-product-results');
+        const transferProductIdInput = document.getElementById('transfer-product-id');
+        const transferSelectedLabel = document.getElementById('transfer-product-selected');
+
+        async function performTransferProductSearch(query) {
+            if (!query || query.length < 2) {
+                transferResultsBox.classList.add('hidden');
+                transferResultsBox.innerHTML = '';
+                return;
+            }
+            try {
+                const data = await apiCall(`/inventory/search?q=${encodeURIComponent(query)}&limit=15&offset=0`);
+                const results = data.items || [];
+                if (results.length === 0) {
+                    transferResultsBox.innerHTML = '<div class="p-3 text-sm text-slate-400">No products found</div>';
+                } else {
+                    transferResultsBox.innerHTML = results.map(p => `
+                        <div class="p-2 hover:bg-slate-800 cursor-pointer border-b border-slate-700 last:border-0"
+                             data-id="${p.id}"
+                             data-label="${escapeHtml(p.description)} (${escapeHtml(p.item_code || p.id)})">
+                            <div class="text-sm text-white">${escapeHtml(p.description)}</div>
+                            <div class="text-xs text-slate-400">${escapeHtml(p.item_code || '')} • Stock: ${p.current_qty || 0}</div>
+                        </div>
+                    `).join('');
+                    transferResultsBox.querySelectorAll('[data-id]').forEach(el => {
+                        el.addEventListener('click', function() {
+                            transferProductIdInput.value = this.dataset.id;
+                            transferSearchInput.value = this.dataset.label;
+                            transferSelectedLabel.textContent = `Selected: ${this.dataset.label}`;
+                            transferResultsBox.classList.add('hidden');
+                        });
+                    });
+                }
+                transferResultsBox.classList.remove('hidden');
+            } catch (err) {
+                transferResultsBox.innerHTML = `<div class="p-3 text-sm text-red-400">Search error: ${escapeHtml(err.message)}</div>`;
+                transferResultsBox.classList.remove('hidden');
+            }
         }
 
+        const debouncedTransferSearch = debounce(function() {
+            performTransferProductSearch(this.value.trim());
+        }, 300);
+
+        transferSearchInput?.addEventListener('input', debouncedTransferSearch);
+        transferSearchInput?.addEventListener('focus', function() {
+            const q = this.value.trim();
+            if (q.length >= 2) performTransferProductSearch(q);
+        });
+
+        // Close the dropdown when clicking outside it
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('#transfer-product-search') && !e.target.closest('#transfer-product-results')) {
+                transferResultsBox?.classList.add('hidden');
+            }
+        });
+
+        function showTransferModal() {
+            if (!allLocations || allLocations.length < 2) {
+                showToast('Need at least 2 locations for transfer', 'error');
+                return;
+            }
+            // Close the global product search overlay so it can't sit on top
+            closeSearchResults();
+
+            // Reset the picker
+            transferSearchInput.value = '';
+            transferProductIdInput.value = '';
+            transferSelectedLabel.textContent = '';
+            transferResultsBox.classList.add('hidden');
+            transferResultsBox.innerHTML = '';
+
+            document.getElementById('transfer-modal').classList.remove('hidden');
+            setTimeout(() => transferSearchInput?.focus(), 80);
+        }
+
+        function closeTransferModal() {
+            document.getElementById('transfer-modal').classList.add('hidden');
+            transferResultsBox?.classList.add('hidden');
+        }
+
+        document.getElementById('transfer-modal-close')?.addEventListener('click', closeTransferModal);
+        document.getElementById('transfer-cancel')?.addEventListener('click', closeTransferModal);
+        document.getElementById('show-transfer-modal')?.addEventListener('click', showTransferModal);
+
         document.getElementById('transfer-submit')?.addEventListener('click', async function() {
-            const productId = document.getElementById('transfer-product').value;
+            const productId = transferProductIdInput.value;
             const fromLoc = document.getElementById('transfer-from').value;
             const toLoc = document.getElementById('transfer-to').value;
             const qty = parseInt(document.getElementById('transfer-qty').value);
             const request_notes = document.getElementById('transfer-reason').value;
-            if (!productId || !fromLoc || !toLoc || !qty || qty <= 0) { showToast('Please fill all fields',
-                'error'); return; }
+
+            if (!productId) { showToast('Please select a product', 'error'); return; }
+            if (!fromLoc || !toLoc || !qty || qty <= 0) { showToast('Please fill all fields', 'error'); return; }
             if (fromLoc === toLoc) { showToast('Source and destination cannot be the same', 'error'); return; }
+
             try {
-                const response = await apiCall('/stock-transfers/request', {
-    method: 'POST',
-    body: JSON.stringify({
-        from_location_id: fromLoc || null,
-        to_location_id: toLoc,
-        inventory_id: parseInt(productId),     // inventory.id is integer
-        quantity: qty,
-        request_notes: request_notes || null
-    })
-});
-                showToast('Transfer request created!', 'success');
-                document.getElementById('transfer-modal').classList.add('hidden');
-                loadInventory();
-                loadTransferSuggestions();
+                await apiCall('/stock-transfers/request', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        from_location_id: fromLoc || null,
+                        to_location_id: toLoc,
+                        inventory_id: parseInt(productId),
+                        quantity: qty,
+                        request_notes: request_notes || null
+                    })
+                });
+                showToast('Transfer completed!', 'success');
+                closeTransferModal();
+                // Reset the picker for next time
+                document.getElementById('transfer-qty').value = '';
+                document.getElementById('transfer-reason').value = '';
+                transferSearchInput.value = '';
+                transferProductIdInput.value = '';
+                transferSelectedLabel.textContent = '';
+
+                // Refresh the stock-transfers tab (where the completed row now lives),
+                // and refresh the inventory so location_stocks reflects the move.
+                await loadStockTransfers();
+                await loadInventory();
             } catch (err) {
                 showToast(`Failed: ${err.message}`, 'error');
             }
         });
 
-        document.getElementById('transfer-cancel')?.addEventListener('click', () => {
-            document.getElementById('transfer-modal').classList.add('hidden');
-        });
-
-        document.getElementById('show-transfer-modal')?.addEventListener('click', showTransferModal);
-
         // ================================================================
         // LOCATION MODAL (quick add from inventory tab)
         // ================================================================
         document.getElementById('show-location-modal')?.addEventListener('click', () => {
+            closeSearchResults();
             document.getElementById('location-modal').classList.remove('hidden');
             document.getElementById('location-modal-name').value = '';
             document.getElementById('location-modal-type').value = 'warehouse';
@@ -1788,6 +1989,9 @@
         document.getElementById('location-modal-cancel')?.addEventListener('click', () => {
             document.getElementById('location-modal').classList.add('hidden');
         });
+        document.getElementById('location-modal-close')?.addEventListener('click', () => {
+            document.getElementById('location-modal').classList.add('hidden');
+        });
 
         // ================================================================
         // BATCH MODAL
@@ -1806,11 +2010,15 @@
         }
 
         document.getElementById('show-add-batch-modal')?.addEventListener('click', () => {
+            closeSearchResults();
             loadBatchProducts();
             document.getElementById('add-batch-modal').classList.remove('hidden');
         });
 
         document.getElementById('batch-cancel')?.addEventListener('click', () => {
+            document.getElementById('add-batch-modal').classList.add('hidden');
+        });
+        document.getElementById('add-batch-close')?.addEventListener('click', () => {
             document.getElementById('add-batch-modal').classList.add('hidden');
         });
 
@@ -1825,7 +2033,7 @@
             if (!quantity || quantity <= 0) { showToast('Quantity must be > 0', 'error'); return; }
             if (!expiryDate) { showToast('Expiry date is required', 'error'); return; }
             try {
-                const result = await apiCall(`/inventory/batches?inventory_id=${productId}`, {
+                await apiCall(`/inventory/batches?inventory_id=${productId}`, {
                     method: 'POST',
                     body: JSON.stringify({
                         batch_number: batchNumber,
@@ -1856,21 +2064,21 @@
             if (alertFilter !== 'all') url += `&alert_level=${alertFilter}`;
             try {
                 const data = await apiCall(url);
-                const products = data.expiring_products || data || [];
-                renderExpiringTable(products, data.summary);
+                const prods = data.expiring_products || data || [];
+                renderExpiringTable(prods, data.summary);
             } catch (err) {
                 document.getElementById('expiring-products-table').innerHTML =
                     `<tr><td colspan="7" class="text-center p-8 text-red-400">❌ ${escapeHtml(err.message)}</td></tr>`;
             }
         }
 
-        function renderExpiringTable(products, summary) {
+        function renderExpiringTable(prods, summary) {
             const tbody = document.getElementById('expiring-products-table');
-            if (!products || products.length === 0) {
+            if (!prods || prods.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="7" class="text-center p-8 text-slate-400">✅ No products expiring within 180 days</td></tr>';
                 return;
             }
-            tbody.innerHTML = products.map(p => {
+            tbody.innerHTML = prods.map(p => {
                 const alertClass = p.alert_level === 'critical' ? 'bg-red-900/50 text-red-300' :
                     p.alert_level === 'warning' ? 'bg-orange-900/50 text-orange-300' :
                     p.alert_level === 'info' ? 'bg-yellow-900/50 text-yellow-300' : 'bg-blue-900/50 text-blue-300';
@@ -1991,6 +2199,7 @@
         // FEFO
         // ================================================================
         document.getElementById('show-fefo-modal')?.addEventListener('click', async function() {
+            closeSearchResults();
             try {
                 const data = await apiCall('/inventory/expiry-fefo-recommendations');
                 const recs = data.recommendations || data || [];
@@ -2036,7 +2245,8 @@
                 const tab = this.dataset.tab;
                 if (tab === 'alerts') loadAlerts();
                 else if (tab === 'risk') loadRiskScores();
-                else if (tab === 'transfers') loadTransferSuggestions();
+                else if (tab === 'stock-transfers') loadStockTransfers();
+                else if (tab === 'suggestions') loadTransferSuggestions();
                 else if (tab === 'limits') loadStockLimits();
                 else if (tab === 'logs') loadSystemLogs();
                 else if (tab === 'locations') loadLocationsUI();
@@ -2277,6 +2487,7 @@
             await loadAlerts();
             await loadRiskScores();
             await loadTransferSuggestions();
+            await loadStockTransfers();
             await loadStockLimits();
             await loadSystemLogs();
             await loadExpiringProducts();
@@ -2380,6 +2591,7 @@
                         await loadAlerts();
                         await loadRiskScores();
                         await loadTransferSuggestions();
+                        await loadStockTransfers();
                         await loadStockLimits();
                         await loadSystemLogs();
                         await loadExpiringProducts();
