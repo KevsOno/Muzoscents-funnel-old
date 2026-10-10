@@ -1,639 +1,730 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Organisation Registry · Kevs bOS</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
-<style>
-  body { background: #0F172A; }
-  .org-card { transition: border-color 0.15s; }
-  .org-card:hover { border-color: #475569; }
-  .copy-btn:active { transform: scale(0.9); }
-  .modal { backdrop-filter: blur(4px); }
-  .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-</style>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kevs Digital – Sign In</title>
+    <script src="https://cdn.tailwindcss.com">
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
+    </script>
+    <style>
+        /* ... all styles unchanged ... */
+        :root {
+            --kevs-orange: #f97316;
+            --kevs-blue: #3b82f6;
+        }
+        body {
+            background-color: #fef9e6;
+            font-family: system-ui, sans-serif;
+        }
+        .loading-spinner {
+            border: 2px solid #e5e7eb;
+            border-top: 2px solid var(--kevs-blue);
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 0.6s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .btn-login {
+            position: relative;
+            overflow: hidden;
+            transition: background 0.3s ease, transform 0.15s ease, box-shadow 0.25s ease;
+            will-change: transform;
+        }
+        .btn-login:active:not(:disabled) { transform: scale(0.96); }
+        .btn-login.loading {
+            pointer-events: none;
+            background-color: #2563eb !important;
+        }
+        .btn-login.loading .btn-text { visibility: hidden; }
+        .btn-login.loading .btn-loader { display: inline-flex; }
+        .btn-login .btn-loader {
+            display: none;
+            position: absolute;
+            inset: 0;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            color: white;
+            font-weight: 500;
+        }
+        .btn-login .btn-loader .spinner {
+            width: 22px;
+            height: 22px;
+            border: 2.5px solid rgba(255,255,255,0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.65s linear infinite;
+        }
+        .btn-login .btn-loader .loader-text { font-size: 0.95rem; }
+        .btn-login .ripple {
+            position: absolute;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.35);
+            transform: scale(0);
+            animation: rippleAnim 0.6s ease-out forwards;
+            pointer-events: none;
+        }
+        @keyframes rippleAnim {
+            to { transform: scale(4); opacity: 0; }
+        }
+        .btn-login.success {
+            background-color: #059669 !important;
+        }
+        .btn-login.success .btn-text { visibility: visible; }
+        .btn-login.success .btn-loader { display: none !important; }
+        .btn-login .btn-text {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn-login .btn-text i { font-size: 1rem; }
+        @keyframes shake {
+            0%,100% { transform: translateX(0); }
+            20% { transform: translateX(-8px); }
+            40% { transform: translateX(8px); }
+            60% { transform: translateX(-5px); }
+            80% { transform: translateX(5px); }
+        }
+        .btn-login.error {
+            animation: shake 0.45s ease forwards;
+            background-color: #dc2626 !important;
+        }
+        .btn-login.error .btn-text { visibility: visible; }
+        .btn-login.error .btn-loader { display: none !important; }
+        #toast-container .toast {
+            transform: translateX(120%);
+            animation: slideIn 0.35s ease forwards;
+        }
+        @keyframes slideIn {
+            to { transform: translateX(0); }
+        }
+        #toast-container .toast.removing {
+            animation: slideOut 0.3s ease forwards;
+        }
+        @keyframes slideOut {
+            to { transform: translateX(120%); opacity: 0; }
+        }
+        input:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            background-color: #f3f4f6;
+        }
+        .hidden { display: none !important; }
+        #reset-code {
+            letter-spacing: 0.5em;
+            font-size: 1.25rem;
+        }
+        #reset-code::placeholder {
+            letter-spacing: 0.1em;
+            font-size: 0.9rem;
+        }
+        .step-divider {
+            border-top: 1px dashed #e5e7eb;
+            margin: 1.5rem 0;
+        }
+    </style>
 </head>
-<body class="text-slate-200 min-h-screen">
+<body class="min-h-screen flex items-center justify-center p-4">
 
-<!-- ─── AUTH GATE ─── -->
-<div id="gate" class="max-w-md mx-auto mt-24 bg-slate-800/70 rounded-2xl p-8 border border-slate-700 shadow-2xl">
-  <div class="text-center mb-6">
-    <i class="fa-solid fa-building-lock text-3xl text-amber-400 mb-3"></i>
-    <h1 class="text-xl font-bold">Organisation Registry</h1>
-    <p class="text-sm text-slate-400 mt-1">Enter your admin key to continue.</p>
-  </div>
-  <input id="admin-key" type="password" placeholder="X-Admin-Key"
-         class="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm mb-3 kbd focus:border-blue-500 outline-none" />
-  <button id="unlock-btn" class="w-full bg-blue-600 hover:bg-blue-700 py-2.5 rounded-lg font-medium transition">
-    Unlock
-  </button>
-  <p id="gate-error" class="hidden text-red-400 text-xs mt-3 text-center"></p>
-  <p class="text-xs text-slate-500 mt-4 text-center">
-    The key stays in this browser tab only.
-  </p>
-</div>
+    <div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
 
-<!-- ─── PORTAL ─── -->
-<div id="portal" class="hidden max-w-6xl mx-auto p-4 md:p-8">
-
-  <!-- Header -->
-  <div class="flex flex-wrap justify-between items-start gap-4 mb-6 pb-4 border-b border-slate-700">
-    <div>
-      <h1 class="text-2xl font-bold">
-        <i class="fa-solid fa-building text-blue-400 mr-2"></i>Organisation Registry
-      </h1>
-      <div class="text-sm text-slate-400 mt-1" id="summary-line">Loading…</div>
-    </div>
-    <div class="flex gap-2 flex-wrap">
-      <button id="refresh-btn" class="bg-slate-700 hover:bg-slate-600 text-sm px-3 py-2 rounded-lg">
-        <i class="fa-solid fa-rotate-right mr-1"></i>Refresh
-      </button>
-      <button id="new-btn" class="bg-emerald-600 hover:bg-emerald-700 text-sm px-3 py-2 rounded-lg font-medium">
-        <i class="fa-solid fa-plus mr-1"></i>New Organisation
-      </button>
-      <button id="lock-btn" class="bg-slate-800 hover:bg-slate-700 text-sm px-3 py-2 rounded-lg" title="Lock">
-        <i class="fa-solid fa-lock"></i>
-      </button>
-    </div>
-  </div>
-
-  <!-- Stats strip -->
-  <div id="stats-strip" class="hidden grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-    <div class="bg-slate-800/60 rounded-xl p-3 border border-slate-700">
-      <div class="text-2xl font-bold text-blue-400" id="stat-total">0</div>
-      <div class="text-xs text-slate-400">Total orgs</div>
-    </div>
-    <div class="bg-slate-800/60 rounded-xl p-3 border border-slate-700">
-      <div class="text-2xl font-bold text-emerald-400" id="stat-published">0</div>
-      <div class="text-xs text-slate-400">Published</div>
-    </div>
-    <div class="bg-slate-800/60 rounded-xl p-3 border border-slate-700">
-      <div class="text-2xl font-bold text-orange-400" id="stat-food">0</div>
-      <div class="text-xs text-slate-400">Food verticals</div>
-    </div>
-    <div class="bg-slate-800/60 rounded-xl p-3 border border-slate-700">
-      <div class="text-2xl font-bold text-purple-400" id="stat-users">0</div>
-      <div class="text-xs text-slate-400">Total users</div>
-    </div>
-  </div>
-
-  <!-- Create panel -->
-  <div id="create-panel" class="hidden mb-6 bg-slate-800/70 rounded-2xl border border-slate-700 p-6">
-    <div class="flex justify-between items-center mb-5">
-      <h2 class="text-lg font-bold">Create organisation</h2>
-      <button id="create-close" class="text-slate-400 hover:text-white">
-        <i class="fa-solid fa-xmark text-lg"></i>
-      </button>
-    </div>
-
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div class="md:col-span-2">
-        <label class="block text-xs text-slate-400 mb-1">Business name *</label>
-        <input id="f-org-name" type="text" placeholder="Acme Pharmacy Ltd."
-               class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm focus:border-blue-500 outline-none" />
-      </div>
-
-      <div>
-        <label class="block text-xs text-slate-400 mb-1">
-          URL slug <span class="text-slate-500">— leave blank to auto-generate</span>
-        </label>
-        <div class="flex items-center bg-slate-950 border border-slate-700 rounded-lg overflow-hidden focus-within:border-blue-500">
-          <span class="px-3 py-2.5 text-xs text-slate-500 bg-slate-900 whitespace-nowrap kbd">/store/</span>
-          <input id="f-slug" type="text" placeholder="acme-pharmacy"
-                 class="flex-1 bg-transparent p-2.5 text-sm outline-none kbd" />
-        </div>
-        <p id="slug-preview" class="text-xs text-slate-500 mt-1"></p>
-      </div>
-
-      <div>
-        <label class="block text-xs text-slate-400 mb-1">Vertical *</label>
-        <select id="f-vertical" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm focus:border-blue-500 outline-none">
-          <option value="retail">Retail / Pharmacy / Supermarket</option>
-          <option value="food">Food &amp; Beverage / Restaurant</option>
-          <option value="service">Service business</option>
-        </select>
-      </div>
-
-      <div>
-        <label class="block text-xs text-slate-400 mb-1">City / region *</label>
-        <input id="f-location" type="text" placeholder="Lagos"
-               class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm focus:border-blue-500 outline-none" />
-      </div>
-
-      <div>
-        <label class="block text-xs text-slate-400 mb-1">Industry / niche *</label>
-        <select id="f-niche" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm focus:border-blue-500 outline-none">
-          <option value="">Select…</option>
-          <option>Retail</option>
-          <option>E-commerce</option>
-          <option>Pharmacy</option>
-          <option>Grocery</option>
-          <option>Fashion</option>
-          <option>Electronics</option>
-          <option>Restaurant</option>
-          <option>Fast Food</option>
-          <option>Cafe</option>
-          <option>Wholesale</option>
-          <option>Beauty</option>
-          <option>Other</option>
-        </select>
-      </div>
-
-      <div>
-        <label class="block text-xs text-slate-400 mb-1">Monthly budget (₦)</label>
-        <input id="f-budget" type="number" value="0" min="0"
-               class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm focus:border-blue-500 outline-none" />
-      </div>
-
-      <div class="md:col-span-2">
-        <div id="create-error" class="hidden p-2.5 rounded-lg bg-red-900/30 border border-red-700 text-red-200 text-sm"></div>
-      </div>
-    </div>
-
-    <div class="flex gap-3 mt-5">
-      <button id="create-submit" class="bg-emerald-600 hover:bg-emerald-700 px-5 py-2.5 rounded-lg text-sm font-medium transition">
-        <i class="fa-solid fa-check mr-1"></i>Create
-      </button>
-      <button id="create-cancel" class="bg-slate-700 hover:bg-slate-600 px-5 py-2.5 rounded-lg text-sm transition">
-        Cancel
-      </button>
-    </div>
-  </div>
-
-  <!-- Org list -->
-  <div id="org-list" class="space-y-3">
-    <div class="text-center py-12 text-slate-400">
-      <i class="fa-solid fa-spinner fa-pulse mr-2"></i>Loading…
-    </div>
-  </div>
-
-</div>
-
-<!-- ─── CREATE SUCCESS MODAL ─── -->
-<div id="success-modal" class="hidden fixed inset-0 bg-black/70 modal flex items-center justify-center z-50 p-4">
-  <div class="bg-slate-800 rounded-2xl max-w-lg w-full p-6 border border-slate-600 shadow-2xl">
-    <div class="text-center mb-5">
-      <i class="fa-solid fa-circle-check text-4xl text-emerald-400 mb-2"></i>
-      <h3 class="text-xl font-bold">Organisation created</h3>
-    </div>
-    <div id="success-body" class="space-y-3 text-sm"></div>
-    <div class="flex gap-3 mt-6">
-      <button id="success-copy-all" class="flex-1 bg-blue-600 hover:bg-blue-700 py-2.5 rounded-lg text-sm font-medium">
-        <i class="fa-solid fa-copy mr-1"></i>Copy summary
-      </button>
-      <button id="success-close" class="flex-1 bg-slate-700 hover:bg-slate-600 py-2.5 rounded-lg text-sm">
-        Done
-      </button>
-    </div>
-  </div>
-</div>
-
-<!-- ─── EDIT MODAL ─── -->
-<div id="edit-modal" class="hidden fixed inset-0 bg-black/70 modal flex items-center justify-center z-50 p-4">
-  <div class="bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-slate-600 shadow-2xl">
-    <div class="flex justify-between items-center mb-5">
-      <h3 class="text-lg font-bold">Edit organisation</h3>
-      <button id="edit-close" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
-    </div>
-    <input type="hidden" id="edit-org-id" />
-    <div class="space-y-4">
-      <div>
-        <label class="block text-xs text-slate-400 mb-1">Business name</label>
-        <input id="edit-name" type="text"
-               class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
-      </div>
-      <div>
-        <label class="block text-xs text-slate-400 mb-1">URL slug</label>
-        <div class="flex items-center bg-slate-950 border border-slate-700 rounded-lg overflow-hidden">
-          <span class="px-3 py-2.5 text-xs text-slate-500 bg-slate-900 whitespace-nowrap kbd">/store/</span>
-          <input id="edit-slug" type="text" class="flex-1 bg-transparent p-2.5 text-sm outline-none kbd" />
-        </div>
-      </div>
-      <div>
-        <label class="block text-xs text-slate-400 mb-1">Vertical</label>
-        <select id="edit-vertical" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
-          <option value="retail">Retail / Pharmacy / Supermarket</option>
-          <option value="food">Food &amp; Beverage / Restaurant</option>
-          <option value="service">Service business</option>
-        </select>
-      </div>
-      <div id="edit-error" class="hidden p-2.5 rounded-lg bg-red-900/30 border border-red-700 text-red-200 text-sm"></div>
-    </div>
-    <div class="flex gap-3 mt-6">
-      <button id="edit-submit" class="flex-1 bg-blue-600 hover:bg-blue-700 py-2.5 rounded-lg text-sm font-medium">Save</button>
-      <button id="edit-cancel" class="flex-1 bg-slate-700 hover:bg-slate-600 py-2.5 rounded-lg text-sm">Cancel</button>
-    </div>
-  </div>
-</div>
-
-<script>
-const API_BASE = 'https://kevsono-kevs-digital-bos.hf.space';
-let ADMIN_KEY = sessionStorage.getItem('kd_admin_key') || '';
-let ORGS = [];
-
-// ─── helpers ───
-function esc(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c =>
-    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-
-function toast(msg, kind = 'success') {
-  const colors = { success: 'bg-green-600', error: 'bg-red-600', info: 'bg-blue-600' };
-  const el = document.createElement('div');
-  el.className = `fixed bottom-4 right-4 ${colors[kind]} text-white px-4 py-2 rounded-lg text-sm shadow-lg z-50`;
-  el.textContent = msg;
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), 2200);
-}
-
-function copy(text, label) {
-  navigator.clipboard.writeText(text).then(() => toast(`${label} copied`));
-}
-
-// ─── auth ───
-async function tryUnlock(key) {
-  const res = await fetch(`${API_BASE}/admin/orgs`, { headers: { 'X-Admin-Key': key } });
-  if (res.status === 403) throw new Error('Invalid admin key');
-  if (!res.ok) throw new Error(`Server returned ${res.status}`);
-  return await res.json();
-}
-
-document.getElementById('unlock-btn').addEventListener('click', async () => {
-  const key = document.getElementById('admin-key').value.trim();
-  if (!key) return;
-  const errEl = document.getElementById('gate-error');
-  errEl.classList.add('hidden');
-  try {
-    const data = await tryUnlock(key);
-    ADMIN_KEY = key;
-    sessionStorage.setItem('kd_admin_key', key);
-    document.getElementById('gate').classList.add('hidden');
-    document.getElementById('portal').classList.remove('hidden');
-    renderOrgs(data.organisations || []);
-    loadStats();
-  } catch (e) {
-    errEl.textContent = e.message;
-    errEl.classList.remove('hidden');
-  }
-});
-
-document.getElementById('admin-key').addEventListener('keypress', e => {
-  if (e.key === 'Enter') document.getElementById('unlock-btn').click();
-});
-
-document.getElementById('lock-btn').addEventListener('click', () => {
-  sessionStorage.removeItem('kd_admin_key');
-  ADMIN_KEY = '';
-  document.getElementById('admin-key').value = '';
-  document.getElementById('portal').classList.add('hidden');
-  document.getElementById('gate').classList.remove('hidden');
-});
-
-// ─── list ───
-async function loadOrgs() {
-  const list = document.getElementById('org-list');
-  list.innerHTML = '<div class="text-center py-12 text-slate-400"><i class="fa-solid fa-spinner fa-pulse mr-2"></i>Loading…</div>';
-  try {
-    const res = await fetch(`${API_BASE}/admin/orgs`, { headers: { 'X-Admin-Key': ADMIN_KEY } });
-    if (res.status === 403) { sessionStorage.removeItem('kd_admin_key'); location.reload(); return; }
-    const data = await res.json();
-    renderOrgs(data.organisations || []);
-    loadStats();
-  } catch (e) {
-    list.innerHTML = `<div class="text-center py-12 text-red-400">Failed to load: ${esc(e.message)}</div>`;
-  }
-}
-
-async function loadStats() {
-  try {
-    const res = await fetch(`${API_BASE}/admin/orgs/stats`, { headers: { 'X-Admin-Key': ADMIN_KEY } });
-    if (!res.ok) return;
-    const s = await res.json();
-    document.getElementById('stat-total').textContent     = s.total_orgs;
-    document.getElementById('stat-published').textContent = s.published_orgs;
-    document.getElementById('stat-food').textContent      = s.by_vertical.food;
-    document.getElementById('stat-users').textContent     = s.total_users;
-    document.getElementById('stats-strip').classList.remove('hidden');
-  } catch {}
-}
-
-function renderOrgs(orgs) {
-  ORGS = orgs;
-  document.getElementById('summary-line').textContent =
-    `${orgs.length} organisation${orgs.length === 1 ? '' : 's'}`;
-
-  const list = document.getElementById('org-list');
-  if (!orgs.length) {
-    list.innerHTML = `
-      <div class="text-center py-16 text-slate-400">
-        <i class="fa-solid fa-building text-3xl mb-3 opacity-50"></i>
-        <p>No organisations yet.</p>
-        <button onclick="document.getElementById('new-btn').click()"
-                class="mt-3 text-sm bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg text-white">
-          Create the first one
-        </button>
-      </div>`;
-    return;
-  }
-
-  list.innerHTML = orgs.map(org => {
-    const slug = org.slug || '';
-    const storeUrl = slug ? `${API_BASE}/store/${slug}` : null;
-    const created = org.created_at ? new Date(org.created_at).toLocaleDateString() : '—';
-    const verticalColor = org.vertical === 'food' ? 'text-orange-400 bg-orange-900/30'
-                        : org.vertical === 'service' ? 'text-purple-400 bg-purple-900/30'
-                        : 'text-blue-400 bg-blue-900/30';
-    const publishedBadge = org.storefront_published
-      ? '<span class="text-xs bg-emerald-900/40 text-emerald-300 px-2 py-0.5 rounded-full"><i class="fa-solid fa-globe mr-1"></i>Live</span>'
-      : '<span class="text-xs bg-slate-700 text-slate-400 px-2 py-0.5 rounded-full"><i class="fa-solid fa-eye-slash mr-1"></i>Unpublished</span>';
-    const owner = org.owner_email
-      ? `<span class="text-slate-300">${esc(org.owner_name || org.owner_email)}</span>
-         <span class="text-slate-500">· ${esc(org.owner_email)}</span>`
-      : '<span class="text-slate-500 italic">no owner yet</span>';
-
-    return `
-      <div class="org-card bg-slate-800/60 border border-slate-700 rounded-xl p-5">
-        <div class="flex flex-wrap justify-between items-start gap-3 mb-3">
-          <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-2 flex-wrap">
-              <h3 class="font-bold text-white text-lg truncate">${esc(org.org_name)}</h3>
-              <span class="text-xs px-2 py-0.5 rounded-full ${verticalColor}">${esc(org.vertical)}</span>
-              ${publishedBadge}
-            </div>
-            <div class="text-xs text-slate-400 mt-1">
-              ${esc(org.niche || '—')} · ${esc(org.location || '—')} · Created ${created} · ${org.member_count} member${org.member_count === 1 ? '' : 's'}
-            </div>
-            <div class="text-xs text-slate-400 mt-0.5">Owner: ${owner}</div>
-          </div>
-          <div class="flex gap-2 flex-wrap">
-            ${storeUrl ? `<a href="${esc(storeUrl)}" target="_blank"
-                            class="text-xs bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 px-3 py-1.5 rounded-lg">
-                            <i class="fa-solid fa-store mr-1"></i>Storefront</a>` : ''}
-            <button class="edit-btn text-xs bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg"
-                    data-id="${esc(org.id)}"><i class="fa-solid fa-pen-to-square"></i></button>
-          </div>
+    <div class="max-w-md w-full bg-white rounded-2xl shadow-xl p-8">
+        <div class="text-center mb-6">
+            <span class="text-3xl font-bold text-orange-500">Kevs</span><span class="text-2xl font-semibold text-gray-800">BI</span>
+            <p class="text-xs text-gray-400 mt-1">Intelligence dashboard</p>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3 border-t border-slate-700">
-          <div>
-            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Slug</div>
-            <div class="flex items-center gap-2">
-              <code class="text-xs kbd text-blue-300 truncate">${esc(slug || '—')}</code>
-              ${slug ? `<button class="copy-btn text-slate-500 hover:text-white text-xs"
-                                data-copy="${esc(slug)}" data-label="Slug"><i class="fa-regular fa-copy"></i></button>` : ''}
+        <div id="tabs-container" class="flex border-b mb-6">
+            <button id="login-tab" class="flex-1 py-2 font-medium text-blue-600 border-b-2 border-blue-600">Login</button>
+            <button id="register-tab" class="flex-1 py-2 font-medium text-gray-500">Register</button>
+        </div>
+
+        <!-- LOGIN FORM -->
+        <form id="login-form">
+            <input type="email" id="login-email" placeholder="Email" class="w-full mb-3 p-3 border rounded-lg" required />
+            <div class="relative mb-2">
+                <input type="password" id="login-password" placeholder="Password" class="w-full p-3 border rounded-lg pr-10" required />
+                <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="login-password">
+                    <i class="fa-solid fa-eye"></i>
+                </button>
             </div>
-          </div>
-          <div>
-            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Invite code</div>
-            <div class="flex items-center gap-2">
-              <code class="text-xs kbd text-emerald-300">${esc(org.invite_code || '—')}</code>
-              ${org.invite_code ? `<button class="copy-btn text-slate-500 hover:text-white text-xs"
-                                          data-copy="${esc(org.invite_code)}" data-label="Invite code">
-                                          <i class="fa-regular fa-copy"></i></button>` : ''}
-              <button class="regen-btn text-slate-500 hover:text-amber-300 text-xs ml-1"
-                      data-id="${esc(org.id)}" title="Generate new code">
-                <i class="fa-solid fa-rotate"></i>
-              </button>
+            <div class="text-right mb-4">
+                <button type="button" id="forgot-pwd-btn" class="text-xs text-blue-500 hover:underline">Forgot password?</button>
             </div>
-          </div>
-          <div>
-            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Storefront</div>
-            <button class="publish-btn text-xs ${org.storefront_published ? 'text-emerald-400 hover:text-emerald-300' : 'text-slate-400 hover:text-slate-200'}"
-                    data-id="${esc(org.id)}" data-published="${org.storefront_published}">
-              <i class="fa-solid ${org.storefront_published ? 'fa-toggle-on' : 'fa-toggle-off'} mr-1"></i>
-              ${org.storefront_published ? 'Unpublish' : 'Publish'}
+            <button type="submit" id="login-submit-btn" class="btn-login w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium transition">
+                <span class="btn-text"><i class="fa-regular fa-circle-check"></i> Login</span>
+                <span class="btn-loader"><span class="spinner"></span><span class="loader-text">Signing in…</span></span>
             </button>
-          </div>
+            <div class="flex items-center my-4">
+                <div class="flex-1 border-t border-gray-200"></div>
+                <span class="px-3 text-xs text-gray-400 uppercase">Or</span>
+                <div class="flex-1 border-t border-gray-200"></div>
+            </div>
+            <button type="button" id="demo-login-btn" class="w-full bg-emerald-600 text-white py-2.5 rounded-lg hover:bg-emerald-700 font-medium flex items-center justify-center gap-2 transition">
+                <i class="fa-solid fa-bolt"></i> One-Click Demo Access
+            </button>
+        </form>
+
+        <!-- REGISTER FORM -->
+        <form id="register-form" class="hidden">
+            <div class="grid grid-cols-2 gap-2 mb-2">
+                <div><label class="block text-xs text-gray-500 mb-1">First Name *</label><input type="text" id="reg-fname" placeholder="John" class="w-full p-3 border rounded-lg" required /></div>
+                <div><label class="block text-xs text-gray-500 mb-1">Last Name *</label><input type="text" id="reg-lname" placeholder="Doe" class="w-full p-3 border rounded-lg" required /></div>
+            </div>
+            <div><label class="block text-xs text-gray-500 mb-1">Phone Number *</label><input type="tel" id="reg-phone" placeholder="e.g., +2348123456789" class="w-full p-3 border rounded-lg mb-2" required /></div>
+            <div><label class="block text-xs text-gray-500 mb-1">Email *</label><input type="email" id="reg-email" placeholder="Email" class="w-full mb-2 p-3 border rounded-lg" required /></div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Password *</label>
+                <div class="relative mb-2">
+                    <input type="password" id="reg-password" placeholder="Password" class="w-full p-3 border rounded-lg pr-10" required />
+                    <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reg-password"><i class="fa-solid fa-eye"></i></button>
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Confirm Password *</label>
+                <div class="relative mb-4">
+                    <input type="password" id="reg-confirm-password" placeholder="Confirm Password" class="w-full p-3 border rounded-lg pr-10" required />
+                    <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reg-confirm-password"><i class="fa-solid fa-eye"></i></button>
+                </div>
+            </div>
+            <button type="submit" class="w-full bg-green-600 text-white py-2.5 rounded-lg hover:bg-green-700 transition">Register</button>
+        </form>
+
+        <!-- RESET PASSWORD FORM (TWO-STEP) -->
+        <div id="reset-password-form" class="hidden">
+            <h3 class="text-center font-bold text-lg mb-2">Reset Your Password</h3>
+
+            <!-- Step 1: Email + Code -->
+            <div id="reset-step1">
+                <p class="text-sm text-gray-500 mb-4">Enter the email address and the 8‑digit code you received.</p>
+                <div class="mb-3">
+                    <input type="email" id="reset-email" placeholder="Your email address" class="w-full p-3 border rounded-lg" required />
+                </div>
+                <div class="mb-3 relative">
+                    <input type="text" id="reset-code" placeholder="8‑digit code from email" 
+                           class="w-full p-3 border rounded-lg text-center text-xl font-mono tracking-widest" 
+                           maxlength="8" inputmode="numeric" pattern="[0-9]*" required />
+                    <span id="code-auto-submit-hint" class="absolute right-3 top-3 text-xs text-gray-400 hidden">Auto‑verifying…</span>
+                </div>
+                <button type="button" id="verify-code-btn" class="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700 transition">
+                    Verify Code
+                </button>
+                <div class="text-center mt-3">
+                    <button type="button" id="back-to-login-from-reset" class="text-xs text-blue-500 hover:underline">Back to login</button>
+                </div>
+            </div>
+
+            <!-- Step 2: New Password -->
+            <div id="reset-step2" class="hidden">
+                <p class="text-sm text-green-600 mb-2">✅ Code verified. Now set your new password.</p>
+                <div class="relative mb-2">
+                    <input type="password" id="reset-password" placeholder="New Password" class="w-full p-3 border rounded-lg pr-10" required />
+                    <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reset-password">
+                        <i class="fa-solid fa-eye"></i>
+                    </button>
+                </div>
+                <div class="relative mb-4">
+                    <input type="password" id="reset-password-confirm" placeholder="Confirm Password" class="w-full p-3 border rounded-lg pr-10" required />
+                    <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reset-password-confirm">
+                        <i class="fa-solid fa-eye"></i>
+                    </button>
+                </div>
+                <button type="button" id="set-password-btn" class="w-full bg-green-600 text-white py-2.5 rounded-lg font-medium hover:bg-green-700 transition">
+                    Set New Password
+                </button>
+                <div class="text-center mt-3">
+                    <button type="button" id="back-to-step1-btn" class="text-xs text-blue-500 hover:underline">← Go back</button>
+                </div>
+            </div>
         </div>
-      </div>`;
-  }).join('');
+    </div>
 
-  // Wire per-card buttons.
-  list.querySelectorAll('.copy-btn').forEach(b =>
-    b.addEventListener('click', () => copy(b.dataset.copy, b.dataset.label)));
+    <script>
+        const BACKEND_URL = 'https://kevsono-kevs-digital-bos.hf.space';
+        const SUPABASE_URL = 'https://crxykdfgexuysngzwulk.supabase.co';
+        // ─── CORRECT ANON KEY ────────────────────────────────────────────────
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNyeHlrZGZnZXh1eXNuZ3p3dWxrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAxOTIzMzYsImV4cCI6MjA5NTc2ODMzNn0.EL8CBO7tKSv5mN8RB2-7g0ioOGNc0A5auUr5WCLsuQI';
 
-  list.querySelectorAll('.regen-btn').forEach(b =>
-    b.addEventListener('click', async () => {
-      if (!confirm('Generate a new invite code? The current one will stop working.')) return;
-      try {
-        const res = await fetch(`${API_BASE}/admin/orgs/${b.dataset.id}/regenerate-invite`, {
-          method: 'POST', headers: { 'X-Admin-Key': ADMIN_KEY }
+        // ─── SINGLE SUPABASE CLIENT ──────────────────────────────────────────
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            auth: {
+                persistSession: true,
+                autoRefreshToken: true
+            }
         });
-        if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
-        toast('Invite code regenerated');
-        loadOrgs();
-      } catch (e) { toast(e.message, 'error'); }
-    }));
 
-  list.querySelectorAll('.publish-btn').forEach(b =>
-    b.addEventListener('click', async () => {
-      const next = b.dataset.published !== 'true';
-      try {
-        const res = await fetch(`${API_BASE}/admin/orgs/${b.dataset.id}/publish`, {
-          method: 'POST',
-          headers: { 'X-Admin-Key': ADMIN_KEY, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ published: next })
+        // ─── TOAST ──────────────────────────────────────────────────────────────
+        function showToast(msg, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className =
+                `toast px-4 py-2 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} mb-2 text-sm`;
+            toast.innerText = msg;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.classList.add('removing');
+                setTimeout(() => toast.remove(), 350);
+            }, 3500);
+        }
+
+        // ─── API CALL ──────────────────────────────────────────────────────────
+        async function apiCall(endpoint, method = 'GET', body = null, token = null) {
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+            const res = await fetch(`${BACKEND_URL}${endpoint}`, {
+                method,
+                headers,
+                body: body ? JSON.stringify(body) : undefined
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: 'API error' }));
+                throw new Error(err.detail || 'API error');
+            }
+            return res.json();
+        }
+
+        // ─── FETCH & STORE ROLE ──────────────────────────────────────────────
+        async function fetchAndStoreRole(accessToken) {
+            try {
+                const me = await apiCall('/auth/me', 'GET', null, accessToken);
+                const role = me.role || 'customer';
+                localStorage.setItem('user_role', role);
+                return role;
+            } catch (_) {
+                localStorage.setItem('user_role', 'customer');
+                return 'customer';
+            }
+        }
+
+        // ─── LOGIN ─────────────────────────────────────────────────────────────
+        async function login(email, password) {
+            const data = await apiCall('/auth/login', 'POST', { email, password });
+            localStorage.setItem('access_token', data.access_token);
+            localStorage.setItem('refresh_token', data.refresh_token);
+            localStorage.setItem('user_id', data.user_id);
+            const role = await fetchAndStoreRole(data.access_token);
+            const redirectUrl = role === 'customer' ? '/kdstore' : '/kdadmin';
+            showToast('Login successful, redirecting…');
+            setTimeout(() => { window.location.href = redirectUrl; }, 1000);
+        }
+
+        // ─── PASSWORD TOGGLE ──────────────────────────────────────────────────
+        document.querySelectorAll('.toggle-password-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const input = document.getElementById(btn.dataset.target);
+                const icon = btn.querySelector('i');
+                if (input.type === 'password') {
+                    input.type = 'text';
+                    icon.classList.replace('fa-eye', 'fa-eye-slash');
+                } else {
+                    input.type = 'password';
+                    icon.classList.replace('fa-eye-slash', 'fa-eye');
+                }
+            });
         });
-        if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
-        toast(next ? 'Storefront published' : 'Storefront unpublished');
-        loadOrgs();
-      } catch (e) { toast(e.message, 'error'); }
-    }));
 
-  list.querySelectorAll('.edit-btn').forEach(b =>
-    b.addEventListener('click', () => openEdit(b.dataset.id)));
-}
+        // ─── LOGIN BUTTON ANIMATION HELPERS ──────────────────────────────────
+        const loginBtn = document.getElementById('login-submit-btn');
+        const loginForm = document.getElementById('login-form');
 
-// ─── create ───
-document.getElementById('new-btn').addEventListener('click', () => {
-  document.getElementById('create-panel').classList.remove('hidden');
-  document.getElementById('f-org-name').focus();
-});
-document.getElementById('create-close').addEventListener('click', closeCreate);
-document.getElementById('create-cancel').addEventListener('click', closeCreate);
-function closeCreate() {
-  document.getElementById('create-panel').classList.add('hidden');
-  document.getElementById('create-error').classList.add('hidden');
-}
+        function resetLoginBtn() {
+            loginBtn.classList.remove('loading', 'success', 'error');
+            loginBtn.disabled = false;
+            const text = loginBtn.querySelector('.btn-text');
+            if (text) text.style.visibility = 'visible';
+            const loader = loginBtn.querySelector('.btn-loader');
+            if (loader) loader.style.display = 'none';
+        }
 
-// Live slug preview from name.
-document.getElementById('f-org-name').addEventListener('input', e => {
-  const slugInput = document.getElementById('f-slug');
-  if (slugInput.dataset.touched === 'true') return;
-  const preview = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
-  document.getElementById('slug-preview').textContent = preview ? `Will be: /store/${preview}` : '';
-});
-document.getElementById('f-slug').addEventListener('input', e => {
-  e.target.dataset.touched = 'true';
-  const v = e.target.value.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-  e.target.value = v;
-  document.getElementById('slug-preview').textContent = v ? `Preview: /store/${v}` : '';
-});
+        function setLoginLoading() {
+            loginBtn.classList.remove('success', 'error');
+            loginBtn.classList.add('loading');
+            loginBtn.disabled = true;
+            const text = loginBtn.querySelector('.btn-text');
+            if (text) text.style.visibility = 'hidden';
+            const loader = loginBtn.querySelector('.btn-loader');
+            if (loader) loader.style.display = 'inline-flex';
+        }
 
-document.getElementById('create-submit').addEventListener('click', async () => {
-  const errEl = document.getElementById('create-error');
-  errEl.classList.add('hidden');
+        function setLoginSuccess() {
+            loginBtn.classList.remove('loading', 'error');
+            loginBtn.classList.add('success');
+            loginBtn.disabled = false;
+            const text = loginBtn.querySelector('.btn-text');
+            if (text) {
+                text.style.visibility = 'visible';
+                text.innerHTML = '<i class="fa-regular fa-circle-check"></i> Logged in!';
+            }
+            const loader = loginBtn.querySelector('.btn-loader');
+            if (loader) loader.style.display = 'none';
+            setTimeout(() => {
+                resetLoginBtn();
+                const text2 = loginBtn.querySelector('.btn-text');
+                if (text2) text2.innerHTML = '<i class="fa-regular fa-circle-check"></i> Login';
+            }, 1800);
+        }
 
-  const payload = {
-    org_name: document.getElementById('f-org-name').value.trim(),
-    slug:     document.getElementById('f-slug').value.trim() || null,
-    vertical: document.getElementById('f-vertical').value,
-    location: document.getElementById('f-location').value.trim(),
-    niche:    document.getElementById('f-niche').value,
-    budget:   parseInt(document.getElementById('f-budget').value, 10) || 0,
-  };
+        function setLoginError() {
+            loginBtn.classList.remove('loading', 'success');
+            loginBtn.classList.add('error');
+            loginBtn.disabled = false;
+            const text = loginBtn.querySelector('.btn-text');
+            if (text) {
+                text.style.visibility = 'visible';
+                text.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Error';
+            }
+            const loader = loginBtn.querySelector('.btn-loader');
+            if (loader) loader.style.display = 'none';
+            setTimeout(() => {
+                resetLoginBtn();
+                const text2 = loginBtn.querySelector('.btn-text');
+                if (text2) text2.innerHTML = '<i class="fa-regular fa-circle-check"></i> Login';
+            }, 1200);
+        }
 
-  if (!payload.org_name || !payload.location || !payload.niche) {
-    errEl.textContent = 'Business name, city, and industry are required.';
-    errEl.classList.remove('hidden');
-    return;
-  }
+        // ─── LOGIN SUBMIT ─────────────────────────────────────────────────────
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('login-email').value;
+            const pwd = document.getElementById('login-password').value;
+            if (!email || !pwd) {
+                showToast('Please fill in both email and password.', 'error');
+                setLoginError();
+                return;
+            }
+            setLoginLoading();
+            try {
+                await login(email, pwd);
+                setLoginSuccess();
+            } catch (err) {
+                showToast(err.message || 'Login failed.', 'error');
+                setLoginError();
+            }
+        });
 
-  const btn = document.getElementById('create-submit');
-  btn.disabled = true;
-  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Creating…';
+        // ─── DEMO LOGIN ──────────────────────────────────────────────────────
+        document.getElementById('demo-login-btn')?.addEventListener('click', async () => {
+            const btn = document.getElementById('demo-login-btn');
+            const original = btn.innerHTML;
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Authenticating…';
+            btn.disabled = true;
+            try {
+                const data = await apiCall('/auth/login', 'POST', { email: 'demo@kevsdigital.com',
+                    password: 'KevsDemo2026!' });
+                localStorage.setItem('access_token', data.access_token);
+                localStorage.setItem('refresh_token', data.refresh_token);
+                localStorage.setItem('user_id', data.user_id);
+                const role = await fetchAndStoreRole(data.access_token);
+                const redirectUrl = role === 'customer' ? '/kdstore' : '/kdadmin';
+                showToast('Demo login successful!');
+                setTimeout(() => window.location.href = redirectUrl, 1000);
+            } catch (err) {
+                showToast('Demo failed: ' + err.message, 'error');
+                btn.innerHTML = original;
+                btn.disabled = false;
+            }
+        });
 
-  try {
-    const res = await fetch(`${API_BASE}/admin/orgs`, {
-      method: 'POST',
-      headers: { 'X-Admin-Key': ADMIN_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+        // ─── TAB SWITCHING ──────────────────────────────────────────────────
+        const loginTab = document.getElementById('login-tab');
+        const registerTab = document.getElementById('register-tab');
 
-    closeCreate();
-    ['f-org-name','f-slug','f-location','f-niche'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el.tagName === 'SELECT') el.value = ''; else el.value = '';
-    });
-    document.getElementById('f-budget').value = '0';
-    document.getElementById('f-slug').dataset.touched = 'false';
-    document.getElementById('slug-preview').textContent = '';
+        function showLoginTab() {
+            document.getElementById('login-form').classList.remove('hidden');
+            document.getElementById('register-form').classList.add('hidden');
+            document.getElementById('reset-password-form').classList.add('hidden');
+            loginTab.classList.add('border-blue-600', 'text-blue-600');
+            registerTab.classList.remove('border-blue-600', 'text-blue-600');
+            registerTab.classList.add('text-gray-500');
+            resetLoginBtn();
+        }
+        loginTab?.addEventListener('click', showLoginTab);
+        registerTab?.addEventListener('click', () => {
+            document.getElementById('login-form').classList.add('hidden');
+            document.getElementById('register-form').classList.remove('hidden');
+            document.getElementById('reset-password-form').classList.add('hidden');
+            registerTab.classList.add('border-blue-600', 'text-blue-600');
+            loginTab.classList.remove('border-blue-600', 'text-blue-600');
+            loginTab.classList.add('text-gray-500');
+            resetLoginBtn();
+        });
 
-    showSuccess(data);
-    loadOrgs();
-  } catch (e) {
-    errEl.textContent = e.message;
-    errEl.classList.remove('hidden');
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = '<i class="fa-solid fa-check mr-1"></i>Create';
-  }
-});
+        // ─── REGISTER SUBMIT ──────────────────────────────────────────────────
+        document.getElementById('register-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('reg-email').value;
+            const password = document.getElementById('reg-password').value;
+            const confirm = document.getElementById('reg-confirm-password').value;
+            const fname = document.getElementById('reg-fname').value;
+            const lname = document.getElementById('reg-lname').value;
+            const phone = document.getElementById('reg-phone').value;
 
-function showSuccess(data) {
-  const url = data.storefront_url || '';
-  const invite = data.invite_code || '';
-  document.getElementById('success-body').innerHTML = `
-    <div class="bg-slate-950 rounded-lg p-3 border border-slate-700">
-      <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Organisation</div>
-      <div class="font-medium">${esc(data.org_name)} <span class="text-slate-500 text-xs">(${esc(data.vertical)})</span></div>
-    </div>
-    <div class="bg-slate-950 rounded-lg p-3 border border-slate-700 flex justify-between items-center gap-2">
-      <div class="min-w-0">
-        <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Invite code</div>
-        <code class="text-emerald-300 kbd text-sm">${esc(invite)}</code>
-      </div>
-      <button class="text-slate-400 hover:text-white shrink-0"
-              onclick="copy('${esc(invite)}','Invite code')">
-        <i class="fa-regular fa-copy"></i>
-      </button>
-    </div>
-    <div class="bg-slate-950 rounded-lg p-3 border border-slate-700 flex justify-between items-center gap-2">
-      <div class="min-w-0">
-        <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Storefront URL</div>
-        <code class="text-blue-300 kbd text-xs truncate block">${esc(url)}</code>
-      </div>
-      <button class="text-slate-400 hover:text-white shrink-0"
-              onclick="copy('${esc(url)}','Storefront URL')">
-        <i class="fa-regular fa-copy"></i>
-      </button>
-    </div>
-    <p class="text-xs text-slate-500">
-      The storefront is <strong>unpublished</strong>. Load inventory and configure branding, then publish from the list.
-    </p>
-  `;
-  document.getElementById('success-modal').classList.remove('hidden');
+            if (!email || !password || !fname || !lname || !phone) {
+                showToast('All fields are required.', 'error');
+                return;
+            }
+            if (password !== confirm) {
+                showToast('Passwords do not match.', 'error');
+                return;
+            }
+            if (password.length < 8) {
+                showToast('Password must be at least 8 characters.', 'error');
+                return;
+            }
 
-  window._lastSummary =
-    `Organisation: ${data.org_name}\n` +
-    `Vertical:     ${data.vertical}\n` +
-    `Invite code:  ${invite}\n` +
-    `Storefront:   ${url}\n`;
-}
+            const btn = e.target.querySelector('button[type="submit"]');
+            const original = btn.textContent;
+            btn.textContent = 'Registering…';
+            btn.disabled = true;
 
-document.getElementById('success-copy-all').addEventListener('click', () => {
-  if (window._lastSummary) copy(window._lastSummary, 'Summary');
-});
-document.getElementById('success-close').addEventListener('click', () => {
-  document.getElementById('success-modal').classList.add('hidden');
-});
+            try {
+                const payload = {
+                    email,
+                    password,
+                    first_name: fname,
+                    last_name: lname,
+                    phone
+                };
+                await apiCall('/auth/register', 'POST', payload);
+                showToast('Registration successful! Please sign in.', 'success');
+                showLoginTab();
+                document.getElementById('login-email').value = email;
+                document.getElementById('login-password').value = '';
+            } catch (err) {
+                showToast(err.message || 'Registration failed.', 'error');
+            } finally {
+                btn.textContent = original;
+                btn.disabled = false;
+            }
+        });
 
-// ─── edit ───
-function openEdit(orgId) {
-  const org = ORGS.find(o => o.id === orgId);
-  if (!org) return;
-  document.getElementById('edit-org-id').value = org.id;
-  document.getElementById('edit-name').value = org.org_name || '';
-  document.getElementById('edit-slug').value = org.slug || '';
-  document.getElementById('edit-vertical').value = org.vertical || 'retail';
-  document.getElementById('edit-error').classList.add('hidden');
-  document.getElementById('edit-modal').classList.remove('hidden');
-}
+        // ─── BACK TO LOGIN FROM RESET ────────────────────────────────────────
+        document.getElementById('back-to-login-from-reset')?.addEventListener('click', () => {
+            document.getElementById('tabs-container').classList.remove('hidden');
+            showLoginTab();
+        });
 
-document.getElementById('edit-close').addEventListener('click', closeEdit);
-document.getElementById('edit-cancel').addEventListener('click', closeEdit);
-function closeEdit() {
-  document.getElementById('edit-modal').classList.add('hidden');
-}
+        // ─── BACK TO STEP 1 ──────────────────────────────────────────────────
+        document.getElementById('back-to-step1-btn')?.addEventListener('click', () => {
+            document.getElementById('reset-step1').classList.remove('hidden');
+            document.getElementById('reset-step2').classList.add('hidden');
+            document.getElementById('verify-code-btn').disabled = false;
+            document.getElementById('reset-code').disabled = false;
+            document.getElementById('reset-code').value = '';
+            document.getElementById('reset-code').focus();
+            verifiedAccessToken = null;
+        });
 
-document.getElementById('edit-submit').addEventListener('click', async () => {
-  const orgId = document.getElementById('edit-org-id').value;
-  const errEl = document.getElementById('edit-error');
-  errEl.classList.add('hidden');
+        // ══════════════════════════════════════════════════════════════════════
+        // ─── RESET PASSWORD (TWO-STEP, USING CLIENT updateUser) ───────────
+        // ══════════════════════════════════════════════════════════════════════
 
-  const payload = {};
-  const newName = document.getElementById('edit-name').value.trim();
-  const newSlug = document.getElementById('edit-slug').value.trim();
-  const newVert = document.getElementById('edit-vertical').value;
+        const verifyBtn = document.getElementById('verify-code-btn');
+        const setPwdBtn = document.getElementById('set-password-btn');
+        let verifiedAccessToken = null;
 
-  const existing = ORGS.find(o => o.id === orgId);
-  if (!existing) return;
+        function showResetForm() {
+            document.getElementById('login-form').classList.add('hidden');
+            document.getElementById('register-form').classList.add('hidden');
+            document.getElementById('reset-password-form').classList.remove('hidden');
+            document.getElementById('tabs-container').classList.add('hidden');
+            document.getElementById('reset-step1').classList.remove('hidden');
+            document.getElementById('reset-step2').classList.add('hidden');
+            document.getElementById('reset-code').value = '';
+            document.getElementById('reset-password').value = '';
+            document.getElementById('reset-password-confirm').value = '';
+            verifyBtn.disabled = false;
+            document.getElementById('reset-code').disabled = false;
+            verifiedAccessToken = null;
+        }
 
-  if (newName && newName !== existing.org_name) payload.org_name = newName;
-  if (newSlug && newSlug !== existing.slug)     payload.slug = newSlug;
-  if (newVert && newVert !== existing.vertical) payload.vertical = newVert;
+        // ─── "Forgot password?" ─────────────────────────────────────────────
+        document.getElementById('forgot-pwd-btn')?.addEventListener('click', async () => {
+            const email = document.getElementById('login-email').value;
+            if (!email) {
+                showToast('Enter your email address first.', 'error');
+                return;
+            }
+            try {
+                await apiCall('/auth/reset-password', 'POST', { email });
+                showToast('An 8‑digit reset code has been sent to your email.', 'success');
+                document.getElementById('reset-email').value = email;
+                showResetForm();
+            } catch (err) {
+                showToast(err.message || 'Failed to send reset code.', 'error');
+            }
+        });
 
-  if (!Object.keys(payload).length) { closeEdit(); return; }
+        // ─── Verify Code ──────────────────────────────────────────────────────
+        async function verifyCode() {
+            const email = document.getElementById('reset-email').value.trim();
+            const code = document.getElementById('reset-code').value.trim();
 
-  try {
-    const res = await fetch(`${API_BASE}/admin/orgs/${orgId}`, {
-      method: 'PATCH',
-      headers: { 'X-Admin-Key': ADMIN_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
-    toast('Saved');
-    closeEdit();
-    loadOrgs();
-  } catch (e) {
-    errEl.textContent = e.message;
-    errEl.classList.remove('hidden');
-  }
-});
+            if (!email || !code) {
+                showToast('Please enter both email and code.', 'error');
+                return;
+            }
+            if (code.length !== 8 || !/^\d{8}$/.test(code)) {
+                showToast('Please enter a valid 8‑digit numeric code.', 'error');
+                return;
+            }
 
-// ─── boot ───
-document.getElementById('refresh-btn').addEventListener('click', loadOrgs);
+            verifyBtn.disabled = true;
+            verifyBtn.textContent = 'Verifying…';
 
-if (ADMIN_KEY) {
-  document.getElementById('admin-key').value = ADMIN_KEY;
-  document.getElementById('unlock-btn').click();
-}
-</script>
+            try {
+                const { data, error } = await supabaseClient.auth.verifyOtp({
+                    email,
+                    token: code,
+                    type: 'recovery'
+                });
 
+                if (error) throw new Error(error.message);
+                if (!data?.session) throw new Error('Code may be expired or already used.');
+
+                // Store the access token in case we need it for fallback
+                verifiedAccessToken = data.session.access_token;
+
+                // Set the session in the client (this is critical)
+                await supabaseClient.auth.setSession({
+                    access_token: data.session.access_token,
+                    refresh_token: data.session.refresh_token
+                });
+
+                // Show step 2
+                document.getElementById('reset-step1').classList.add('hidden');
+                document.getElementById('reset-step2').classList.remove('hidden');
+                document.getElementById('reset-password').focus();
+                showToast('Code verified! Now set your new password.', 'success');
+
+            } catch (err) {
+                console.error('Verify error:', err);
+                showToast('Verification failed: ' + err.message, 'error');
+                verifyBtn.disabled = false;
+                verifyBtn.textContent = 'Verify Code';
+                document.getElementById('reset-code').value = '';
+                document.getElementById('reset-code').focus();
+            }
+        }
+
+        verifyBtn?.addEventListener('click', verifyCode);
+
+        // ─── Auto‑submit on 8 digits ──────────────────────────────────────────
+        document.getElementById('reset-code')?.addEventListener('input', function(e) {
+            this.value = this.value.replace(/\D/g, '').slice(0, 8);
+            if (this.value.length === 8 && !verifyBtn.disabled) {
+                verifyCode();
+            }
+        });
+
+        // ─── Set New Password (using supabase client updateUser) ────────────
+        setPwdBtn?.addEventListener('click', async () => {
+            const password = document.getElementById('reset-password').value;
+            const confirm = document.getElementById('reset-password-confirm').value;
+
+            if (password.length < 8) {
+                showToast('Password must be at least 8 characters.', 'error');
+                return;
+            }
+            if (password !== confirm) {
+                showToast('Passwords do not match.', 'error');
+                return;
+            }
+
+            setPwdBtn.disabled = true;
+            setPwdBtn.textContent = 'Updating…';
+
+            try {
+                // Use the supabase client to update the password.
+                // The client should have the session from the verify step.
+                const { error } = await supabaseClient.auth.updateUser({
+                    password: password
+                });
+
+                if (error) throw new Error(error.message);
+
+                showToast('Password updated successfully! Please log in.', 'success');
+                // Redirect to login
+                setTimeout(() => {
+                    document.getElementById('reset-password-form').classList.add('hidden');
+                    document.getElementById('tabs-container').classList.remove('hidden');
+                    showLoginTab();
+                    document.getElementById('reset-email').value = '';
+                    document.getElementById('reset-code').value = '';
+                    document.getElementById('reset-password').value = '';
+                    document.getElementById('reset-password-confirm').value = '';
+                    document.getElementById('login-email').focus();
+                }, 1500);
+
+            } catch (err) {
+                console.error('Update password error:', err);
+                // Fallback: try direct fetch with the stored token if client method fails
+                if (verifiedAccessToken) {
+                    try {
+                        const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+                            method: 'PATCH',
+                            headers: {
+                                'apikey': SUPABASE_ANON_KEY,
+                                'Authorization': `Bearer ${verifiedAccessToken}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ password })
+                        });
+                        if (!response.ok) {
+                            const errJson = await response.json().catch(() => ({ message: 'Server error' }));
+                            throw new Error(errJson.message || 'Failed to update password');
+                        }
+                        showToast('Password updated successfully! Please log in.', 'success');
+                        setTimeout(() => {
+                            document.getElementById('reset-password-form').classList.add('hidden');
+                            document.getElementById('tabs-container').classList.remove('hidden');
+                            showLoginTab();
+                            // ... reset fields ...
+                        }, 1500);
+                        return;
+                    } catch (fallbackErr) {
+                        console.error('Fallback update also failed:', fallbackErr);
+                        showToast('Both update attempts failed: ' + fallbackErr.message, 'error');
+                    }
+                } else {
+                    showToast('Failed to update password: ' + err.message, 'error');
+                }
+                setPwdBtn.disabled = false;
+                setPwdBtn.textContent = 'Set New Password';
+            }
+        });
+
+        // ─── Enter key support ──────────────────────────────────────────────
+        document.getElementById('reset-email')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                document.getElementById('reset-code').focus();
+            }
+        });
+        document.getElementById('reset-code')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (!verifyBtn.disabled) verifyBtn.click();
+            }
+        });
+        document.querySelectorAll('#reset-password, #reset-password-confirm').forEach(field => {
+            field.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (!setPwdBtn.disabled) setPwdBtn.click();
+                }
+            });
+        });
+
+        console.log('✅ Kevs Digital – Sign In (two‑step reset using client updateUser, with fallback)');
+    </script>
 </body>
 </html>
