@@ -595,109 +595,6 @@ function renderFoodMenu() {
     grid.innerHTML = html || '<div style="padding:60px 20px;text-align:center;color:#4b5563;">Menu coming soon.</div>';
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   PRODUCT CARD RENDERERS — one per layout variant
-   Each is a pure function: (product) => htmlString
-   ═══════════════════════════════════════════════════════════════ */
-
-function productCardList(p) {
-    if (!productQuantities.hasOwnProperty(p.id)) productQuantities[p.id] = 1;
-    const stock = Number(p.current_qty || 0);
-    const oos = stock <= 0;
-    const safeImageUrl = p.image_url ? escapeHtml(p.image_url) : null;
-    const imageHtml = safeImageUrl
-        ? `<img src="${safeImageUrl}" alt="${escapeHtml(p.description)}" width="140" height="140" loading="lazy">`
-        : `<i class="fa-solid fa-box-open" aria-hidden="true"></i>`;
-
-    return `
-        <article class="pf-product-list" data-product-id="${p.id}">
-            <div class="pf-product-list-image">${imageHtml}</div>
-            <div class="pf-product-list-body">
-                ${p.product_group ? `<div class="pf-product-list-group">${escapeHtml(p.product_group)}</div>` : ''}
-                <h3 class="pf-product-list-title">${escapeHtml(p.description)}</h3>
-                <div class="pf-product-list-meta">
-                    ${!oos ? `<span class="pf-stock"><i class="fa-solid fa-check" aria-hidden="true"></i> ${stock} available</span>` : `<span style="color:#dc2626;font-weight:600;">Out of stock</span>`}
-                </div>
-            </div>
-            <div class="pf-product-list-side">
-                <div class="pf-product-list-price">₦${Number(p.price_naira || 0).toLocaleString()}</div>
-                <button class="pf-product-list-add add-to-cart-btn"
-                    data-id="${p.id}"
-                    aria-label="Add ${escapeHtml(p.description)} to cart"
-                    ${oos ? 'disabled' : ''}>
-                    ${oos ? 'Out of stock' : 'Add to cart'}
-                </button>
-            </div>
-        </article>`;
-}
-
-function productCardEditorial(p) {
-    const stock = Number(p.current_qty || 0);
-    const oos = stock <= 0;
-    const safeImageUrl = p.image_url ? escapeHtml(p.image_url) : null;
-    const imageHtml = safeImageUrl
-        ? `<img src="${safeImageUrl}" alt="${escapeHtml(p.description)}" width="200" height="200" loading="lazy">`
-        : `<i class="fa-solid fa-box-open" aria-hidden="true"></i>`;
-
-    return `
-        <article class="pf-product-editorial" data-product-id="${p.id}">
-            <div class="pf-product-editorial-image">
-                <span class="pf-product-editorial-stock${oos ? ' oos' : ''}">${oos ? 'SOLD OUT' : 'IN STOCK'}</span>
-                ${imageHtml}
-                <span class="pf-product-editorial-price">₦${Number(p.price_naira || 0).toLocaleString()}</span>
-            </div>
-            <div class="pf-product-editorial-body">
-                <h3 class="pf-product-editorial-title">${escapeHtml(p.description)}</h3>
-                <button class="pf-product-editorial-add add-to-cart-btn"
-                    data-id="${p.id}"
-                    aria-label="Add ${escapeHtml(p.description)} to cart"
-                    ${oos ? 'disabled' : ''}>
-                    ${oos ? 'Unavailable' : 'Add'}
-                </button>
-            </div>
-        </article>`;
-}
-
-function productCardRounded(p) {
-    const stock = Number(p.current_qty || 0);
-    const oos = stock <= 0;
-    const safeImageUrl = p.image_url ? escapeHtml(p.image_url) : null;
-    const imageHtml = safeImageUrl
-        ? `<img src="${safeImageUrl}" alt="${escapeHtml(p.description)}" width="240" height="240" loading="lazy">`
-        : `<i class="fa-solid fa-box-open" aria-hidden="true"></i>`;
-
-    return `
-        <article class="pf-product-rounded" data-product-id="${p.id}">
-            <div class="pf-product-rounded-image">${imageHtml}</div>
-            <h3 class="pf-product-rounded-title">${escapeHtml(p.description)}</h3>
-            ${!oos ? `<div class="pf-product-rounded-stock"><i class="fa-solid fa-check" aria-hidden="true"></i>${stock} available</div>` : `<div class="pf-product-rounded-stock" style="color:#a15e3f;">Out of stock</div>`}
-            <div class="pf-product-rounded-price">₦${Number(p.price_naira || 0).toLocaleString()}</div>
-            <button class="pf-product-rounded-add add-to-cart-btn"
-                data-id="${p.id}"
-                aria-label="Add ${escapeHtml(p.description)} to cart"
-                ${oos ? 'disabled' : ''}>
-                ${oos ? 'Out of stock' : 'Add to cart'}
-            </button>
-        </article>`;
-}
-
-function getProductCardVariant() {
-    return (window.__KD_CONFIG__ && window.__KD_CONFIG__.layout && window.__KD_CONFIG__.layout.product_card) || 'grid';
-}
-
-function getGridDensity() {
-    return (window.__KD_CONFIG__ && window.__KD_CONFIG__.layout && window.__KD_CONFIG__.layout.grid_density) || 'normal';
-}
-
-function getCardRenderer(variant) {
-    switch (variant) {
-        case 'list':      return productCardList;
-        case 'editorial': return productCardEditorial;
-        case 'rounded':   return productCardRounded;
-        default:          return productCardHtml;   // the existing grid renderer
-    }
-}
-
 function renderProducts() {
     if (isFoodVertical()) {
         renderFoodMenu();
@@ -728,12 +625,7 @@ function renderProducts() {
         return;
     }
 
-    const variant = getProductCardVariant();
-    const renderer = getCardRenderer(variant);
-    grid.dataset.cardVariant = variant;
-    grid.dataset.density = getGridDensity();
-
-    grid.innerHTML = items.map(p => renderer(p)).join('');
+    grid.innerHTML = items.map(p => productCardHtml(p)).join('');
     const summary = document.getElementById('product-results-summary');
     if (summary) {
         const filterText = searchQuery.trim() ? ` for "${escapeHtml(searchQuery.trim())}"` : '';
