@@ -774,6 +774,67 @@ async def ensure_sales_fulfillment_columns():
         raise RuntimeError(f"sales fulfillment migration failed: {resp.text}")
     logger.info("sales fulfillment columns installed")
 
+async def ensure_health_check_schema():
+    sql = """
+    CREATE OR REPLACE FUNCTION public.health_check_schema()
+    RETURNS JSONB
+    LANGUAGE plpgsql
+    SECURITY DEFINER
+    SET search_path = public, pg_catalog
+    AS $$
+    DECLARE
+        v_rpcs   JSONB;
+        v_tables JSONB;
+    BEGIN
+        SELECT COALESCE(jsonb_agg(proname ORDER BY proname), '[]'::jsonb)
+          INTO v_rpcs
+          FROM pg_proc
+         WHERE proname IN (
+            'approve_stock_transfer',
+            'complete_stock_transfer',
+            'decrement_stock_fefo',
+            'claim_webhook_event',
+            'mark_webhook_event_processed',
+            'release_webhook_event_claim',
+            'audit_stock_drift',
+            'heal_stock_drift',
+            'match_knowledge_documents'
+         );
+
+        SELECT COALESCE(jsonb_agg(tablename ORDER BY tablename), '[]'::jsonb)
+          INTO v_tables
+          FROM pg_tables
+         WHERE schemaname = 'public'
+           AND tablename IN (
+            'organisations','profiles','org_members',
+            'inventory','locations','location_stocks','stock_transfers',
+            'sales','sale_items',
+            'accounts_receivable','accounts_payable',
+            'webhook_events','general_knowledge','support_tickets'
+         );
+
+        RETURN jsonb_build_object('rpcs', v_rpcs, 'tables', v_tables);
+    END;
+    $$;
+
+    GRANT EXECUTE ON FUNCTION public.health_check_schema() TO service_role;
+    """
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"health_check_schema migration failed: {resp.text}")
+        raise RuntimeError(f"health_check_schema migration failed: {resp.text}")
+    logger.info("health_check_schema RPC installed")
+
 
 
 async def ensure_cost_price_column():
@@ -2671,6 +2732,7 @@ async def startup_event():
     await ensure_org_delivery_columns()
     await ensure_role_column()
     await ensure_org_registry_schema()
+    await ensure_health_check_schema()
     await ensure_knowledge_audit_table()
     await ensure_vector_support()
     await ensure_loyalty_tables()
@@ -11469,7 +11531,7 @@ async def health_deep(request: Request):
     except Exception as e:
         checks["database"] = {"status": "fail", "error": str(e)[:200]}
 
-    # ── 2. Critical RPCs exist in pg_proc ──
+    # ── 2 & 3. RPCs and tables via health_check_schema RPC ──
     expected_rpcs = [
         "approve_stock_transfer",
         "complete_stock_transfer",
@@ -11481,20 +11543,6 @@ async def health_deep(request: Request):
         "heal_stock_drift",
         "match_knowledge_documents",
     ]
-    try:
-        rpc_list = ",".join(f"'{r}'" for r in expected_rpcs)
-        sql = f"SELECT proname FROM pg_proc WHERE proname IN ({rpc_list});"
-        res = await run_sql(sql)
-        found = {row["proname"] for row in (res or [])}
-        missing = sorted(set(expected_rpcs) - found)
-        if missing:
-            checks["rpcs"] = {"status": "fail", "missing": missing}
-        else:
-            checks["rpcs"] = {"status": "ok", "count": len(found)}
-    except Exception as e:
-        checks["rpcs"] = {"status": "fail", "error": str(e)[:200]}
-
-    # ── 3. Critical tables exist ──
     expected_tables = [
         "organisations", "profiles", "org_members",
         "inventory", "locations", "location_stocks", "stock_transfers",
@@ -11503,20 +11551,29 @@ async def health_deep(request: Request):
         "webhook_events", "general_knowledge", "support_tickets",
     ]
     try:
-        table_list = ",".join(f"'{t}'" for t in expected_tables)
-        sql = (
-            "SELECT tablename FROM pg_tables "
-            "WHERE schemaname='public' "
-            f"AND tablename IN ({table_list});"
+        schema_res = await run_sync_db_call(
+            client.rpc("health_check_schema", {}).execute
         )
-        res = await run_sql(sql)
-        found = {row["tablename"] for row in (res or [])}
-        missing = sorted(set(expected_tables) - found)
-        if missing:
-            checks["tables"] = {"status": "fail", "missing": missing}
+        schema = schema_res.data if schema_res else None
+        if isinstance(schema, list):
+            schema = schema[0] if schema else {}
+        schema = schema or {}
+        found_rpcs = set(schema.get("rpcs") or [])
+        found_tables = set(schema.get("tables") or [])
+
+        missing_rpcs = sorted(set(expected_rpcs) - found_rpcs)
+        if missing_rpcs:
+            checks["rpcs"] = {"status": "fail", "missing": missing_rpcs}
         else:
-            checks["tables"] = {"status": "ok", "count": len(found)}
+            checks["rpcs"] = {"status": "ok", "count": len(found_rpcs)}
+
+        missing_tables = sorted(set(expected_tables) - found_tables)
+        if missing_tables:
+            checks["tables"] = {"status": "fail", "missing": missing_tables}
+        else:
+            checks["tables"] = {"status": "ok", "count": len(found_tables)}
     except Exception as e:
+        checks["rpcs"] = {"status": "fail", "error": str(e)[:200]}
         checks["tables"] = {"status": "fail", "error": str(e)[:200]}
 
     # ── 4. Storage bucket ──
