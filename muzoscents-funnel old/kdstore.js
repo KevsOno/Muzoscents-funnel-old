@@ -1800,6 +1800,16 @@ function initStickyHeader() {
 
     if (window.innerWidth < 768) return;
 
+    // Reserve the header's space immediately so nothing below can jump.
+    stickyWrap.style.minHeight = stickyWrap.offsetHeight + 'px';
+
+    // Re-measure after fonts settle
+    if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(() => {
+            stickyWrap.style.minHeight = stickyWrap.offsetHeight + 'px';
+        });
+    }
+
     let headerHeight = stickyWrap.offsetHeight;
     let isFixed = false;
     const placeholder = document.createElement('div');
