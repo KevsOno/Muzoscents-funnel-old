@@ -529,12 +529,14 @@ async def supabase_rest_get(
         "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
         "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}"
     }
-    async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.get(url, headers=headers)
-        if resp.status_code != 200:
-            logger.error(f"❌ REST query failed: {resp.status_code} {resp.text}")
-            raise HTTPException(status_code=500, detail=f"Query failed: {resp.text}")
-        return resp.json()
+    if resp.status_code not in (200, 204):
+        logger.error(f"❌ REST query failed: {resp.status_code} {resp.text}")
+        raise HTTPException(status_code=500, detail=f"Query failed: {resp.text}")
+    if resp.status_code == 204 or not resp.content:
+        return []
+    return resp.json()
 
 # ===================== LOYALTY POINTS ENGINE =====================
 async def award_loyalty_points(user_id: str, amount_naira: float, sale_id: str, reason: str = "purchase") -> int:
@@ -10318,7 +10320,7 @@ async def retry_pending_orders(
                     continue
 
                 await create_ar_from_sale(order["id"], org_id, user_id)
-                await mark_ar_paid_for_sale(sale.data["id"], org_id)
+                await mark_ar_paid_for_sale(order.data["id"], org_id)
 
                 if order.get("total_amount"):
                     await award_loyalty_points(user_id, order["total_amount"], order["id"], "sync_purchase")
