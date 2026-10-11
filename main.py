@@ -647,7 +647,7 @@ async def ensure_loyalty_tables():
             }
             async with httpx.AsyncClient() as client:
                 resp = await client.post(f"{SUPABASE_URL}/rest/v1/rpc/exec_sql", json={"query": sql}, headers=headers)
-                if resp.status_code != 200:
+                if resp.status_code not in (200, 204):
                     logger.error(f"Failed to add credit_balance: {resp.text}")
                 else:
                     logger.info("credit_balance column added.")
@@ -675,7 +675,7 @@ async def ensure_loyalty_tables():
             }
             async with httpx.AsyncClient() as client:
                 resp = await client.post(f"{SUPABASE_URL}/rest/v1/rpc/exec_sql", json={"query": sql}, headers=headers)
-                if resp.status_code != 200:
+                if resp.status_code not in (200, 204):
                     logger.error(f"Failed to create loyalty_transactions: {resp.text}")
                 else:
                     logger.info("loyalty_transactions table created.")
@@ -702,7 +702,7 @@ async def ensure_loyalty_tables():
             }
             async with httpx.AsyncClient() as client:
                 resp = await client.post(f"{SUPABASE_URL}/rest/v1/rpc/exec_sql", json={"query": sql}, headers=headers)
-                if resp.status_code != 200:
+                if resp.status_code not in (200, 204):
                     logger.error(f"Failed to create customer_points_summary view: {resp.text}")
                 else:
                     logger.info("customer_points_summary view created.")
@@ -719,7 +719,7 @@ async def ensure_loyalty_tables():
             }
             async with httpx.AsyncClient() as client:
                 resp = await client.post(f"{SUPABASE_URL}/rest/v1/rpc/exec_sql", json={"query": sql}, headers=headers)
-                if resp.status_code != 200:
+                if resp.status_code not in (200, 204):
                     logger.error(f"Failed to add current_points: {resp.text}")
                 else:
                     logger.info("current_points column added.")
@@ -798,7 +798,7 @@ async def ensure_cost_price_column():
                         json={"query": sql},
                         headers=headers
                     )
-                    if resp.status_code != 200:
+                    if resp.status_code not in (200, 204):
                         logger.error(f"Failed to run migration: {resp.text}")
                     else:
                         logger.info("Successfully added cost_price_naira column and set default values.")
@@ -831,7 +831,7 @@ async def ensure_delivery_fee_columns():
                         json={"query": sql},
                         headers=headers
                     )
-                    if resp.status_code != 200:
+                    if resp.status_code not in (200, 204):
                         logger.error(f"Failed to add delivery_fee columns: {resp.text}")
                     else:
                         logger.info("Successfully added delivery_fee and handling_fee columns.")
@@ -868,7 +868,7 @@ async def ensure_org_delivery_columns():
                         json={"query": sql},
                         headers=headers
                     )
-                    if resp.status_code != 200:
+                    if resp.status_code not in (200, 204):
                         logger.error(f"Failed to add organisation delivery columns: {resp.text}")
                     else:
                         logger.info("Successfully added delivery columns to organisations table.")
@@ -900,7 +900,7 @@ async def ensure_role_column():
                         json={"query": sql},
                         headers=headers
                     )
-                    if resp.status_code != 200:
+                    if resp.status_code not in (200, 204):
                         logger.error(f"Failed to add role column: {resp.text}")
                     else:
                         logger.info("Successfully added role column to org_members.")
@@ -940,7 +940,7 @@ async def ensure_knowledge_audit_table():
                         json={"query": sql},
                         headers=headers
                     )
-                    if resp.status_code != 200:
+                    if resp.status_code not in (200, 204):
                         logger.error(f"Failed to create knowledge_audit table: {resp.text}")
                     else:
                         logger.info("Successfully created knowledge_audit table.")
@@ -1011,7 +1011,7 @@ async def ensure_vector_support():
                 json={"query": sql_ext},
                 headers=headers
             )
-            if resp_ext.status_code != 200:
+            if resp_ext.status_code not in (200, 204):
                 logger.error(f"Failed to enable pgvector: {resp_ext.text}")
             else:
                 logger.info("pgvector extension enabled.")
@@ -1022,7 +1022,7 @@ async def ensure_vector_support():
                 json={"query": sql_col},
                 headers=headers
             )
-            if resp_col.status_code != 200:
+            if resp_col.status_code not in (200, 204):
                 logger.error(f"Failed to add embedding column: {resp_col.text}")
             else:
                 logger.info("Embedding column added to general_knowledge.")
@@ -1033,7 +1033,7 @@ async def ensure_vector_support():
                 json={"query": sql_drop_old},
                 headers=headers
             )
-            if resp_drop.status_code != 200:
+            if resp_drop.status_code not in (200, 204):
                 logger.warning(f"Drop legacy function returned: {resp_drop.text}")
             else:
                 logger.info("Legacy 3-arg match_knowledge_documents dropped (if it existed).")
@@ -1044,7 +1044,7 @@ async def ensure_vector_support():
                 json={"query": sql_func},
                 headers=headers
             )
-            if resp_func.status_code != 200:
+            if resp_func.status_code not in (200, 204):
                 logger.error(f"Failed to create match function: {resp_func.text}")
             else:
                 logger.info("match_knowledge_documents (tenant-scoped, 4-arg) created.")
@@ -1120,7 +1120,7 @@ async def ensure_stock_transfers_table():
                     json={"query": sql},
                     headers=headers
                 )
-                if resp.status_code != 200:
+                if resp.status_code not in (200, 204):
                     logger.error(f"Failed to create stock transfer tables: {resp.text}")
                 else:
                     logger.info("Successfully created locations, location_stocks, and stock_transfers tables.")
@@ -1894,7 +1894,7 @@ async def ensure_alert_log_table():
                         json={"query": sql},
                         headers=headers
                     )
-                    if resp.status_code != 200:
+                    if resp.status_code not in (200, 204):
                         logger.error(f"Failed to create alert_log table: {resp.text}")
                     else:
                         logger.info("Successfully created alert_log table.")
@@ -1944,7 +1944,7 @@ async def ensure_transfer_suggestions_table():
                         json={"query": sql},
                         headers=headers
                     )
-                    if resp.status_code != 200:
+                    if resp.status_code not in (200, 204):
                         logger.error(f"Failed to create transfer_suggestions table: {resp.text}")
                     else:
                         logger.info("Successfully created transfer_suggestions table.")
@@ -1988,7 +1988,7 @@ async def ensure_stock_limits_table():
                         json={"query": sql},
                         headers=headers
                     )
-                    if resp.status_code != 200:
+                    if resp.status_code not in (200, 204):
                         logger.error(f"Failed to create stock_limits table: {resp.text}")
                     else:
                         logger.info("Successfully created stock_limits table.")
@@ -2048,7 +2048,7 @@ async def ensure_product_risk_view():
                         json={"query": sql},
                         headers=headers
                     )
-                    if resp.status_code != 200:
+                    if resp.status_code not in (200, 204):
                         logger.error(f"Failed to create view_risk_list: {resp.text}")
                     else:
                         logger.info("Successfully created view_risk_list view.")
@@ -2100,7 +2100,7 @@ async def ensure_transfer_suggestions_view():
                         json={"query": sql},
                         headers=headers
                     )
-                    if resp.status_code != 200:
+                    if resp.status_code not in (200, 204):
                         logger.error(f"Failed to create view_all_transfer_suggestions: {resp.text}")
                     else:
                         logger.info("Successfully created view_all_transfer_suggestions view.")
@@ -2144,7 +2144,7 @@ async def ensure_system_logs_table():
                         json={"query": sql},
                         headers=headers
                     )
-                    if resp.status_code != 200:
+                    if resp.status_code not in (200, 204):
                         logger.error(f"Failed to create system_logs table: {resp.text}")
                     else:
                         logger.info("Successfully created system_logs table.")
@@ -2192,7 +2192,7 @@ async def ensure_rpc_functions():
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.post(f"{SUPABASE_URL}/rest/v1/rpc/exec_sql", json={"query": sql_total}, headers=headers)
-            if resp.status_code != 200:
+            if resp.status_code not in (200, 204):
                 logger.error(f"Failed to create get_total_value RPC: {resp.text}")
             else:
                 logger.info("Created get_total_value RPC functions.")
@@ -2234,7 +2234,7 @@ async def ensure_rpc_functions():
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.post(f"{SUPABASE_URL}/rest/v1/rpc/exec_sql", json={"query": sql_waste}, headers=headers)
-            if resp.status_code != 200:
+            if resp.status_code not in (200, 204):
                 logger.error(f"Failed to create get_waste_risk RPC: {resp.text}")
             else:
                 logger.info("Created get_waste_risk RPC functions.")
@@ -2323,7 +2323,7 @@ async def ensure_rpc_functions():
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.post(f"{SUPABASE_URL}/rest/v1/rpc/exec_sql", json={"query": sql_resolve}, headers=headers)
-            if resp.status_code != 200:
+            if resp.status_code not in (200, 204):
                 logger.error(f"Failed to create resolve_alert RPC: {resp.text}")
             else:
                 logger.info("Created resolve_alert RPC function.")
@@ -2425,7 +2425,7 @@ async def ensure_rpc_functions():
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.post(f"{SUPABASE_URL}/rest/v1/rpc/exec_sql", json={"query": sql_execute}, headers=headers)
-            if resp.status_code != 200:
+            if resp.status_code not in (200, 204):
                 logger.error(f"Failed to create execute_transfer_suggestion RPC: {resp.text}")
             else:
                 logger.info("Created execute_transfer_suggestion RPC function.")
@@ -2533,7 +2533,7 @@ async def ensure_hr_tables():
             json={"query": sql},
             headers=headers
         )
-        if resp.status_code != 200:
+        if resp.status_code not in (200, 204):
             logger.error(f"Failed to create HR tables: {resp.text}")
         else:
             logger.info("HR tables created/verified.")
@@ -2558,7 +2558,7 @@ async def ensure_is_cogs_column():
                     json={"query": sql},
                     headers=headers
                 )
-                if resp.status_code != 200:
+                if resp.status_code not in (200, 204):
                     logger.error(f"Failed to add is_cogs column: {resp.text}")
                 else:
                     logger.info("is_cogs column added.")
@@ -2648,7 +2648,7 @@ async def ensure_accounting_tables():
             json={"query": sql},
             headers=headers
         )
-        if resp.status_code != 200:
+        if resp.status_code not in (200, 204):
             logger.error(f"Failed to create accounting tables: {resp.text}")
         else:
             logger.info("Accounting tables created/verified.")
@@ -12895,7 +12895,7 @@ async def run_load_test_internal(
                 json={"email": email, "password": password},
                 timeout=10.0
             )
-            if login_resp.status_code != 200:
+            if login_resp.status_code not in (200, 204):
                 raise ValueError(f"Login failed: {login_resp.text}")
             auth_token = login_resp.json().get("access_token")
             if not auth_token:
