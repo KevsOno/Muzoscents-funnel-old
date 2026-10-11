@@ -595,6 +595,276 @@ function renderFoodMenu() {
     grid.innerHTML = html || '<div style="padding:60px 20px;text-align:center;color:#4b5563;">Menu coming soon.</div>';
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   SECTION RENDERERS
+   Each returns a full HTML string for one section. The order and
+   inclusion of sections is driven by cfg.sections from the config.
+   ═══════════════════════════════════════════════════════════════ */
+
+function _cfg() { return window.__KD_CONFIG__ || {}; }
+function _branding() { return _cfg().branding || {}; }
+function _heroCfg() { return _cfg().hero || {}; }
+function _contact() { return _cfg().contact || {}; }
+
+function _storeName() {
+    return _branding().store_name || window.__KD_ORG_NAME__ || 'Store';
+}
+
+function sectionHero() {
+    const h = _heroCfg();
+    if (h.enabled === false) return '';
+    const storeName = _storeName();
+    const headline = h.headline || ('Welcome to ' + storeName);
+    const subtext = h.subtext || '';
+    const ctaText = h.cta_text || 'Shop now';
+
+    return `
+        <section class="max-w-7xl mx-auto px-4 pt-5 md:pt-7">
+            <div class="pf-hero rounded-3xl">
+                <div class="grid md:grid-cols-[.92fr_1.08fr] items-center px-6 py-8 md:px-12 md:py-10">
+                    <div class="pf-hero-copy">
+                        <span class="inline-flex items-center gap-2 bg-white border border-[#dfe9d8] text-[#075c3a] rounded-full px-3 py-1 text-xs font-bold mb-4">
+                            <i class="fa-solid fa-bag-shopping" aria-hidden="true"></i> Welcome
+                        </span>
+                        <h1 class="text-4xl md:text-6xl font-black leading-[.98]">${escapeHtml(headline)}</h1>
+                        ${subtext ? `<p class="text-xl md:text-2xl font-semibold mt-3">${escapeHtml(subtext)}</p>` : ''}
+                        <div class="flex flex-wrap gap-3 mt-7">
+                            <button class="hero-shop-btn pf-primary-btn px-6 py-3 rounded-xl font-bold">${escapeHtml(ctaText)}</button>
+                            <button class="hero-categories-btn pf-secondary-btn px-6 py-3 rounded-xl font-bold">Explore Categories</button>
+                        </div>
+                    </div>
+                    <div id="hero-product-collage" class="pf-hero-collage mt-5 md:mt-0">
+                        ${[1,2,3,4].map(() => `<div class="pf-hero-product"><div class="text-gray-400 text-4xl" aria-hidden="true"><i class="fa-solid fa-box-open"></i></div></div>`).join('')}
+                        <div class="pf-hero-badge"><i class="fa-solid fa-store mr-1" aria-hidden="true"></i> Online + In-store</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    `;
+}
+
+function sectionBenefits() {
+    const benefits = [
+        { icon: 'fa-truck',            title: 'Convenient Delivery',  desc: 'Get essentials delivered.' },
+        { icon: 'fa-store',            title: 'Shop In-Store & Online', desc: 'Your store, your way.' },
+        { icon: 'fa-shield-halved',    title: 'Secure Payments',       desc: 'Simple & reliable checkout.' },
+        { icon: 'fa-tag',              title: 'Great Value',           desc: 'More products for your money.' },
+    ];
+    return `
+        <section class="max-w-7xl mx-auto px-4 mt-10">
+            <div class="pf-benefits rounded-2xl p-4 md:p-5 grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-0">
+                ${benefits.map((b, i) => `
+                    <div class="flex items-center gap-3 md:px-4 ${i < 3 ? 'md:border-r border-gray-100' : ''}">
+                        <div class="pf-benefit-icon"><i class="fa-solid ${b.icon}" aria-hidden="true"></i></div>
+                        <div>
+                            <div class="font-bold text-sm">${escapeHtml(b.title)}</div>
+                            <div class="text-xs text-gray-600 mt-1">${escapeHtml(b.desc)}</div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </section>
+    `;
+}
+
+function sectionCategories() {
+    if (_cfg().features && _cfg().features.show_categories === false) return '';
+    return `
+        <section id="categories-section" class="max-w-7xl mx-auto px-4 mt-10">
+            <div class="flex items-end justify-between mb-4">
+                <div>
+                    <h2 class="pf-section-title text-xl md:text-2xl font-black">Shop by Category</h2>
+                    <p class="text-sm text-gray-600 mt-1">Find what you need faster.</p>
+                </div>
+                <button id="view-all-categories" class="pf-section-link">View all <i class="fa-solid fa-arrow-right ml-1" aria-hidden="true"></i></button>
+            </div>
+            <div id="category-cards" class="pf-horizontal-scroll md:grid md:grid-cols-6 lg:grid-cols-8 md:overflow-visible"></div>
+        </section>
+    `;
+}
+
+function sectionTopPicks() {
+    return `
+        <section id="deals-section" class="max-w-7xl mx-auto px-4 mt-10">
+            <div class="flex items-end justify-between mb-4">
+                <div>
+                    <h2 class="pf-section-title text-xl md:text-2xl font-black"><span class="mr-1" aria-hidden="true">🔥</span> Today's Picks</h2>
+                    <p class="text-sm text-gray-600 mt-1">Popular items customers can shop right now.</p>
+                </div>
+                <button id="view-all-products" class="pf-section-link">View all <i class="fa-solid fa-arrow-right ml-1" aria-hidden="true"></i></button>
+            </div>
+            <div id="featured-grid" class="pf-product-grid pf-featured-grid"></div>
+        </section>
+    `;
+}
+
+function sectionNeeds() {
+    const needs = [
+        { key: 'breakfast', icon: 'fa-mug-hot',            color: '#9ebf82', title: 'Breakfast Essentials', desc: 'Bread • Milk • Cereals • Beverages' },
+        { key: 'kitchen',   icon: 'fa-bowl-food',          color: '#b7a56a', title: 'Stock Your Kitchen',    desc: 'Rice • Pasta • Oil • Seasonings' },
+        { key: 'cleaning',  icon: 'fa-spray-can-sparkles', color: '#7aa9a1', title: 'Cleaning Day',          desc: 'Detergents • Disinfectants • Tissue' },
+        { key: 'party',     icon: 'fa-champagne-glasses',  color: '#c58b65', title: 'Party & Events',        desc: 'Drinks • Snacks • Confectionery' },
+    ];
+    return `
+        <section id="needs-section" class="max-w-7xl mx-auto px-4 mt-10">
+            <div class="flex items-end justify-between mb-4">
+                <div>
+                    <h2 class="pf-section-title text-xl md:text-2xl font-black">Shop by Need</h2>
+                    <p class="text-sm text-gray-600 mt-1">Start with what you're trying to get done.</p>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                ${needs.map(n => `
+                    <button class="pf-need-card text-left p-5" data-need="${n.key}">
+                        <div class="pf-need-copy">
+                            <h3 class="font-black text-lg">${escapeHtml(n.title)}</h3>
+                            <p class="text-xs text-gray-600 mt-2">${escapeHtml(n.desc)}</p>
+                            <span class="inline-block mt-5 text-xs font-bold text-[#075c3a]">SHOP NOW →</span>
+                        </div>
+                        <div class="pf-need-art flex items-center justify-center text-6xl" style="color:${n.color}" aria-hidden="true">
+                            <i class="fa-solid ${n.icon}"></i>
+                        </div>
+                    </button>
+                `).join('')}
+            </div>
+        </section>
+    `;
+}
+
+function sectionProducts() {
+    return `
+        <section id="products-section" class="max-w-7xl mx-auto px-4 mt-10">
+            <div class="flex flex-col md:flex-row md:items-end justify-between gap-3 mb-4">
+                <div>
+                    <h2 class="pf-section-title text-xl md:text-2xl font-black">Popular Products</h2>
+                    <p id="product-results-summary" class="text-sm text-gray-600 mt-1">Browse our available products.</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <select id="sort-select" aria-label="Sort products by" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white">
+                        <option value="newest">Newest First</option>
+                        <option value="price_asc">Price: Low → High</option>
+                        <option value="price_desc">Price: High → Low</option>
+                        <option value="popularity">Popularity</option>
+                    </select>
+                    <select id="category-select-mobile" aria-label="Filter by category" class="category-select md:hidden border border-gray-200 text-xs">
+                        <option value="">All Categories</option>
+                    </select>
+                </div>
+            </div>
+            <div id="products-grid" class="pf-product-grid"></div>
+            <div id="pagination-container" class="mt-7 flex justify-center"></div>
+        </section>
+    `;
+}
+
+function sectionAbout() {
+    const about = _cfg().about || {};
+    if (!about.enabled || !about.body) return '';
+    return `
+        <section id="about-section" class="max-w-7xl mx-auto px-4 mt-16">
+            <div class="max-w-3xl mx-auto">
+                <h2 class="pf-section-title text-2xl md:text-3xl font-black mb-4">${escapeHtml(about.title || 'About us')}</h2>
+                <p class="text-gray-700 leading-relaxed whitespace-pre-wrap">${escapeHtml(about.body)}</p>
+            </div>
+        </section>
+    `;
+}
+
+function sectionCta() {
+    const b = _branding();
+    const headline = b.tagline || ('Ready to shop ' + _storeName() + '?');
+    return `
+        <section class="max-w-7xl mx-auto px-4 mt-16">
+            <div class="rounded-3xl p-10 md:p-14 text-center" style="background:var(--pf-green);color:#fff;">
+                <h2 class="text-2xl md:text-3xl font-black mb-3">${escapeHtml(headline)}</h2>
+                <p class="opacity-90 mb-6">Browse our full collection and order online for delivery or pickup.</p>
+                <button class="hero-shop-btn px-8 py-3 rounded-xl font-bold" style="background:#fff;color:var(--pf-green);">Shop Now</button>
+            </div>
+        </section>
+    `;
+}
+
+const SECTION_RENDERERS = {
+    'hero':       sectionHero,
+    'benefits':   sectionBenefits,
+    'categories': sectionCategories,
+    'top-picks':  sectionTopPicks,
+    'needs':      sectionNeeds,
+    'products':   sectionProducts,
+    'about':      sectionAbout,
+    'cta':        sectionCta,
+};
+
+function getActiveSections() {
+    const cfg = _cfg();
+    let list = cfg.sections;
+    if (!Array.isArray(list) || list.length === 0) {
+        // Fallback to current default order
+        list = [
+            { type: 'hero' }, { type: 'benefits' }, { type: 'categories' },
+            { type: 'top-picks' }, { type: 'needs' }, { type: 'products' },
+        ];
+    }
+    return list;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   FULL PAGE RENDER
+   Called once on load, and again if the theme/sections change.
+   ═══════════════════════════════════════════════════════════════ */
+function renderSections() {
+    const root = document.getElementById('sections-root');
+    if (!root) return;
+
+    if (isFoodVertical()) {
+        // Food uses hero + food menu, no section reordering yet
+        root.innerHTML =
+            sectionHero() +
+            '<section class="max-w-7xl mx-auto px-4 mt-10">' +
+                '<div class="flex flex-col md:flex-row md:items-end justify-between gap-3 mb-4">' +
+                    '<div>' +
+                        '<h2 class="pf-section-title text-xl md:text-2xl font-black">Our Menu</h2>' +
+                        '<p id="product-results-summary" class="text-sm text-gray-600 mt-1">Browse our menu</p>' +
+                    '</div>' +
+                '</div>' +
+                '<div id="products-grid" class="pf-product-grid"></div>' +
+            '</section>';
+        postRenderSections();
+        return;
+    }
+
+    const sections = getActiveSections();
+    let html = '';
+    for (const sec of sections) {
+        const fn = SECTION_RENDERERS[sec.type];
+        if (fn) {
+            try { html += fn(sec); }
+            catch (e) { console.warn('Section render failed:', sec.type, e); }
+        }
+    }
+    root.innerHTML = html;
+    postRenderSections();
+}
+
+function postRenderSections() {
+    // Hero product collage
+    if (document.getElementById('hero-product-collage')) {
+        renderHeroProducts();
+    }
+    // Category cards
+    if (document.getElementById('category-cards')) {
+        renderCategoryCards();
+    }
+    // Product grid (uses current allProducts)
+    if (document.getElementById('products-grid')) {
+        renderProducts();
+    }
+    // Top picks carousel (async fetch)
+    if (document.getElementById('featured-grid')) {
+        loadTopProducts();
+    }
+}
+
 function renderProducts() {
     if (isFoodVertical()) {
         renderFoodMenu();
@@ -2268,19 +2538,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     document.getElementById('nav-cart')?.addEventListener('click', () => document.getElementById('cart-drawer')
         .classList.remove('translate-x-full'));
 
-    document.querySelectorAll('.hero-shop-btn').forEach(btn => btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        showView('shop');
-        const target = document.getElementById('products-grid') || document.getElementById('shop-view');
-        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        setTimeout(() => {
-            const input = document.getElementById('product-search');
-            if (input && (window.innerWidth < 768 || document.documentElement.classList.contains(
-                'pwa-mobile'))) {
-                input.focus({ preventScroll: true });
-            }
-        }, 500);
-    }));
     document.querySelectorAll('.hero-track-btn').forEach(btn => btn.addEventListener('click', () => document
         .getElementById('track-modal').classList.add('active')));
     document.querySelectorAll('.hero-tickets-btn').forEach(btn => btn.addEventListener('click', () => showView(
@@ -2388,8 +2645,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     document.getElementById('view-all-categories')?.addEventListener('click', () => goToSection(
         'products-section'));
     document.getElementById('view-all-products')?.addEventListener('click', () => goToSection('products-section'));
-    document.getElementById('hero-categories-btn')?.addEventListener('click', () => goToSection(
-        'categories-section'));
     document.getElementById('nav-track-order')?.addEventListener('click', () => document.getElementById('track-modal')
         ?.classList.add('active'));
     document.getElementById('announcement-track-btn')?.addEventListener('click', () => document.getElementById(
@@ -2509,6 +2764,19 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
 
     document.addEventListener('click', function(e) {
+        // Hero CTA buttons (may be re-rendered)
+        if (e.target.closest('.hero-categories-btn')) {
+            e.preventDefault();
+            goToSection('categories-section');
+            return;
+        }
+        if (e.target.closest('.hero-shop-btn')) {
+            e.preventDefault();
+            const target = document.getElementById('products-section') || document.getElementById('products-grid');
+            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            return;
+        }
+
         const productCard = e.target.closest('.pf-product-card');
         if (productCard && !e.target.closest('button')) {
             const product = allProducts.find(p => String(p.id) === String(productCard.dataset.productId));
@@ -2567,7 +2835,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         try { await loadUser(); } catch (e) { token = null; }
     }
     await loadCategories();
-    await loadProducts();
+    await loadProducts();           // fetches products, sets allProducts
+    renderSections();               // renders the whole page from config
     handlePaymentReturn();
     handleDeepLinks();
     showView('shop');
