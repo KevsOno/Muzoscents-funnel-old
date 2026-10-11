@@ -5360,6 +5360,16 @@ class CreateOrgRequest(BaseModel):
 DEFAULT_STOREFRONT_CONFIG = {
     "theme": "modern",  # modern | minimal | bold
 
+    "sections": [
+        {"type": "hero"},
+        {"type": "benefits"},
+        {"type": "categories"},
+        {"type": "top-picks"},
+        {"type": "needs"},
+        {"type": "products"},
+    ],
+
+
     "layout": {
         "product_card": "grid",       # grid | list | editorial | rounded
         "hero":         "split",      # split | minimal | full | centred
