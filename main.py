@@ -5829,6 +5829,7 @@ async def get_public_storefront(slug: str, request: Request):
 
 class StorefrontConfigUpdate(BaseModel):
     theme:          Optional[str]  = None
+    layout:         Optional[dict] = None
     branding:       Optional[dict] = None
     hero:           Optional[dict] = None
     about:          Optional[dict] = None
@@ -5843,6 +5844,7 @@ class StorefrontConfigUpdate(BaseModel):
 
 # Sections that must be objects, not strings or scalars.
 _CONFIG_SECTIONS = (
+    "layout",
     "branding", "hero", "about", "contact", "social",
     "policies", "seo", "features", "retail_config", "food_config",
 )
