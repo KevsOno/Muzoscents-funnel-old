@@ -5518,6 +5518,13 @@ class AdminCreateOrgRequest(BaseModel):
     niche: str = Field(..., min_length=1, max_length=100)
     budget: int = 0
 
+    # Optional owner — if provided, user is created (or attached) as owner
+    owner_email: Optional[str] = Field(None, max_length=200)
+    owner_first_name: Optional[str] = Field(None, max_length=100)
+    owner_last_name: Optional[str] = Field(None, max_length=100)
+    owner_phone: Optional[str] = Field(None, max_length=50)
+    owner_password: Optional[str] = Field(None, min_length=8, max_length=100)
+
 
 class AdminUpdateOrgRequest(BaseModel):
     org_name: Optional[str] = Field(None, min_length=2, max_length=200)
@@ -5589,6 +5596,141 @@ async def admin_list_orgs(
 
 
 @app.post("/admin/orgs")
+async def _create_or_attach_owner(
+    org_id: str,
+    email: str,
+    first_name: str = "",
+    last_name: str = "",
+    phone: str = "",
+    password: Optional[str] = None,
+) -> Dict:
+    """
+    Attach a user as owner of the given org.
+    - If a profile with this email exists, uses that user.
+    - Otherwise creates the user via Supabase admin auth API + profile row.
+    - Then upserts org_members with role='owner'.
+    - Stamps JWT metadata.
+    Returns { user_id, email, created, temporary_password }.
+    """
+    if not SUPABASE_SERVICE_ROLE_KEY:
+        raise HTTPException(status_code=500, detail="Service role key required to create users")
+
+    client = get_supabase()
+
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+    }
+
+    # 1. Try to find existing profile
+    prof_res = await run_sync_db_call(
+        client.table("profiles").select("id").eq("email", email).maybe_single().execute
+    )
+
+    created = False
+    temp_password: Optional[str] = None
+    user_id: Optional[str] = None
+
+    if prof_res and prof_res.data:
+        user_id = prof_res.data["id"]
+    else:
+        # 2. Create the auth user
+        temp_password = password or ''.join(
+            secrets.choice(string.ascii_letters + string.digits) for _ in range(12)
+        )
+        async with httpx.AsyncClient(timeout=15.0) as http:
+            resp = await http.post(
+                f"{SUPABASE_URL}/auth/v1/admin/users",
+                json={
+                    "email": email,
+                    "password": temp_password,
+                    "email_confirm": True,
+                    "user_metadata": {
+                        "first_name": first_name,
+                        "last_name": last_name,
+                        "phone": phone,
+                    },
+                },
+                headers=headers,
+            )
+        if resp.status_code not in (200, 201):
+            raise HTTPException(status_code=500, detail=f"Failed to create user: {resp.text}")
+
+        user_id = resp.json().get("id")
+        if not user_id:
+            raise HTTPException(status_code=500, detail="Auth user created but no id returned")
+        created = True
+
+        # 3. Create the profile row
+        async with httpx.AsyncClient(timeout=15.0) as http:
+            prof_resp = await http.post(
+                f"{SUPABASE_URL}/rest/v1/profiles",
+                json={
+                    "id": user_id,
+                    "email": email,
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "phone": phone,
+                    "membership_id": f"MEM-{user_id[:8]}",
+                    "status": "active",
+                    "current_points": 0,
+                    "tier": "bronze",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                },
+                headers=headers,
+            )
+        if prof_resp.status_code not in (200, 201):
+            # Roll back the auth user so we don't leave an orphan
+            async with httpx.AsyncClient(timeout=10.0) as http:
+                await http.delete(f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}", headers=headers)
+            raise HTTPException(status_code=500, detail=f"Failed to create profile: {prof_resp.text}")
+
+    # 4. Upsert org_members as owner
+    existing = await run_sync_db_call(
+        client.table("org_members")
+        .select("user_id, role")
+        .eq("user_id", user_id)
+        .eq("org_id", org_id)
+        .maybe_single()
+        .execute
+    )
+    if existing and existing.data:
+        if existing.data.get("role") != "owner":
+            await run_sync_db_call(
+                client.table("org_members")
+                .update({"role": "owner"})
+                .eq("user_id", user_id)
+                .eq("org_id", org_id)
+                .execute
+            )
+    else:
+        await run_sync_db_call(
+            client.table("org_members").insert({
+                "user_id": user_id,
+                "org_id": org_id,
+                "role": "owner",
+                "joined_at": datetime.now(timezone.utc).isoformat(),
+            }).execute
+        )
+
+    # 5. Stamp app_metadata so the JWT carries org + role
+    await _admin_set_app_metadata(user_id, {
+        "org_id": org_id,
+        "role": "owner",
+        "branch_scope": None,
+    })
+
+    return {
+        "user_id": user_id,
+        "email": email,
+        "created": created,
+        "temporary_password": temp_password,
+    }
+
+
 async def admin_create_org(
     request: Request,
     req: AdminCreateOrgRequest,
@@ -5654,6 +5796,41 @@ async def admin_create_org(
     except Exception as e:
         logger.warning(f"Failed to seed warehouse for org {org['id']}: {e}")
 
+    # ── Create or attach the first owner ──
+    owner_info = None
+    if req.owner_email:
+        try:
+            owner_info = await _create_or_attach_owner(
+                org_id=org["id"],
+                email=req.owner_email,
+                first_name=req.owner_first_name or "",
+                last_name=req.owner_last_name or "",
+                phone=req.owner_phone or "",
+                password=req.owner_password,
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Owner creation failed for org {org['id']}: {e}", exc_info=True)
+            # Don't fail the whole org creation if only the owner step failed
+            owner_info = {"error": str(e)}
+
+    # ── Notify the owner with credentials if we created them ──
+    if owner_info and owner_info.get("temporary_password"):
+        try:
+            login_link = f"{PRODUCTION_HOST}/kdsiginin"
+            html = f"""
+            <h2>Welcome to {escape_html(req.org_name)}</h2>
+            <p>You have been set up as an <strong>owner</strong> of {escape_html(req.org_name)} on Kevs Digital bOS.</p>
+            <p><strong>Email:</strong> {req.owner_email}<br>
+               <strong>Temporary password:</strong> <code>{owner_info['temporary_password']}</code></p>
+            <p>Sign in here: <a href="{login_link}">{login_link}</a></p>
+            <p>Change your password immediately after signing in.</p>
+            """
+            await send_sendgrid_email(req.owner_email, f"Your {req.org_name} owner account", html)
+        except Exception as e:
+            logger.warning(f"Owner invite email failed: {e}")
+
     return {
         "org_id":         org["id"],
         "org_name":       org["org_name"],
@@ -5662,8 +5839,8 @@ async def admin_create_org(
         "invite_code":    invite_code,
         "storefront_url": f"{PRODUCTION_HOST}/store/{candidate}",
         "published":      False,
+        "owner":          owner_info,
     }
-
 
 @app.patch("/admin/orgs/{org_id}")
 async def admin_update_org(
