@@ -420,9 +420,190 @@ function productCardHtml(p, featured = false) {
         </article>`;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   FOOD VERTICAL
+   ═══════════════════════════════════════════════════════════════ */
+function isFoodVertical() {
+    return window.__KD_VERTICAL__ === 'food';
+}
+
+function getFoodConfig() {
+    return (window.__KD_CONFIG__ && window.__KD_CONFIG__.food_config) || {};
+}
+
+function renderOpeningHoursBanner() {
+    if (!isFoodVertical()) return;
+    var banner = document.getElementById('food-opening-banner');
+    if (!banner) return;
+
+    var food = getFoodConfig();
+    var accepting = food.accepting_orders !== false;
+    var now = new Date();
+    var dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    var dayKey = dayNames[now.getDay()];
+    var todayHours = (food.opening_hours || {})[dayKey];
+    var timeStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    var isOpenNow = false;
+    if (todayHours && todayHours.open && todayHours.close) {
+        isOpenNow = timeStr >= todayHours.open && timeStr <= todayHours.close;
+    }
+
+    var html = '';
+    if (!accepting) {
+        banner.classList.add('closed');
+        html = '<i class="fa-solid fa-circle-xmark"></i> ' + escapeHtml(food.closed_message || "We're not accepting orders right now.");
+    } else if (todayHours && !isOpenNow) {
+        banner.classList.add('closed');
+        html = '<i class="fa-solid fa-clock"></i> Closed now — today ' + escapeHtml(todayHours.open) + ' to ' + escapeHtml(todayHours.close);
+    } else if (todayHours) {
+        banner.classList.remove('closed');
+        html = '<i class="fa-solid fa-circle-check"></i> Open now — until ' + escapeHtml(todayHours.close);
+    } else {
+        banner.classList.remove('closed');
+        html = '<i class="fa-solid fa-circle-check"></i> Open for orders';
+    }
+    banner.innerHTML = html;
+    banner.style.display = 'flex';
+}
+
+function renderFoodFulfillmentTabs() {
+    if (!isFoodVertical()) return;
+    var container = document.getElementById('food-fulfillment-tabs');
+    var wrap = document.getElementById('food-fulfillment-container');
+    var retailWrap = document.getElementById('retail-delivery-wrap');
+    if (!container || !wrap) return;
+
+    var food = getFoodConfig();
+    var modes = food.fulfillment_modes || {};
+    var order = ['delivery', 'pickup', 'dine_in'];
+    var labels = { delivery: 'Delivery', pickup: 'Pickup', dine_in: 'Dine-in' };
+    var icons = { delivery: '🚚', pickup: '📦', dine_in: '🍽️' };
+    var enabled = [];
+    order.forEach(function (m) {
+        if (modes[m] && modes[m].enabled !== false) enabled.push({ key: m, cfg: modes[m] });
+    });
+
+    if (enabled.length === 0) {
+        wrap.style.display = 'none';
+        if (retailWrap) retailWrap.style.display = 'block';
+        return;
+    }
+
+    wrap.style.display = 'block';
+    if (retailWrap) retailWrap.style.display = 'none';
+
+    // Pick a sensible default if current selection isn't enabled
+    var validModes = enabled.map(function (e) { return e.key; });
+    if (validModes.indexOf(deliveryOption) === -1) {
+        deliveryOption = enabled[0].key;
+        try { localStorage.setItem('pf_delivery_option', deliveryOption); } catch (e) {}
+    }
+
+    container.innerHTML = enabled.map(function (e) {
+        var prep = e.cfg.prep_time_minutes ? '<small>' + e.cfg.prep_time_minutes + ' min</small>' : '';
+        var active = deliveryOption === e.key ? ' active' : '';
+        return '<button type="button" class="fulfillment-tab' + active + '" data-mode="' + e.key + '">' +
+            (icons[e.key] || '') + ' ' + (labels[e.key] || e.key) + prep +
+        '</button>';
+    }).join('');
+
+    container.querySelectorAll('.fulfillment-tab').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            setDeliveryOpt(this.dataset.mode);
+            renderFoodFulfillmentTabs();
+        });
+    });
+}
+
+function renderMenuItem(p) {
+    var stock = Number(p.current_qty || 0);
+    var oos = stock <= 0;
+    var img = p.image_url
+        ? '<img src="' + escapeHtml(p.image_url) + '" alt="' + escapeHtml(p.description) + '" loading="lazy">'
+        : '<i class="fa-solid fa-utensils"></i>';
+    return '<article class="menu-item" data-product-id="' + p.id + '">' +
+        '<div class="menu-item-image">' + img + '</div>' +
+        '<div class="menu-item-body">' +
+            '<h4>' + escapeHtml(p.description) + '</h4>' +
+            (p.product_group ? '<p>' + escapeHtml(p.product_group) + '</p>' : '') +
+        '</div>' +
+        '<div class="menu-item-side">' +
+            '<div class="menu-item-price">₦' + Number(p.price_naira || 0).toLocaleString() + '</div>' +
+            '<button class="menu-item-add add-to-cart-btn" data-id="' + p.id + '"' + (oos ? ' disabled title="Out of stock"' : ' title="Add to cart"') + '>+</button>' +
+        '</div>' +
+    '</article>';
+}
+
+function renderFoodMenu() {
+    var grid = document.getElementById('products-grid');
+    var summary = document.getElementById('product-results-summary');
+    if (!grid) return;
+
+    var items = allProducts || [];
+    var food = getFoodConfig();
+    var sections = (food.menu_sections || []).slice().sort(function (a, b) {
+        return (a.order || 0) - (b.order || 0);
+    });
+
+    // Search results — flat list
+    if (searchQuery && searchQuery.trim()) {
+        if (summary) summary.innerText = 'Showing ' + items.length + ' item' + (items.length === 1 ? '' : 's') + ' for "' + searchQuery + '"';
+        if (items.length === 0) {
+            grid.innerHTML = '<div style="padding:60px 20px;text-align:center;color:#94a3b8;">No items match your search.</div>';
+            return;
+        }
+        grid.innerHTML = '<div class="menu-list">' + items.map(renderMenuItem).join('') + '</div>';
+        return;
+    }
+
+    if (summary) summary.innerText = 'Browse our menu';
+
+    if (items.length === 0) {
+        grid.innerHTML = '<div style="padding:60px 20px;text-align:center;color:#94a3b8;">Menu coming soon.</div>';
+        return;
+    }
+
+    var html = '';
+    var usedIds = {};
+
+    // Match each item to a section by product_group name (case-insensitive)
+    sections.forEach(function (sec) {
+        var sectionName = sec.name || '';
+        var sectionItems = items.filter(function (p) {
+            return (p.product_group || '').toLowerCase() === sectionName.toLowerCase();
+        });
+        sectionItems.forEach(function (p) { usedIds[p.id] = true; });
+        if (sectionItems.length === 0) return;
+        html += '<div class="menu-section">';
+        html += '<div class="menu-section-header">';
+        html += '<h3>' + escapeHtml(sectionName) + '</h3>';
+        html += '<span class="count">' + sectionItems.length + ' item' + (sectionItems.length === 1 ? '' : 's') + '</span>';
+        html += '</div>';
+        html += '<div class="menu-list">' + sectionItems.map(renderMenuItem).join('') + '</div>';
+        html += '</div>';
+    });
+
+    // Leftovers — anything not matched to a named section
+    var leftovers = items.filter(function (p) { return !usedIds[p.id]; });
+    if (leftovers.length > 0) {
+        html += '<div class="menu-section">';
+        html += '<div class="menu-section-header">';
+        html += '<h3>More items</h3>';
+        html += '<span class="count">' + leftovers.length + ' item' + (leftovers.length === 1 ? '' : 's') + '</span>';
+        html += '</div>';
+        html += '<div class="menu-list">' + leftovers.map(renderMenuItem).join('') + '</div>';
+        html += '</div>';
+    }
+
+    grid.innerHTML = html || '<div style="padding:60px 20px;text-align:center;color:#94a3b8;">Menu coming soon.</div>';
+}
+
 function renderProducts() {
-    if (window.__KD_VERTICAL__ === 'food') {
-        return renderFoodMenu();
+    if (isFoodVertical()) {
+        renderFoodMenu();
+        renderOpeningHoursBanner();
+        renderFoodFulfillmentTabs();
+        return;
     }
     const grid = document.getElementById('products-grid');
     const featuredGrid = document.getElementById('featured-grid');
@@ -456,42 +637,6 @@ function renderProducts() {
 
     renderHeroProducts();
     renderCategoryCards();
-}
-
-function renderFoodMenu() {
-    const grid = document.getElementById('products-grid');
-    if (!grid) return;
-    const items = allProducts || [];
-    if (items.length === 0) {
-        grid.innerHTML = '<div class="col-span-full text-center py-12 text-gray-500">Menu coming soon.</div>';
-        return;
-    }
-    // Group by product_group (which for food orgs is the menu section)
-    const groups = {};
-    items.forEach(p => {
-        const g = p.product_group || 'Menu';
-        if (!groups[g]) groups[g] = [];
-        groups[g].push(p);
-    });
-    grid.innerHTML = Object.entries(groups).map(([name, list]) =>
-        `<div class="menu-section col-span-full mb-8">
-            <h2 class="text-2xl font-black mb-4 pb-3 border-b border-gray-200">${escapeHtml(name)}</h2>
-            <div class="space-y-3">
-                ${list.map(p => `
-                    <div class="flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-xl hover:border-[#075c3a] transition cursor-pointer" data-product-id="${p.id}">
-                        <div class="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
-                            ${p.image_url ? `<img src="${escapeHtml(p.image_url)}" alt="" width="64" height="64" class="w-full h-full object-cover">` : '<i class="fa-solid fa-utensils text-2xl text-gray-400"></i>'}
-                        </div>
-                        <div class="flex-1 min-w-0">
-                            <div class="font-semibold">${escapeHtml(p.description)}</div>
-                        </div>
-                        <div class="font-bold text-[#075c3a]">₦${Number(p.price_naira || 0).toLocaleString()}</div>
-                        <button class="add-to-cart-btn w-10 h-10 rounded-full bg-[#075c3a] text-white flex items-center justify-center" data-id="${p.id}">+</button>
-                    </div>
-                `).join('')}
-            </div>
-        </div>`
-    ).join('');
 }
 
 function renderHeroProducts() {
@@ -954,10 +1099,16 @@ function setDeliveryOpt(opt) {
     localStorage.setItem('pf_delivery_option', opt);
     const pickup = document.getElementById('pickup-option'),
         deliv = document.getElementById('delivery-option');
-    if (opt === 'pickup') {
-        pickup.classList.add('bg-orange-500', 'text-white');
-        deliv.classList.remove('bg-orange-500', 'text-white');
-        deliv.classList.add('bg-gray-200');
+
+    // Food vertical: dynamic tabs handle visual state, we just run the side effects.
+    if (opt === 'pickup' || opt === 'dine_in') {
+        if (pickup) {
+            pickup.classList.add('bg-orange-500', 'text-white');
+        }
+        if (deliv) {
+            deliv.classList.remove('bg-orange-500', 'text-white');
+            deliv.classList.add('bg-gray-200');
+        }
         document.getElementById('delivery-address-section').classList.add('hidden');
         deliveryFee = 0;
         deliveryAddress = '';
@@ -966,9 +1117,11 @@ function setDeliveryOpt(opt) {
         updateCartUI();
         updateCheckoutButton();
     } else {
-        deliv.classList.add('bg-orange-500', 'text-white');
-        pickup.classList.remove('bg-orange-500', 'text-white');
-        pickup.classList.add('bg-gray-200');
+        if (deliv) deliv.classList.add('bg-orange-500', 'text-white');
+        if (pickup) {
+            pickup.classList.remove('bg-orange-500', 'text-white');
+            pickup.classList.add('bg-gray-200');
+        }
         document.getElementById('delivery-address-section').classList.remove('hidden');
         isDeliveryEstimated = false;
         const savedAddr = localStorage.getItem('pf_delivery_address');
@@ -1235,7 +1388,8 @@ async function checkout() {
             customer_email: userProfile?.email || null,
             customer_phone: userProfile?.phone || null,
             payment_method: payMethod,
-            callback_url: window.location.href.split('?')[0]
+            callback_url: window.location.href.split('?')[0],
+            fulfillment_mode: deliveryOption // 'delivery' | 'pickup' | 'dine_in'
         };
 
         if (deliveryOption === 'delivery') {
@@ -1265,7 +1419,7 @@ async function checkout() {
                 customer_name: payload.customer_name || 'Guest',
                 customer_email: payload.customer_email,
                 customer_phone: payload.customer_phone || '0000000000',
-                fulfillment_mode: deliveryOption === 'delivery' ? 'delivery' : 'pickup',
+                fulfillment_mode: payload.fulfillment_mode,
                 shipping_address: deliveryOption === 'delivery' ? deliveryAddress : null,
                 delivery_fee: deliveryOption === 'delivery' ? deliveryFeeToUse : 0,
                 handling_fee: deliveryOption === 'delivery' ? handlingFeeToUse : 0,
@@ -2462,6 +2616,11 @@ document.addEventListener('click', function(e) {
     handlePaymentReturn();
     handleDeepLinks();
     showView('shop');
+
+    if (isFoodVertical()) {
+        renderFoodFulfillmentTabs();
+        renderOpeningHoursBanner();
+    }
 
     if (searchInput) {
         searchInput.value = '';
