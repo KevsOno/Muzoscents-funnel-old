@@ -268,6 +268,39 @@ async def run_sync_db_call(sync_func, *args, **kwargs):
     """Run a sync supabase-py call in a thread to avoid blocking the event loop."""
     return await asyncio.to_thread(sync_func, *args, **kwargs)
 
+
+async def fetch_one(query) -> Optional[Dict]:
+    """
+    Run a supabase query that returns 0 or 1 row. Returns the row as a dict,
+    or None if no row matches.
+
+    Use with `.maybe_single()`:
+        row = await fetch_one(client.table("x").select("*").eq("id", y).maybe_single())
+        if not row: raise HTTPException(404, "...")
+
+    Handles both failure modes of supabase-py:
+      - postgrest-py raises APIError(PGRST116) when 0 rows are found
+      - response.data is None when 0 rows are found
+    """
+    try:
+        res = await run_sync_db_call(query.execute)
+    except Exception as e:
+        msg = str(e)
+        if "PGRST116" in msg or "JSON object requested" in msg:
+            return None
+        raise
+    if res is None:
+        return None
+    data = getattr(res, "data", None)
+    if data is None:
+        return None
+    if isinstance(data, list):
+        return data[0] if data else None
+    return data
+
+
+
+
 # ===================== HELPER: DEFAULT LOCATION =====================
 
 async def get_default_location(org_id: str) -> Optional[int]:
