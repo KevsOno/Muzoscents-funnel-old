@@ -71,7 +71,6 @@ async function initSupabase() {
         });
         return supabaseClient;
     }
-    // Load Supabase library dynamically
     return new Promise((resolve, reject) => {
         const script = document.createElement('script');
         script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
@@ -130,11 +129,13 @@ async function clearUserFromDB() {
 // ========== UTILITIES ==========
 function escapeHtml(str) {
     if (!str) return '';
-    return str.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' } [m]));
+    return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } [m]));
 }
 
 function showToast(msg, type) {
     const t = document.createElement('div');
+    t.setAttribute('role', 'status');
+    t.setAttribute('aria-live', 'polite');
     t.className =
         `fixed bottom-20 left-4 right-4 md:left-auto md:right-6 z-50 bg-${type==='success'?'green-600':'red-600'} text-white px-4 py-2 rounded-xl shadow-lg text-sm`;
     t.innerText = msg;
@@ -147,7 +148,7 @@ function setButtonLoading(btn, loading) {
     if (loading) {
         btn.disabled = true;
         btn.dataset.origHtml = btn.innerHTML;
-        btn.innerHTML = '<span class="loader-small"></span> Please wait...';
+        btn.innerHTML = '<span class="loader-small" aria-hidden="true"></span> Please wait...';
     } else {
         btn.disabled = false;
         if (btn.dataset.origHtml) {
@@ -159,7 +160,7 @@ function setButtonLoading(btn, loading) {
 function setCartTotalLoading(loading) {
     const totalSpan = document.getElementById('cart-total');
     if (loading) {
-        totalSpan.innerHTML = '<span class="loader-small"></span>';
+        totalSpan.innerHTML = '<span class="loader-small" aria-hidden="true"></span>';
     } else {
         const subtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
         let total = subtotal;
@@ -173,7 +174,7 @@ function updateCheckoutButton() {
     const btn = document.getElementById('checkout-btn');
     if (!btn) return;
 
-    if (deliveryOption === 'pickup') {
+    if (deliveryOption === 'pickup' || deliveryOption === 'dine_in') {
         btn.disabled = false;
         btn.textContent = '💳 Proceed to Checkout';
         btn.classList.remove('opacity-50', 'cursor-not-allowed');
@@ -321,10 +322,8 @@ function updateCategoryDropdown() {
     renderCategoryCards();
 }
 
-// ===== MODIFIED loadProducts with sort =====
 async function loadProducts(page = currentPage, limit = PAGE_SIZE) {
     const offset = (page - 1) * limit;
-    // --- get sort value from dropdown ---
     const sortBy = document.getElementById('sort-select')?.value || 'newest';
     const orgQuery = window.__KD_ORG__ ? `&org_id=${encodeURIComponent(window.__KD_ORG__)}` : '';
     let url = `/inventory/public-list?limit=${limit}&offset=${offset}&sort_by=${sortBy}${orgQuery}`;
@@ -369,17 +368,18 @@ function renderPagination() {
 
     let html = infoHtml + `<div class="flex justify-center items-center gap-2 flex-wrap">`;
     if (currentPage > 1) html +=
-        `<button class="page-btn px-3 py-1 bg-gray-200 rounded hover:bg-gray-300" data-page="${currentPage-1}">← Prev</button>`;
+        `<button class="page-btn px-3 py-1 bg-gray-200 rounded hover:bg-gray-300" data-page="${currentPage-1}" aria-label="Previous page">← Prev</button>`;
 
     const startPage = Math.max(1, currentPage - 2);
     const endPage = Math.min(totalPages, currentPage + 2);
     for (let i = startPage; i <= endPage; i++) {
         const active = i === currentPage ? 'bg-orange-500 text-white' : 'bg-gray-200 hover:bg-gray-300';
-        html += `<button class="page-btn px-3 py-1 rounded ${active}" data-page="${i}">${i}</button>`;
+        const current = i === currentPage ? ' aria-current="page"' : '';
+        html += `<button class="page-btn px-3 py-1 rounded ${active}" data-page="${i}"${current} aria-label="Page ${i}">${i}</button>`;
     }
 
     if (currentPage < totalPages) html +=
-        `<button class="page-btn px-3 py-1 bg-gray-200 rounded hover:bg-gray-300" data-page="${currentPage+1}">Next →</button>`;
+        `<button class="page-btn px-3 py-1 bg-gray-200 rounded hover:bg-gray-300" data-page="${currentPage+1}" aria-label="Next page">Next →</button>`;
     html += `</div>`;
     container.innerHTML = html;
 }
@@ -391,29 +391,29 @@ function productCardHtml(p, featured = false) {
     const safeImageUrl = p.image_url ? escapeHtml(p.image_url) : null;
     const imageHtml = safeImageUrl
         ? `<img src="${safeImageUrl}" alt="${escapeHtml(p.description)}" width="300" height="165" loading="lazy">`
-        : `<i class="fa-solid fa-box-open text-4xl text-gray-300"></i>`;
+        : `<i class="fa-solid fa-box-open text-4xl text-gray-400" aria-hidden="true"></i>`;
 
     return `
         <article class="pf-product-card product-card cursor-pointer" data-product-id="${p.id}">
             <div class="pf-product-image">
-                ${stock > 0 ? `<span class="absolute top-3 left-3 bg-[#eaf5e8] text-[#075c3a] text-[10px] font-bold px-2 py-1 rounded-full z-10">In stock</span>` : `<span class="absolute top-3 left-3 bg-red-50 text-red-600 text-[10px] font-bold px-2 py-1 rounded-full z-10">Out of stock</span>`}
+                ${stock > 0 ? `<span class="absolute top-3 left-3 bg-[#eaf5e8] text-[#075c3a] text-[10px] font-bold px-2 py-1 rounded-full z-10">In stock</span>` : `<span class="absolute top-3 left-3 bg-red-50 text-red-700 text-[10px] font-bold px-2 py-1 rounded-full z-10">Out of stock</span>`}
                 ${imageHtml}
             </div>
             <div class="p-3.5">
                 <h3 class="font-bold text-gray-800 text-sm leading-5 line-clamp-2 min-h-[40px]" title="${escapeHtml(p.description)}">${escapeHtml(p.description)}</h3>
                 <div class="flex items-center justify-between gap-2 mt-3">
                     <span class="pf-price font-black text-base md:text-lg">₦${Number(p.price_naira || 0).toLocaleString()}</span>
-                    ${stock > 0 ? `<span class="pf-stock"><i class="fa-solid fa-check mr-1"></i>${stock} available</span>` : ''}
+                    ${stock > 0 ? `<span class="pf-stock"><i class="fa-solid fa-check mr-1" aria-hidden="true"></i>${stock} available</span>` : ''}
                 </div>
                 <div class="flex items-center justify-between gap-2 mt-3">
                     <div class="flex items-center gap-1">
-                        <button class="pf-qty-btn qty-btn" data-id="${p.id}" data-delta="-1" aria-label="Decrease quantity">−</button>
+                        <button class="pf-qty-btn qty-btn" data-id="${p.id}" data-delta="-1" aria-label="Decrease quantity of ${escapeHtml(p.description)}">−</button>
                         <span class="pf-qty qty-display" id="qty-${p.id}">${qty}</span>
-                        <button class="pf-qty-btn qty-btn green" data-id="${p.id}" data-delta="1" aria-label="Increase quantity">+</button>
+                        <button class="pf-qty-btn qty-btn green" data-id="${p.id}" data-delta="1" aria-label="Increase quantity of ${escapeHtml(p.description)}">+</button>
                     </div>
                     <button class="pf-add-btn add-to-cart-btn px-3 flex items-center justify-center gap-2 font-bold text-sm"
-                        data-id="${p.id}" ${stock <= 0 ? 'disabled title="Out of stock"' : ''}>
-                        <i class="fa-solid fa-cart-plus"></i><span class="hidden sm:inline">Add</span>
+                        data-id="${p.id}" aria-label="Add ${escapeHtml(p.description)} to cart" ${stock <= 0 ? 'disabled title="Out of stock"' : ''}>
+                        <i class="fa-solid fa-cart-plus" aria-hidden="true"></i><span class="hidden sm:inline">Add</span>
                     </button>
                 </div>
             </div>
@@ -451,16 +451,16 @@ function renderOpeningHoursBanner() {
     var html = '';
     if (!accepting) {
         banner.classList.add('closed');
-        html = '<i class="fa-solid fa-circle-xmark"></i> ' + escapeHtml(food.closed_message || "We're not accepting orders right now.");
+        html = '<i class="fa-solid fa-circle-xmark" aria-hidden="true"></i> ' + escapeHtml(food.closed_message || "We're not accepting orders right now.");
     } else if (todayHours && !isOpenNow) {
         banner.classList.add('closed');
-        html = '<i class="fa-solid fa-clock"></i> Closed now — today ' + escapeHtml(todayHours.open) + ' to ' + escapeHtml(todayHours.close);
+        html = '<i class="fa-solid fa-clock" aria-hidden="true"></i> Closed now — today ' + escapeHtml(todayHours.open) + ' to ' + escapeHtml(todayHours.close);
     } else if (todayHours) {
         banner.classList.remove('closed');
-        html = '<i class="fa-solid fa-circle-check"></i> Open now — until ' + escapeHtml(todayHours.close);
+        html = '<i class="fa-solid fa-circle-check" aria-hidden="true"></i> Open now — until ' + escapeHtml(todayHours.close);
     } else {
         banner.classList.remove('closed');
-        html = '<i class="fa-solid fa-circle-check"></i> Open for orders';
+        html = '<i class="fa-solid fa-circle-check" aria-hidden="true"></i> Open for orders';
     }
     banner.innerHTML = html;
     banner.style.display = 'flex';
@@ -492,7 +492,6 @@ function renderFoodFulfillmentTabs() {
     wrap.style.display = 'block';
     if (retailWrap) retailWrap.style.display = 'none';
 
-    // Pick a sensible default if current selection isn't enabled
     var validModes = enabled.map(function (e) { return e.key; });
     if (validModes.indexOf(deliveryOption) === -1) {
         deliveryOption = enabled[0].key;
@@ -502,7 +501,8 @@ function renderFoodFulfillmentTabs() {
     container.innerHTML = enabled.map(function (e) {
         var prep = e.cfg.prep_time_minutes ? '<small>' + e.cfg.prep_time_minutes + ' min</small>' : '';
         var active = deliveryOption === e.key ? ' active' : '';
-        return '<button type="button" class="fulfillment-tab' + active + '" data-mode="' + e.key + '">' +
+        var pressed = deliveryOption === e.key ? 'true' : 'false';
+        return '<button type="button" class="fulfillment-tab' + active + '" data-mode="' + e.key + '" aria-pressed="' + pressed + '">' +
             (icons[e.key] || '') + ' ' + (labels[e.key] || e.key) + prep +
         '</button>';
     }).join('');
@@ -519,8 +519,8 @@ function renderMenuItem(p) {
     var stock = Number(p.current_qty || 0);
     var oos = stock <= 0;
     var img = p.image_url
-        ? '<img src="' + escapeHtml(p.image_url) + '" alt="' + escapeHtml(p.description) + '" loading="lazy">'
-        : '<i class="fa-solid fa-utensils"></i>';
+        ? '<img src="' + escapeHtml(p.image_url) + '" alt="' + escapeHtml(p.description) + '" loading="lazy" width="92" height="92">'
+        : '<i class="fa-solid fa-utensils" aria-hidden="true"></i>';
     return '<article class="menu-item" data-product-id="' + p.id + '">' +
         '<div class="menu-item-image">' + img + '</div>' +
         '<div class="menu-item-body">' +
@@ -529,7 +529,7 @@ function renderMenuItem(p) {
         '</div>' +
         '<div class="menu-item-side">' +
             '<div class="menu-item-price">₦' + Number(p.price_naira || 0).toLocaleString() + '</div>' +
-            '<button class="menu-item-add add-to-cart-btn" data-id="' + p.id + '"' + (oos ? ' disabled title="Out of stock"' : ' title="Add to cart"') + '>+</button>' +
+            '<button class="menu-item-add add-to-cart-btn" data-id="' + p.id + '" aria-label="Add ' + escapeHtml(p.description) + ' to cart"' + (oos ? ' disabled title="Out of stock"' : ' title="Add to cart"') + '>+</button>' +
         '</div>' +
     '</article>';
 }
@@ -545,11 +545,10 @@ function renderFoodMenu() {
         return (a.order || 0) - (b.order || 0);
     });
 
-    // Search results — flat list
     if (searchQuery && searchQuery.trim()) {
         if (summary) summary.innerText = 'Showing ' + items.length + ' item' + (items.length === 1 ? '' : 's') + ' for "' + searchQuery + '"';
         if (items.length === 0) {
-            grid.innerHTML = '<div style="padding:60px 20px;text-align:center;color:#94a3b8;">No items match your search.</div>';
+            grid.innerHTML = '<div style="padding:60px 20px;text-align:center;color:#4b5563;">No items match your search.</div>';
             return;
         }
         grid.innerHTML = '<div class="menu-list">' + items.map(renderMenuItem).join('') + '</div>';
@@ -559,14 +558,13 @@ function renderFoodMenu() {
     if (summary) summary.innerText = 'Browse our menu';
 
     if (items.length === 0) {
-        grid.innerHTML = '<div style="padding:60px 20px;text-align:center;color:#94a3b8;">Menu coming soon.</div>';
+        grid.innerHTML = '<div style="padding:60px 20px;text-align:center;color:#4b5563;">Menu coming soon.</div>';
         return;
     }
 
     var html = '';
     var usedIds = {};
 
-    // Match each item to a section by product_group name (case-insensitive)
     sections.forEach(function (sec) {
         var sectionName = sec.name || '';
         var sectionItems = items.filter(function (p) {
@@ -583,7 +581,6 @@ function renderFoodMenu() {
         html += '</div>';
     });
 
-    // Leftovers — anything not matched to a named section
     var leftovers = items.filter(function (p) { return !usedIds[p.id]; });
     if (leftovers.length > 0) {
         html += '<div class="menu-section">';
@@ -595,7 +592,7 @@ function renderFoodMenu() {
         html += '</div>';
     }
 
-    grid.innerHTML = html || '<div style="padding:60px 20px;text-align:center;color:#94a3b8;">Menu coming soon.</div>';
+    grid.innerHTML = html || '<div style="padding:60px 20px;text-align:center;color:#4b5563;">Menu coming soon.</div>';
 }
 
 function renderProducts() {
@@ -622,7 +619,7 @@ function renderProducts() {
 
     if (items.length === 0) {
         grid.innerHTML =
-            `<div class="col-span-full text-center py-12 text-gray-500"><i class="fa-regular fa-face-frown text-2xl"></i><p class="mt-2">No products match your filters.</p></div>`;
+            `<div class="col-span-full text-center py-12 text-gray-500"><i class="fa-regular fa-face-frown text-2xl" aria-hidden="true"></i><p class="mt-2">No products match your filters.</p></div>`;
         const summary = document.getElementById('product-results-summary');
         if (summary) summary.innerText = 'No products found.';
         return;
@@ -631,7 +628,7 @@ function renderProducts() {
     grid.innerHTML = items.map(p => productCardHtml(p)).join('');
     const summary = document.getElementById('product-results-summary');
     if (summary) {
-        const filterText = searchQuery.trim() ? ` for “${escapeHtml(searchQuery.trim())}”` : '';
+        const filterText = searchQuery.trim() ? ` for "${escapeHtml(searchQuery.trim())}"` : '';
         summary.innerText = `Showing ${items.length} products${filterText}.`;
     }
 
@@ -649,7 +646,7 @@ function renderHeroProducts() {
         const safeImageUrl = p && p.image_url ? escapeHtml(p.image_url) : null;
         slot.innerHTML = safeImageUrl ?
             `<img src="${safeImageUrl}" alt="${escapeHtml(p.description)}" width="300" height="300">` :
-            `<div class="text-gray-300 text-4xl"><i class="fa-solid fa-box-open"></i></div>`;
+            `<div class="text-gray-400 text-4xl" aria-hidden="true"><i class="fa-solid fa-box-open"></i></div>`;
     });
 }
 
@@ -669,7 +666,7 @@ function renderCategoryCards() {
     const container = document.getElementById('category-cards');
     if (!container) return;
 
-    const cats = (categories || []).filter(Boolean); //show all categories
+    const cats = (categories || []).filter(Boolean);
     if (!cats.length) {
         container.innerHTML = '<div class="text-sm text-gray-500">Categories will appear as products load.</div>';
         return;
@@ -681,11 +678,11 @@ function renderCategoryCards() {
         const safeImageUrl = product && product.image_url ? escapeHtml(product.image_url) : null;
         const visual = safeImageUrl ?
             `<img src="${safeImageUrl}" alt="${escapeHtml(category)}" width="200" height="96">` :
-            `<i class="fa-solid ${categoryIcon(category)} text-3xl text-[#6d8f69]"></i>`;
-        return `<button class="pf-category-card rounded-2xl p-2.5 text-left" data-category="${escapeHtml(category)}">
+            `<i class="fa-solid ${categoryIcon(category)} text-3xl text-[#6d8f69]" aria-hidden="true"></i>`;
+        return `<button class="pf-category-card rounded-2xl p-2.5 text-left" data-category="${escapeHtml(category)}" aria-label="Shop ${escapeHtml(category)}">
             <div class="pf-category-image">${visual}</div>
             <div class="font-bold text-xs mt-2.5 truncate">${escapeHtml(category)}</div>
-            <div class="text-[10px] text-gray-400 mt-0.5">Shop now</div>
+            <div class="text-[10px] text-gray-600 mt-0.5">Shop now</div>
         </button>`;
     }).join('');
 }
@@ -724,7 +721,7 @@ async function loadTopProducts() {
 
     isFeaturedLoading = true;
     grid.innerHTML =
-        `<div class="col-span-full flex items-center justify-center py-10"><span class="loader-small"></span><span class="ml-3 text-gray-500 text-sm">Loading top picks...</span></div>`;
+        `<div class="col-span-full flex items-center justify-center py-10"><span class="loader-small" aria-hidden="true"></span><span class="ml-3 text-gray-500 text-sm">Loading top picks...</span></div>`;
 
     try {
         const orgQuery = window.__KD_ORG__ ? `?org_id=${encodeURIComponent(window.__KD_ORG__)}` : '';
@@ -774,7 +771,7 @@ function renderFeaturedProducts(products) {
             const safeImageUrl = p.image_url ? escapeHtml(p.image_url) : null;
             const imageHtml = safeImageUrl ?
                 `<img src="${safeImageUrl}" alt="${escapeHtml(p.product_name)}" width="300" height="165" loading="lazy">` :
-                `<i class="fa-solid fa-box-open text-4xl text-gray-300"></i>`;
+                `<i class="fa-solid fa-box-open text-4xl text-gray-400" aria-hidden="true"></i>`;
 
             const card = document.createElement('div');
             card.className = "pf-product-card product-card cursor-pointer";
@@ -788,16 +785,16 @@ function renderFeaturedProducts(products) {
                     <h3 class="font-bold text-gray-800 text-sm leading-5 line-clamp-2 min-h-[40px]" title="${escapeHtml(p.product_name)}">${escapeHtml(p.product_name)}</h3>
                     <div class="flex items-center justify-between gap-2 mt-3">
                         <span class="pf-price font-black text-base md:text-lg">₦${Number(p.price_naira || 0).toLocaleString()}</span>
-                        <span class="pf-stock"><i class="fa-solid fa-check mr-1"></i>In stock</span>
+                        <span class="pf-stock"><i class="fa-solid fa-check mr-1" aria-hidden="true"></i>In stock</span>
                     </div>
                     <div class="flex items-center justify-between gap-2 mt-3">
                         <div class="flex items-center gap-1">
-                            <button class="pf-qty-btn qty-btn" data-id="${p.inventory_id}" data-delta="-1" aria-label="Decrease quantity">−</button>
+                            <button class="pf-qty-btn qty-btn" data-id="${p.inventory_id}" data-delta="-1" aria-label="Decrease quantity of ${escapeHtml(p.product_name)}">−</button>
                             <span class="pf-qty qty-display" id="qty-${p.inventory_id}">${qty}</span>
-                            <button class="pf-qty-btn qty-btn green" data-id="${p.inventory_id}" data-delta="1" aria-label="Increase quantity">+</button>
+                            <button class="pf-qty-btn qty-btn green" data-id="${p.inventory_id}" data-delta="1" aria-label="Increase quantity of ${escapeHtml(p.product_name)}">+</button>
                         </div>
-                        <button class="pf-add-btn add-to-cart-btn px-3 flex items-center justify-center gap-2 font-bold text-sm" data-id="${p.inventory_id}">
-                            <i class="fa-solid fa-cart-plus"></i><span class="hidden sm:inline">Add</span>
+                        <button class="pf-add-btn add-to-cart-btn px-3 flex items-center justify-center gap-2 font-bold text-sm" data-id="${p.inventory_id}" aria-label="Add ${escapeHtml(p.product_name)} to cart">
+                            <i class="fa-solid fa-cart-plus" aria-hidden="true"></i><span class="hidden sm:inline">Add</span>
                         </button>
                     </div>
                 </div>
@@ -851,7 +848,6 @@ function goToFeaturedSlide(index) {
 // ============================================================
 function showProductDetail(p) {
     currentProductForModal = p;
-    // Start modal quantity with the quantity currently set on the card
     modalQuantity = productQuantities[p.id] || 1;
 
     const modal = document.getElementById('product-detail-modal'),
@@ -861,7 +857,7 @@ function showProductDetail(p) {
         'Not specified';
     const safeImageUrl = p.image_url ? escapeHtml(p.image_url) : null;
     content.innerHTML =
-        `<div class="flex flex-col gap-4">${safeImageUrl ? `<img src="${safeImageUrl}" width="600" height="192" class="w-full h-48 object-contain rounded-xl">` : `<div class="w-full h-48 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl flex items-center justify-center"><i class="fa-solid fa-cube text-5xl text-orange-400"></i></div>`}<h2 class="text-2xl font-bold">${escapeHtml(p.description)}</h2><div class="flex justify-between"><span class="text-3xl font-bold text-orange-600">₦${p.price_naira.toLocaleString()}</span><span class="bg-gray-100 px-3 py-1 rounded-full">Stock: ${p.current_qty||0}</span></div><div class="border-t pt-3 grid grid-cols-2 gap-3 text-sm"><div><span class="text-gray-500">Weight:</span> ${p.weight_kg ? p.weight_kg+' kg' : 'Not specified'}</div><div><span class="text-gray-500">Dimensions:</span> ${dim}</div><div><span class="text-gray-500">Handling:</span> ${p.handling_category || 'Standard'}</div><div><span class="text-gray-500">Size factor:</span> ${p.size_factor || 'Standard'}</div><div class="col-span-2 flex gap-2">${p.fragile ? '<span class="bg-red-100 text-red-700 px-2 py-1 rounded-full text-xs">Fragile</span>' : ''}${p.hazardous ? '<span class="bg-amber-100 text-amber-700 px-2 py-1 rounded-full text-xs">Hazardous</span>' : ''}</div>${p.product_group ? `<div><span class="text-gray-500">Group:</span> ${escapeHtml(p.product_group)}</div>` : ''}${p.item_code ? `<div><span class="text-gray-500">Item code:</span> ${escapeHtml(p.item_code)}</div>` : ''}</div><div class="bg-orange-50 p-3 rounded-xl text-sm"><i class="fa-regular fa-truck-fast text-orange-500 mr-2"></i> Delivery fees calculated based on weight, dimensions, and distance.</div></div>`;
+        `<div class="flex flex-col gap-4">${safeImageUrl ? `<img src="${safeImageUrl}" width="600" height="192" class="w-full h-48 object-contain rounded-xl" alt="${escapeHtml(p.description)}">` : `<div class="w-full h-48 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl flex items-center justify-center"><i class="fa-solid fa-cube text-5xl text-orange-400" aria-hidden="true"></i></div>`}<h3 class="text-2xl font-bold">${escapeHtml(p.description)}</h3><div class="flex justify-between"><span class="text-3xl font-bold text-orange-600">₦${p.price_naira.toLocaleString()}</span><span class="bg-gray-100 px-3 py-1 rounded-full">Stock: ${p.current_qty||0}</span></div><div class="border-t pt-3 grid grid-cols-2 gap-3 text-sm"><div><span class="text-gray-500">Weight:</span> ${p.weight_kg ? p.weight_kg+' kg' : 'Not specified'}</div><div><span class="text-gray-500">Dimensions:</span> ${dim}</div><div><span class="text-gray-500">Handling:</span> ${p.handling_category || 'Standard'}</div><div><span class="text-gray-500">Size factor:</span> ${p.size_factor || 'Standard'}</div><div class="col-span-2 flex gap-2">${p.fragile ? '<span class="bg-red-100 text-red-700 px-2 py-1 rounded-full text-xs">Fragile</span>' : ''}${p.hazardous ? '<span class="bg-amber-100 text-amber-700 px-2 py-1 rounded-full text-xs">Hazardous</span>' : ''}</div>${p.product_group ? `<div><span class="text-gray-500">Group:</span> ${escapeHtml(p.product_group)}</div>` : ''}${p.item_code ? `<div><span class="text-gray-500">Item code:</span> ${escapeHtml(p.item_code)}</div>` : ''}</div><div class="bg-orange-50 p-3 rounded-xl text-sm"><i class="fa-regular fa-truck-fast text-orange-500 mr-2" aria-hidden="true"></i> Delivery fees calculated based on weight, dimensions, and distance.</div></div>`;
 
     updateModalQtyDisplay();
     modal.classList.add('active');
@@ -874,7 +870,6 @@ function updateModalQtyDisplay() {
     if (totalSpan && currentProductForModal) {
         totalSpan.innerText = `₦${(modalQuantity * currentProductForModal.price_naira).toLocaleString()}`;
     }
-    // Sync the card's quantity display with the modal quantity
     if (currentProductForModal) {
         const id = currentProductForModal.id;
         productQuantities[id] = modalQuantity;
@@ -904,13 +899,11 @@ function loadCart() {
 
 async function addToCart(product, qty = 1) {
     if (qty < 1) qty = 1;
-    // Find product in allProducts to check stock
     const productData = allProducts.find(p => p.id === product.id);
     if (!productData) {
         showToast("Product not found", 'error');
         return;
     }
-    // Calculate current total in cart for this product
     const existing = cart.find(i => i.id === product.id);
     const currentQtyInCart = existing ? existing.quantity : 0;
     const newTotal = currentQtyInCart + qty;
@@ -918,7 +911,6 @@ async function addToCart(product, qty = 1) {
         showToast(`Only ${productData.current_qty} available`, 'error');
         return;
     }
-    // Proceed to add/update
     if (existing) {
         existing.quantity += qty;
     } else {
@@ -946,7 +938,6 @@ async function updateCartQty(idx, delta) {
         renderProducts();
         return;
     }
-    // Check stock if increasing
     if (delta > 0) {
         const productData = allProducts.find(p => p.id === item.id);
         if (productData && newQty > productData.current_qty) {
@@ -989,7 +980,7 @@ function updateCartUI() {
     if (!container) return;
     if (cart.length === 0) {
         container.innerHTML =
-            '<div class="text-center text-gray-400 py-8"><i class="fa-regular fa-basket-shopping text-4xl mb-2"></i><p>Cart is empty</p></div>';
+            '<div class="text-center text-gray-500 py-8"><i class="fa-regular fa-basket-shopping text-4xl mb-2" aria-hidden="true"></i><p>Cart is empty</p></div>';
         return;
     }
 
@@ -999,15 +990,15 @@ function updateCartUI() {
                   <div class="flex-1 min-w-0">
                     <span class="font-medium text-gray-800 truncate block">${escapeHtml(item.name)}</span>
                     <div class="flex items-center gap-2 mt-1">
-                      <button class="cart-qty-btn qty-btn" data-index="${idx}" data-delta="-1" aria-label="Decrease quantity">−</button>
+                      <button class="cart-qty-btn qty-btn" data-index="${idx}" data-delta="-1" aria-label="Decrease quantity of ${escapeHtml(item.name)}">−</button>
                       <span class="qty-display">${item.quantity}</span>
-                      <button class="cart-qty-btn qty-btn orange" data-index="${idx}" data-delta="1" aria-label="Increase quantity">+</button>
-                      <span class="text-xs text-gray-400 ml-1">× ₦${item.price.toLocaleString()}</span>
+                      <button class="cart-qty-btn qty-btn orange" data-index="${idx}" data-delta="1" aria-label="Increase quantity of ${escapeHtml(item.name)}">+</button>
+                      <span class="text-xs text-gray-500 ml-1">× ₦${item.price.toLocaleString()}</span>
                     </div>
                   </div>
                   <div class="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
-                    <span class="font-mono text-orange-600 font-semibold">₦${sub.toLocaleString()}</span>
-                    <button class="cart-remove-btn text-red-400 hover:text-red-600 transition" data-index="${idx}"><i class="fa-regular fa-trash-can"></i></button>
+                    <span class="font-mono text-orange-700 font-semibold">₦${sub.toLocaleString()}</span>
+                    <button class="cart-remove-btn text-red-600 hover:text-red-700 transition" data-index="${idx}" aria-label="Remove ${escapeHtml(item.name)} from cart"><i class="fa-regular fa-trash-can" aria-hidden="true"></i></button>
                   </div>
                 </div>`;
     }).join('');
@@ -1100,7 +1091,6 @@ function setDeliveryOpt(opt) {
     const pickup = document.getElementById('pickup-option'),
         deliv = document.getElementById('delivery-option');
 
-    // Food vertical: dynamic tabs handle visual state, we just run the side effects.
     if (opt === 'pickup' || opt === 'dine_in') {
         if (pickup) {
             pickup.classList.add('bg-orange-500', 'text-white');
@@ -1152,7 +1142,7 @@ function showAddrSugg(items) {
     if (!sugg) return;
     if (!items.length) return hideAddrSugg();
     sugg.innerHTML = items.map(item =>
-            `<div class="suggestion-item">${item.display_name.split(',').slice(0,3).join(',')}</div>`).join('');
+            `<div class="suggestion-item" role="option">${item.display_name.split(',').slice(0,3).join(',')}</div>`).join('');
     sugg.classList.remove('hidden');
     sugg.querySelectorAll('.suggestion-item').forEach((el, idx) => {
         el.addEventListener('click', () => {
@@ -1249,14 +1239,13 @@ paymentOptions.forEach(btn => {
 document.getElementById('choose-payment-btn')?.addEventListener('click', openPaymentModal);
 
 // ============================================================
-//  RECEIPT MODAL (NEW)
+//  RECEIPT MODAL
 // ============================================================
 const receiptModal = document.getElementById('receipt-modal');
 const receiptBody = document.getElementById('receipt-body');
 const closeReceiptModal = document.getElementById('close-receipt-modal');
 
 function showReceiptModal(orderData) {
-    // Build receipt HTML
     let itemsHtml = orderData.items.map(item =>
         `<div class="receipt-item">
             <span>${escapeHtml(item.name)} × ${item.quantity}</span>
@@ -1302,8 +1291,8 @@ function showReceiptModal(orderData) {
                 <span class="text-[#075c3a]">₦${(orderData.totalAmount || 0).toLocaleString()}</span>
             </div>
         </div>
-        <div class="mt-5 text-center text-xs text-gray-400 border-t border-gray-100 pt-3">
-            <i class="fa-regular fa-envelope mr-1"></i> A receipt has been sent to your email.
+        <div class="mt-5 text-center text-xs text-gray-500 border-t border-gray-100 pt-3">
+            <i class="fa-regular fa-envelope mr-1" aria-hidden="true"></i> A receipt has been sent to your email.
         </div>
     `;
 
@@ -1312,7 +1301,6 @@ function showReceiptModal(orderData) {
 
 function closeReceiptModalFn() {
     receiptModal.classList.remove('active');
-    // Clear cart and reset after closing
     cart = [];
     saveCart();
     setDeliveryOpt('pickup');
@@ -1327,7 +1315,7 @@ receiptModal?.addEventListener('click', (e) => {
 });
 
 // ============================================================
-//  CHECKOUT (with receipt modal)
+//  CHECKOUT
 // ============================================================
 async function checkout() {
     const btn = document.getElementById('checkout-btn');
@@ -1389,7 +1377,7 @@ async function checkout() {
             customer_phone: userProfile?.phone || null,
             payment_method: payMethod,
             callback_url: window.location.href.split('?')[0],
-            fulfillment_mode: deliveryOption // 'delivery' | 'pickup' | 'dine_in'
+            fulfillment_mode: deliveryOption
         };
 
         if (deliveryOption === 'delivery') {
@@ -1442,14 +1430,13 @@ async function checkout() {
 }
 
 // ============================================================
-//  PAYMENT RETURN HANDLER (with receipt modal)
+//  PAYMENT RETURN HANDLER
 // ============================================================
 function cleanUrl() {
     try {
         const url = new URL(window.location.href);
         url.search = '';
         url.hash = '';
-        // Collapse any accidental double slashes in the path
         url.pathname = url.pathname.replace(/\/+/g, '/');
         window.history.replaceState({}, '', url.pathname);
     } catch (e) {
@@ -1470,9 +1457,7 @@ function handlePaymentReturn() {
             if (reference && orderData.receiptNumber === 'PENDING') {
                 orderData.receiptNumber = 'PAYSTACK-' + reference.slice(0, 10);
             }
-            // SHOW RECEIPT MODAL instead of view
             showReceiptModal(orderData);
-            // Clear cart but keep order data for modal
             cart = [];
             saveCart();
             setDeliveryOpt('pickup');
@@ -1502,7 +1487,6 @@ function handlePaymentReturn() {
 // ============================================================
 function showAuthModal() {
     document.getElementById('auth-modal').classList.remove('hidden');
-    // Close cart drawer if open so modal is clearly visible
     const drawer = document.getElementById('cart-drawer');
     if (drawer) drawer.classList.add('translate-x-full');
 }
@@ -1543,7 +1527,7 @@ async function loadUser() {
         userProfile = me;
         const displayName = me.first_name || me.email || 'User';
         document.getElementById('user-info-dropdown').innerHTML =
-            `<i class="fa-regular fa-user"></i> ${escapeHtml(displayName)}`;
+            `<i class="fa-regular fa-user" aria-hidden="true"></i> ${escapeHtml(displayName)}`;
         document.getElementById('logout-dropdown').classList.remove('hidden');
         await loadUserLoyalty();
         try {
@@ -1606,17 +1590,17 @@ async function loadTickets() {
         showToast("Please login", 'error'); return; }
     const container = document.getElementById('tickets-list');
     container.innerHTML =
-        '<div class="text-center py-10"><i class="fa-solid fa-spinner fa-pulse"></i> Loading tickets...</div>';
+        '<div class="text-center py-10"><i class="fa-solid fa-spinner fa-pulse" aria-hidden="true"></i> Loading tickets...</div>';
     try {
         const data = await apiCall('/support/tickets');
         const tickets = data.tickets || [];
         if (tickets.length === 0) {
             container.innerHTML =
-                '<div class="bg-white rounded-xl p-8 text-center text-gray-500"><i class="fa-regular fa-ticket-alt text-4xl mb-2"></i><p>No support tickets yet. Start a chat with AI.</p></div>';
+                '<div class="bg-white rounded-xl p-8 text-center text-gray-500"><i class="fa-regular fa-ticket-alt text-4xl mb-2" aria-hidden="true"></i><p>No support tickets yet. Start a chat with AI.</p></div>';
             return;
         }
         container.innerHTML = tickets.map(t =>
-            `<div class="ticket-card bg-white rounded-xl p-4 shadow-sm border border-gray-100"><div class="flex justify-between items-start"><div><span class="text-xs font-mono text-blue-500">#${t.id.slice(0,8)}</span><span class="ml-2 text-xs uppercase px-2 py-0.5 rounded-full ${t.status==='open'?'bg-amber-100 text-amber-700':'bg-green-100 text-green-700'}">${t.status}</span></div><span class="text-xs text-gray-400">Priority: ${t.priority}</span></div><p class="font-semibold mt-1">${escapeHtml(t.subject || 'General inquiry')}</p><p class="text-sm text-gray-600 mt-1">${escapeHtml(t.message?.substring(0,100) || '')}</p>${t.resolution ? `<div class="mt-2 text-xs bg-gray-50 p-2 rounded"><span class="font-medium">Resolution:</span> ${escapeHtml(t.resolution)}</div>` : ''}<div class="mt-2 text-xs text-gray-400">Created: ${new Date(t.created_at).toLocaleString()}</div></div>`
+            `<div class="ticket-card bg-white rounded-xl p-4 shadow-sm border border-gray-100"><div class="flex justify-between items-start"><div><span class="text-xs font-mono text-blue-700">#${t.id.slice(0,8)}</span><span class="ml-2 text-xs uppercase px-2 py-0.5 rounded-full ${t.status==='open'?'bg-amber-100 text-amber-800':'bg-green-100 text-green-800'}">${t.status}</span></div><span class="text-xs text-gray-500">Priority: ${t.priority}</span></div><p class="font-semibold mt-1">${escapeHtml(t.subject || 'General inquiry')}</p><p class="text-sm text-gray-600 mt-1">${escapeHtml(t.message?.substring(0,100) || '')}</p>${t.resolution ? `<div class="mt-2 text-xs bg-gray-50 p-2 rounded"><span class="font-medium">Resolution:</span> ${escapeHtml(t.resolution)}</div>` : ''}<div class="mt-2 text-xs text-gray-500">Created: ${new Date(t.created_at).toLocaleString()}</div></div>`
         ).join('');
     } catch (e) { container.innerHTML = `<div class="text-red-500 p-4">Error: ${e.message}</div>`; }
 }
@@ -1635,7 +1619,7 @@ function addChatMsg(sender, text, isTypingIndicator = false) {
     if (sender === 'assistant') {
         const avatar = document.createElement('div');
         avatar.className = 'chat-msg-avatar';
-        avatar.innerHTML = '<i class="fa-solid fa-sparkles"></i>';
+        avatar.innerHTML = '<i class="fa-solid fa-sparkles" aria-hidden="true"></i>';
         row.appendChild(avatar);
     }
 
@@ -1674,8 +1658,9 @@ async function sendChatMessage() {
 function initChat() {
     chatMessagesDiv = document.getElementById('chat-messages');
     if (chatMessagesDiv && chatMessagesDiv.children.length === 0) {
+        var orgName = window.__KD_ORG_NAME__ || 'our store';
         addChatMsg('assistant',
-            "Hi! I'm Penafort AI. I can help you find products, compare options, or get help with an order. What are you shopping for?"
+            "Hi! I'm the AI assistant for " + orgName + ". I can help you find products, compare options, or get help with an order. What are you shopping for?"
         );
     }
 }
@@ -1783,7 +1768,7 @@ function handleDeepLinks() {
 }
 
 // ============================================================
-//  PASSWORD TOGGLE (Show/Hide)
+//  PASSWORD TOGGLE
 // ============================================================
 document.addEventListener('click', function(e) {
     const toggle = e.target.closest('.password-toggle');
@@ -1813,7 +1798,6 @@ function initStickyHeader() {
     const stickyWrap = document.getElementById('pf-top-sticky');
     if (!stickyWrap) return;
 
-    // Only enable on desktop
     if (window.innerWidth < 768) return;
 
     let headerHeight = stickyWrap.offsetHeight;
@@ -1824,7 +1808,6 @@ function initStickyHeader() {
     function onScroll() {
         const scrollY = window.scrollY || window.pageYOffset;
         if (scrollY > 10 && !isFixed) {
-            // Switch to fixed
             stickyWrap.style.position = 'fixed';
             stickyWrap.style.top = '0';
             stickyWrap.style.left = '0';
@@ -1834,14 +1817,12 @@ function initStickyHeader() {
             stickyWrap.style.background = 'rgba(255,255,255,0.96)';
             stickyWrap.style.backdropFilter = 'blur(14px)';
             stickyWrap.style.boxShadow = '0 2px 12px rgba(0,0,0,0.08)';
-            // Add placeholder to prevent jump
             placeholder.style.display = 'block';
             placeholder.style.height = headerHeight + 'px';
             placeholder.style.width = '100%';
             stickyWrap.parentNode.insertBefore(placeholder, stickyWrap);
             isFixed = true;
         } else if (scrollY <= 10 && isFixed) {
-            // Revert to static
             stickyWrap.style.position = '';
             stickyWrap.style.top = '';
             stickyWrap.style.left = '';
@@ -1856,7 +1837,6 @@ function initStickyHeader() {
         }
     }
 
-    // Debounce scroll for performance
     let ticking = false;
     window.addEventListener('scroll', () => {
         if (!ticking) {
@@ -1868,7 +1848,6 @@ function initStickyHeader() {
         }
     });
 
-    // Also on resize to update header height
     window.addEventListener('resize', () => {
         headerHeight = stickyWrap.offsetHeight;
         if (isFixed) {
@@ -1881,20 +1860,15 @@ function initStickyHeader() {
 //  DOM CONTENT LOADED - INITIALIZATION
 // ============================================================
 document.addEventListener('DOMContentLoaded', async function() {
-    // ─── Wait for the multi-tenant config adapter ───
     if (window.__KD_READY__) {
         try {
             await window.__KD_READY__;
         } catch (e) {
-            // Error page already rendered by the adapter.
             return;
         }
     }
 
-    // Initialize sticky header
     initStickyHeader();
-
-    // --- Static Event Listeners ---
 
     document.getElementById('marketplace-logo')?.addEventListener('click', () => showView('shop'));
 
@@ -1928,7 +1902,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         document.getElementById('modal-title').innerText = isReg ? "Register" : "Sign In";
     });
 
-    // ─── RESET PASSWORD (three‑step) ──────────────────────────────
     const authMainSection = document.getElementById('auth-main-section');
     const authResetSection = document.getElementById('auth-reset-section');
     const resetStep1 = document.getElementById('reset-step1');
@@ -1947,24 +1920,17 @@ document.addEventListener('DOMContentLoaded', async function() {
     let resetEmailValue = '';
     let verifiedAccessToken = null;
 
-    // Helper to show/hide parts
     function setResetState(state) {
-        // state: 'email', 'code', 'password'
         if (state === 'email') {
-            // show email + send, hide code input, hide verify button (if any)
             resetEmailInput.style.display = 'block';
             resetSendCode.style.display = 'inline-block';
             resetCodeInput.style.display = 'none';
             resetStep2.classList.add('hidden');
-            // ensure step1 is visible
             resetStep1.classList.remove('hidden');
-            // also hide any verify button if exists
             const verifyBtn = document.getElementById('verify-code-btn');
             if (verifyBtn) verifyBtn.style.display = 'none';
-            // clear code value
             resetCodeInput.value = '';
         } else if (state === 'code') {
-            // hide email + send, show code input
             resetEmailInput.style.display = 'none';
             resetSendCode.style.display = 'none';
             resetCodeInput.style.display = 'block';
@@ -1972,26 +1938,21 @@ document.addEventListener('DOMContentLoaded', async function() {
             resetCodeInput.placeholder = '8‑digit code from email';
             resetCodeInput.value = '';
             resetCodeInput.focus();
-            // hide step2
             resetStep2.classList.add('hidden');
-            // step1 remains visible (contains code input)
             resetStep1.classList.remove('hidden');
-            // hide verify button if present (auto-verify)
             const verifyBtn = document.getElementById('verify-code-btn');
             if (verifyBtn) verifyBtn.style.display = 'none';
         } else if (state === 'password') {
-            // hide entire step1, show step2
             resetStep1.classList.add('hidden');
             resetStep2.classList.remove('hidden');
             resetNewPassword.focus();
         }
     }
 
-    // ─── Show reset step 1 (email) ──────────────────────────────
     forgotPasswordLink?.addEventListener('click', async function(e) {
         e.preventDefault();
         try {
-            await initSupabase();      // ensure supabase client is loaded
+            await initSupabase();
         } catch (err) {
             showToast('Failed to load security library. Please try again later.', 'error');
             return;
@@ -2002,12 +1963,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         resetMessage.classList.add('hidden');
         resetMessage.innerText = '';
         verifiedAccessToken = null;
-        // Pre-fill email from login field if available
         const loginEmail = document.getElementById('login-email')?.value || '';
         if (loginEmail) resetEmailInput.value = loginEmail;
     });
 
-    // ─── Back to login ──────────────────────────────────────────────
     resetBackToLogin?.addEventListener('click', function(e) {
         e.preventDefault();
         authResetSection.classList.add('hidden');
@@ -2021,7 +1980,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         setResetState('email');
     });
 
-    // ─── Back to step 1 (from step 2) ─────────────────────────────
     resetBackToStep1?.addEventListener('click', function(e) {
         e.preventDefault();
         setResetState('email');
@@ -2031,10 +1989,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         resetNewPassword.value = '';
         resetConfirmPassword.value = '';
         verifiedAccessToken = null;
-        resetEmailInput.value = resetEmailValue; // keep email
+        resetEmailInput.value = resetEmailValue;
     });
 
-    // ─── Send reset code (Step 1) ──────────────────────────────────
     resetSendCode?.addEventListener('click', async function() {
         const email = resetEmailInput.value.trim();
         if (!email) {
@@ -2054,7 +2011,6 @@ document.addEventListener('DOMContentLoaded', async function() {
             const data = await response.json();
             if (!response.ok) throw new Error(data.detail || 'Failed to send code');
             resetEmailValue = email;
-            // ✅ Switch to code‑only state
             setResetState('code');
             resetMessage.classList.add('hidden');
             showToast('8‑digit code sent to your email.', 'success');
@@ -2070,43 +2026,34 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
     });
 
-
-
-// Close cart when clicking outside it
-document.addEventListener('click', function(e) {
-    const drawer = document.getElementById('cart-drawer');
-    const cartBtn = document.getElementById('cart-icon-btn');
-    if (!drawer || !cartBtn) return;
-
-    // If cart is open and the click is outside the drawer and not on the cart button, close it
-    if (!drawer.classList.contains('translate-x-full') &&
-        !drawer.contains(e.target) &&
-        !cartBtn.contains(e.target)) {
-        drawer.classList.add('translate-x-full');
-    }
-});
-
-
-    document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') {
+    document.addEventListener('click', function(e) {
         const drawer = document.getElementById('cart-drawer');
-        if (drawer && !drawer.classList.contains('translate-x-full')) {
+        const cartBtn = document.getElementById('cart-icon-btn');
+        if (!drawer || !cartBtn) return;
+
+        if (!drawer.classList.contains('translate-x-full') &&
+            !drawer.contains(e.target) &&
+            !cartBtn.contains(e.target)) {
             drawer.classList.add('translate-x-full');
         }
-    }
-});
-    
-    
-    // ─── Auto‑verify code when 8 digits are entered ────────────────
+    });
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            const drawer = document.getElementById('cart-drawer');
+            if (drawer && !drawer.classList.contains('translate-x-full')) {
+                drawer.classList.add('translate-x-full');
+            }
+        }
+    });
+
     resetCodeInput?.addEventListener('input', function(e) {
-        // Only allow digits
         this.value = this.value.replace(/\D/g, '').slice(0, 8);
         if (this.value.length === 8 && !this.disabled) {
             autoVerifyCode();
         }
     });
 
-    // ─── Auto‑verify function ──────────────────────────────────────
     async function autoVerifyCode() {
         const code = resetCodeInput.value.trim();
         if (code.length !== 8 || !/^\d{8}$/.test(code)) return;
@@ -2115,7 +2062,6 @@ document.addEventListener('click', function(e) {
             showToast('Email is missing. Please go back and try again.', 'error');
             return;
         }
-        // Disable input while verifying
         resetCodeInput.disabled = true;
         const originalPlaceholder = resetCodeInput.placeholder;
         resetCodeInput.placeholder = 'Verifying…';
@@ -2132,16 +2078,13 @@ document.addEventListener('click', function(e) {
             if (error) throw new Error(error.message);
             if (!data?.session) throw new Error('Code may be expired or already used.');
 
-            // Store access token for fallback
             verifiedAccessToken = data.session.access_token;
 
-            // Set the session so updateUser works
             await supabaseClient.auth.setSession({
                 access_token: data.session.access_token,
                 refresh_token: data.session.refresh_token
             });
 
-            // ✅ Switch to password state (step 2)
             setResetState('password');
             showToast('✅ Code verified! Enter your new password.', 'success');
             resetNewPassword.focus();
@@ -2157,7 +2100,6 @@ document.addEventListener('click', function(e) {
         }
     }
 
-    // ─── Update password (Step 2) ──────────────────────────────────
     resetUpdatePassword?.addEventListener('click', async function() {
         const newPassword = resetNewPassword.value;
         const confirm = resetConfirmPassword.value;
@@ -2183,13 +2125,11 @@ document.addEventListener('click', function(e) {
             await initSupabase();
             if (!supabaseClient) throw new Error('Supabase client not initialized');
 
-            // 1️⃣ Try using the client with the session we set earlier
             const { error } = await supabaseClient.auth.updateUser({
                 password: newPassword
             });
 
             if (error) {
-                // 2️⃣ Fallback: direct PATCH using the stored token
                 console.warn('updateUser failed, falling back to direct PATCH');
                 const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
                     method: 'PATCH',
@@ -2208,13 +2148,12 @@ document.addEventListener('click', function(e) {
 
             showToast('✅ Password updated successfully! Please log in.', 'success');
 
-            // Reset and close modal after short delay
             setTimeout(() => {
                 hideAuthModal();
                 authResetSection.classList.add('hidden');
                 authMainSection.classList.remove('hidden');
                 setResetState('email');
-                resetEmailInput.value = resetEmailValue; // fill email for login
+                resetEmailInput.value = resetEmailValue;
                 resetNewPassword.value = '';
                 resetConfirmPassword.value = '';
                 resetEmailValue = '';
@@ -2231,7 +2170,6 @@ document.addEventListener('click', function(e) {
         }
     });
 
-    // ─── Allow Enter key on reset fields ──────────────────────────
     resetCodeInput?.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && resetCodeInput.value.length === 8) {
             e.preventDefault();
@@ -2245,7 +2183,6 @@ document.addEventListener('click', function(e) {
         if (e.key === 'Enter') { e.preventDefault(); resetUpdatePassword?.click(); }
     });
 
-    // ---- AUTH MODAL SUBMIT (Login or Register) ----
     document.getElementById('auth-submit')?.addEventListener('click', async function() {
         const btn = this;
         setButtonLoading(btn, true);
@@ -2256,7 +2193,6 @@ document.addEventListener('click', function(e) {
 
             const isReg = !document.getElementById('reg-extra').classList.contains('hidden');
             if (isReg) {
-                // --- REGISTRATION (with password confirmation) ---
                 const pwdConfirm = document.getElementById('auth-password-confirm').value;
                 if (pwd !== pwdConfirm) {
                     alert("Passwords do not match. Please re-enter.");
@@ -2284,7 +2220,6 @@ document.addEventListener('click', function(e) {
                 return;
             }
 
-            // --- LOGIN ---
             const loginRes = await fetch(`${API_BASE}/auth/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -2380,14 +2315,14 @@ document.addEventListener('click', function(e) {
             email = document.getElementById('track-email').value.trim();
         if (!receipt || !email) { showToast("Receipt and email required", 'error'); return; }
         const resultDiv = document.getElementById('track-result');
-        resultDiv.innerHTML = '<i class="fa-solid fa-spinner fa-pulse"></i> Tracking...';
+        resultDiv.innerHTML = '<i class="fa-solid fa-spinner fa-pulse" aria-hidden="true"></i> Tracking...';
         resultDiv.classList.remove('hidden');
         try {
             const data = await apiCall(`/track-order?receipt_number=${receipt}&email=${email}`);
             const statusMap = { pending: "⏳ Pending", completed: "📦 Ready", shipped: "🚚 In transit",
                 delivered: "✅ Delivered" };
             resultDiv.innerHTML =
-                `<div class="bg-gray-100 p-3 rounded-lg space-y-1 text-sm"><div><strong>Receipt:</strong> ${data.receipt_number}</div><div><strong>Total:</strong> ₦${data.total_amount?.toLocaleString()}</div><div><strong>Status:</strong> <span class="text-orange-600 font-semibold">${statusMap[data.shipping_status] || data.shipping_status}</span></div><div><strong>Carrier:</strong> ${data.shipping_carrier || '—'}</div><div><strong>Tracking #:</strong> ${data.tracking_number || 'N/A'}</div></div>`;
+                `<div class="bg-gray-100 p-3 rounded-lg space-y-1 text-sm"><div><strong>Receipt:</strong> ${data.receipt_number}</div><div><strong>Total:</strong> ₦${data.total_amount?.toLocaleString()}</div><div><strong>Status:</strong> <span class="text-orange-700 font-semibold">${statusMap[data.shipping_status] || data.shipping_status}</span></div><div><strong>Carrier:</strong> ${data.shipping_carrier || '—'}</div><div><strong>Tracking #:</strong> ${data.tracking_number || 'N/A'}</div></div>`;
         } catch (e) { resultDiv.innerHTML = `<div class="text-red-500">${e.message}</div>`; }
     });
 
@@ -2429,9 +2364,8 @@ document.addEventListener('click', function(e) {
         showToast(`Categories reloaded (${categories.length})`, 'success');
     });
 
-    // ===== NEW: Sort dropdown listener =====
     document.getElementById('sort-select')?.addEventListener('change', () => {
-        currentPage = 1; // reset to first page when sorting changes
+        currentPage = 1;
         loadProducts();
     });
 
@@ -2564,7 +2498,6 @@ document.addEventListener('click', function(e) {
         btn.addEventListener('click', () => sendQuickChatPrompt(btn.dataset.chatPrompt));
     });
 
-    // --- EVENT DELEGATION FOR DYNAMIC ELEMENTS ---
     document.addEventListener('click', function(e) {
         const productCard = e.target.closest('.pf-product-card');
         if (productCard && !e.target.closest('button')) {
@@ -2612,7 +2545,6 @@ document.addEventListener('click', function(e) {
         }
     });
 
-    // --- INIT ---
     loadCart();
     if (deliveryOption === 'delivery' && deliveryAddress) {
         document.getElementById('delivery-address').value = deliveryAddress;
