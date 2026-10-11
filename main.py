@@ -10301,15 +10301,7 @@ async def paystack_webhook(request: Request):
         sale_location = sale.data.get("location_id") if sale.data else None
         default_location_id = sale_location or await get_location_for_channel(org_id, "online")
 
-        result = await decrement_stock_fefo(
-            org_id,
-            [
-                {"inventory_id": it["inventory_id"], "quantity": it["quantity"]}
-                for it in (items.data or [])
-            ],
-            default_location_id,
-            sale_id=sale.data["id"],
-        )
+        result = await finalize_online_order(sale.data["id"], org_id)
 
         if result.get("skipped"):
             logger.info(
@@ -10319,18 +10311,28 @@ async def paystack_webhook(request: Request):
             await mark_webhook_event_processed(claim_id)
             return {"status": "ok"}
 
-        logger.info(f"Stock decremented + sale {sale.data['id']} flipped atomically")
-
-        await create_ar_from_sale(sale.data["id"], org_id, sale.data.get("user_id"))
-        await mark_ar_paid_for_sale(sale.data["id"], org_id)
-        
-        if sale.data.get("user_id") and sale.data.get("total_amount"):
-            await award_loyalty_points(
-                sale.data["user_id"],
-                sale.data["total_amount"],
-                sale.data["id"],
-                "purchase",
+        for s in (result.get("short") or []):
+            logger.warning(
+                f"Paystack {reference}: inventory {s['inventory_id']} short by "
+                f"{s['short_by']} units at finalize"
             )
+
+        logger.info(
+            f"finalize_online_order: sale {sale.data['id']} completed, "
+            f"AR {result.get('ar_id')} marked paid"
+        )
+
+        # Non-critical side effects — safe to fail independently.
+        if sale.data.get("user_id") and sale.data.get("total_amount"):
+            try:
+                await award_loyalty_points(
+                    sale.data["user_id"],
+                    sale.data["total_amount"],
+                    sale.data["id"],
+                    "purchase",
+                )
+            except Exception as pts_err:
+                logger.error(f"Paystack {reference}: loyalty points failed: {pts_err}")
 
         if sale.data.get("customer_email"):
             try:
@@ -10348,7 +10350,6 @@ async def paystack_webhook(request: Request):
         logger.error(f"Paystack {reference} failed: {e}", exc_info=True)
         await release_webhook_event_claim(claim_id)
         raise HTTPException(status_code=500, detail="Webhook processing failed")
-
 
 @app.post("/webhook/flutterwave")
 async def flutterwave_webhook(request: Request):
@@ -10437,15 +10438,7 @@ async def flutterwave_webhook(request: Request):
         sale_location = sale.data.get("location_id") if sale.data else None
         default_location_id = sale_location or await get_location_for_channel(org_id, "online")
 
-        result = await decrement_stock_fefo(
-            org_id,
-            [
-                {"inventory_id": it["inventory_id"], "quantity": it["quantity"]}
-                for it in (items.data or [])
-            ],
-            default_location_id,
-            sale_id=sale.data["id"],
-        )
+        result = await finalize_online_order(sale.data["id"], org_id)
 
         if result.get("skipped"):
             logger.info(
@@ -10455,18 +10448,27 @@ async def flutterwave_webhook(request: Request):
             await mark_webhook_event_processed(claim_id)
             return {"status": "ok"}
 
-        logger.info(f"Stock decremented + sale {sale.data['id']} flipped atomically")
+        for s in (result.get("short") or []):
+            logger.warning(
+                f"Flutterwave {reference}: inventory {s['inventory_id']} short by "
+                f"{s['short_by']} units at finalize"
+            )
 
-        await create_ar_from_sale(sale.data["id"], org_id, sale.data.get("user_id"))
-        await mark_ar_paid_for_sale(sale.data["id"], org_id)
+        logger.info(
+            f"finalize_online_order: sale {sale.data['id']} completed, "
+            f"AR {result.get('ar_id')} marked paid"
+        )
 
         if sale.data.get("user_id") and sale.data.get("total_amount"):
-            await award_loyalty_points(
-                sale.data["user_id"],
-                sale.data["total_amount"],
-                sale.data["id"],
-                "purchase",
-            )
+            try:
+                await award_loyalty_points(
+                    sale.data["user_id"],
+                    sale.data["total_amount"],
+                    sale.data["id"],
+                    "purchase",
+                )
+            except Exception as pts_err:
+                logger.error(f"Flutterwave {reference}: loyalty points failed: {pts_err}")
 
         if sale.data.get("customer_email"):
             try:
@@ -10484,7 +10486,6 @@ async def flutterwave_webhook(request: Request):
         logger.error(f"Flutterwave {reference} failed: {e}", exc_info=True)
         await release_webhook_event_claim(claim_id)
         raise HTTPException(status_code=500, detail="Webhook processing failed")
-
 
 # ------------------------------------------------------------------
 # BACKGROUND SYNC – Retry pending orders
