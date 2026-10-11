@@ -1682,7 +1682,9 @@ async def ensure_finalize_online_order():
                 amount, paid_amount, status, due_date, created_at
             ) VALUES (
                 p_org_id,
+                NULLIF(v_sale.branch_id::text, '')::uuid,
                 v_sale.branch_id,
+                NULLIF(v_sale.user_id::text,  '')::uuid,
                 p_sale_id,
                 v_sale.user_id,
                 v_sale.total_amount,
