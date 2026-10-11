@@ -2922,6 +2922,7 @@ async def startup_event():
     await ensure_stock_transfer_rpcs()
     await ensure_transfer_suggestions_last_updated_column()   # ← new
     await ensure_decrement_stock_fefo()
+    await ensure_finalize_online_order()
     await ensure_webhook_events()
     await ensure_stock_reconciliation()
     await ensure_sales_fulfillment_columns()
