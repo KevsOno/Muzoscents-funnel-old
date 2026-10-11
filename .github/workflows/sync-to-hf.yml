@@ -1,4 +1,4 @@
-name: Sync to Hugging Face Space
+name: Sync Backend to Hugging Face Space
 
 on:
   push:
@@ -9,18 +9,27 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository with LFS
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          lfs: true
 
-      - name: Push to Hugging Face Space
+      - name: Push Backend Files to Hugging Face
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           git config --global user.email "github-actions@github.com"
           git config --global user.name "GitHub Actions"
-          git lfs install
+          
+          # Initialize temporary git directory for HF
+          mkdir hf_deploy
+          cp main.py Dockerfile requirements.txt netlify.toml .gitattributes hf_deploy/ 2>/dev/null || true
+          
+          # Copy template or HTML files at root if needed
+          cp *.html *.js hf_deploy/ 2>/dev/null || true
+          
+          cd hf_deploy
+          git init
+          git checkout -b main
+          git add .
+          git commit -m "Deploy backend updates"
           git remote add hf https://user:$HF_TOKEN@huggingface.co/spaces/KevsOno/Kevs_Digital_bOS
-          git push hf HEAD:main --force
+          git push hf main --force
