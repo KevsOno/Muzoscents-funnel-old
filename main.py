@@ -11412,6 +11412,110 @@ async def diagnose(request: Request):
 async def health():
     return {"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()}
 
+@app.get("/health/deep")
+async def health_deep(request: Request):
+    """
+    Deep health check. Pings every critical subsystem.
+    Returns 200 always; the JSON body carries the per-subsystem status.
+    Uptime monitors can poll this every 60s.
+    """
+    await rate_limit(get_client_ip(request))
+    checks: Dict[str, Dict] = {}
+    client = get_supabase()
+
+    # ── 1. Database connectivity ──
+    try:
+        await run_sync_db_call(
+            client.table("organisations").select("id").limit(1).execute
+        )
+        checks["database"] = {"status": "ok"}
+    except Exception as e:
+        checks["database"] = {"status": "fail", "error": str(e)[:200]}
+
+    # ── 2. Critical RPCs exist in pg_proc ──
+    expected_rpcs = [
+        "approve_stock_transfer",
+        "complete_stock_transfer",
+        "decrement_stock_fefo",
+        "claim_webhook_event",
+        "mark_webhook_event_processed",
+        "release_webhook_event_claim",
+        "audit_stock_drift",
+        "heal_stock_drift",
+        "match_knowledge_documents",
+    ]
+    try:
+        rpc_list = ",".join(f"'{r}'" for r in expected_rpcs)
+        sql = f"SELECT proname FROM pg_proc WHERE proname IN ({rpc_list});"
+        res = await run_sql(sql)
+        found = {row["proname"] for row in (res or [])}
+        missing = sorted(set(expected_rpcs) - found)
+        if missing:
+            checks["rpcs"] = {"status": "fail", "missing": missing}
+        else:
+            checks["rpcs"] = {"status": "ok", "count": len(found)}
+    except Exception as e:
+        checks["rpcs"] = {"status": "fail", "error": str(e)[:200]}
+
+    # ── 3. Critical tables exist ──
+    expected_tables = [
+        "organisations", "profiles", "org_members",
+        "inventory", "locations", "location_stocks", "stock_transfers",
+        "sales", "sale_items",
+        "accounts_receivable", "accounts_payable",
+        "webhook_events", "general_knowledge", "support_tickets",
+    ]
+    try:
+        table_list = ",".join(f"'{t}'" for t in expected_tables)
+        sql = (
+            "SELECT tablename FROM pg_tables "
+            "WHERE schemaname='public' "
+            f"AND tablename IN ({table_list});"
+        )
+        res = await run_sql(sql)
+        found = {row["tablename"] for row in (res or [])}
+        missing = sorted(set(expected_tables) - found)
+        if missing:
+            checks["tables"] = {"status": "fail", "missing": missing}
+        else:
+            checks["tables"] = {"status": "ok", "count": len(found)}
+    except Exception as e:
+        checks["tables"] = {"status": "fail", "error": str(e)[:200]}
+
+    # ── 4. Storage bucket ──
+    try:
+        buckets = await run_sync_db_call(client.storage.list_buckets)
+        names = set()
+        for b in (buckets or []):
+            n = getattr(b, "name", None)
+            if n is None and isinstance(b, dict):
+                n = b.get("name")
+            if n:
+                names.add(n)
+        if "storefront" in names:
+            checks["storage"] = {"status": "ok"}
+        else:
+            checks["storage"] = {"status": "fail", "error": "bucket 'storefront' missing"}
+    except Exception as e:
+        checks["storage"] = {"status": "fail", "error": str(e)[:200]}
+
+    # ── 5. Embedder (RAG) ──
+    if get_embedder() is not None:
+        checks["embedder"] = {"status": "ok"}
+    else:
+        checks["embedder"] = {"status": "fail"}
+
+    # ── Overall ──
+    failed = [k for k, v in checks.items() if v.get("status") != "ok"]
+    overall = "healthy" if not failed else "degraded"
+
+    return {
+        "status": overall,
+        "failed": failed,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "checks": checks,
+    }
+
 @app.get("/chat-widget.js", response_class=PlainTextResponse)
 async def widget():
     api_url = PRODUCTION_HOST
