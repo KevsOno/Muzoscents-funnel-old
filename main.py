@@ -10025,7 +10025,8 @@ async def paystack_webhook(request: Request):
         logger.info(f"Stock decremented + sale {sale.data['id']} flipped atomically")
 
         await create_ar_from_sale(sale.data["id"], org_id, sale.data.get("user_id"))
-
+        await mark_ar_paid_for_sale(sale.data["id"], org_id)
+        
         if sale.data.get("user_id") and sale.data.get("total_amount"):
             await award_loyalty_points(
                 sale.data["user_id"],
@@ -10160,6 +10161,7 @@ async def flutterwave_webhook(request: Request):
         logger.info(f"Stock decremented + sale {sale.data['id']} flipped atomically")
 
         await create_ar_from_sale(sale.data["id"], org_id, sale.data.get("user_id"))
+        await mark_ar_paid_for_sale(sale.data["id"], org_id)
 
         if sale.data.get("user_id") and sale.data.get("total_amount"):
             await award_loyalty_points(
@@ -10281,6 +10283,7 @@ async def retry_pending_orders(
                     continue
 
                 await create_ar_from_sale(order["id"], org_id, user_id)
+                await mark_ar_paid_for_sale(sale.data["id"], org_id)
 
                 if order.get("total_amount"):
                     await award_loyalty_points(user_id, order["total_amount"], order["id"], "sync_purchase")
