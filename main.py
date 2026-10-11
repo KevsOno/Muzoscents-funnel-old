@@ -1684,7 +1684,7 @@ async def ensure_finalize_online_order():
             ) VALUES (
                 p_org_id,
                 NULLIF(v_sale.branch_id::text, '')::uuid,
-                p_sale.id,
+                p_sale_id,
                 NULLIF(v_sale.user_id::text,  '')::uuid,
                 v_sale.total_amount,
                 v_sale.total_amount,
