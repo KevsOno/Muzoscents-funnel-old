@@ -1547,6 +1547,188 @@ async def ensure_decrement_stock_fefo():
         logger.error(f"Failed to install decrement_stock_fefo: {resp.text}")
         raise RuntimeError(f"decrement_stock_fefo migration failed: {resp.text}")
     logger.info("decrement_stock_fefo RPC installed (UUID-typed location id)")
+
+
+async def ensure_finalize_online_order():
+    """
+    Install finalize_online_order(sale_id, org_id) — an atomic transactional
+    RPC that flips a pending online order to completed, decrements stock at
+    the sale's location (FEFO), and marks the A/R record paid. All inside
+    one Postgres transaction. Idempotent on retry.
+    """
+    sql = """
+    DROP FUNCTION IF EXISTS public.finalize_online_order(UUID, UUID);
+
+    CREATE OR REPLACE FUNCTION public.finalize_online_order(
+        p_sale_id   UUID,
+        p_org_id    UUID
+    )
+    RETURNS JSONB
+    LANGUAGE plpgsql
+    SECURITY INVOKER
+    AS $$
+    DECLARE
+        v_sale              RECORD;
+        v_item              RECORD;
+        v_remaining         INTEGER;
+        v_batch             RECORD;
+        v_take              INTEGER;
+        v_short             JSONB := '[]'::JSONB;
+        v_location_id       UUID;
+        v_ar_id             UUID;
+    BEGIN
+        -- Lock the sale row
+        SELECT * INTO v_sale
+          FROM sales
+         WHERE id = p_sale_id AND org_id = p_org_id
+           FOR UPDATE;
+
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'sale % not found in org %', p_sale_id, p_org_id;
+        END IF;
+
+        -- Idempotent: already done, return current state
+        IF v_sale.status <> 'pending' THEN
+            RETURN jsonb_build_object(
+                'success', TRUE,
+                'skipped', TRUE,
+                'reason',  'sale already ' || v_sale.status,
+                'sale_id', p_sale_id,
+                'status',  v_sale.status,
+                'short',   '[]'::JSONB
+            );
+        END IF;
+
+        v_location_id := v_sale.location_id;
+        IF v_location_id IS NULL THEN
+            RAISE WARNING
+                'finalize_online_order: sale % has no location_id; location_stocks will not decrement',
+                p_sale_id;
+        END IF;
+
+        -- Decrement stock for each item
+        FOR v_item IN
+            SELECT inventory_id, quantity
+              FROM sale_items
+             WHERE sale_id = p_sale_id
+        LOOP
+            CONTINUE WHEN v_item.quantity IS NULL OR v_item.quantity <= 0;
+
+            PERFORM 1 FROM inventory
+             WHERE id = v_item.inventory_id AND org_id = p_org_id
+               FOR UPDATE;
+
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'inventory % not in org %', v_item.inventory_id, p_org_id;
+            END IF;
+
+            v_remaining := v_item.quantity;
+
+            IF v_location_id IS NOT NULL THEN
+                FOR v_batch IN
+                    SELECT id, quantity
+                      FROM location_stocks
+                     WHERE location_id = v_location_id
+                       AND inventory_id = v_item.inventory_id
+                     ORDER BY expiry_date ASC NULLS LAST, id ASC
+                       FOR UPDATE
+                LOOP
+                    EXIT WHEN v_remaining <= 0;
+
+                    v_take := LEAST(v_batch.quantity, v_remaining);
+
+                    IF v_take = v_batch.quantity THEN
+                        DELETE FROM location_stocks WHERE id = v_batch.id;
+                    ELSE
+                        UPDATE location_stocks
+                           SET quantity   = quantity - v_take,
+                               updated_at = NOW()
+                         WHERE id = v_batch.id;
+                    END IF;
+
+                    v_remaining := v_remaining - v_take;
+                END LOOP;
+
+                IF v_remaining > 0 THEN
+                    v_short := v_short || jsonb_build_object(
+                        'inventory_id', v_item.inventory_id,
+                        'short_by',     v_remaining
+                    );
+                END IF;
+            END IF;
+
+            UPDATE inventory
+               SET current_qty = GREATEST(0, COALESCE(current_qty, 0) - v_item.quantity),
+                   updated_at  = NOW()
+             WHERE id = v_item.inventory_id;
+        END LOOP;
+
+        -- Flip sale to completed
+        UPDATE sales
+           SET status          = 'completed',
+               shipping_status = COALESCE(shipping_status, 'processing'),
+               updated_at      = NOW()
+         WHERE id = p_sale_id;
+
+        -- Upsert A/R record — create if missing, mark paid if exists
+        SELECT id INTO v_ar_id
+          FROM accounts_receivable
+         WHERE sale_id = p_sale_id
+         LIMIT 1;
+
+        IF v_ar_id IS NULL THEN
+            INSERT INTO accounts_receivable (
+                org_id, branch_id, sale_id, customer_id,
+                amount, paid_amount, status, due_date, created_at
+            ) VALUES (
+                p_org_id,
+                v_sale.branch_id,
+                p_sale_id,
+                v_sale.user_id,
+                v_sale.total_amount,
+                v_sale.total_amount,
+                'paid',
+                CURRENT_DATE,
+                NOW()
+            )
+            RETURNING id INTO v_ar_id;
+        ELSE
+            UPDATE accounts_receivable
+               SET paid_amount = amount,
+                   status      = 'paid',
+                   updated_at  = NOW()
+             WHERE id = v_ar_id;
+        END IF;
+
+        RETURN jsonb_build_object(
+            'success',   TRUE,
+            'skipped',   FALSE,
+            'sale_id',   p_sale_id,
+            'status',    'completed',
+            'ar_id',     v_ar_id,
+            'short',     v_short
+        );
+    END;
+    $$;
+
+    GRANT EXECUTE ON FUNCTION public.finalize_online_order(UUID, UUID) TO service_role;
+    """
+
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"Failed to install finalize_online_order: {resp.text}")
+        raise RuntimeError(f"finalize_online_order migration failed: {resp.text}")
+    logger.info("finalize_online_order RPC installed")
 async def ensure_webhook_events():
     """
     Webhook idempotency: dedupe duplicate deliveries, allow safe retry
