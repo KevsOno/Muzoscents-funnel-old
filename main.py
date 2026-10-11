@@ -529,7 +529,7 @@ async def supabase_rest_get(
         "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
         "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}"
     }
-        async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.get(url, headers=headers)
     if resp.status_code not in (200, 204):
         logger.error(f"❌ REST query failed: {resp.status_code} {resp.text}")
