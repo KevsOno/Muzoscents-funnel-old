@@ -3456,6 +3456,14 @@ def slugify(text: str) -> str:
     s = re.sub(r'-+', '-', s).strip('-')
     return s[:60]
 
+def escape_html(s: str) -> str:
+    if not s:
+        return ""
+    return (s.replace("&", "&amp;")
+             .replace("<", "&lt;")
+             .replace(">", "&gt;")
+             .replace('"', "&quot;"))
+             
 
 RESERVED_SLUGS = {
     "admin", "api", "app", "store", "login", "signup", "register",
