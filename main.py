@@ -500,10 +500,12 @@ async def run_sql(query: str) -> List[Dict]:
             json={"query": query},
             headers=headers
         )
-        if resp.status_code != 200:
-            logger.error(f"exec_sql failed: {resp.status_code} {resp.text}")
-            raise HTTPException(status_code=500, detail=f"SQL execution failed: {resp.text}")
-        return resp.json()
+    if resp.status_code not in (200, 204):
+        logger.error(f"exec_sql failed: {resp.status_code} {resp.text}")
+        raise HTTPException(status_code=500, detail=f"SQL execution failed: {resp.text}")
+    if resp.status_code == 204 or not resp.content:
+        return []
+    return resp.json()
 
 # ------------------------------------------------------------------
 # Direct REST API calls (service role key, bypasses RLS)
