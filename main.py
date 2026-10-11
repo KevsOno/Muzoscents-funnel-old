@@ -8337,6 +8337,21 @@ async def mark_ar_paid_for_sale(sale_id: str, org_id: str) -> Optional[str]:
     return ar["id"]
 
 
+
+async def finalize_online_order(sale_id: str, org_id: str) -> Dict:
+    """
+    Call the finalize_online_order RPC. One round trip, one Postgres
+    transaction. Returns:
+        { success, skipped, sale_id, status, ar_id, short }
+    """
+    resp = await run_sync_db_call(
+        get_supabase().rpc("finalize_online_order", {
+            "p_sale_id": sale_id,
+            "p_org_id":  org_id,
+        }).execute
+    )
+    return resp.data or {}
+
 async def create_ap_from_po(po_id: str, org_id: str, supplier_id: str):
     client = get_admin_supabase()
     po = await run_sync_db_call(
