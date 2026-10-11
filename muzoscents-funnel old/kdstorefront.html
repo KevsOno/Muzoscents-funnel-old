@@ -1,0 +1,1131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Storefront Studio · Kevs bOS</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+<style>
+    body { background: #0F172A; }
+    .nav-item { transition: all 0.15s; }
+    .nav-item.active { background: #1e40af; color: white; }
+    .nav-item:hover:not(.active) { background: #1e293b; }
+    .field {
+        background: #0f172a;
+        border: 1px solid #334155;
+        border-radius: 10px;
+        padding: 12px 14px;
+        transition: border-color 0.15s;
+    }
+    .field:focus-within { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.12); }
+    .field label { display: block; font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; font-weight: 600; }
+    .field input, .field textarea, .field select {
+        width: 100%; background: transparent; border: none; outline: none;
+        color: #f1f5f9; font-size: 14px; font-family: inherit;
+    }
+    .field textarea { resize: vertical; min-height: 80px; }
+    .color-swatch {
+        width: 44px; height: 44px; border-radius: 10px;
+        border: 2px solid #334155; cursor: pointer;
+        position: relative; overflow: hidden; flex-shrink: 0;
+    }
+    .color-swatch input[type="color"] {
+        position: absolute; top: -6px; left: -6px;
+        width: 60px; height: 60px; border: none; padding: 0; cursor: pointer;
+    }
+    .upload-box {
+        border: 2px dashed #334155; border-radius: 12px;
+        padding: 20px; text-align: center; cursor: pointer;
+        transition: all 0.15s;
+    }
+    .upload-box:hover { border-color: #3b82f6; background: #0f172a; }
+    .upload-preview {
+        display: flex; align-items: center; gap: 12px;
+        background: #0f172a; border: 1px solid #334155;
+        border-radius: 10px; padding: 10px;
+    }
+    .upload-preview img { max-height: 48px; border-radius: 6px; }
+    .toggle {
+        width: 44px; height: 24px; border-radius: 999px;
+        background: #334155; position: relative; cursor: pointer;
+        transition: background 0.15s; flex-shrink: 0;
+    }
+    .toggle.on { background: #3b82f6; }
+    .toggle::after {
+        content: ''; position: absolute; top: 2px; left: 2px;
+        width: 20px; height: 20px; border-radius: 50%;
+        background: white; transition: transform 0.15s;
+    }
+    .toggle.on::after { transform: translateX(20px); }
+    .theme-card {
+        border: 2px solid #334155; border-radius: 12px;
+        padding: 16px; cursor: pointer; transition: all 0.15s;
+    }
+    .theme-card:hover { border-color: #475569; }
+    .theme-card.selected { border-color: #3b82f6; background: #1e3a8a20; }
+    .theme-card.selected::after {
+        content: '\f058'; font-family: 'Font Awesome 6 Free'; font-weight: 900;
+        position: absolute; top: 10px; right: 12px; color: #3b82f6;
+    }
+    .theme-preview {
+        height: 60px; border-radius: 8px; margin-bottom: 10px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
+    }
+</style>
+</head>
+<body class="text-slate-200 min-h-screen">
+
+<!-- ═══ AUTH GATE ═══ -->
+<div id="gate" class="max-w-md mx-auto mt-24 bg-slate-800/70 rounded-2xl p-8 border border-slate-700 shadow-2xl">
+    <div class="text-center mb-6">
+        <i class="fa-solid fa-store text-3xl text-blue-400 mb-3"></i>
+        <h1 class="text-xl font-bold">Storefront Studio</h1>
+        <p class="text-sm text-slate-400 mt-1">Sign in with your organisation account.</p>
+    </div>
+    <div class="field mb-3">
+        <label>Email</label>
+        <input id="gate-email" type="email" autocomplete="email" />
+    </div>
+    <div class="field mb-3">
+        <label>Password</label>
+        <input id="gate-password" type="password" autocomplete="current-password" />
+    </div>
+    <button id="gate-signin" class="w-full bg-blue-600 hover:bg-blue-700 py-2.5 rounded-lg font-medium transition">
+        Sign in
+    </button>
+    <p id="gate-error" class="hidden text-red-400 text-xs mt-3 text-center"></p>
+    <p class="text-xs text-slate-500 mt-4 text-center">
+        You must be an <strong>owner</strong> or <strong>admin</strong> of an organisation.
+    </p>
+</div>
+
+<!-- ═══ APP ═══ -->
+<div id="app" class="hidden">
+
+    <!-- Header -->
+    <div class="sticky top-0 z-30 bg-slate-900/95 backdrop-blur border-b border-slate-800">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3 flex-wrap">
+            <div class="flex items-center gap-3 flex-1 min-w-0">
+                <div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center flex-shrink-0">
+                    <i class="fa-solid fa-store text-white"></i>
+                </div>
+                <div class="min-w-0">
+                    <div class="font-bold text-white truncate" id="hdr-store-name">Store</div>
+                    <a id="hdr-live-link" href="#" target="_blank" class="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                        <i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i>
+                        <span id="hdr-slug">—</span>
+                    </a>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+                <span id="hdr-status" class="text-xs px-3 py-1.5 rounded-lg font-medium"></span>
+                <button id="btn-preview" class="bg-slate-700 hover:bg-slate-600 text-sm px-3 py-2 rounded-lg">
+                    <i class="fa-regular fa-eye mr-1"></i> Preview
+                </button>
+                <button id="btn-save" class="bg-blue-600 hover:bg-blue-700 text-sm px-4 py-2 rounded-lg font-medium disabled:opacity-40 disabled:cursor-not-allowed" disabled>
+                    <i class="fa-solid fa-floppy-disk mr-1"></i> <span id="save-label">Save</span>
+                </button>
+                <button id="btn-publish" class="bg-emerald-600 hover:bg-emerald-700 text-sm px-4 py-2 rounded-lg font-medium">
+                    <i class="fa-solid fa-globe mr-1"></i> <span id="publish-label">Publish</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-6">
+
+        <!-- Sidebar nav -->
+        <aside class="lg:sticky lg:top-20 lg:self-start space-y-1">
+            <button class="nav-item active w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium" data-tab="branding">
+                <i class="fa-solid fa-palette w-5 text-slate-400"></i> Branding
+            </button>
+            <button class="nav-item w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium" data-tab="theme">
+                <i class="fa-solid fa-wand-magic-sparkles w-5 text-slate-400"></i> Theme
+            </button>
+            <button class="nav-item w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium" data-tab="hero">
+                <i class="fa-solid fa-image w-5 text-slate-400"></i> Hero
+            </button>
+            <button class="nav-item w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium" data-tab="contact">
+                <i class="fa-solid fa-address-book w-5 text-slate-400"></i> Contact
+            </button>
+            <button class="nav-item w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium" data-tab="social">
+                <i class="fa-solid fa-share-nodes w-5 text-slate-400"></i> Social
+            </button>
+            <button class="nav-item w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium" data-tab="policies">
+                <i class="fa-solid fa-file-contract w-5 text-slate-400"></i> Policies
+            </button>
+            <button class="nav-item w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium" data-tab="seo">
+                <i class="fa-solid fa-magnifying-glass w-5 text-slate-400"></i> SEO
+            </button>
+            <button class="nav-item w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium" data-tab="features">
+                <i class="fa-solid fa-toggle-on w-5 text-slate-400"></i> Features
+            </button>
+            <button id="nav-food" class="nav-item w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium hidden" data-tab="food">
+                <i class="fa-solid fa-utensils w-5 text-slate-400"></i> Restaurant
+            </button>
+        </aside>
+
+        <!-- Content -->
+        <main class="space-y-6">
+
+            <!-- ═══ BRANDING ═══ -->
+            <section data-panel="branding" class="space-y-5">
+                <div>
+                    <h2 class="text-2xl font-bold">Branding</h2>
+                    <p class="text-sm text-slate-400 mt-1">Name, logo, and colours.</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="field">
+                        <label>Store name</label>
+                        <input id="f-branding-store_name" type="text" placeholder="Your business name" />
+                    </div>
+                    <div class="field">
+                        <label>Tagline</label>
+                        <input id="f-branding-tagline" type="text" placeholder="Short one-liner" />
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs text-slate-400 uppercase tracking-wider mb-2 font-semibold">Logo</label>
+                    <div id="upload-logo" class="upload-box">
+                        <i class="fa-solid fa-cloud-arrow-up text-2xl text-slate-500 mb-2"></i>
+                        <div class="text-sm text-slate-300 font-medium">Upload logo</div>
+                        <div class="text-xs text-slate-500 mt-1">PNG, JPG, WEBP, or SVG · 3MB max</div>
+                    </div>
+                    <input id="file-logo" type="file" accept="image/*" class="hidden" />
+                </div>
+
+                <div>
+                    <label class="block text-xs text-slate-400 uppercase tracking-wider mb-2 font-semibold">Favicon (optional)</label>
+                    <div id="upload-favicon" class="upload-box">
+                        <i class="fa-solid fa-star text-2xl text-slate-500 mb-2"></i>
+                        <div class="text-sm text-slate-300 font-medium">Upload favicon</div>
+                        <div class="text-xs text-slate-500 mt-1">Small square icon, 32×32 recommended</div>
+                    </div>
+                    <input id="file-favicon" type="file" accept="image/*" class="hidden" />
+                </div>
+
+                <div>
+                    <label class="block text-xs text-slate-400 uppercase tracking-wider mb-3 font-semibold">Colours</label>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div class="flex items-center gap-3 bg-slate-900 border border-slate-700 rounded-xl p-3">
+                            <div class="color-swatch"><input type="color" id="c-primary" /></div>
+                            <div class="min-w-0">
+                                <div class="text-xs text-slate-400">Primary</div>
+                                <div class="text-sm font-mono text-slate-200" id="c-primary-label">#3b82f6</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-3 bg-slate-900 border border-slate-700 rounded-xl p-3">
+                            <div class="color-swatch"><input type="color" id="c-accent" /></div>
+                            <div class="min-w-0">
+                                <div class="text-xs text-slate-400">Accent</div>
+                                <div class="text-sm font-mono text-slate-200" id="c-accent-label">#f59e0b</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-3 bg-slate-900 border border-slate-700 rounded-xl p-3">
+                            <div class="color-swatch"><input type="color" id="c-background" /></div>
+                            <div class="min-w-0">
+                                <div class="text-xs text-slate-400">Background</div>
+                                <div class="text-sm font-mono text-slate-200" id="c-background-label">#ffffff</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-3 bg-slate-900 border border-slate-700 rounded-xl p-3">
+                            <div class="color-swatch"><input type="color" id="c-text" /></div>
+                            <div class="min-w-0">
+                                <div class="text-xs text-slate-400">Text</div>
+                                <div class="text-sm font-mono text-slate-200" id="c-text-label">#0f172a</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label>Font family</label>
+                    <select id="f-branding-font">
+                        <option value="Inter">Inter (default)</option>
+                        <option value="Playfair Display">Playfair Display (serif)</option>
+                        <option value="Space Grotesk">Space Grotesk (modern)</option>
+                        <option value="Georgia">Georgia (classic)</option>
+                    </select>
+                </div>
+            </section>
+
+            <!-- ═══ THEME ═══ -->
+            <section data-panel="theme" class="hidden space-y-5">
+                <div>
+                    <h2 class="text-2xl font-bold">Theme</h2>
+                    <p class="text-sm text-slate-400 mt-1">Layout style — corners, spacing, type weight.</p>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="theme-card relative" data-theme="modern">
+                        <div class="theme-preview" style="background:linear-gradient(135deg,#e0e7ff,#c7d2fe);color:#1e3a8a;">MODERN</div>
+                        <div class="font-semibold text-white">Modern</div>
+                        <div class="text-xs text-slate-400 mt-1">Rounded corners, soft shadows, generous space.</div>
+                    </div>
+                    <div class="theme-card relative" data-theme="minimal">
+                        <div class="theme-preview" style="background:#f5f5f5;color:#111;border:1px solid #ddd;">MINIMAL</div>
+                        <div class="font-semibold text-white">Minimal</div>
+                        <div class="text-xs text-slate-400 mt-1">Flat, sharp corners, thin borders. Editorial feel.</div>
+                    </div>
+                    <div class="theme-card relative" data-theme="bold">
+                        <div class="theme-preview" style="background:#000;color:#fff;">BOLD</div>
+                        <div class="font-semibold text-white">Bold</div>
+                        <div class="text-xs text-slate-400 mt-1">Thick borders, uppercase headings, high contrast.</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ═══ HERO ═══ -->
+            <section data-panel="hero" class="hidden space-y-5">
+                <div>
+                    <h2 class="text-2xl font-bold">Hero</h2>
+                    <p class="text-sm text-slate-400 mt-1">The big banner at the top of your storefront.</p>
+                </div>
+
+                <div class="flex items-center justify-between bg-slate-900 border border-slate-700 rounded-xl p-4">
+                    <div>
+                        <div class="font-medium">Show hero section</div>
+                        <div class="text-xs text-slate-400 mt-1">Turn off for a text-only storefront.</div>
+                    </div>
+                    <div id="t-hero-enabled" class="toggle on"></div>
+                </div>
+
+                <div class="field">
+                    <label>Headline</label>
+                    <input id="f-hero-headline" type="text" placeholder="Big bold statement" />
+                </div>
+
+                <div class="field">
+                    <label>Subtext</label>
+                    <textarea id="f-hero-subtext" placeholder="Supporting line under the headline"></textarea>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="field">
+                        <label>Button text</label>
+                        <input id="f-hero-cta_text" type="text" placeholder="Shop now" />
+                    </div>
+                    <div class="field">
+                        <label>Button link</label>
+                        <input id="f-hero-cta_link" type="text" placeholder="#products" />
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs text-slate-400 uppercase tracking-wider mb-2 font-semibold">Hero image</label>
+                    <div id="upload-hero" class="upload-box">
+                        <i class="fa-solid fa-image text-2xl text-slate-500 mb-2"></i>
+                        <div class="text-sm text-slate-300 font-medium">Upload hero image</div>
+                        <div class="text-xs text-slate-500 mt-1">Wide image, 1600×600 or larger</div>
+                    </div>
+                    <input id="file-hero" type="file" accept="image/*" class="hidden" />
+                </div>
+
+                <div class="field">
+                    <label>Image darkness overlay</label>
+                    <div class="flex items-center gap-3 mt-1">
+                        <input id="f-hero-overlay" type="range" min="0" max="1" step="0.05" value="0.35" class="flex-1 accent-blue-500" />
+                        <span class="text-sm font-mono text-slate-300 w-12" id="hero-overlay-label">0.35</span>
+                    </div>
+                    <div class="text-xs text-slate-500 mt-1">Darkens the image so text is readable. 0 = no overlay, 1 = black.</div>
+                </div>
+            </section>
+
+            <!-- ═══ CONTACT ═══ -->
+            <section data-panel="contact" class="hidden space-y-5">
+                <div>
+                    <h2 class="text-2xl font-bold">Contact</h2>
+                    <p class="text-sm text-slate-400 mt-1">Shown in the top bar and footer.</p>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="field"><label>Email</label><input id="f-contact-email" type="email" /></div>
+                    <div class="field"><label>Phone</label><input id="f-contact-phone" type="tel" /></div>
+                    <div class="field"><label>WhatsApp</label><input id="f-contact-whatsapp" type="tel" /></div>
+                    <div class="field"><label>Address</label><input id="f-contact-address" type="text" /></div>
+                </div>
+            </section>
+
+            <!-- ═══ SOCIAL ═══ -->
+            <section data-panel="social" class="hidden space-y-5">
+                <div>
+                    <h2 class="text-2xl font-bold">Social links</h2>
+                    <p class="text-sm text-slate-400 mt-1">Shown in the footer. Leave blank to hide a network.</p>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="field"><label>Facebook</label><input id="f-social-facebook" type="url" placeholder="https://facebook.com/…" /></div>
+                    <div class="field"><label>Instagram</label><input id="f-social-instagram" type="url" placeholder="https://instagram.com/…" /></div>
+                    <div class="field"><label>Twitter / X</label><input id="f-social-twitter" type="url" placeholder="https://x.com/…" /></div>
+                    <div class="field"><label>TikTok</label><input id="f-social-tiktok" type="url" placeholder="https://tiktok.com/@…" /></div>
+                </div>
+            </section>
+
+            <!-- ═══ POLICIES ═══ -->
+            <section data-panel="policies" class="hidden space-y-5">
+                <div>
+                    <h2 class="text-2xl font-bold">Policies</h2>
+                    <p class="text-sm text-slate-400 mt-1">Plain text shown in expandable footer sections.</p>
+                </div>
+                <div class="field"><label>Shipping policy</label><textarea id="f-policies-shipping"></textarea></div>
+                <div class="field"><label>Returns policy</label><textarea id="f-policies-returns"></textarea></div>
+                <div class="field"><label>Privacy policy</label><textarea id="f-policies-privacy"></textarea></div>
+            </section>
+
+            <!-- ═══ SEO ═══ -->
+            <section data-panel="seo" class="hidden space-y-5">
+                <div>
+                    <h2 class="text-2xl font-bold">SEO</h2>
+                    <p class="text-sm text-slate-400 mt-1">What search engines and link previews see.</p>
+                </div>
+                <div class="field"><label>Meta title</label><input id="f-seo-meta_title" type="text" placeholder="Falls back to store name" /></div>
+                <div class="field"><label>Meta description</label><textarea id="f-seo-meta_description" placeholder="150–160 characters works best"></textarea></div>
+            </section>
+
+            <!-- ═══ FEATURES ═══ -->
+            <section data-panel="features" class="hidden space-y-5">
+                <div>
+                    <h2 class="text-2xl font-bold">Features</h2>
+                    <p class="text-sm text-slate-400 mt-1">Toggle individual storefront sections.</p>
+                </div>
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between bg-slate-900 border border-slate-700 rounded-xl p-4">
+                        <div>
+                            <div class="font-medium">Search bar</div>
+                            <div class="text-xs text-slate-400 mt-1">Show the search input in the header.</div>
+                        </div>
+                        <div id="t-features-show_search" class="toggle on"></div>
+                    </div>
+                    <div class="flex items-center justify-between bg-slate-900 border border-slate-700 rounded-xl p-4">
+                        <div>
+                            <div class="font-medium">Category filter</div>
+                            <div class="text-xs text-slate-400 mt-1">Show category chips above the products.</div>
+                        </div>
+                        <div id="t-features-show_categories" class="toggle on"></div>
+                    </div>
+                    <div class="flex items-center justify-between bg-slate-900 border border-slate-700 rounded-xl p-4">
+                        <div>
+                            <div class="font-medium">Contact bar</div>
+                            <div class="text-xs text-slate-400 mt-1">Show phone, email, address at the top.</div>
+                        </div>
+                        <div id="t-features-show_contact_bar" class="toggle on"></div>
+                    </div>
+                    <div class="flex items-center justify-between bg-slate-900 border border-slate-700 rounded-xl p-4">
+                        <div>
+                            <div class="font-medium">Loyalty CTA</div>
+                            <div class="text-xs text-slate-400 mt-1">Invite customers to sign up for rewards.</div>
+                        </div>
+                        <div id="t-features-show_loyalty_cta" class="toggle on"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ═══ FOOD ═══ -->
+            <section data-panel="food" class="hidden space-y-5">
+                <div>
+                    <h2 class="text-2xl font-bold">Restaurant settings</h2>
+                    <p class="text-sm text-slate-400 mt-1">Menu structure, order types, and opening hours.</p>
+                </div>
+
+                <div class="flex items-center justify-between bg-slate-900 border border-slate-700 rounded-xl p-4">
+                    <div>
+                        <div class="font-medium">Accepting orders</div>
+                        <div class="text-xs text-slate-400 mt-1">Turn off during holidays or between service.</div>
+                    </div>
+                    <div id="t-food-accepting_orders" class="toggle on"></div>
+                </div>
+
+                <div class="field">
+                    <label>Closed message</label>
+                    <input id="f-food-closed_message" type="text" placeholder="We're closed right now. Order when we open." />
+                </div>
+
+                <div>
+                    <div class="flex items-center justify-between mb-3">
+                        <label class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Menu sections</label>
+                        <button type="button" id="btn-add-section" class="text-xs bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg">
+                            <i class="fa-solid fa-plus mr-1"></i> Add section
+                        </button>
+                    </div>
+                    <div id="sections-list" class="space-y-2"></div>
+                    <p class="text-xs text-slate-500 mt-2">
+                        Products are grouped by their <code class="bg-slate-800 px-1 rounded">product_group</code> field. Sections here define order and headings.
+                    </p>
+                </div>
+
+                <div>
+                    <label class="block text-xs text-slate-400 uppercase tracking-wider mb-3 font-semibold">Order types</label>
+                    <div class="space-y-2">
+                        <div class="bg-slate-900 border border-slate-700 rounded-xl p-4 flex items-center gap-3 flex-wrap">
+                            <div class="flex-1 min-w-[140px]">
+                                <div class="font-medium">Delivery</div>
+                                <div class="text-xs text-slate-400 mt-1">Customer provides an address.</div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <label class="text-xs text-slate-400">Prep time</label>
+                                <input id="f-food-delivery-prep" type="number" min="0" max="300" class="w-16 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm" />
+                                <span class="text-xs text-slate-500">min</span>
+                            </div>
+                            <div id="t-food-delivery" class="toggle on"></div>
+                        </div>
+                        <div class="bg-slate-900 border border-slate-700 rounded-xl p-4 flex items-center gap-3 flex-wrap">
+                            <div class="flex-1 min-w-[140px]">
+                                <div class="font-medium">Pickup</div>
+                                <div class="text-xs text-slate-400 mt-1">Customer collects in person.</div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <label class="text-xs text-slate-400">Prep time</label>
+                                <input id="f-food-pickup-prep" type="number" min="0" max="300" class="w-16 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm" />
+                                <span class="text-xs text-slate-500">min</span>
+                            </div>
+                            <div id="t-food-pickup" class="toggle on"></div>
+                        </div>
+                        <div class="bg-slate-900 border border-slate-700 rounded-xl p-4 flex items-center gap-3 flex-wrap">
+                            <div class="flex-1 min-w-[140px]">
+                                <div class="font-medium">Dine-in</div>
+                                <div class="text-xs text-slate-400 mt-1">Customer eats at the restaurant.</div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <label class="text-xs text-slate-400">Prep time</label>
+                                <input id="f-food-dine_in-prep" type="number" min="0" max="300" class="w-16 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm" />
+                                <span class="text-xs text-slate-500">min</span>
+                            </div>
+                            <div id="t-food-dine_in" class="toggle"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs text-slate-400 uppercase tracking-wider mb-3 font-semibold">Opening hours</label>
+                    <div class="space-y-2">
+                        <div class="grid grid-cols-[80px_1fr_1fr] gap-3 items-center bg-slate-900 border border-slate-700 rounded-xl p-3">
+                            <div class="text-sm font-medium">Monday</div>
+                            <input id="f-hours-mon-open" type="time" class="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm" />
+                            <input id="f-hours-mon-close" type="time" class="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm" />
+                        </div>
+                        <div class="grid grid-cols-[80px_1fr_1fr] gap-3 items-center bg-slate-900 border border-slate-700 rounded-xl p-3">
+                            <div class="text-sm font-medium">Tuesday</div>
+                            <input id="f-hours-tue-open" type="time" class="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm" />
+                            <input id="f-hours-tue-close" type="time" class="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm" />
+                        </div>
+                        <div class="grid grid-cols-[80px_1fr_1fr] gap-3 items-center bg-slate-900 border border-slate-700 rounded-xl p-3">
+                            <div class="text-sm font-medium">Wednesday</div>
+                            <input id="f-hours-wed-open" type="time" class="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm" />
+                            <input id="f-hours-wed-close" type="time" class="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm" />
+                        </div>
+                        <div class="grid grid-cols-[80px_1fr_1fr] gap-3 items-center bg-slate-900 border border-slate-700 rounded-xl p-3">
+                            <div class="text-sm font-medium">Thursday</div>
+                            <input id="f-hours-thu-open" type="time" class="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm" />
+                            <input id="f-hours-thu-close" type="time" class="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm" />
+                        </div>
+                        <div class="grid grid-cols-[80px_1fr_1fr] gap-3 items-center bg-slate-900 border border-slate-700 rounded-xl p-3">
+                            <div class="text-sm font-medium">Friday</div>
+                            <input id="f-hours-fri-open" type="time" class="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm" />
+                            <input id="f-hours-fri-close" type="time" class="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm" />
+                        </div>
+                        <div class="grid grid-cols-[80px_1fr_1fr] gap-3 items-center bg-slate-900 border border-slate-700 rounded-xl p-3">
+                            <div class="text-sm font-medium">Saturday</div>
+                            <input id="f-hours-sat-open" type="time" class="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm" />
+                            <input id="f-hours-sat-close" type="time" class="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm" />
+                        </div>
+                        <div class="grid grid-cols-[80px_1fr_1fr] gap-3 items-center bg-slate-900 border border-slate-700 rounded-xl p-3">
+                            <div class="text-sm font-medium">Sunday</div>
+                            <input id="f-hours-sun-open" type="time" class="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm" />
+                            <input id="f-hours-sun-close" type="time" class="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm" />
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+</div>
+
+<script>
+const API_BASE = window.location.origin;
+let TOKEN = localStorage.getItem('access_token') || '';
+let CONFIG = null;         // Full merged config from server
+let ORG_META = null;       // { org_name, slug, vertical, published }
+let DIRTY = false;
+
+/* ─── helpers ─── */
+function $(s) { return document.querySelector(s); }
+function $$(s) { return Array.from(document.querySelectorAll(s)); }
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function toast(msg, kind) {
+    const colors = { success: 'bg-emerald-600', error: 'bg-red-600', info: 'bg-blue-600' };
+    const el = document.createElement('div');
+    el.className = 'fixed bottom-4 right-4 ' + (colors[kind] || colors.info) + ' text-white px-5 py-3 rounded-xl text-sm shadow-2xl z-50';
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 2600);
+}
+function markDirty() {
+    DIRTY = true;
+    const btn = $('#btn-save');
+    btn.disabled = false;
+    $('#save-label').textContent = 'Save changes';
+}
+function clearDirty() {
+    DIRTY = false;
+    const btn = $('#btn-save');
+    btn.disabled = true;
+    $('#save-label').textContent = 'Saved';
+    setTimeout(() => { if (!DIRTY) $('#save-label').textContent = 'Save'; }, 1200);
+}
+
+/* ─── API ─── */
+async function api(path, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+    if (TOKEN) opts.headers['Authorization'] = 'Bearer ' + TOKEN;
+    const res = await fetch(API_BASE + path, opts);
+    if (res.status === 401) {
+        localStorage.removeItem('access_token');
+        throw new Error('Session expired. Please sign in again.');
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || ('HTTP ' + res.status));
+    return data;
+}
+
+/* ─── Auth ─── */
+async function signin() {
+    const email = $('#gate-email').value.trim();
+    const password = $('#gate-password').value;
+    const err = $('#gate-error');
+    err.classList.add('hidden');
+    if (!email || !password) { err.textContent = 'Email and password required'; err.classList.remove('hidden'); return; }
+
+    try {
+        const res = await fetch(API_BASE + '/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Login failed');
+        TOKEN = data.access_token;
+        localStorage.setItem('access_token', TOKEN);
+        localStorage.setItem('refresh_token', data.refresh_token || '');
+        await bootApp();
+    } catch (e) {
+        err.textContent = e.message;
+        err.classList.remove('hidden');
+    }
+}
+
+/* ─── Boot ─── */
+async function bootApp() {
+    try {
+        const me = await api('/auth/me');
+        if (me.role !== 'owner' && me.role !== 'admin') {
+            throw new Error('Only owners and admins can edit the storefront.');
+        }
+        const payload = await api('/storefront/config');
+        ORG_META = payload;
+        CONFIG = payload.config || {};
+
+        $('#gate').classList.add('hidden');
+        $('#app').classList.remove('hidden');
+
+        hydrateForm();
+        wireAll();
+        updateHeader();
+        updatePublishButton();
+    } catch (e) {
+        $('#gate-error').textContent = e.message;
+        $('#gate-error').classList.remove('hidden');
+    }
+}
+
+/* ─── Hydrate form from config ─── */
+function hydrateForm() {
+    const b = CONFIG.branding || {};
+    const h = CONFIG.hero || {};
+    const c = CONFIG.contact || {};
+    const s = CONFIG.social || {};
+    const p = CONFIG.policies || {};
+    const seo = CONFIG.seo || {};
+    const f = CONFIG.features || {};
+    const food = CONFIG.food_config || {};
+
+    $('#f-branding-store_name').value = b.store_name || '';
+    $('#f-branding-tagline').value = b.tagline || '';
+    $('#f-branding-font').value = b.font_family || 'Inter';
+    setColor('primary', b.primary_color || '#3b82f6');
+    setColor('accent', b.accent_color || '#f59e0b');
+    setColor('background', b.background || '#ffffff');
+    setColor('text', b.text_color || '#0f172a');
+    renderUploadPreview('logo', b.logo_url);
+    renderUploadPreview('favicon', b.favicon_url);
+
+    // Theme
+    $$('.theme-card').forEach(t => t.classList.toggle('selected', t.dataset.theme === (CONFIG.theme || 'modern')));
+
+    // Hero
+    setToggle('t-hero-enabled', h.enabled !== false);
+    $('#f-hero-headline').value = h.headline || '';
+    $('#f-hero-subtext').value = h.subtext || '';
+    $('#f-hero-cta_text').value = h.cta_text || 'Shop now';
+    $('#f-hero-cta_link').value = h.cta_link || '#products';
+    $('#f-hero-overlay').value = String(h.overlay ?? 0.35);
+    $('#hero-overlay-label').textContent = Number(h.overlay ?? 0.35).toFixed(2);
+    renderUploadPreview('hero', h.image_url);
+
+    // Contact
+    $('#f-contact-email').value = c.email || '';
+    $('#f-contact-phone').value = c.phone || '';
+    $('#f-contact-whatsapp').value = c.whatsapp || '';
+    $('#f-contact-address').value = c.address || '';
+
+    // Social
+    $('#f-social-facebook').value = s.facebook || '';
+    $('#f-social-instagram').value = s.instagram || '';
+    $('#f-social-twitter').value = s.twitter || '';
+    $('#f-social-tiktok').value = s.tiktok || '';
+
+    // Policies
+    $('#f-policies-shipping').value = p.shipping || '';
+    $('#f-policies-returns').value = p.returns || '';
+    $('#f-policies-privacy').value = p.privacy || '';
+
+    // SEO
+    $('#f-seo-meta_title').value = seo.meta_title || '';
+    $('#f-seo-meta_description').value = seo.meta_description || '';
+
+    // Features
+    setToggle('t-features-show_search', f.show_search !== false);
+    setToggle('t-features-show_categories', f.show_categories !== false);
+    setToggle('t-features-show_contact_bar', f.show_contact_bar !== false);
+    setToggle('t-features-show_loyalty_cta', f.show_loyalty_cta !== false);
+
+    // Food
+    if (ORG_META.vertical === 'food') {
+        $('#nav-food').classList.remove('hidden');
+        setToggle('t-food-accepting_orders', food.accepting_orders !== false);
+        $('#f-food-closed_message').value = food.closed_message || '';
+
+        const fm = food.fulfillment_modes || {};
+        ['delivery', 'pickup', 'dine_in'].forEach(mode => {
+            const cfg = fm[mode] || {};
+            setToggle('t-food-' + mode, cfg.enabled !== false);
+            $('#f-food-' + mode + '-prep').value = cfg.prep_time_minutes || '';
+        });
+
+        const oh = food.opening_hours || {};
+        ['mon','tue','wed','thu','fri','sat','sun'].forEach(day => {
+            const d = oh[day] || {};
+            $('#f-hours-' + day + '-open').value = d.open || '';
+            $('#f-hours-' + day + '-close').value = d.close || '';
+        });
+
+        renderSections(food.menu_sections || []);
+    }
+}
+
+/* ─── UI primitives ─── */
+function setColor(key, hex) {
+    $('#c-' + key).value = hex;
+    $('#c-' + key + '-label').textContent = hex;
+}
+function getColor(key) { return $('#c-' + key).value; }
+
+function setToggle(id, on) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.toggle('on', !!on);
+}
+function getToggle(id) {
+    const el = document.getElementById(id);
+    return el ? el.classList.contains('on') : false;
+}
+
+function renderUploadPreview(kind, url) {
+    const box = document.getElementById('upload-' + kind);
+    if (!box) return;
+    if (url) {
+        box.outerHTML = '<div class="upload-preview" id="upload-' + kind + '">' +
+            '<img src="' + esc(url) + '" alt="' + kind + ' preview" />' +
+            '<div class="flex-1 min-w-0">' +
+                '<div class="text-xs text-slate-400">Current ' + kind + '</div>' +
+                '<div class="text-xs text-slate-500 truncate">' + esc(url) + '</div>' +
+            '</div>' +
+            '<button type="button" class="text-slate-400 hover:text-red-400 p-2" data-clear="' + kind + '">' +
+                '<i class="fa-regular fa-trash-can"></i>' +
+            '</button>' +
+        '</div>';
+    } else {
+        const placeholders = {
+            logo: { icon: 'fa-cloud-arrow-up', label: 'Upload logo', hint: 'PNG, JPG, WEBP, or SVG · 3MB max' },
+            favicon: { icon: 'fa-star', label: 'Upload favicon', hint: 'Small square icon, 32×32 recommended' },
+            hero: { icon: 'fa-image', label: 'Upload hero image', hint: 'Wide image, 1600×600 or larger' }
+        };
+        const p = placeholders[kind];
+        box.outerHTML = '<div class="upload-box" id="upload-' + kind + '">' +
+            '<i class="fa-solid ' + p.icon + ' text-2xl text-slate-500 mb-2"></i>' +
+            '<div class="text-sm text-slate-300 font-medium">' + p.label + '</div>' +
+            '<div class="text-xs text-slate-500 mt-1">' + p.hint + '</div>' +
+        '</div>';
+    }
+}
+
+function renderSections(sections) {
+    const list = document.getElementById('sections-list');
+    list.innerHTML = (sections || []).map((sec, i) => renderSectionRow(sec, i)).join('');
+    list.querySelectorAll('[data-section-remove]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const idx = Number(btn.dataset.sectionRemove);
+            removeSection(idx);
+        });
+    });
+    list.querySelectorAll('[data-section-name]').forEach(input => {
+        input.addEventListener('input', () => {
+            const idx = Number(input.dataset.sectionName);
+            updateSectionName(idx, input.value);
+        });
+    });
+    list.querySelectorAll('[data-section-order]').forEach(input => {
+        input.addEventListener('input', () => {
+            const idx = Number(input.dataset.sectionOrder);
+            updateSectionOrder(idx, Number(input.value) || 0);
+        });
+    });
+}
+
+function renderSectionRow(sec, i) {
+    return '<div class="flex items-center gap-2 bg-slate-900 border border-slate-700 rounded-xl p-2">' +
+        '<input type="text" value="' + esc(sec.name || '') + '" placeholder="Section name" ' +
+            'class="flex-1 bg-slate-800 border border-slate-600 rounded px-3 py-2 text-sm" ' +
+            'data-section-name="' + i + '" />' +
+        '<input type="number" value="' + (sec.order || i + 1) + '" min="0" ' +
+            'class="w-16 bg-slate-800 border border-slate-600 rounded px-2 py-2 text-sm" ' +
+            'data-section-order="' + i + '" />' +
+        '<button type="button" class="text-slate-500 hover:text-red-400 p-2" data-section-remove="' + i + '">' +
+            '<i class="fa-regular fa-trash-can"></i>' +
+        '</button>' +
+    '</div>';
+}
+
+function addSection() {
+    if (!CONFIG.food_config) CONFIG.food_config = {};
+    if (!CONFIG.food_config.menu_sections) CONFIG.food_config.menu_sections = [];
+    CONFIG.food_config.menu_sections.push({ name: 'New section', order: CONFIG.food_config.menu_sections.length + 1 });
+    renderSections(CONFIG.food_config.menu_sections);
+    markDirty();
+}
+
+function removeSection(idx) {
+    CONFIG.food_config.menu_sections.splice(idx, 1);
+    renderSections(CONFIG.food_config.menu_sections);
+    markDirty();
+}
+
+function updateSectionName(idx, name) {
+    if (!CONFIG.food_config.menu_sections[idx]) return;
+    CONFIG.food_config.menu_sections[idx].name = name;
+    markDirty();
+}
+
+function updateSectionOrder(idx, order) {
+    if (!CONFIG.food_config.menu_sections[idx]) return;
+    CONFIG.food_config.menu_sections[idx].order = order;
+    markDirty();
+}
+
+/* ─── Header state ─── */
+function updateHeader() {
+    const b = CONFIG.branding || {};
+    $('#hdr-store-name').textContent = b.store_name || ORG_META.org_name || 'Store';
+    $('#hdr-slug').textContent = '/' + (ORG_META.slug || '');
+    $('#hdr-live-link').href = ORG_META.slug ? ('/store/' + ORG_META.slug) : '#';
+}
+function updatePublishButton() {
+    const pub = ORG_META.published;
+    const status = $('#hdr-status');
+    if (pub) {
+        status.textContent = 'Live';
+        status.className = 'text-xs px-3 py-1.5 rounded-lg font-medium bg-emerald-900/40 text-emerald-300';
+        $('#publish-label').textContent = 'Unpublish';
+        $('#btn-publish').className = 'bg-slate-700 hover:bg-slate-600 text-sm px-4 py-2 rounded-lg font-medium';
+    } else {
+        status.textContent = 'Unpublished';
+        status.className = 'text-xs px-3 py-1.5 rounded-lg font-medium bg-slate-700 text-slate-300';
+        $('#publish-label').textContent = 'Publish';
+        $('#btn-publish').className = 'bg-emerald-600 hover:bg-emerald-700 text-sm px-4 py-2 rounded-lg font-medium';
+    }
+}
+
+/* ─── Build payload from form ─── */
+function buildPayload() {
+    const payload = {
+        theme: CONFIG.theme || 'modern',
+        branding: {
+            store_name: $('#f-branding-store_name').value.trim() || null,
+            tagline: $('#f-branding-tagline').value.trim() || null,
+            primary_color: getColor('primary'),
+            accent_color: getColor('accent'),
+            background: getColor('background'),
+            text_color: getColor('text'),
+            font_family: $('#f-branding-font').value || 'Inter'
+        },
+        hero: {
+            enabled: getToggle('t-hero-enabled'),
+            headline: $('#f-hero-headline').value.trim() || null,
+            subtext: $('#f-hero-subtext').value.trim() || null,
+            cta_text: $('#f-hero-cta_text').value.trim() || null,
+            cta_link: $('#f-hero-cta_link').value.trim() || null,
+            overlay: parseFloat($('#f-hero-overlay').value) || 0,
+            image_url: CONFIG.hero && CONFIG.hero.image_url || null
+        },
+        contact: {
+            email: $('#f-contact-email').value.trim() || null,
+            phone: $('#f-contact-phone').value.trim() || null,
+            whatsapp: $('#f-contact-whatsapp').value.trim() || null,
+            address: $('#f-contact-address').value.trim() || null
+        },
+        social: {
+            facebook: $('#f-social-facebook').value.trim() || null,
+            instagram: $('#f-social-instagram').value.trim() || null,
+            twitter: $('#f-social-twitter').value.trim() || null,
+            tiktok: $('#f-social-tiktok').value.trim() || null
+        },
+        policies: {
+            shipping: $('#f-policies-shipping').value.trim() || null,
+            returns: $('#f-policies-returns').value.trim() || null,
+            privacy: $('#f-policies-privacy').value.trim() || null
+        },
+        seo: {
+            meta_title: $('#f-seo-meta_title').value.trim() || null,
+            meta_description: $('#f-seo-meta_description').value.trim() || null
+        },
+        features: {
+            show_search: getToggle('t-features-show_search'),
+            show_categories: getToggle('t-features-show_categories'),
+            show_contact_bar: getToggle('t-features-show_contact_bar'),
+            show_loyalty_cta: getToggle('t-features-show_loyalty_cta')
+        }
+    };
+
+    // Carry logo/favicon URLs which are stored but not form-bound
+    payload.branding.logo_url = CONFIG.branding && CONFIG.branding.logo_url || null;
+    payload.branding.favicon_url = CONFIG.branding && CONFIG.branding.favicon_url || null;
+
+    if (ORG_META.vertical === 'food') {
+        const fm = {
+            delivery: {
+                enabled: getToggle('t-food-delivery'),
+                prep_time_minutes: parseInt($('#f-food-delivery-prep').value, 10) || 0
+            },
+            pickup: {
+                enabled: getToggle('t-food-pickup'),
+                prep_time_minutes: parseInt($('#f-food-pickup-prep').value, 10) || 0
+            },
+            dine_in: {
+                enabled: getToggle('t-food-dine_in'),
+                prep_time_minutes: parseInt($('#f-food-dine_in-prep').value, 10) || 0
+            }
+        };
+        const oh = {};
+        ['mon','tue','wed','thu','fri','sat','sun'].forEach(day => {
+            const open = $('#f-hours-' + day + '-open').value;
+            const close = $('#f-hours-' + day + '-close').value;
+            if (open && close) oh[day] = { open, close };
+        });
+        payload.food_config = {
+            menu_sections: (CONFIG.food_config && CONFIG.food_config.menu_sections) || [],
+            fulfillment_modes: fm,
+            opening_hours: oh,
+            accepting_orders: getToggle('t-food-accepting_orders'),
+            closed_message: $('#f-food-closed_message').value.trim() || null
+        };
+    }
+
+    return payload;
+}
+
+/* ─── Save / Publish ─── */
+async function save() {
+    const btn = $('#btn-save');
+    btn.disabled = true;
+    $('#save-label').textContent = 'Saving…';
+    try {
+        const payload = buildPayload();
+        const res = await api('/storefront/config', {
+            method: 'PATCH',
+            body: JSON.stringify(payload)
+        });
+        CONFIG = res.config;
+        ORG_META.config = res.config;
+        clearDirty();
+        toast('Saved', 'success');
+        updateHeader();
+    } catch (e) {
+        toast(e.message, 'error');
+        btn.disabled = false;
+        $('#save-label').textContent = 'Save';
+    }
+}
+
+async function togglePublish() {
+    try {
+        if (ORG_META.published) {
+            await api('/storefront/unpublish', { method: 'POST' });
+            ORG_META.published = false;
+            toast('Storefront unpublished', 'info');
+        } else {
+            // Ensure current changes are saved before publishing
+            if (DIRTY) await save();
+            const res = await api('/storefront/publish', { method: 'POST' });
+            ORG_META.published = true;
+            toast('Storefront published', 'success');
+        }
+        updatePublishButton();
+    } catch (e) {
+        toast(e.message, 'error');
+    }
+}
+
+/* ─── Uploads ─── */
+async function uploadFile(kind, file) {
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+        const res = await fetch(API_BASE + '/storefront/upload', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + TOKEN },
+            body: fd
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Upload failed');
+
+        // Store on local config object
+        if (!CONFIG.branding) CONFIG.branding = {};
+        if (kind === 'logo') CONFIG.branding.logo_url = data.url;
+        if (kind === 'favicon') CONFIG.branding.favicon_url = data.url;
+        if (kind === 'hero') {
+            if (!CONFIG.hero) CONFIG.hero = {};
+            CONFIG.hero.image_url = data.url;
+        }
+        renderUploadPreview(kind, data.url);
+        wireUpload(kind);
+        markDirty();
+        updateHeader();
+        toast(kind + ' uploaded', 'success');
+    } catch (e) {
+        toast(e.message, 'error');
+    }
+}
+
+function wireUpload(kind) {
+    const box = document.getElementById('upload-' + kind);
+    const input = document.getElementById('file-' + kind);
+    if (!box || !input) return;
+
+    // Existing preview — wire the clear button
+    const clearBtn = box.querySelector('[data-clear]');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            if (!CONFIG.branding) CONFIG.branding = {};
+            if (!CONFIG.hero) CONFIG.hero = {};
+            if (kind === 'logo') CONFIG.branding.logo_url = null;
+            if (kind === 'favicon') CONFIG.branding.favicon_url = null;
+            if (kind === 'hero') CONFIG.hero.image_url = null;
+            renderUploadPreview(kind, null);
+            wireUpload(kind);
+            markDirty();
+            updateHeader();
+        });
+        return;
+    }
+
+    // Placeholder — wire the click to open file picker
+    box.addEventListener('click', () => input.click());
+    input.onchange = (e) => {
+        if (e.target.files[0]) uploadFile(kind, e.target.files[0]);
+        input.value = '';
+    };
+}
+
+/* ─── Wiring ─── */
+function wireAll() {
+    // Sidebar tabs
+    $$('.nav-item').forEach(btn => {
+        btn.addEventListener('click', () => {
+            $$('.nav-item').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            $$('[data-panel]').forEach(p => p.classList.toggle('hidden', p.dataset.panel !== btn.dataset.tab));
+        });
+    });
+
+    // Dirty tracking — any input in the main area
+    document.querySelectorAll('input, textarea, select').forEach(el => {
+        if (el.closest('#gate')) return;
+        el.addEventListener('input', markDirty);
+        el.addEventListener('change', markDirty);
+    });
+
+    // Colour pickers
+    ['primary', 'accent', 'background', 'text'].forEach(key => {
+        const input = document.getElementById('c-' + key);
+        input.addEventListener('input', () => {
+            $('#c-' + key + '-label').textContent = input.value;
+            markDirty();
+        });
+    });
+
+    // Toggles
+    document.querySelectorAll('.toggle').forEach(t => {
+        t.addEventListener('click', () => {
+            t.classList.toggle('on');
+            markDirty();
+        });
+    });
+
+    // Theme cards
+    $$('.theme-card').forEach(card => {
+        card.addEventListener('click', () => {
+            $$('.theme-card').forEach(c => c.classList.remove('selected'));
+            card.classList.add('selected');
+            CONFIG.theme = card.dataset.theme;
+            markDirty();
+        });
+    });
+
+    // Hero overlay slider label
+    $('#f-hero-overlay').addEventListener('input', (e) => {
+        $('#hero-overlay-label').textContent = Number(e.target.value).toFixed(2);
+    });
+
+    // Upload placeholders
+    ['logo', 'favicon', 'hero'].forEach(wireUpload);
+
+    // Sections
+    $('#btn-add-section').addEventListener('click', addSection);
+
+    // Save / Publish
+    $('#btn-save').addEventListener('click', save);
+    $('#btn-publish').addEventListener('click', togglePublish);
+    $('#btn-preview').addEventListener('click', () => {
+        if (!ORG_META.slug) { toast('Set a slug first', 'error'); return; }
+        window.open('/store/' + ORG_META.slug, '_blank');
+    });
+
+    // Warn on unsaved changes
+    window.addEventListener('beforeunload', (e) => {
+        if (DIRTY) { e.preventDefault(); e.returnValue = ''; }
+    });
+}
+
+/* ─── Init ─── */
+$('#gate-signin').addEventListener('click', signin);
+$('#gate-password').addEventListener('keypress', e => { if (e.key === 'Enter') signin(); });
+
+if (TOKEN) {
+    bootApp();
+}
+</script>
+</body>
+</html>
