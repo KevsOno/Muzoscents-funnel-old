@@ -5913,7 +5913,7 @@ async def update_own_storefront_config(
             )
 
     # Theme whitelist
-    if "theme" in patch and patch["theme"] not in ("modern", "minimal", "bold"):
+    if "theme" in patch and patch["theme"] not in ("modern", "minimal", "bold", "warm"):
         raise HTTPException(status_code=400, detail="Unknown theme")
 
     # Layout whitelist
