@@ -8019,6 +8019,41 @@ async def create_ar_from_sale(sale_id: str, org_id: str, customer_id: Optional[s
     else:
         logger.warning(f"Missing revenue or A/R account for org {org_id} – journal entry skipped")
 
+async def mark_ar_paid_for_sale(sale_id: str, org_id: str) -> Optional[str]:
+    """
+    Flip the A/R record for a given sale to status='paid' with
+    paid_amount = amount. Idempotent: safe to call multiple times.
+    Returns the A/R id on success, None if no record found.
+    """
+    client = get_admin_supabase()
+    ar_res = await run_sync_db_call(
+        client.table("accounts_receivable")
+        .select("id, amount, paid_amount, status")
+        .eq("sale_id", sale_id)
+        .maybe_single()
+        .execute
+    )
+    if not ar_res or not ar_res.data:
+        logger.warning(f"mark_ar_paid_for_sale: no A/R record for sale {sale_id}")
+        return None
+
+    ar = ar_res.data
+    if ar.get("status") == "paid":
+        return ar["id"]  # already done, idempotent
+
+    await run_sync_db_call(
+        client.table("accounts_receivable")
+        .update({
+            "paid_amount": ar["amount"],
+            "status": "paid",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+        .eq("id", ar["id"])
+        .execute
+    )
+    logger.info(f"A/R {ar['id']} marked paid for sale {sale_id} (₦{ar['amount']})")
+    return ar["id"]
+
 
 async def create_ap_from_po(po_id: str, org_id: str, supplier_id: str):
     client = get_admin_supabase()
