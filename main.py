@@ -11733,6 +11733,7 @@ async def health_deep(request: Request):
         "approve_stock_transfer",
         "complete_stock_transfer",
         "decrement_stock_fefo",
+        "finalize_online_order",
         "claim_webhook_event",
         "mark_webhook_event_processed",
         "release_webhook_event_claim",
