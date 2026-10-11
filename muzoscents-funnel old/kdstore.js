@@ -1444,6 +1444,19 @@ async function checkout() {
 // ============================================================
 //  PAYMENT RETURN HANDLER (with receipt modal)
 // ============================================================
+function cleanUrl() {
+    try {
+        const url = new URL(window.location.href);
+        url.search = '';
+        url.hash = '';
+        // Collapse any accidental double slashes in the path
+        url.pathname = url.pathname.replace(/\/+/g, '/');
+        window.history.replaceState({}, '', url.pathname);
+    } catch (e) {
+        console.warn('Could not clean URL:', e);
+    }
+}
+
 function handlePaymentReturn() {
     const urlParams = new URLSearchParams(window.location.search);
     const reference = urlParams.get('reference') || urlParams.get('trxref');
@@ -1467,7 +1480,7 @@ function handlePaymentReturn() {
             localStorage.removeItem('pending_order');
             localStorage.removeItem('pending_payment');
             isDeliveryEstimated = false;
-            window.history.replaceState({}, '', window.location.pathname);
+            cleanUrl();
             showToast("✅ Payment successful!", 'success');
         } catch (e) {
             console.warn("Failed to parse pending order", e);
@@ -1475,12 +1488,12 @@ function handlePaymentReturn() {
             showToast("Payment successful! Check your email for receipt.", 'success');
             localStorage.removeItem('pending_order');
             localStorage.removeItem('pending_payment');
-            window.history.replaceState({}, '', window.location.pathname);
+            cleanUrl();
         }
     } else if (paymentSuccess && !pendingOrder) {
         showToast("Payment successful! Check your email for receipt.", 'success');
         localStorage.removeItem('pending_payment');
-        window.history.replaceState({}, '', window.location.pathname);
+        cleanUrl();
     }
 }
 
