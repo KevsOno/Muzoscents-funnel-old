@@ -118,6 +118,10 @@ function hydrateForm() {
 
     // Theme
     $$('.theme-card').forEach(t => t.classList.toggle('selected', t.dataset.theme === (CONFIG.theme || 'modern')));
+    // Ensure layout is initialized from saved config (falls back to defaults)
+    if (!CONFIG.layout) {
+        CONFIG.layout = { product_card: 'grid', hero: 'split', grid_density: 'normal' };
+    }
 
     // Hero
     setToggle('t-hero-enabled', h.enabled !== false);
@@ -316,6 +320,7 @@ function updatePublishButton() {
 function buildPayload() {
     const payload = {
         theme: CONFIG.theme || 'modern',
+        layout: CONFIG.layout || { product_card: 'grid', hero: 'split', grid_density: 'normal' },
         branding: {
             store_name: $('#f-branding-store_name').value.trim() || null,
             tagline: $('#f-branding-tagline').value.trim() || null,
@@ -540,12 +545,26 @@ function wireAll() {
     });
 
     // Theme cards
+    const THEME_PRESETS = {
+        modern:  { product_card: 'grid',      hero: 'split',   grid_density: 'normal' },
+        minimal: { product_card: 'list',      hero: 'minimal', grid_density: 'sparse' },
+        bold:    { product_card: 'editorial', hero: 'full',    grid_density: 'dense'  },
+        warm:    { product_card: 'rounded',   hero: 'split',   grid_density: 'normal' }
+    };
+
     $$('.theme-card').forEach(card => {
         card.addEventListener('click', () => {
             $$('.theme-card').forEach(c => c.classList.remove('selected'));
             card.classList.add('selected');
-            CONFIG.theme = card.dataset.theme;
+            const themeName = card.dataset.theme;
+            CONFIG.theme = themeName;
+            // Preset writes the layout too
+            CONFIG.layout = Object.assign({}, CONFIG.layout, THEME_PRESETS[themeName] || {});
             markDirty();
+            // Give feedback
+            if (typeof toast === 'function') {
+                toast(`Theme set to ${themeName.charAt(0).toUpperCase() + themeName.slice(1)} — save to apply`, 'info');
+            }
         });
     });
 
