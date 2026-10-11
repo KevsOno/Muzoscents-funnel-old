@@ -182,6 +182,8 @@ function hydrateForm() {
 
         renderSections(food.menu_sections || []);
     }
+
+    renderSectionsUI();
 }
 
 /* ─── UI primitives ─── */
@@ -291,6 +293,75 @@ function updateSectionOrder(idx, order) {
     if (!CONFIG.food_config.menu_sections[idx]) return;
     CONFIG.food_config.menu_sections[idx].order = order;
     markDirty();
+}
+
+/* ─── Sections editor (page sections) ─── */
+function renderSectionsUI() {
+    const editor = document.getElementById('sections-editor');
+    if (!editor) return;
+    const list = CONFIG.sections || [];
+    const SECTION_LABELS = {
+        'hero': 'Hero',
+        'benefits': 'Benefits strip',
+        'categories': 'Shop by Category',
+        'top-picks': "Today's Picks",
+        'needs': 'Shop by Need',
+        'products': 'Product grid',
+        'about': 'About',
+        'cta': 'Call to action'
+    };
+    if (list.length === 0) {
+        editor.innerHTML = '<div class="text-sm text-slate-400 text-center py-8">No sections yet. Add one below.</div>';
+        return;
+    }
+    editor.innerHTML = list.map((sec, i) => `
+        <div class="flex items-center gap-2 bg-slate-900 border border-slate-700 rounded-xl p-3">
+            <div class="flex flex-col gap-0.5">
+                <button class="text-slate-500 hover:text-white p-1 disabled:opacity-20" data-move-up="${i}" ${i === 0 ? 'disabled' : ''} aria-label="Move up">
+                    <i class="fa-solid fa-chevron-up text-xs"></i>
+                </button>
+                <button class="text-slate-500 hover:text-white p-1 disabled:opacity-20" data-move-down="${i}" ${i === list.length - 1 ? 'disabled' : ''} aria-label="Move down">
+                    <i class="fa-solid fa-chevron-down text-xs"></i>
+                </button>
+            </div>
+            <div class="flex-1">
+                <div class="font-medium text-white">${escapeHtml(SECTION_LABELS[sec.type] || sec.type)}</div>
+                <div class="text-xs text-slate-500 font-mono">${escapeHtml(sec.type)}</div>
+            </div>
+            <button class="text-slate-500 hover:text-red-400 p-2" data-remove-section="${i}" aria-label="Remove section">
+                <i class="fa-regular fa-trash-can"></i>
+            </button>
+        </div>
+    `).join('');
+
+    editor.querySelectorAll('[data-move-up]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const i = Number(btn.dataset.moveUp);
+            if (i <= 0) return;
+            const [item] = CONFIG.sections.splice(i, 1);
+            CONFIG.sections.splice(i - 1, 0, item);
+            renderSectionsUI();
+            markDirty();
+        });
+    });
+    editor.querySelectorAll('[data-move-down]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const i = Number(btn.dataset.moveDown);
+            if (i >= CONFIG.sections.length - 1) return;
+            const [item] = CONFIG.sections.splice(i, 1);
+            CONFIG.sections.splice(i + 1, 0, item);
+            renderSectionsUI();
+            markDirty();
+        });
+    });
+    editor.querySelectorAll('[data-remove-section]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const i = Number(btn.dataset.removeSection);
+            CONFIG.sections.splice(i, 1);
+            renderSectionsUI();
+            markDirty();
+        });
+    });
 }
 
 /* ─── Header state ─── */
@@ -616,6 +687,18 @@ function wireAll() {
 
     // Sections
     $('#btn-add-section').addEventListener('click', addSection);
+
+    // Page sections editor — add section
+    document.getElementById('add-section-btn')?.addEventListener('click', () => {
+        const select = document.getElementById('add-section-select');
+        const type = select.value;
+        if (!type) return;
+        if (!CONFIG.sections) CONFIG.sections = [];
+        CONFIG.sections.push({ type });
+        renderSectionsUI();
+        select.value = '';
+        markDirty();
+    });
 
     // Save / Publish
     $('#btn-save').addEventListener('click', save);
