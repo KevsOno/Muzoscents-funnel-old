@@ -10560,31 +10560,27 @@ async def retry_pending_orders(
                 )
                 items = items_res.data or []
 
-                sale_location = order.get("location_id")
-                default_location_id = sale_location or await get_location_for_channel(org_id, "online")
-                decrement_result = await decrement_stock_fefo(
-                    org_id,
-                    [
-                        {"inventory_id": it["inventory_id"], "quantity": it["quantity"]}
-                        for it in items
-                    ],
-                    default_location_id,
-                    sale_id=order["id"],
-                )
+                finalize_result = await finalize_online_order(order["id"], org_id)
 
-                if decrement_result.get("skipped"):
+                if finalize_result.get("skipped"):
                     results.append({
                         "id": order["id"],
                         "status": "skipped",
-                        "reason": decrement_result.get("reason"),
+                        "reason": finalize_result.get("reason"),
                     })
                     continue
 
-                await create_ar_from_sale(order["id"], org_id, user_id)
-                await mark_ar_paid_for_sale(order.data["id"], org_id)
+                for s in (finalize_result.get("short") or []):
+                    logger.warning(
+                        f"retry_pending_orders: inventory {s['inventory_id']} short by "
+                        f"{s['short_by']} units at finalize"
+                    )
 
                 if order.get("total_amount"):
-                    await award_loyalty_points(user_id, order["total_amount"], order["id"], "sync_purchase")
+                    try:
+                        await award_loyalty_points(user_id, order["total_amount"], order["id"], "sync_purchase")
+                    except Exception as pts_err:
+                        logger.error(f"retry_pending_orders: loyalty points failed for {order['id']}: {pts_err}")
 
                 if order.get("customer_email"):
                     items_for_email = await run_sync_db_call(
@@ -10593,7 +10589,10 @@ async def retry_pending_orders(
                         .eq("sale_id", order["id"])
                         .execute
                     )
-                    await send_order_confirmation_email(order, items_for_email.data)
+                    try:
+                        await send_order_confirmation_email(order, items_for_email.data)
+                    except Exception as email_err:
+                        logger.error(f"retry_pending_orders: email failed for {order['id']}: {email_err}")
 
                 results.append({"id": order["id"], "status": "synced"})
             else:
@@ -10604,7 +10603,6 @@ async def retry_pending_orders(
             results.append({"id": order["id"], "status": "failed", "error": str(e)})
 
     return {"synced": results}
-
 
 # ------------------------------------------------------------------
 # CHAT STREAM (public for guests)
