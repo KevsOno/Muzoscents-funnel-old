@@ -5829,6 +5829,7 @@ async def get_public_storefront(slug: str, request: Request):
 
 class StorefrontConfigUpdate(BaseModel):
     theme:          Optional[str]  = None
+    sections:       Optional[List[dict]] = None      # ← ADD
     layout:         Optional[dict] = None
     branding:       Optional[dict] = None
     hero:           Optional[dict] = None
