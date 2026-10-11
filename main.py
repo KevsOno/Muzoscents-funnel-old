@@ -5967,6 +5967,25 @@ async def update_own_storefront_config(
                             detail="prep_time_minutes must be 0–300",
                         )
 
+    # Sections validation — order + type whitelist
+    if "sections" in patch and patch["sections"] is not None:
+        if not isinstance(patch["sections"], list):
+            raise HTTPException(status_code=400, detail="'sections' must be an array")
+
+        ALLOWED_SECTION_TYPES = {
+            "hero", "benefits", "categories", "top-picks",
+            "needs", "products", "about", "cta",
+        }
+        for i, sec in enumerate(patch["sections"]):
+            if not isinstance(sec, dict):
+                raise HTTPException(status_code=400, detail=f"sections[{i}] must be an object")
+            t = sec.get("type")
+            if not t or t not in ALLOWED_SECTION_TYPES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"sections[{i}].type must be one of: {sorted(ALLOWED_SECTION_TYPES)}",
+                )
+
     # Deep-merge the patch into the stored config
     for section, values in patch.items():
         if (
@@ -5991,7 +6010,7 @@ async def update_own_storefront_config(
         raise HTTPException(status_code=500, detail="Failed to save config")
 
     return {"config": merge_storefront_config(current)}
-
+    
 @app.post("/storefront/publish")
 async def publish_own_storefront(
     user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin"])),
