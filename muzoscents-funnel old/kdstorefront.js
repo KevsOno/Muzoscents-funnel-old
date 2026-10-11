@@ -321,6 +321,7 @@ function buildPayload() {
     const payload = {
         theme: CONFIG.theme || 'modern',
         layout: CONFIG.layout || { product_card: 'grid', hero: 'split', grid_density: 'normal' },
+        sections: CONFIG.sections || [],
         branding: {
             store_name: $('#f-branding-store_name').value.trim() || null,
             tagline: $('#f-branding-tagline').value.trim() || null,
@@ -546,10 +547,46 @@ function wireAll() {
 
     // Theme cards
     const THEME_PRESETS = {
-        modern:  { product_card: 'grid',      hero: 'split',   grid_density: 'normal' },
-        minimal: { product_card: 'list',      hero: 'minimal', grid_density: 'sparse' },
-        bold:    { product_card: 'editorial', hero: 'full',    grid_density: 'dense'  },
-        warm:    { product_card: 'rounded',   hero: 'split',   grid_density: 'normal' }
+        modern: {
+            layout: { product_card: 'grid', hero: 'split', grid_density: 'normal' },
+            sections: [
+                { type: 'hero' },
+                { type: 'benefits' },
+                { type: 'categories' },
+                { type: 'top-picks' },
+                { type: 'needs' },
+                { type: 'products' }
+            ]
+        },
+        minimal: {
+            layout: { product_card: 'list', hero: 'minimal', grid_density: 'sparse' },
+            sections: [
+                { type: 'hero' },
+                { type: 'products' }
+            ]
+        },
+        bold: {
+            layout: { product_card: 'editorial', hero: 'full', grid_density: 'dense' },
+            sections: [
+                { type: 'hero' },
+                { type: 'categories' },
+                { type: 'top-picks' },
+                { type: 'products' },
+                { type: 'benefits' }
+            ]
+        },
+        warm: {
+            layout: { product_card: 'rounded', hero: 'split', grid_density: 'normal' },
+            sections: [
+                { type: 'hero' },
+                { type: 'benefits' },
+                { type: 'top-picks' },
+                { type: 'categories' },
+                { type: 'products' },
+                { type: 'about' },
+                { type: 'cta' }
+            ]
+        }
     };
 
     $$('.theme-card').forEach(card => {
@@ -558,13 +595,14 @@ function wireAll() {
             card.classList.add('selected');
             const themeName = card.dataset.theme;
             CONFIG.theme = themeName;
-            // Preset writes the layout too
-            CONFIG.layout = Object.assign({}, CONFIG.layout, THEME_PRESETS[themeName] || {});
+            const preset = THEME_PRESETS[themeName] || {};
+            CONFIG.layout = Object.assign({}, CONFIG.layout, preset.layout || {});
+            CONFIG.sections = JSON.parse(JSON.stringify(preset.sections || []));
             markDirty();
-            // Give feedback
             if (typeof toast === 'function') {
-                toast(`Theme set to ${themeName.charAt(0).toUpperCase() + themeName.slice(1)} — save to apply`, 'info');
+                toast(`Theme set to ${themeName} — save to apply`, 'info');
             }
+            if (typeof renderSectionsUI === 'function') renderSectionsUI();
         });
     });
 
