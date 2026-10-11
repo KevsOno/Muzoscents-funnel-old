@@ -520,6 +520,11 @@ document.getElementById('create-submit').addEventListener('click', async () => {
     location: document.getElementById('f-location').value.trim(),
     niche:    document.getElementById('f-niche').value,
     budget:   parseInt(document.getElementById('f-budget').value, 10) || 0,
+    // NEW:
+    owner_email:      document.getElementById('f-owner-email').value.trim() || null,
+    owner_first_name: document.getElementById('f-owner-first-name').value.trim() || null,
+    owner_last_name:  document.getElementById('f-owner-last-name').value.trim() || null,
+    owner_phone:      document.getElementById('f-owner-phone').value.trim() || null,
   };
 
   if (!payload.org_name || !payload.location || !payload.niche) {
@@ -542,7 +547,8 @@ document.getElementById('create-submit').addEventListener('click', async () => {
     if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
 
     closeCreate();
-    ['f-org-name','f-slug','f-location','f-niche'].forEach(id => {
+    ['f-org-name','f-slug','f-location','f-niche',
+     'f-owner-email','f-owner-first-name','f-owner-last-name','f-owner-phone'].forEach(id => {
       const el = document.getElementById(id);
       if (el.tagName === 'SELECT') el.value = ''; else el.value = '';
     });
@@ -589,6 +595,15 @@ function showSuccess(data) {
         <i class="fa-regular fa-copy"></i>
       </button>
     </div>
+    ${data.owner && data.owner.temporary_password ? `
+    <div class="bg-slate-950 rounded-lg p-3 border border-amber-700">
+        <div class="text-[10px] text-amber-500 uppercase tracking-wider mb-1">Owner credentials (emailed)</div>
+        <div class="text-sm">
+            <div><strong>Email:</strong> ${esc(data.owner.email)}</div>
+            <div class="mt-1"><strong>Temp password:</strong> <code class="text-amber-300 kbd">${esc(data.owner.temporary_password)}</code></div>
+        </div>
+    </div>
+` : ''}
     <p class="text-xs text-slate-500">
       The storefront is <strong>unpublished</strong>. Load inventory and configure branding, then publish from the list.
     </p>
