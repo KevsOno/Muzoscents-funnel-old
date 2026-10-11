@@ -5360,6 +5360,12 @@ class CreateOrgRequest(BaseModel):
 DEFAULT_STOREFRONT_CONFIG = {
     "theme": "modern",  # modern | minimal | bold
 
+    "layout": {
+        "product_card": "grid",       # grid | list | editorial | rounded
+        "hero":         "split",      # split | minimal | full | centred
+        "grid_density": "normal",     # normal | dense | sparse
+    },
+
     "branding": {
         "store_name":    None,       # falls back to org_name
         "tagline":       None,
@@ -5453,7 +5459,6 @@ DEFAULT_STOREFRONT_CONFIG = {
         "min_order_naira":    None,
     },
 }
-
 
 def merge_storefront_config(org_config: Optional[dict]) -> dict:
     """
