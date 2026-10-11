@@ -5914,6 +5914,25 @@ async def update_own_storefront_config(
     if "theme" in patch and patch["theme"] not in ("modern", "minimal", "bold"):
         raise HTTPException(status_code=400, detail="Unknown theme")
 
+    # Layout whitelist
+    if "layout" in patch and patch["layout"]:
+        if not isinstance(patch["layout"], dict):
+            raise HTTPException(status_code=400, detail="'layout' must be an object")
+
+        ALLOWED_CARDS  = {"grid", "list", "editorial", "rounded"}
+        ALLOWED_HEROES = {"split", "minimal", "full", "centred"}
+        ALLOWED_DENS   = {"normal", "dense", "sparse"}
+
+        pc = patch["layout"].get("product_card")
+        if pc and pc not in ALLOWED_CARDS:
+            raise HTTPException(status_code=400, detail=f"Unknown product_card: {pc}")
+        h = patch["layout"].get("hero")
+        if h and h not in ALLOWED_HEROES:
+            raise HTTPException(status_code=400, detail=f"Unknown hero: {h}")
+        gd = patch["layout"].get("grid_density")
+        if gd and gd not in ALLOWED_DENS:
+            raise HTTPException(status_code=400, detail=f"Unknown grid_density: {gd}")
+
     # Colour sanity — must look like #rrggbb
     if "branding" in patch:
         for key in ("primary_color", "accent_color", "background", "text_color"):
@@ -5969,7 +5988,6 @@ async def update_own_storefront_config(
         raise HTTPException(status_code=500, detail="Failed to save config")
 
     return {"config": merge_storefront_config(current)}
-
 
 @app.post("/storefront/publish")
 async def publish_own_storefront(
