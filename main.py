@@ -462,25 +462,25 @@ async def check_org_feature(org_id: str, feature_key: str) -> None:
         )
 
 
-def require_feature(feature_key: str):
+def require_feature(feature_key: str, allowed_roles: Optional[List[str]] = None):
     """
-    FastAPI dependency for authenticated endpoints. Resolves org_id from
-    the caller's membership and checks the feature entitlement.
+    FastAPI dependency. Resolves org_id from the caller's membership,
+    optionally enforces a role list, and then checks the feature
+    entitlement. Returns the (user_id, org_id, role) tuple.
     """
     async def check(user_data: Tuple[str, str, str] = Depends(get_current_user_with_role)):
         user_id, org_id, role = user_data
+        if allowed_roles is not None and role not in allowed_roles:
+            raise HTTPException(status_code=403, detail=f"Access denied. Required role: {allowed_roles}")
         await check_org_feature(org_id, feature_key)
         return user_data
     return check
 
-
-def require_feature_any(*feature_keys: str):
-    """
-    Like require_feature, but passes if ANY of the listed features are on.
-    Useful for endpoints that serve multiple use cases.
-    """
+def require_feature_any(*feature_keys: str, allowed_roles: Optional[List[str]] = None):
     async def check(user_data: Tuple[str, str, str] = Depends(get_current_user_with_role)):
         user_id, org_id, role = user_data
+        if allowed_roles is not None and role not in allowed_roles:
+            raise HTTPException(status_code=403, detail=f"Access denied. Required role: {allowed_roles}")
         if not ENFORCE_FEATURES:
             return user_data
         org = await fetch_org_flags(org_id)
@@ -494,7 +494,6 @@ def require_feature_any(*feature_keys: str):
             )
         return user_data
     return check
-
 
 # ------------------------------------------------------------------
 # FastAPI app – MUST BE DEFINED BEFORE ANY DECORATOR
@@ -5000,7 +4999,9 @@ async def list_locations(
 async def create_location(
     request: Request,
     loc: LocationCreate,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
+    user_data: Tuple[str, str, str] = Depends(
+        require_feature("multi_location", allowed_roles=["owner", "admin", "inventory_manager"])
+    )
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -5055,7 +5056,9 @@ async def update_location(
     request: Request,
     location_id: int,
     loc: LocationUpdate,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
+    user_data: Tuple[str, str, str] = Depends(
+        require_feature("multi_location", allowed_roles=["owner", "admin", "inventory_manager"])
+    )
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -5117,7 +5120,9 @@ async def update_location(
 async def delete_location(
     request: Request,
     location_id: int,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin"]))
+    user_data: Tuple[str, str, str] = Depends(
+        require_feature("multi_location", allowed_roles=["owner", "admin"])
+    )
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -5162,10 +5167,19 @@ async def get_inventory_by_location(
     location_id: Optional[str] = None,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager", "sales_rep", "finance"]))
+    user_data: Tuple[str, str, str] = Depends(
+        require_role(["owner", "admin", "inventory_manager", "sales_rep", "finance"])
+    )
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
+
+    # The all-locations fan-out is a multi-location feature. The
+    # single-location read is available on every plan because every
+    # org has at least one location.
+    if location_id is None:
+        await check_org_feature(org_id, "multi_location")
+
     client = get_supabase()
 
     # Build the query in one shot — supabase-py does NOT allow calling .select() twice.
@@ -9989,7 +10003,9 @@ async def get_expiring_products(
     days_threshold: int = Query(180, ge=1, le=365),
     alert_level: Optional[str] = Query(None),
     location_id: Optional[str] = None,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
+    user_data: Tuple[str, str, str] = Depends(
+        require_feature("expiry_tracking", allowed_roles=["owner", "admin", "inventory_manager"])
+    )
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -10503,7 +10519,9 @@ async def transfer_batch_between_locations(
 @app.get("/inventory/expiry-dashboard")
 async def expiry_dashboard(
     request: Request,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
+    user_data: Tuple[str, str, str] = Depends(
+        require_feature("expiry_tracking", allowed_roles=["owner", "admin", "inventory_manager"])
+    )
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -11492,7 +11510,9 @@ async def pos_terminal_checkout(
     request: Request,
     req: POSCheckoutRequest,
     background_tasks: BackgroundTasks,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "sales_rep"]))
+    user_data: Tuple[str, str, str] = Depends(
+        require_feature("offline_pos", allowed_roles=["owner", "admin", "sales_rep"])
+    )
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     user_id, org_id, _ = user_data
