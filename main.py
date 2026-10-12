@@ -6078,7 +6078,7 @@ async def admin_publish_org(
     if not res.data:
         raise HTTPException(status_code=404, detail="Organisation not found")
     return {"published": publish, "organisation": res.data[0]}
-
+    
 @app.post("/admin/orgs/{org_id}/regenerate-invite")
 async def admin_regenerate_invite(
     request: Request,
@@ -6088,8 +6088,13 @@ async def admin_regenerate_invite(
     await rate_limit(get_client_ip(request))
     _require_admin_key(x_admin_key)
     new_code = await generate_invite_code()
+
+    # Admin client: fresh service-role client per call. The invite-code
+    # update must touch any org in the table.
+    client = get_admin_supabase()
+
     res = await run_sync_db_call(
-        get_supabase().table("organisations")
+        client.table("organisations")
         .update({
             "invite_code": new_code,
             "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -6109,7 +6114,13 @@ async def admin_org_stats(
 ):
     await rate_limit(get_client_ip(request))
     _require_admin_key(x_admin_key)
-    client = get_supabase()
+
+    # Admin client: fresh service-role client per call. This endpoint
+    # counts every org and every membership platform-wide, so RLS must
+    # not scope either query to any single user's view. Under the old
+    # polluted singleton, these counts silently matched one user's
+    # memberships instead of the whole platform.
+    client = get_admin_supabase()
 
     orgs_res = await run_sync_db_call(
         client.table("organisations").select("id, vertical, storefront_published").execute
@@ -6131,7 +6142,6 @@ async def admin_org_stats(
         },
         "total_users": len(members),
     }
-
 
 # ─────────────────────────────────────────────────────────────────
 # STOREFRONT — public read
