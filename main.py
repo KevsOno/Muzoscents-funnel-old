@@ -3612,8 +3612,10 @@ async def get_current_user(authorization: str = Header(None)) -> Optional[Tuple[
         return None
     token = authorization.split(" ")[1]
     try:
-        client = get_supabase()
-        user = await run_sync_db_call(client.auth.get_user, token)
+        # Auth operations use a throwaway anon client so the cached
+        # service-role client never has a user session attached to it.
+        auth_client = get_user_supabase()
+        user = await run_sync_db_call(auth_client.auth.get_user, token)
         if user and user.user:
             email = getattr(user.user, 'email', None)
             logger.info(f"get_current_user: user_id={user.user.id}, email={email}")
@@ -3624,7 +3626,7 @@ async def get_current_user(authorization: str = Header(None)) -> Optional[Tuple[
     except Exception as e:
         logger.warning(f"get_current_user: Invalid token - {e}")
         return None
-
+        
 async def get_current_org(authorization: str = Header(None), x_selected_org_id: Optional[str] = None) -> Tuple[str, str]:
     """FIXED: Enforces role validation per tenant instance - prevents cross-tenant privilege escalation."""
     user_info = await get_current_user(authorization)
