@@ -410,6 +410,91 @@ def effective_limit(org: Dict, metric: str):
     tier = PLAN_TIERS.get((org or {}).get("plan_tier") or "", {})
     return tier.get(f"max_{metric}")
 
+# ====================================================================
+# FEATURE ENFORCEMENT
+#
+# Master switch. When false, every feature check short-circuits to
+# "allowed", so we can ship the plumbing without changing behaviour.
+# Flip ENFORCE_FEATURES=true in the Space secrets to turn it on.
+# ====================================================================
+
+ENFORCE_FEATURES = os.environ.get("ENFORCE_FEATURES", "false").lower() == "true"
+
+
+async def fetch_org_flags(org_id: str) -> Optional[Dict]:
+    """
+    Read the org row that carries plan/status/overrides. One indexed
+    lookup. Returns None if the org doesn't exist.
+    """
+    if not org_id:
+        return None
+    client = get_admin_supabase()
+    try:
+        res = await run_sync_db_call(
+            client.table("organisations")
+            .select("id, status, plan_tier, feature_overrides, limits_overrides")
+            .eq("id", org_id)
+            .maybe_single()
+            .execute
+        )
+        return res.data if res else None
+    except Exception as e:
+        logger.error("fetch_org_flags failed", org_id=org_id, error=str(e))
+        return None
+
+
+async def check_org_feature(org_id: str, feature_key: str) -> None:
+    """
+    Raise 402 if the org is not entitled to the feature.
+    No-op when ENFORCE_FEATURES is off.
+    """
+    if not ENFORCE_FEATURES:
+        return
+    org = await fetch_org_flags(org_id)
+    if not org:
+        raise HTTPException(status_code=404, detail="Organisation not found")
+    features = effective_features(org)
+    if not features.get(feature_key, False):
+        raise HTTPException(
+            status_code=402,
+            detail=f"Feature '{feature_key}' is not enabled for this organisation. "
+                   f"Contact support to upgrade your plan.",
+        )
+
+
+def require_feature(feature_key: str):
+    """
+    FastAPI dependency for authenticated endpoints. Resolves org_id from
+    the caller's membership and checks the feature entitlement.
+    """
+    async def check(user_data: Tuple[str, str, str] = Depends(get_current_user_with_role)):
+        user_id, org_id, role = user_data
+        await check_org_feature(org_id, feature_key)
+        return user_data
+    return check
+
+
+def require_feature_any(*feature_keys: str):
+    """
+    Like require_feature, but passes if ANY of the listed features are on.
+    Useful for endpoints that serve multiple use cases.
+    """
+    async def check(user_data: Tuple[str, str, str] = Depends(get_current_user_with_role)):
+        user_id, org_id, role = user_data
+        if not ENFORCE_FEATURES:
+            return user_data
+        org = await fetch_org_flags(org_id)
+        if not org:
+            raise HTTPException(status_code=404, detail="Organisation not found")
+        features = effective_features(org)
+        if not any(features.get(k, False) for k in feature_keys):
+            raise HTTPException(
+                status_code=402,
+                detail=f"None of {list(feature_keys)} is enabled for this organisation.",
+            )
+        return user_data
+    return check
+
 
 # ------------------------------------------------------------------
 # FastAPI app – MUST BE DEFINED BEFORE ANY DECORATOR
