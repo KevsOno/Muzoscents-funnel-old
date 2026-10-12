@@ -6015,7 +6015,11 @@ async def admin_update_org(
 ):
     await rate_limit(get_client_ip(request))
     _require_admin_key(x_admin_key)
-    client = get_supabase()
+
+    # Admin client: fresh service-role client per call. The slug clash
+    # check must see every org in the table, not just the ones the last
+    # logged-in user happens to belong to.
+    client = get_admin_supabase()
 
     update = {k: v for k, v in req.dict(exclude_unset=True).items() if v is not None}
 
