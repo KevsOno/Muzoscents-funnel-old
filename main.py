@@ -6061,8 +6061,13 @@ async def admin_publish_org(
     body = await request.json()
     publish = bool(body.get("published", True))
 
+    # Admin client: fresh service-role client per call. The publish flip
+    # must update any org in the table, not just ones the last logged-in
+    # user belongs to.
+    client = get_admin_supabase()
+
     res = await run_sync_db_call(
-        get_supabase().table("organisations")
+        client.table("organisations")
         .update({
             "storefront_published": publish,
             "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -6073,7 +6078,6 @@ async def admin_publish_org(
     if not res.data:
         raise HTTPException(status_code=404, detail="Organisation not found")
     return {"published": publish, "organisation": res.data[0]}
-
 
 @app.post("/admin/orgs/{org_id}/regenerate-invite")
 async def admin_regenerate_invite(
