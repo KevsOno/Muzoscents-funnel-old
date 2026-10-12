@@ -164,33 +164,27 @@ def get_client_ip(request: Request) -> str:
 # ------------------------------------------------------------------
 # Supabase clients
 #
-# Three distinct clients, three distinct jobs:
+# Three distinct clients, three distinct jobs.
 #
-#   get_supabase()        Cached, service-role client for business reads
-#                         and writes. Its `.auth` surface is guarded so
-#                         no code path can attach a user JWT to it. That
-#                         was the cause of the /admin/orgs RLS-scoping
-#                         bug: an anonymous sign_in() on the shared
-#                         client silently scoped every subsequent
-#                         request to the last-logged-in user, because
-#                         PostgREST prefers the Authorization header
-#                         over the apikey header when both are present.
+# IMPORTANT: supabase-py / gotrue-py stores the auth session in state
+# that is keyed by SUPABASE_URL, not by client instance. Calling
+# sign_in_with_password on ANY client created from this URL writes the
+# resulting session to that shared store, and every other client built
+# from the same URL then reads it back. The result: a fresh
+# `create_client(SUPABASE_URL, SERVICE_ROLE_KEY)` can come out already
+# "logged in" as the last person who authenticated — and its PostgREST
+# requests will send that user's JWT, so RLS applies and the service
+# role is silently ignored.
 #
-#   get_admin_supabase()  Fresh service-role client, built per call.
-#                         Never cached. For one-shot admin and system
-#                         operations that want a clean, un-sessioned
-#                         client every time.
-#
-#   get_user_supabase()   Fresh anon-key client, built per call. ONLY
-#                         for auth operations (sign_in, sign_up,
-#                         refresh_session, sign_out, get_user,
-#                         reset_password_for_email). Never cache this.
+# Every client we build therefore calls _force_clear_auth_session()
+# before we hand it to the caller. The guard on the cached client
+# blocks the specific mutator methods; this clears the shared store
+# underneath so a leak can't survive even if the guard is bypassed.
 # ------------------------------------------------------------------
 
-# Auth methods that mutate the client's in-memory session.
-# Any call to these on a guarded client raises immediately, so a
-# regression here fails loudly at the call site instead of silently
-# poisoning the process for up to an hour.
+# Auth methods that mutate a client's session. Any call on a guarded
+# client raises immediately, so a regression fails loudly at the call
+# site instead of silently poisoning the process for up to an hour.
 _AUTH_MUTATORS = frozenset({
     "sign_in",
     "sign_in_with_password",
@@ -207,9 +201,8 @@ _AUTH_MUTATORS = frozenset({
 
 class _GuardedAuth:
     """
-    Wraps a Supabase `client.auth` object and blocks any method that would
-    mutate the underlying client's session. Reads (get_user, get_session,
-    get_claims) pass through untouched.
+    Wraps a Supabase client's `.auth` and blocks any mutator. Reads
+    (get_user, get_session, get_claims) fall through untouched.
     """
     __slots__ = ("_inner",)
 
@@ -229,8 +222,8 @@ class _GuardedAuth:
 class _GuardedClient:
     """
     Wraps the cached Supabase client. `.auth` returns the guarded variant.
-    Every other attribute falls through to the real client unchanged, so
-    .table(...), .rpc(...), .storage, etc. all work as before.
+    Every other attribute falls through unchanged, so .table(), .rpc(),
+    .storage, etc. all work as before.
     """
     __slots__ = ("_inner",)
 
@@ -243,13 +236,59 @@ class _GuardedClient:
         return getattr(self._inner, name)
 
 
+def _force_clear_auth_session(client: Client) -> None:
+    """
+    Wipe any inherited auth session on a freshly-created Supabase client.
+
+    supabase-py shares auth state per SUPABASE_URL. A sign_in on one
+    client leaks into every other client from the same URL. This clears
+    both the in-memory session fields and the storage layer so a fresh
+    client authenticates with its apikey alone — never with whatever
+    user last signed in anywhere.
+
+    This is defence in depth: the guarded client blocks the mutator
+    methods by name; this clears the state those methods would write to.
+    """
+    try:
+        auth = client.auth
+    except Exception:
+        return
+
+    # 1. In-memory session fields the PostgREST sub-client consults when
+    #    it builds the Authorization header on the next request.
+    for attr in ("_current_session", "_current_user"):
+        try:
+            if hasattr(auth, attr):
+                setattr(auth, attr, None)
+        except Exception:
+            pass
+
+    # 2. Storage layer. Key formats vary across gotrue versions, so try
+    #    the common ones and ignore failures — step 1 is the real fix.
+    try:
+        storage = getattr(auth, "_storage", None)
+        if storage is not None:
+            url = (SUPABASE_URL or "").rstrip("/")
+            for key in (
+                "supabase.auth.token",
+                f"sb-{url}-auth-token",
+                "gotrue.auth.token",
+            ):
+                try:
+                    storage.remove_item(key)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+
 supabase_client: Optional[Client] = None
 last_client_check = None
 
 
 def get_supabase():
     """
-    Cached service-role client. Its `.auth` is guarded so it can never be
+    Cached service-role client. `.auth` is guarded so it can never be
     mutated with a user session. Use get_user_supabase() for auth.
     """
     global supabase_client, last_client_check
@@ -264,6 +303,7 @@ def get_supabase():
         else:
             raw = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
             logger.info("Supabase client created with SERVICE ROLE KEY (RLS bypassed)")
+        _force_clear_auth_session(raw)
         supabase_client = _GuardedClient(raw)
         last_client_check = now
     return supabase_client
@@ -271,12 +311,17 @@ def get_supabase():
 
 def get_admin_supabase() -> Client:
     """
-    Fresh service-role client, built per call. Never cached, never carries
-    a user session. Use for /admin/* and one-off system operations.
+    Fresh service-role client, built per call. Never cached, never
+    carries a user session. Use for /admin/* and one-off system ops.
+
+    Clears any inherited auth session before returning — see
+    _force_clear_auth_session for the why.
     """
     if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
         raise RuntimeError("Missing service role key for admin client")
-    return create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    _force_clear_auth_session(client)
+    return client
 
 
 def get_user_supabase() -> Client:
@@ -285,13 +330,16 @@ def get_user_supabase() -> Client:
       sign_in, sign_up, refresh_session, sign_out, get_user,
       reset_password_for_email.
 
-    Must NEVER be cached and must NEVER be used for data reads — it carries
-    no service role, so RLS applies with whatever user session is attached.
-    Build a new one on every auth operation and let it be garbage collected.
+    Must NEVER be cached and must NEVER be used for data reads — it
+    carries no service role, so RLS applies with whatever session is
+    attached. Clears any inherited session first so a fresh anon client
+    isn't accidentally pre-authenticated as the last person to log in.
     """
     if not SUPABASE_URL or not SUPABASE_ANON_KEY:
         raise RuntimeError("Missing anon key for user auth client")
-    return create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    _force_clear_auth_session(client)
+    return client
 # ===================== JWT ENRICHMENT =====================
 async def _admin_set_app_metadata(user_id: str, metadata: dict) -> bool:
     """
