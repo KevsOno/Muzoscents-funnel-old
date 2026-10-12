@@ -6072,18 +6072,61 @@ async def admin_list_orgs(
         client.table("organisations")
         .select(
             "id, org_name, slug, vertical, location, niche, budget, "
-            "invite_code, storefront_published, created_at"
+            "invite_code, storefront_published, created_at, "
+            "plan_tier, plan_started_at, plan_renews_at, status, "
+            "feature_overrides, limits_overrides, partner_id, admin_notes"
         )
         .order("created_at", desc=True)
         .execute
     )
     orgs = res.data or []
 
-    # Enrich each row with member count + owner info.
+    # Enrich each row with plan metadata, effective features, usage counts,
+    # and owner info.
     for org in orgs:
+        # ── Plan metadata from the static catalog ──
+        tier = PLAN_TIERS.get(org.get("plan_tier") or "", {})
+        org["plan_label"]           = tier.get("label")
+        org["plan_monthly_naira"]   = tier.get("monthly_naira")
+        org["plan_vertical"]        = tier.get("vertical")
+
+        # ── Effective features (merged tier + overrides, status-aware) ──
+        org["features"]             = effective_features(org)
+        org["has_feature_overrides"] = bool(org.get("feature_overrides"))
+        org["has_limit_overrides"]   = bool(org.get("limits_overrides"))
+
+        # ── Live usage counts ──
+        # NOTE: per-org COUNT queries. Fine at 5 orgs; replaced by the
+        # nightly rollup in Phase 5 when the org count grows.
+        org["skus"] = 0
+        org["locations"] = 0
+        try:
+            sku_res = await run_sync_db_call(
+                client.table("inventory")
+                .select("id", count="exact")
+                .eq("org_id", org["id"])
+                .limit(1)
+                .execute
+            )
+            org["skus"] = sku_res.count or 0
+        except Exception as e:
+            logger.warning(f"admin_list_orgs: sku count failed for {org['id']}: {e}")
+        try:
+            loc_res = await run_sync_db_call(
+                client.table("locations")
+                .select("id", count="exact")
+                .eq("org_id", org["id"])
+                .limit(1)
+                .execute
+            )
+            org["locations"] = loc_res.count or 0
+        except Exception as e:
+            logger.warning(f"admin_list_orgs: location count failed for {org['id']}: {e}")
+
+        # ── Owner + member count ──
         org["member_count"] = 0
-        org["owner_email"] = None
-        org["owner_name"] = None
+        org["owner_email"]  = None
+        org["owner_name"]   = None
         try:
             members_res = await run_sync_db_call(
                 client.table("org_members")
@@ -6112,6 +6155,110 @@ async def admin_list_orgs(
             logger.warning(f"admin_list_orgs enrichment failed for {org['id']}: {e}")
 
     return {"organisations": orgs}
+
+
+@app.get("/admin/orgs/{org_id}")
+async def admin_get_org(
+    request: Request,
+    org_id: str,
+    x_admin_key: str = Header(..., alias="X-Admin-Key"),
+):
+    await rate_limit(get_client_ip(request))
+    _require_admin_key(x_admin_key)
+    client = get_admin_supabase()
+
+    res = await run_sync_db_call(
+        client.table("organisations")
+        .select("*")
+        .eq("id", org_id)
+        .maybe_single()
+        .execute
+    )
+    if not res or not res.data:
+        raise HTTPException(status_code=404, detail="Organisation not found")
+
+    org = res.data
+
+    tier = PLAN_TIERS.get(org.get("plan_tier") or "", {})
+    org["plan_definition"] = tier
+    org["features"]        = effective_features(org)
+
+    # Live usage counts for the drawer
+    try:
+        sku_res = await run_sync_db_call(
+            client.table("inventory").select("id", count="exact")
+            .eq("org_id", org_id).limit(1).execute
+        )
+        org["skus"] = sku_res.count or 0
+    except Exception:
+        org["skus"] = 0
+
+    try:
+        loc_res = await run_sync_db_call(
+            client.table("locations").select("id", count="exact")
+            .eq("org_id", org_id).limit(1).execute
+        )
+        org["locations"] = loc_res.count or 0
+    except Exception:
+        org["locations"] = 0
+
+    try:
+        mem_res = await run_sync_db_call(
+            client.table("org_members").select("user_id", count="exact")
+            .eq("org_id", org_id).limit(1).execute
+        )
+        org["member_count"] = mem_res.count or 0
+    except Exception:
+        org["member_count"] = 0
+
+    return {"organisation": org}
+
+@app.get("/admin/plans")
+async def admin_list_plans(
+    request: Request,
+    x_admin_key: str = Header(..., alias="X-Admin-Key"),
+):
+    await rate_limit(get_client_ip(request))
+    _require_admin_key(x_admin_key)
+
+    return {
+        "plans": [
+            {"key": key, **tier}
+            for key, tier in PLAN_TIERS.items()
+        ],
+        "features": FEATURE_CATALOG,
+        "metrics":  METRIC_CATALOG,
+    }
+
+
+@app.get("/admin/audit")
+async def admin_audit_log(
+    request: Request,
+    x_admin_key: str = Header(..., alias="X-Admin-Key"),
+    org_id: Optional[str] = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    await rate_limit(get_client_ip(request))
+    _require_admin_key(x_admin_key)
+    client = get_admin_supabase()
+
+    query = client.table("admin_audit").select("*", count="exact")
+    if org_id:
+        query = query.eq("org_id", org_id)
+    res = await run_sync_db_call(
+        query.order("created_at", desc=True)
+        .range(offset, offset + limit - 1)
+        .execute
+    )
+    return {
+        "entries": res.data or [],
+        "total":   res.count or 0,
+        "limit":   limit,
+        "offset":  offset,
+    }
+
+
 
 async def _create_or_attach_owner(
     org_id: str,
