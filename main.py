@@ -331,10 +331,17 @@ async def resolve_default_branch(org_id: str) -> Optional[str]:
     Return the org's default (oldest) branch id. Every org gets a MAIN
     branch seeded at migration time. Returns None only if the org has
     no branches at all, which is unreachable post-migration.
+
+    Uses the admin client. Callers include public checkout, webhook
+    handlers, and admin paths that run without — or on behalf of —
+    any single authenticated user. RLS scoping would return nothing
+    in those contexts, silently leaving branch_id NULL on the row
+    being written. The explicit .eq("org_id", org_id) filter is the
+    real tenant boundary here.
     """
     if not org_id:
         return None
-    client = get_supabase()
+    client = get_admin_supabase()
     result = await run_sync_db_call(
         client.table("branches")
         .select("id")
@@ -363,7 +370,6 @@ async def resolve_branch_for_write(
     if requested:
         return requested
     return await resolve_default_branch(org_id)
-
 # ===================== ASYNC DB HELPER =====================
 async def run_sync_db_call(sync_func, *args, **kwargs):
     """Run a sync supabase-py call in a thread to avoid blocking the event loop."""
