@@ -5081,9 +5081,12 @@ async def register(request: Request, auth: RegisterRequest):
 async def login(request: Request, auth: LoginRequest):
     await rate_limit(get_client_ip(request))
     try:
-        client = get_supabase()
-        resp = await run_sync_db_call(client.auth.sign_in_with_password, {"email": auth.email, "password": auth.password})
+        # Auth operations use a throwaway anon client so the shared
+        # service-role client never carries a user session.
+        auth_client = get_user_supabase()
+        resp = await run_sync_db_call(auth_client.auth.sign_in_with_password, {"email": auth.email, "password": auth.password})
         if resp.session:
+            client = get_supabase()
             profile_res = await run_sync_db_call(client.table("profiles").select("first_name, last_name").eq("id", resp.user.id).maybe_single().execute)
             profile_data = profile_res.data if profile_res else None
 
@@ -5107,7 +5110,9 @@ async def login(request: Request, auth: LoginRequest):
 async def refresh_token(request: Request, req: RefreshRequest):
     await rate_limit(get_client_ip(request))
     try:
-        resp = await run_sync_db_call(get_supabase().auth.refresh_session, req.refresh_token)
+        # Refresh must run on a throwaway client — never on the shared one.
+        auth_client = get_user_supabase()
+        resp = await run_sync_db_call(auth_client.auth.refresh_session, req.refresh_token)
         if resp.session:
             return {
                 "access_token": resp.session.access_token,
@@ -5125,8 +5130,13 @@ async def logout(request: Request, authorization: str = Header(None)):
         return {"message": "Logged out (no token)"}
 
     token = authorization.split(" ")[1]
+    # The client holds the JWT; the server is stateless. There is no
+    # server-side session on the shared client to clear, and calling
+    # sign_out on it would be a no-op at best and a footgun at worst.
+    # We do not attempt to revoke the token here; the browser discards it.
     try:
-        await run_sync_db_call(get_supabase().auth.sign_out)
+        auth_client = get_user_supabase()
+        await run_sync_db_call(auth_client.auth.sign_out)
     except Exception as e:
         logger.warning(f"Logout error (ignored): {e}")
 
@@ -5157,7 +5167,8 @@ async def me(request: Request, authorization: str = Header(None), x_selected_org
         if authorization and authorization.startswith("Bearer "):
             token = authorization.split(" ")[1]
         if token:
-            user = await run_sync_db_call(client.auth.get_user, token)
+            auth_client = get_user_supabase()
+            user = await run_sync_db_call(auth_client.auth.get_user, token)
             if user and user.user:
                 app_meta = getattr(user.user, "app_metadata", None) or {}
                 branch_scope = app_meta.get("branch_scope")
@@ -5174,7 +5185,6 @@ async def me(request: Request, authorization: str = Header(None), x_selected_org
         "email": email,
         "branch_scope": branch_scope,
     }
-
 # ------------------------------------------------------------------
 # TEAM MANAGEMENT
 # ------------------------------------------------------------------
