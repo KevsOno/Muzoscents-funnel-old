@@ -5732,7 +5732,6 @@ async def admin_list_orgs(
     return {"organisations": orgs}
 
 
-@app.post("/admin/orgs")
 async def _create_or_attach_owner(
     org_id: str,
     email: str,
@@ -5748,11 +5747,18 @@ async def _create_or_attach_owner(
     - Then upserts org_members with role='owner'.
     - Stamps JWT metadata.
     Returns { user_id, email, created, temporary_password }.
+
+    NOTE: this is a helper, not an endpoint. The @app.post("/admin/orgs")
+    decorator that used to be attached here has been moved to its rightful
+    owner, admin_create_org. This function is only ever called from there.
     """
     if not SUPABASE_SERVICE_ROLE_KEY:
         raise HTTPException(status_code=500, detail="Service role key required to create users")
 
-    client = get_supabase()
+    # Admin client: fresh service-role client, built per call. Never carries
+    # a session, always bypasses RLS, so the profile lookup and org_members
+    # upsert see the whole table regardless of who last logged in.
+    client = get_admin_supabase()
 
     headers = {
         "apikey": SUPABASE_SERVICE_ROLE_KEY,
@@ -5866,8 +5872,8 @@ async def _create_or_attach_owner(
         "created": created,
         "temporary_password": temp_password,
     }
-
-
+    
+@app.post("/admin/orgs")
 async def admin_create_org(
     request: Request,
     req: AdminCreateOrgRequest,
