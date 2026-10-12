@@ -3583,12 +3583,15 @@ async def generate_unique_slug(org_name: str, exclude_org_id: Optional[str] = No
     """
     Turn a name into a slug that isn't already taken.
     Appends -2, -3, ... on collision. Reserves system slugs.
+
+    Uses the admin client so the collision check sees every org row,
+    even if the cached client ever carries a user session.
     """
     base = slugify(org_name) or "org"
     if base in RESERVED_SLUGS:
         base = f"{base}-org"
 
-    client = get_supabase()
+    client = get_admin_supabase()
     for attempt in range(50):
         candidate = base if attempt == 0 else f"{base}-{attempt + 1}"
         if candidate in RESERVED_SLUGS:
@@ -3601,7 +3604,6 @@ async def generate_unique_slug(org_name: str, exclude_org_id: Optional[str] = No
             return candidate
 
     return f"{base}-{uuid.uuid4().hex[:6]}"
-
 async def get_next_auto_batch_number() -> str:
     client = get_supabase()
     try:
