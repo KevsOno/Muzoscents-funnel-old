@@ -5897,7 +5897,12 @@ async def admin_create_org(
 ):
     await rate_limit(get_client_ip(request))
     _require_admin_key(x_admin_key)
-    client = get_supabase()
+
+    # Admin client: fresh service-role client per call, never a cached
+    # singleton that could carry a user session. Every read and write in
+    # this handler (slug clash check, org insert, warehouse seed) needs
+    # to see the whole table — RLS must not scope any of it.
+    client = get_admin_supabase()
 
     # ── Slug resolution ──
     if req.slug and req.slug.strip():
