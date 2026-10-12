@@ -5408,6 +5408,8 @@ async def admin_reset_password(
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
 
+    # Ownership check uses the shared service-role client so RLS doesn't
+    # hide rows from us. This is a pure read — no auth mutation.
     client = get_supabase()
     profile = await run_sync_db_call(client.table("profiles").select("id").eq("email", email).maybe_single().execute)
     if not profile.data:
@@ -5417,7 +5419,10 @@ async def admin_reset_password(
         raise HTTPException(status_code=403, detail="User not in your organisation")
 
     try:
-        await run_sync_db_call(client.auth.reset_password_for_email, email)
+        # Auth operation — must run on a throwaway anon client so the
+        # shared service-role client never picks up a session.
+        auth_client = get_user_supabase()
+        await run_sync_db_call(auth_client.auth.reset_password_for_email, email)
         return {"message": f"Password reset email sent to {email}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
