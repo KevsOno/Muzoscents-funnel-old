@@ -408,8 +408,12 @@ async def get_default_location(org_id: str) -> Optional[int]:
     """
     Return the ID of the main warehouse location.
     If none, return the first location available.
+
+    Uses the admin client so the lookup always returns the org's own
+    default location regardless of who last authenticated. Called from
+    /admin/reconcile-stock and other admin paths that iterate all orgs.
     """
-    client = get_supabase()
+    client = get_admin_supabase()
     result = await run_sync_db_call(
         client.table("locations")
         .select("id")
@@ -420,6 +424,7 @@ async def get_default_location(org_id: str) -> Optional[int]:
     )
     return result.data[0]["id"] if result.data else None
 
+
 async def get_location_for_channel(org_id: str, channel: str) -> Optional[str]:
     """
     Resolve the fulfillment location for a sales channel.
@@ -429,6 +434,13 @@ async def get_location_for_channel(org_id: str, channel: str) -> Optional[str]:
       'online' → prefers type='online_fulfillment', falls back to 'warehouse'
 
     Returns None if the org has no locations at all (unreachable post-migration).
+
+    Uses the admin client because callers include webhook handlers and
+    public checkout paths that run without any authenticated user. RLS
+    scoping would return nothing in those contexts. For authenticated
+    callers, the explicit .eq("org_id", org_id) filter is the real
+    tenant boundary; the admin client just removes a second, unreliable
+    enforcement layer from the picture.
     """
     if not org_id:
         return None
@@ -438,7 +450,7 @@ async def get_location_for_channel(org_id: str, channel: str) -> Optional[str]:
         "online": ["online_fulfillment", "warehouse"],
     }.get(channel, ["warehouse"])
 
-    client = get_supabase()
+    client = get_admin_supabase()
     for loc_type in priority:
         result = await run_sync_db_call(
             client.table("locations")
