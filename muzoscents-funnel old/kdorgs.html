@@ -3,16 +3,63 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Organisation Registry · Kevs bOS</title>
+<title>Control Center · Kevs bOS</title>
 <link rel="stylesheet" href="/tailwind.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
 <style>
   body { background: #0F172A; }
-  .org-card { transition: border-color 0.15s; }
-  .org-card:hover { border-color: #475569; }
+  .org-card { transition: border-color 0.15s, background 0.15s; cursor: pointer; }
+  .org-card:hover { border-color: #475569; background: rgba(30,41,59,0.8); }
   .copy-btn:active { transform: scale(0.9); }
-  .modal { backdrop-filter: blur(4px); }
   .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  /* Tab bar */
+  .tab-bar { display: flex; gap: 0.25rem; border-bottom: 1px solid #334155; margin-bottom: 1.5rem; overflow-x: auto; }
+  .tab-btn { padding: 0.75rem 1.1rem; font-size: 0.85rem; font-weight: 500; color: #94a3b8; border-bottom: 2px solid transparent; transition: 0.15s; white-space: nowrap; background: transparent; border-top: none; border-left: none; border-right: none; cursor: pointer; }
+  .tab-btn:hover { color: #e2e8f0; }
+  .tab-btn.active { color: #60a5fa; border-bottom-color: #60a5fa; }
+  .tab-btn i { margin-right: 0.4rem; }
+
+  /* Drawer */
+  .drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 40; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+  .drawer-overlay.open { opacity: 1; pointer-events: auto; }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 100%; max-width: 640px; background: #0F172A; z-index: 50; transform: translateX(100%); transition: transform 0.25s ease; display: flex; flex-direction: column; border-left: 1px solid #334155; box-shadow: -20px 0 40px rgba(0,0,0,0.5); }
+  .drawer.open { transform: translateX(0); }
+  .drawer-head { padding: 1.25rem 1.5rem; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+  .drawer-tabs { display: flex; gap: 0.1rem; border-bottom: 1px solid #334155; padding: 0 1.5rem; overflow-x: auto; background: rgba(15,23,42,0.95); }
+  .drawer-tab { padding: 0.7rem 0.9rem; font-size: 0.8rem; color: #94a3b8; border-bottom: 2px solid transparent; background: transparent; border-top: none; border-left: none; border-right: none; cursor: pointer; white-space: nowrap; }
+  .drawer-tab:hover { color: #e2e8f0; }
+  .drawer-tab.active { color: #60a5fa; border-bottom-color: #60a5fa; }
+  .drawer-body { flex: 1; overflow-y: auto; padding: 1.5rem; }
+  .drawer-tab-panel { display: none; }
+  .drawer-tab-panel.active { display: block; }
+
+  /* Feature pills */
+  .pill-group { display: inline-flex; gap: 0.15rem; background: #0b1220; border: 1px solid #334155; border-radius: 6px; padding: 2px; }
+  .pill-btn { padding: 0.2rem 0.55rem; font-size: 0.7rem; border-radius: 4px; color: #94a3b8; background: transparent; border: none; cursor: pointer; transition: 0.1s; }
+  .pill-btn:hover { color: #e2e8f0; }
+  .pill-btn.on { background: #1e40af; color: #dbeafe; }
+  .pill-btn.off { background: #7f1d1d; color: #fee2e2; }
+  .pill-btn.inherit.active { background: #334155; color: #e2e8f0; }
+
+  /* Badges */
+  .status-pill { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.68rem; font-weight: 600; letter-spacing: 0.02em; }
+  .status-active { background: rgba(16,185,129,0.15); color: #34d399; }
+  .status-trial { background: rgba(245,158,11,0.15); color: #fbbf24; }
+  .status-suspended { background: rgba(239,68,68,0.15); color: #f87171; }
+  .status-churned { background: rgba(100,116,139,0.2); color: #94a3b8; }
+  .plan-pill { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 6px; font-size: 0.68rem; font-weight: 600; }
+  .plan-retail { background: rgba(59,130,246,0.15); color: #60a5fa; }
+  .plan-food { background: rgba(249,115,22,0.15); color: #fb923c; }
+  .plan-service { background: rgba(168,85,247,0.15); color: #c084fc; }
+  .override-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #f59e0b; margin-left: 4px; }
+
+  /* Diff */
+  .diff-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0; font-size: 0.8rem; border-bottom: 1px dashed #334155; }
+  .diff-row:last-child { border-bottom: none; }
+  .diff-gain { color: #34d399; }
+  .diff-lose { color: #f87171; }
+  .diff-keep { color: #64748b; }
 </style>
 </head>
 <body class="text-slate-200 min-h-screen">
@@ -21,7 +68,7 @@
 <div id="gate" class="max-w-md mx-auto mt-24 bg-slate-800/70 rounded-2xl p-8 border border-slate-700 shadow-2xl">
   <div class="text-center mb-6">
     <i class="fa-solid fa-building-lock text-3xl text-amber-400 mb-3"></i>
-    <h1 class="text-xl font-bold">Organisation Registry</h1>
+    <h1 class="text-xl font-bold">Control Center</h1>
     <p class="text-sm text-slate-400 mt-1">Enter your admin key to continue.</p>
   </div>
   <input id="admin-key" type="password" placeholder="X-Admin-Key"
@@ -36,13 +83,13 @@
 </div>
 
 <!-- ─── PORTAL ─── -->
-<div id="portal" class="hidden max-w-6xl mx-auto p-4 md:p-8">
+<div id="portal" class="hidden max-w-7xl mx-auto p-4 md:p-8">
 
   <!-- Header -->
-  <div class="flex flex-wrap justify-between items-start gap-4 mb-6 pb-4 border-b border-slate-700">
+  <div class="flex flex-wrap justify-between items-start gap-4 mb-4">
     <div>
       <h1 class="text-2xl font-bold">
-        <i class="fa-solid fa-building text-blue-400 mr-2"></i>Organisation Registry
+        <i class="fa-solid fa-sliders text-blue-400 mr-2"></i>Control Center
       </h1>
       <div class="text-sm text-slate-400 mt-1" id="summary-line">Loading…</div>
     </div>
@@ -59,28 +106,91 @@
     </div>
   </div>
 
-  <!-- Stats strip -->
-  <div id="stats-strip" class="hidden grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-    <div class="bg-slate-800/60 rounded-xl p-3 border border-slate-700">
-      <div class="text-2xl font-bold text-blue-400" id="stat-total">0</div>
-      <div class="text-xs text-slate-400">Total orgs</div>
+  <!-- Tab bar -->
+  <div class="tab-bar" id="tab-bar">
+    <button class="tab-btn active" data-tab="overview"><i class="fa-solid fa-chart-simple"></i>Overview</button>
+    <button class="tab-btn" data-tab="organisations"><i class="fa-solid fa-building"></i>Organisations</button>
+    <button class="tab-btn" data-tab="features"><i class="fa-solid fa-toggle-on"></i>Features</button>
+    <button class="tab-btn" data-tab="usage"><i class="fa-solid fa-chart-line"></i>Usage</button>
+    <button class="tab-btn" data-tab="partners"><i class="fa-solid fa-handshake"></i>Partners</button>
+    <button class="tab-btn" data-tab="audit"><i class="fa-solid fa-clipboard-list"></i>Audit</button>
+  </div>
+
+  <!-- ── Overview tab ── -->
+  <div id="tab-overview" class="tab-panel">
+    <div id="stats-strip" class="hidden grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      <div class="bg-slate-800/60 rounded-xl p-3 border border-slate-700">
+        <div class="text-2xl font-bold text-blue-400" id="stat-total">0</div>
+        <div class="text-xs text-slate-400">Total orgs</div>
+      </div>
+      <div class="bg-slate-800/60 rounded-xl p-3 border border-slate-700">
+        <div class="text-2xl font-bold text-emerald-400" id="stat-published">0</div>
+        <div class="text-xs text-slate-400">Published</div>
+      </div>
+      <div class="bg-slate-800/60 rounded-xl p-3 border border-slate-700">
+        <div class="text-2xl font-bold text-orange-400" id="stat-food">0</div>
+        <div class="text-xs text-slate-400">Food verticals</div>
+      </div>
+      <div class="bg-slate-800/60 rounded-xl p-3 border border-slate-700">
+        <div class="text-2xl font-bold text-purple-400" id="stat-users">0</div>
+        <div class="text-xs text-slate-400">Total users</div>
+      </div>
     </div>
-    <div class="bg-slate-800/60 rounded-xl p-3 border border-slate-700">
-      <div class="text-2xl font-bold text-emerald-400" id="stat-published">0</div>
-      <div class="text-xs text-slate-400">Published</div>
-    </div>
-    <div class="bg-slate-800/60 rounded-xl p-3 border border-slate-700">
-      <div class="text-2xl font-bold text-orange-400" id="stat-food">0</div>
-      <div class="text-xs text-slate-400">Food verticals</div>
-    </div>
-    <div class="bg-slate-800/60 rounded-xl p-3 border border-slate-700">
-      <div class="text-2xl font-bold text-purple-400" id="stat-users">0</div>
-      <div class="text-xs text-slate-400">Total users</div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6" id="overview-summary"></div>
+
+    <div class="text-xs text-slate-500 italic">
+      <i class="fa-solid fa-circle-info mr-1"></i>
+      Click <strong>Organisations</strong> to manage a specific org.
     </div>
   </div>
 
-  <!-- Create panel -->
-  <div id="create-panel" class="hidden mb-6 bg-slate-800/70 rounded-2xl border border-slate-700 p-6">
+  <!-- ── Organisations tab ── -->
+  <div id="tab-organisations" class="tab-panel hidden">
+    <div id="org-list" class="space-y-3">
+      <div class="text-center py-12 text-slate-400">
+        <i class="fa-solid fa-spinner fa-pulse mr-2"></i>Loading…
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Placeholder tabs ── -->
+  <div id="tab-features" class="tab-panel hidden">
+    <div class="text-center py-16 text-slate-400">
+      <i class="fa-solid fa-toggle-on text-3xl mb-3 opacity-50"></i>
+      <p class="font-medium">Feature matrix</p>
+      <p class="text-sm mt-1">Cross-org feature view. Coming in a later phase.</p>
+    </div>
+  </div>
+
+  <div id="tab-usage" class="tab-panel hidden">
+    <div class="text-center py-16 text-slate-400">
+      <i class="fa-solid fa-chart-line text-3xl mb-3 opacity-50"></i>
+      <p class="font-medium">Global usage</p>
+      <p class="text-sm mt-1">Requires the nightly rollup job (Phase 5).</p>
+    </div>
+  </div>
+
+  <div id="tab-partners" class="tab-panel hidden">
+    <div class="text-center py-16 text-slate-400">
+      <i class="fa-solid fa-handshake text-3xl mb-3 opacity-50"></i>
+      <p class="font-medium">Partner network</p>
+      <p class="text-sm mt-1">Commission tracking. Coming later.</p>
+    </div>
+  </div>
+
+  <div id="tab-audit" class="tab-panel hidden">
+    <div class="flex justify-between items-center mb-3">
+      <h2 class="text-lg font-bold">Recent admin actions</h2>
+      <button id="audit-refresh" class="text-xs bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg">
+        <i class="fa-solid fa-rotate-right mr-1"></i>Refresh
+      </button>
+    </div>
+    <div id="audit-global" class="space-y-2"></div>
+  </div>
+
+  <!-- ── Create panel ── -->
+  <div id="create-panel" class="hidden mt-6 mb-6 bg-slate-800/70 rounded-2xl border border-slate-700 p-6">
     <div class="flex justify-between items-center mb-5">
       <h2 class="text-lg font-bold">Create organisation</h2>
       <button id="create-close" class="text-slate-400 hover:text-white">
@@ -96,9 +206,7 @@
       </div>
 
       <div>
-        <label class="block text-xs text-slate-400 mb-1">
-          URL slug <span class="text-slate-500">— leave blank to auto-generate</span>
-        </label>
+        <label class="block text-xs text-slate-400 mb-1">URL slug <span class="text-slate-500">— blank to auto-generate</span></label>
         <div class="flex items-center bg-slate-950 border border-slate-700 rounded-lg overflow-hidden focus-within:border-blue-500">
           <span class="px-3 py-2.5 text-xs text-slate-500 bg-slate-900 whitespace-nowrap kbd">/store/</span>
           <input id="f-slug" type="text" placeholder="acme-pharmacy"
@@ -148,42 +256,40 @@
       </div>
 
       <div class="md:col-span-2 border-t border-slate-700 pt-4 mt-2">
-    <div class="text-xs text-amber-400 font-semibold mb-3 flex items-center gap-2">
-        <i class="fa-solid fa-user-shield"></i>
-        First owner (optional, but recommended)
-    </div>
-    <p class="text-xs text-slate-500 mb-3">
-        If you provide an email, the owner account is created automatically
-        and an invite email with a temporary password is sent.
-        Leave blank to create the org with no owner — you can add one later.
-    </p>
-</div>
+        <div class="text-xs text-amber-400 font-semibold mb-3 flex items-center gap-2">
+          <i class="fa-solid fa-user-shield"></i>
+          First owner (optional, but recommended)
+        </div>
+        <p class="text-xs text-slate-500 mb-3">
+          If you provide an email, the owner account is created automatically and an invite email with a temporary password is sent.
+          Leave blank to create the org with no owner — you can add one later.
+        </p>
+      </div>
 
-<div class="md:col-span-2">
-    <label class="block text-xs text-slate-400 mb-1">Owner email</label>
-    <input id="f-owner-email" type="email" placeholder="owner@example.com"
-           class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm focus:border-blue-500 outline-none" />
-</div>
+      <div class="md:col-span-2">
+        <label class="block text-xs text-slate-400 mb-1">Owner email</label>
+        <input id="f-owner-email" type="email" placeholder="owner@example.com"
+               class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm focus:border-blue-500 outline-none" />
+      </div>
 
-<div>
-    <label class="block text-xs text-slate-400 mb-1">Owner first name</label>
-    <input id="f-owner-first-name" type="text"
-           class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm focus:border-blue-500 outline-none" />
-</div>
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Owner first name</label>
+        <input id="f-owner-first-name" type="text"
+               class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm focus:border-blue-500 outline-none" />
+      </div>
 
-<div>
-    <label class="block text-xs text-slate-400 mb-1">Owner last name</label>
-    <input id="f-owner-last-name" type="text"
-           class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm focus:border-blue-500 outline-none" />
-</div>
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Owner last name</label>
+        <input id="f-owner-last-name" type="text"
+               class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm focus:border-blue-500 outline-none" />
+      </div>
 
-<div class="md:col-span-2">
-    <label class="block text-xs text-slate-400 mb-1">Owner phone</label>
-    <input id="f-owner-phone" type="tel"
-           class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm focus:border-blue-500 outline-none" />
-</div>
+      <div class="md:col-span-2">
+        <label class="block text-xs text-slate-400 mb-1">Owner phone</label>
+        <input id="f-owner-phone" type="tel"
+               class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm focus:border-blue-500 outline-none" />
+      </div>
 
-      
       <div class="md:col-span-2">
         <div id="create-error" class="hidden p-2.5 rounded-lg bg-red-900/30 border border-red-700 text-red-200 text-sm"></div>
       </div>
@@ -199,17 +305,268 @@
     </div>
   </div>
 
-  <!-- Org list -->
-  <div id="org-list" class="space-y-3">
-    <div class="text-center py-12 text-slate-400">
-      <i class="fa-solid fa-spinner fa-pulse mr-2"></i>Loading…
+</div>
+
+<!-- ─── ORG DRAWER ─── -->
+<div id="drawer-overlay" class="drawer-overlay"></div>
+<div id="drawer" class="drawer" aria-hidden="true">
+  <div class="drawer-head">
+    <div class="min-w-0">
+      <h2 class="text-lg font-bold truncate" id="d-org-name">—</h2>
+      <div class="flex items-center gap-2 mt-1 flex-wrap">
+        <span class="status-pill" id="d-status">—</span>
+        <span class="plan-pill" id="d-plan">—</span>
+        <span class="text-xs text-slate-500 kbd truncate" id="d-slug"></span>
+      </div>
     </div>
+    <button id="drawer-close" class="text-slate-400 hover:text-white text-xl leading-none">
+      <i class="fa-solid fa-xmark"></i>
+    </button>
   </div>
 
+  <div class="drawer-tabs" id="drawer-tabs">
+    <button class="drawer-tab active" data-dtab="settings">Settings</button>
+    <button class="drawer-tab" data-dtab="plan">Plan</button>
+    <button class="drawer-tab" data-dtab="features">Features</button>
+    <button class="drawer-tab" data-dtab="usage">Usage</button>
+    <button class="drawer-tab" data-dtab="audit">Audit</button>
+    <button class="drawer-tab" data-dtab="danger">Danger</button>
+  </div>
+
+  <div class="drawer-body">
+
+    <!-- Settings panel -->
+    <div class="drawer-tab-panel active" data-dpanel="settings">
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Business name</label>
+          <input id="d-set-name" type="text" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">URL slug</label>
+          <div class="flex items-center bg-slate-950 border border-slate-700 rounded-lg overflow-hidden">
+            <span class="px-3 py-2.5 text-xs text-slate-500 bg-slate-900 kbd">/store/</span>
+            <input id="d-set-slug" type="text" class="flex-1 bg-transparent p-2.5 text-sm outline-none kbd" />
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Vertical</label>
+          <select id="d-set-vertical" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+            <option value="retail">Retail / Pharmacy / Supermarket</option>
+            <option value="food">Food &amp; Beverage / Restaurant</option>
+            <option value="service">Service business</option>
+          </select>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Location</label>
+            <input id="d-set-location" type="text" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Niche</label>
+            <input id="d-set-niche" type="text" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Monthly budget (₦)</label>
+          <input id="d-set-budget" type="number" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Admin notes</label>
+          <textarea id="d-set-notes" rows="4" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" placeholder="Internal notes, not shown to client"></textarea>
+        </div>
+        <div class="border-t border-slate-700 pt-4 mt-2">
+          <div class="text-xs text-amber-400 font-semibold mb-3 flex items-center gap-2">
+            <i class="fa-solid fa-store"></i> Storefront & access
+          </div>
+
+          <div class="space-y-3">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <div class="text-sm">Storefront status</div>
+                <div class="text-xs text-slate-500" id="d-publish-status">—</div>
+              </div>
+              <button id="d-publish-toggle" class="text-xs bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg">
+                <i class="fa-solid fa-toggle-off mr-1"></i>Toggle
+              </button>
+            </div>
+
+            <div class="flex items-center justify-between gap-3">
+              <div class="text-sm">Invite code</div>
+              <div class="flex items-center gap-2">
+                <code id="d-invite-code" class="text-xs kbd text-emerald-300">—</code>
+                <button id="d-copy-invite" class="text-slate-500 hover:text-white text-xs" title="Copy">
+                  <i class="fa-regular fa-copy"></i>
+                </button>
+                <button id="d-regen-invite" class="text-slate-500 hover:text-amber-300 text-xs" title="Regenerate">
+                  <i class="fa-solid fa-rotate"></i>
+                </button>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between gap-3">
+              <div class="text-sm">Public URL</div>
+              <a id="d-store-link" href="#" target="_blank"
+                 class="text-xs text-blue-300 hover:text-blue-200 truncate">—</a>
+            </div>
+          </div>
+        </div>
+        <div id="d-set-error" class="hidden p-2.5 rounded-lg bg-red-900/30 border border-red-700 text-red-200 text-sm"></div>
+        <button id="d-set-save" class="w-full bg-blue-600 hover:bg-blue-700 py-2.5 rounded-lg text-sm font-medium">
+          <i class="fa-solid fa-check mr-1"></i>Save changes
+        </button>
+      </div>
+    </div>
+
+    <!-- Plan panel -->
+    <div class="drawer-tab-panel" data-dpanel="plan">
+      <div class="mb-4">
+        <div class="text-xs text-slate-500 uppercase tracking-wider mb-1">Current plan</div>
+        <div class="flex items-baseline gap-3">
+          <span class="text-lg font-bold" id="d-plan-label">—</span>
+          <span class="text-sm text-slate-400" id="d-plan-price"></span>
+        </div>
+        <div class="text-xs text-slate-500 mt-1" id="d-plan-dates"></div>
+      </div>
+
+      <div class="border-t border-slate-700 pt-4 mb-4">
+        <label class="block text-xs text-slate-400 mb-1">Change plan to</label>
+        <select id="d-plan-select" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
+          <option value="">— Select plan —</option>
+        </select>
+      </div>
+
+      <div id="d-plan-diff" class="hidden bg-slate-900/60 border border-slate-700 rounded-lg p-4 mb-4">
+        <div class="text-xs text-slate-400 uppercase tracking-wider mb-2">Impact</div>
+        <div id="d-plan-diff-content"></div>
+      </div>
+
+      <button id="d-plan-apply" class="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed py-2.5 rounded-lg text-sm font-medium" disabled>
+        <i class="fa-solid fa-check mr-1"></i>Apply plan change
+      </button>
+    </div>
+
+    <!-- Features panel -->
+    <div class="drawer-tab-panel" data-dpanel="features">
+      <p class="text-xs text-slate-400 mb-4">
+        <strong>Inherit</strong> uses the plan default. <strong>On</strong> and <strong>Off</strong> override the plan.
+        Overrides win in both directions — you can grant a feature the plan doesn't include, or revoke one it does.
+      </p>
+      <div id="d-features-list" class="space-y-2"></div>
+      <div class="flex gap-3 mt-5">
+        <button id="d-features-reset" class="flex-1 bg-slate-700 hover:bg-slate-600 py-2.5 rounded-lg text-sm">
+          Reset all overrides
+        </button>
+        <button id="d-features-save" class="flex-1 bg-blue-600 hover:bg-blue-700 py-2.5 rounded-lg text-sm font-medium">
+          <i class="fa-solid fa-check mr-1"></i>Save
+        </button>
+      </div>
+    </div>
+
+    <!-- Usage panel -->
+    <div class="drawer-tab-panel" data-dpanel="usage">
+      <div class="grid grid-cols-2 gap-3">
+        <div class="bg-slate-900/60 border border-slate-700 rounded-lg p-3">
+          <div class="text-xs text-slate-400">SKUs</div>
+          <div class="text-2xl font-bold text-blue-400" id="d-usage-skus">—</div>
+          <div class="text-xs text-slate-500 mt-1" id="d-usage-skus-cap"></div>
+        </div>
+        <div class="bg-slate-900/60 border border-slate-700 rounded-lg p-3">
+          <div class="text-xs text-slate-400">Members</div>
+          <div class="text-2xl font-bold text-purple-400" id="d-usage-members">—</div>
+        </div>
+        <div class="bg-slate-900/60 border border-slate-700 rounded-lg p-3">
+          <div class="text-xs text-slate-400">Locations</div>
+          <div class="text-2xl font-bold text-emerald-400" id="d-usage-locations">—</div>
+          <div class="text-xs text-slate-500 mt-1" id="d-usage-locations-cap"></div>
+        </div>
+        <div class="bg-slate-900/60 border border-slate-700 rounded-lg p-3">
+          <div class="text-xs text-slate-400">Plan started</div>
+          <div class="text-sm font-medium" id="d-usage-started">—</div>
+          <div class="text-xs text-slate-500 mt-1" id="d-usage-renews"></div>
+        </div>
+      </div>
+      <p class="text-xs text-slate-500 mt-4">
+        <i class="fa-solid fa-info-circle mr-1"></i>
+        Historical sparklines arrive with the nightly rollup (Phase 5).
+      </p>
+    </div>
+
+    <!-- Drawer audit panel -->
+    <div class="drawer-tab-panel" data-dpanel="audit">
+      <div class="flex justify-between items-center mb-3">
+        <div class="text-sm text-slate-400">Recent actions on this org</div>
+        <button id="d-audit-refresh" class="text-xs text-slate-500 hover:text-white">
+          <i class="fa-solid fa-rotate-right"></i>
+        </button>
+      </div>
+      <div id="d-audit-list" class="space-y-2"></div>
+    </div>
+
+    <!-- Danger panel -->
+    <div class="drawer-tab-panel" data-dpanel="danger">
+      <div class="bg-red-900/20 border border-red-800 rounded-lg p-4 mb-4">
+        <div class="font-bold text-red-300 mb-1"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Dangerous actions</div>
+        <p class="text-xs text-red-200/80">These take effect immediately. Use with care.</p>
+      </div>
+
+      <div class="space-y-3">
+        <div class="bg-slate-900/60 border border-slate-700 rounded-lg p-4">
+          <div class="flex justify-between items-center">
+            <div>
+              <div class="font-medium text-sm">Suspend organisation</div>
+              <div class="text-xs text-slate-400 mt-0.5">All features disabled. Client retains login access.</div>
+            </div>
+            <button id="d-suspend-btn" class="text-xs bg-red-700 hover:bg-red-600 px-3 py-2 rounded-lg font-medium">
+              Suspend
+            </button>
+          </div>
+        </div>
+
+        <div class="bg-slate-900/60 border border-slate-700 rounded-lg p-4">
+          <div class="flex justify-between items-center">
+            <div>
+              <div class="font-medium text-sm">Reactivate organisation</div>
+              <div class="text-xs text-slate-400 mt-0.5">Restore the org to active status.</div>
+            </div>
+            <button id="d-reactivate-btn" class="text-xs bg-emerald-700 hover:bg-emerald-600 px-3 py-2 rounded-lg font-medium">
+              Reactivate
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ─── SUSPEND CONFIRM MODAL ─── -->
+<div id="suspend-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+  <div class="bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-red-800 shadow-2xl">
+    <div class="text-center mb-4">
+      <i class="fa-solid fa-triangle-exclamation text-4xl text-red-400 mb-2"></i>
+      <h3 class="text-xl font-bold">Suspend organisation?</h3>
+      <p class="text-sm text-slate-400 mt-2">
+        This disables all features for <strong id="suspend-target-name" class="text-white"></strong> immediately.
+        The client will still be able to log in, but nothing will work until you reactivate them.
+      </p>
+    </div>
+    <div class="bg-slate-950 border border-slate-700 rounded-lg p-3 mb-4">
+      <label class="block text-xs text-slate-400 mb-1">Type the org name to confirm:</label>
+      <input id="suspend-confirm-input" type="text" class="w-full bg-transparent text-sm outline-none kbd"
+             placeholder="Exact match required" />
+    </div>
+    <div class="flex gap-3">
+      <button id="suspend-cancel" class="flex-1 bg-slate-700 hover:bg-slate-600 py-2.5 rounded-lg text-sm">Cancel</button>
+      <button id="suspend-confirm" class="flex-1 bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed py-2.5 rounded-lg text-sm font-medium" disabled>
+        Suspend
+      </button>
+    </div>
+  </div>
 </div>
 
 <!-- ─── CREATE SUCCESS MODAL ─── -->
-<div id="success-modal" class="hidden fixed inset-0 bg-black/70 modal flex items-center justify-center z-50 p-4">
+<div id="success-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
   <div class="bg-slate-800 rounded-2xl max-w-lg w-full p-6 border border-slate-600 shadow-2xl">
     <div class="text-center mb-5">
       <i class="fa-solid fa-circle-check text-4xl text-emerald-400 mb-2"></i>
@@ -227,66 +584,60 @@
   </div>
 </div>
 
-<!-- ─── EDIT MODAL ─── -->
-<div id="edit-modal" class="hidden fixed inset-0 bg-black/70 modal flex items-center justify-center z-50 p-4">
-  <div class="bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-slate-600 shadow-2xl">
-    <div class="flex justify-between items-center mb-5">
-      <h3 class="text-lg font-bold">Edit organisation</h3>
-      <button id="edit-close" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
-    </div>
-    <input type="hidden" id="edit-org-id" />
-    <div class="space-y-4">
-      <div>
-        <label class="block text-xs text-slate-400 mb-1">Business name</label>
-        <input id="edit-name" type="text"
-               class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm" />
-      </div>
-      <div>
-        <label class="block text-xs text-slate-400 mb-1">URL slug</label>
-        <div class="flex items-center bg-slate-950 border border-slate-700 rounded-lg overflow-hidden">
-          <span class="px-3 py-2.5 text-xs text-slate-500 bg-slate-900 whitespace-nowrap kbd">/store/</span>
-          <input id="edit-slug" type="text" class="flex-1 bg-transparent p-2.5 text-sm outline-none kbd" />
-        </div>
-      </div>
-      <div>
-        <label class="block text-xs text-slate-400 mb-1">Vertical</label>
-        <select id="edit-vertical" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm">
-          <option value="retail">Retail / Pharmacy / Supermarket</option>
-          <option value="food">Food &amp; Beverage / Restaurant</option>
-          <option value="service">Service business</option>
-        </select>
-      </div>
-      <div id="edit-error" class="hidden p-2.5 rounded-lg bg-red-900/30 border border-red-700 text-red-200 text-sm"></div>
-    </div>
-    <div class="flex gap-3 mt-6">
-      <button id="edit-submit" class="flex-1 bg-blue-600 hover:bg-blue-700 py-2.5 rounded-lg text-sm font-medium">Save</button>
-      <button id="edit-cancel" class="flex-1 bg-slate-700 hover:bg-slate-600 py-2.5 rounded-lg text-sm">Cancel</button>
-    </div>
-  </div>
-</div>
-
 <script>
 const API_BASE = 'https://kevsono-kevs-digital-bos.hf.space';
 let ADMIN_KEY = sessionStorage.getItem('kd_admin_key') || '';
 let ORGS = [];
+let PLANS = {};
+let FEATURES = {};
+let METRICS = {};
+let CURRENT_ORG = null;       // full org object in the drawer
+let PENDING_FEATURE_OVERRIDES = null;   // working copy while editing
 
 // ─── helpers ───
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c =>
     ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
-
 function toast(msg, kind = 'success') {
   const colors = { success: 'bg-green-600', error: 'bg-red-600', info: 'bg-blue-600' };
   const el = document.createElement('div');
-  el.className = `fixed bottom-4 right-4 ${colors[kind]} text-white px-4 py-2 rounded-lg text-sm shadow-lg z-50`;
+  el.className = `fixed bottom-4 right-4 ${colors[kind]} text-white px-4 py-2 rounded-lg text-sm shadow-lg z-[70]`;
   el.textContent = msg;
   document.body.appendChild(el);
-  setTimeout(() => el.remove(), 2200);
+  setTimeout(() => el.remove(), 2400);
 }
-
 function copy(text, label) {
   navigator.clipboard.writeText(text).then(() => toast(`${label} copied`));
+}
+function fmtNaira(n) {
+  if (n == null) return '';
+  return '₦' + Number(n).toLocaleString('en-NG');
+}
+function fmtDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString();
+}
+
+async function adminFetch(path, opts = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...opts,
+    headers: {
+      'X-Admin-Key': ADMIN_KEY,
+      'Content-Type': 'application/json',
+      ...(opts.headers || {}),
+    },
+  });
+  if (res.status === 403) {
+    sessionStorage.removeItem('kd_admin_key');
+    location.reload();
+    throw new Error('Unauthorized');
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.detail || `HTTP ${res.status}`);
+  }
+  return data;
 }
 
 // ─── auth ───
@@ -308,8 +659,7 @@ document.getElementById('unlock-btn').addEventListener('click', async () => {
     sessionStorage.setItem('kd_admin_key', key);
     document.getElementById('gate').classList.add('hidden');
     document.getElementById('portal').classList.remove('hidden');
-    renderOrgs(data.organisations || []);
-    loadStats();
+    await bootstrap();
   } catch (e) {
     errEl.textContent = e.message;
     errEl.classList.remove('hidden');
@@ -328,18 +678,23 @@ document.getElementById('lock-btn').addEventListener('click', () => {
   document.getElementById('gate').classList.remove('hidden');
 });
 
-// ─── list ───
-async function loadOrgs() {
-  const list = document.getElementById('org-list');
-  list.innerHTML = '<div class="text-center py-12 text-slate-400"><i class="fa-solid fa-spinner fa-pulse mr-2"></i>Loading…</div>';
+// ─── bootstrap ───
+async function bootstrap() {
   try {
-    const res = await fetch(`${API_BASE}/admin/orgs`, { headers: { 'X-Admin-Key': ADMIN_KEY } });
-    if (res.status === 403) { sessionStorage.removeItem('kd_admin_key'); location.reload(); return; }
-    const data = await res.json();
-    renderOrgs(data.organisations || []);
+    const [orgsData, plansData] = await Promise.all([
+      adminFetch('/admin/orgs'),
+      adminFetch('/admin/plans'),
+    ]);
+    PLANS   = plansData.plans ? Object.fromEntries(plansData.plans.map(p => [p.key, p])) : {};
+    FEATURES = plansData.features || {};
+    METRICS  = plansData.metrics || {};
+    renderOrgs(orgsData.organisations || []);
     loadStats();
+    loadGlobalAudit();
+    renderOverviewSummary(orgsData.organisations || []);
   } catch (e) {
-    list.innerHTML = `<div class="text-center py-12 text-red-400">Failed to load: ${esc(e.message)}</div>`;
+    document.getElementById('org-list').innerHTML =
+      `<div class="text-center py-12 text-red-400">Failed to load: ${esc(e.message)}</div>`;
   }
 }
 
@@ -356,6 +711,50 @@ async function loadStats() {
   } catch {}
 }
 
+function renderOverviewSummary(orgs) {
+  const byStatus = { trial: 0, active: 0, suspended: 0, churned: 0 };
+  let mrr = 0;
+  for (const o of orgs) {
+    const st = o.status || 'active';
+    if (byStatus[st] != null) byStatus[st]++;
+    if (st === 'active' && o.plan_monthly_naira) mrr += Number(o.plan_monthly_naira);
+  }
+  const total = orgs.length || 1;
+  const html = `
+    <div class="bg-slate-800/60 rounded-xl p-4 border border-slate-700">
+      <div class="text-xs text-slate-400 uppercase tracking-wider mb-2">Status breakdown</div>
+      <div class="space-y-1.5">
+        <div class="flex justify-between text-sm"><span class="text-emerald-400">Active</span><span>${byStatus.active}</span></div>
+        <div class="flex justify-between text-sm"><span class="text-amber-400">Trial</span><span>${byStatus.trial}</span></div>
+        <div class="flex justify-between text-sm"><span class="text-red-400">Suspended</span><span>${byStatus.suspended}</span></div>
+        <div class="flex justify-between text-sm"><span class="text-slate-400">Churned</span><span>${byStatus.churned}</span></div>
+      </div>
+    </div>
+    <div class="bg-slate-800/60 rounded-xl p-4 border border-slate-700">
+      <div class="text-xs text-slate-400 uppercase tracking-wider mb-2">MRR (active plans)</div>
+      <div class="text-2xl font-bold text-emerald-400">${fmtNaira(mrr)}</div>
+      <div class="text-xs text-slate-500 mt-1">Based on catalog list prices</div>
+    </div>
+    <div class="bg-slate-800/60 rounded-xl p-4 border border-slate-700">
+      <div class="text-xs text-slate-400 uppercase tracking-wider mb-2">Coverage</div>
+      <div class="text-2xl font-bold text-blue-400">${total}</div>
+      <div class="text-xs text-slate-500 mt-1">Organisations in registry</div>
+    </div>`;
+  document.getElementById('overview-summary').innerHTML = html;
+}
+
+// ─── tabs ───
+document.querySelectorAll('#tab-bar .tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const target = btn.dataset.tab;
+    document.querySelectorAll('#tab-bar .tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+    const panel = document.getElementById(`tab-${target}`);
+    if (panel) panel.classList.remove('hidden');
+  });
+});
+
+// ─── org list ───
 function renderOrgs(orgs) {
   ORGS = orgs;
   document.getElementById('summary-line').textContent =
@@ -379,9 +778,13 @@ function renderOrgs(orgs) {
     const slug = org.slug || '';
     const storeUrl = slug ? `${API_BASE}/store/${slug}` : null;
     const created = org.created_at ? new Date(org.created_at).toLocaleDateString() : '—';
-    const verticalColor = org.vertical === 'food' ? 'text-orange-400 bg-orange-900/30'
-                        : org.vertical === 'service' ? 'text-purple-400 bg-purple-900/30'
-                        : 'text-blue-400 bg-blue-900/30';
+    const statusPill = `<span class="status-pill status-${esc(org.status || 'active')}">${esc((org.status || 'active').toUpperCase())}</span>`;
+    const planVert = org.plan_vertical || org.vertical || 'retail';
+    const planPill = org.plan_label
+      ? `<span class="plan-pill plan-${esc(planVert)}">${esc(org.plan_label)}</span>`
+      : '';
+    const overrideDot = (org.has_feature_overrides || org.has_limit_overrides)
+      ? `<span class="override-dot" title="Has overrides"></span>` : '';
     const publishedBadge = org.storefront_published
       ? '<span class="text-xs bg-emerald-900/40 text-emerald-300 px-2 py-0.5 rounded-full"><i class="fa-solid fa-globe mr-1"></i>Live</span>'
       : '<span class="text-xs bg-slate-700 text-slate-400 px-2 py-0.5 rounded-full"><i class="fa-solid fa-eye-slash mr-1"></i>Unpublished</span>';
@@ -391,13 +794,12 @@ function renderOrgs(orgs) {
       : '<span class="text-slate-500 italic">no owner yet</span>';
 
     return `
-      <div class="org-card bg-slate-800/60 border border-slate-700 rounded-xl p-5">
+      <div class="org-card bg-slate-800/60 border border-slate-700 rounded-xl p-5" data-org-id="${esc(org.id)}">
         <div class="flex flex-wrap justify-between items-start gap-3 mb-3">
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 flex-wrap">
               <h3 class="font-bold text-white text-lg truncate">${esc(org.org_name)}</h3>
-              <span class="text-xs px-2 py-0.5 rounded-full ${verticalColor}">${esc(org.vertical)}</span>
-              ${publishedBadge}
+              ${planPill}${overrideDot}${statusPill}${publishedBadge}
             </div>
             <div class="text-xs text-slate-400 mt-1">
               ${esc(org.niche || '—')} · ${esc(org.location || '—')} · Created ${created} · ${org.member_count} member${org.member_count === 1 ? '' : 's'}
@@ -406,20 +808,20 @@ function renderOrgs(orgs) {
           </div>
           <div class="flex gap-2 flex-wrap">
             ${storeUrl ? `<a href="${esc(storeUrl)}" target="_blank"
-                            class="text-xs bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 px-3 py-1.5 rounded-lg">
+                            class="text-xs bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 px-3 py-1.5 rounded-lg"
+                            onclick="event.stopPropagation()">
                             <i class="fa-solid fa-store mr-1"></i>Storefront</a>` : ''}
-            <button class="edit-btn text-xs bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg"
-                    data-id="${esc(org.id)}"><i class="fa-solid fa-pen-to-square"></i></button>
           </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3 border-t border-slate-700">
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-3 pt-3 border-t border-slate-700">
           <div>
             <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Slug</div>
             <div class="flex items-center gap-2">
               <code class="text-xs kbd text-blue-300 truncate">${esc(slug || '—')}</code>
               ${slug ? `<button class="copy-btn text-slate-500 hover:text-white text-xs"
-                                data-copy="${esc(slug)}" data-label="Slug"><i class="fa-regular fa-copy"></i></button>` : ''}
+                                data-copy="${esc(slug)}" data-label="Slug"
+                                onclick="event.stopPropagation()"><i class="fa-regular fa-copy"></i></button>` : ''}
             </div>
           </div>
           <div>
@@ -427,18 +829,29 @@ function renderOrgs(orgs) {
             <div class="flex items-center gap-2">
               <code class="text-xs kbd text-emerald-300">${esc(org.invite_code || '—')}</code>
               ${org.invite_code ? `<button class="copy-btn text-slate-500 hover:text-white text-xs"
-                                          data-copy="${esc(org.invite_code)}" data-label="Invite code">
+                                          data-copy="${esc(org.invite_code)}" data-label="Invite code"
+                                          onclick="event.stopPropagation()">
                                           <i class="fa-regular fa-copy"></i></button>` : ''}
               <button class="regen-btn text-slate-500 hover:text-amber-300 text-xs ml-1"
-                      data-id="${esc(org.id)}" title="Generate new code">
+                      data-id="${esc(org.id)}" title="Generate new code"
+                      onclick="event.stopPropagation()">
                 <i class="fa-solid fa-rotate"></i>
               </button>
             </div>
           </div>
           <div>
+            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">SKUs</div>
+            <div class="text-sm font-semibold text-blue-300">${org.skus ?? 0}</div>
+          </div>
+          <div>
+            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Locations</div>
+            <div class="text-sm font-semibold text-emerald-300">${org.locations ?? 0}</div>
+          </div>
+          <div>
             <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Storefront</div>
             <button class="publish-btn text-xs ${org.storefront_published ? 'text-emerald-400 hover:text-emerald-300' : 'text-slate-400 hover:text-slate-200'}"
-                    data-id="${esc(org.id)}" data-published="${org.storefront_published}">
+                    data-id="${esc(org.id)}" data-published="${org.storefront_published}"
+                    onclick="event.stopPropagation()">
               <i class="fa-solid ${org.storefront_published ? 'fa-toggle-on' : 'fa-toggle-off'} mr-1"></i>
               ${org.storefront_published ? 'Unpublish' : 'Publish'}
             </button>
@@ -447,43 +860,495 @@ function renderOrgs(orgs) {
       </div>`;
   }).join('');
 
-  // Wire per-card buttons.
   list.querySelectorAll('.copy-btn').forEach(b =>
-    b.addEventListener('click', () => copy(b.dataset.copy, b.dataset.label)));
+    b.addEventListener('click', (e) => { e.stopPropagation(); copy(b.dataset.copy, b.dataset.label); }));
 
   list.querySelectorAll('.regen-btn').forEach(b =>
-    b.addEventListener('click', async () => {
+    b.addEventListener('click', async (e) => {
+      e.stopPropagation();
       if (!confirm('Generate a new invite code? The current one will stop working.')) return;
       try {
-        const res = await fetch(`${API_BASE}/admin/orgs/${b.dataset.id}/regenerate-invite`, {
-          method: 'POST', headers: { 'X-Admin-Key': ADMIN_KEY }
-        });
-        if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
+        await adminFetch(`/admin/orgs/${b.dataset.id}/regenerate-invite`, { method: 'POST' });
         toast('Invite code regenerated');
-        loadOrgs();
-      } catch (e) { toast(e.message, 'error'); }
+        await bootstrap();
+      } catch (err) { toast(err.message, 'error'); }
     }));
 
   list.querySelectorAll('.publish-btn').forEach(b =>
-    b.addEventListener('click', async () => {
+    b.addEventListener('click', async (e) => {
+      e.stopPropagation();
       const next = b.dataset.published !== 'true';
       try {
-        const res = await fetch(`${API_BASE}/admin/orgs/${b.dataset.id}/publish`, {
+        await adminFetch(`/admin/orgs/${b.dataset.id}/publish`, {
           method: 'POST',
-          headers: { 'X-Admin-Key': ADMIN_KEY, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ published: next })
+          body: JSON.stringify({ published: next }),
         });
-        if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
         toast(next ? 'Storefront published' : 'Storefront unpublished');
-        loadOrgs();
-      } catch (e) { toast(e.message, 'error'); }
+        await bootstrap();
+      } catch (err) { toast(err.message, 'error'); }
     }));
 
-  list.querySelectorAll('.edit-btn').forEach(b =>
-    b.addEventListener('click', () => openEdit(b.dataset.id)));
+  list.querySelectorAll('.org-card').forEach(card =>
+    card.addEventListener('click', () => openDrawer(card.dataset.orgId)));
 }
 
-// ─── create ───
+// ─── drawer ───
+function openDrawer(orgId) {
+  document.getElementById('drawer-overlay').classList.add('open');
+  const dr = document.getElementById('drawer');
+  dr.classList.add('open');
+  dr.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
+  loadDrawer(orgId);
+}
+
+function closeDrawer() {
+  document.getElementById('drawer-overlay').classList.remove('open');
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('drawer').setAttribute('aria-hidden', 'true');
+  document.body.style.overflow = '';
+  CURRENT_ORG = null;
+  PENDING_FEATURE_OVERRIDES = null;
+}
+
+document.getElementById('drawer-close').addEventListener('click', closeDrawer);
+document.getElementById('drawer-overlay').addEventListener('click', closeDrawer);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('drawer').classList.contains('open')) closeDrawer();
+});
+
+document.querySelectorAll('#drawer-tabs .drawer-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const target = btn.dataset.dtab;
+    document.querySelectorAll('#drawer-tabs .drawer-tab').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.drawer-tab-panel').forEach(p => p.classList.toggle('active', p.dataset.dpanel === target));
+    if (target === 'audit') loadDrawerAudit();
+  });
+});
+
+async function loadDrawer(orgId) {
+  const dr = document.getElementById('drawer');
+  dr.querySelector('.drawer-body').scrollTop = 0;
+  try {
+    const data = await adminFetch(`/admin/orgs/${encodeURIComponent(orgId)}`);
+    CURRENT_ORG = data.organisation;
+    renderDrawer();
+  } catch (e) {
+    toast(e.message, 'error');
+    closeDrawer();
+  }
+}
+
+function renderDrawer() {
+  const o = CURRENT_ORG;
+  if (!o) return;
+
+  // Header
+  document.getElementById('d-org-name').textContent = o.org_name || '—';
+  const statusEl = document.getElementById('d-status');
+  statusEl.textContent = (o.status || 'active').toUpperCase();
+  statusEl.className = `status-pill status-${o.status || 'active'}`;
+
+  const planPill = document.getElementById('d-plan');
+  const tier = o.plan_definition || PLANS[o.plan_tier] || {};
+  planPill.textContent = tier.label || 'No plan';
+  planPill.className = `plan-pill plan-${tier.vertical || o.vertical || 'retail'}`;
+
+  document.getElementById('d-slug').textContent = o.slug ? `/store/${o.slug}` : '';
+
+  // Settings tab
+  document.getElementById('d-set-name').value = o.org_name || '';
+  document.getElementById('d-set-slug').value = o.slug || '';
+  document.getElementById('d-set-vertical').value = o.vertical || 'retail';
+  document.getElementById('d-set-location').value = o.location || '';
+  document.getElementById('d-set-niche').value = o.niche || '';
+  document.getElementById('d-set-budget').value = o.budget || 0;
+  document.getElementById('d-set-notes').value = o.admin_notes || '';
+  document.getElementById('d-set-error').classList.add('hidden');
+
+  // Plan tab
+  document.getElementById('d-plan-label').textContent = tier.label || '—';
+  document.getElementById('d-plan-price').textContent = tier.monthly_naira ? `${fmtNaira(tier.monthly_naira)}/mo` : '';
+  document.getElementById('d-plan-dates').textContent = `Started ${fmtDate(o.plan_started_at)} · Renews ${fmtDate(o.plan_renews_at)}`;
+
+  const planSel = document.getElementById('d-plan-select');
+  planSel.innerHTML = '<option value="">— Select plan —</option>' +
+    Object.entries(PLANS).map(([k, p]) => `<option value="${esc(k)}">${esc(p.label)} — ${fmtNaira(p.monthly_naira)}/mo</option>`).join('');
+  planSel.value = '';
+  document.getElementById('d-plan-diff').classList.add('hidden');
+  document.getElementById('d-plan-apply').disabled = true;
+
+  // Features tab
+  PENDING_FEATURE_OVERRIDES = { ...(o.feature_overrides || {}) };
+  renderFeaturesTab();
+
+  // Usage tab
+  document.getElementById('d-usage-skus').textContent = o.skus ?? 0;
+  document.getElementById('d-usage-members').textContent = o.member_count ?? 0;
+  document.getElementById('d-usage-locations').textContent = o.locations ?? 0;
+
+  const skuCap = (o.limits_overrides && o.limits_overrides.max_skus != null)
+    ? o.limits_overrides.max_skus : (tier.max_skus ?? null);
+  document.getElementById('d-usage-skus-cap').textContent = skuCap ? `/ ${skuCap} cap` : 'No cap';
+
+  const locCap = (o.limits_overrides && o.limits_overrides.max_locations != null)
+    ? o.limits_overrides.max_locations : (tier.max_locations ?? null);
+  document.getElementById('d-usage-locations-cap').textContent = locCap ? `/ ${locCap} cap` : 'No cap';
+
+  document.getElementById('d-usage-started').textContent = fmtDate(o.plan_started_at);
+  document.getElementById('d-usage-renews').textContent = o.plan_renews_at ? `Renews ${fmtDate(o.plan_renews_at)}` : '';
+
+  // Danger buttons state
+  const isSuspended = (o.status === 'suspended');
+  document.getElementById('d-suspend-btn').disabled = isSuspended;
+  document.getElementById('d-suspend-btn').classList.toggle('opacity-40', isSuspended);
+  document.getElementById('d-reactivate-btn').disabled = !isSuspended;
+  document.getElementById('d-reactivate-btn').classList.toggle('opacity-40', !isSuspended);
+
+  // Storefront & access section
+  const pubStatus = document.getElementById('d-publish-status');
+  pubStatus.textContent = o.storefront_published ? 'Live' : 'Unpublished';
+  pubStatus.className = o.storefront_published ? 'text-xs text-emerald-400' : 'text-xs text-slate-500';
+
+  document.getElementById('d-invite-code').textContent = o.invite_code || '—';
+
+  const storeLink = document.getElementById('d-store-link');
+  if (o.slug) {
+    storeLink.href = `${API_BASE}/store/${o.slug}`;
+    storeLink.textContent = `/store/${o.slug}`;
+  } else {
+    storeLink.removeAttribute('href');
+    storeLink.textContent = 'no slug yet';
+  }
+}
+
+document.getElementById('d-publish-toggle').addEventListener('click', async () => {
+  if (!CURRENT_ORG) return;
+  const next = !CURRENT_ORG.storefront_published;
+  try {
+    await adminFetch(`/admin/orgs/${CURRENT_ORG.id}/publish`, {
+      method: 'POST',
+      body: JSON.stringify({ published: next }),
+    });
+    toast(next ? 'Storefront published' : 'Storefront unpublished');
+    await loadDrawer(CURRENT_ORG.id);
+    await bootstrap();
+  } catch (e) { toast(e.message, 'error'); }
+});
+
+document.getElementById('d-copy-invite').addEventListener('click', () => {
+  if (!CURRENT_ORG || !CURRENT_ORG.invite_code) return;
+  copy(CURRENT_ORG.invite_code, 'Invite code');
+});
+
+document.getElementById('d-regen-invite').addEventListener('click', async () => {
+  if (!CURRENT_ORG) return;
+  if (!confirm('Generate a new invite code? The current one will stop working.')) return;
+  try {
+    await adminFetch(`/admin/orgs/${CURRENT_ORG.id}/regenerate-invite`, { method: 'POST' });
+    toast('Invite code regenerated');
+    await loadDrawer(CURRENT_ORG.id);
+    await bootstrap();
+  } catch (e) { toast(e.message, 'error'); }
+});
+
+// ─── Settings tab save ───
+document.getElementById('d-set-save').addEventListener('click', async () => {
+  if (!CURRENT_ORG) return;
+  const errEl = document.getElementById('d-set-error');
+  errEl.classList.add('hidden');
+
+  const payload = {};
+  const name = document.getElementById('d-set-name').value.trim();
+  const slug = document.getElementById('d-set-slug').value.trim();
+  const vertical = document.getElementById('d-set-vertical').value;
+  const location = document.getElementById('d-set-location').value.trim();
+  const niche = document.getElementById('d-set-niche').value.trim();
+  const budget = parseInt(document.getElementById('d-set-budget').value, 10) || 0;
+  const notes = document.getElementById('d-set-notes').value;
+
+  if (name && name !== CURRENT_ORG.org_name) payload.org_name = name;
+  if (slug && slug !== CURRENT_ORG.slug) payload.slug = slug;
+  if (vertical && vertical !== CURRENT_ORG.vertical) payload.vertical = vertical;
+  if (location && location !== CURRENT_ORG.location) payload.location = location;
+  if (niche && niche !== CURRENT_ORG.niche) payload.niche = niche;
+  if (budget !== CURRENT_ORG.budget) payload.budget = budget;
+  if (notes !== (CURRENT_ORG.admin_notes || '')) payload.admin_notes = notes;
+
+  if (!Object.keys(payload).length) { toast('Nothing changed'); return; }
+
+  try {
+    await adminFetch(`/admin/orgs/${CURRENT_ORG.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    toast('Saved');
+    await loadDrawer(CURRENT_ORG.id);
+    await bootstrap();  // refresh list
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+  }
+});
+
+// ─── Plan tab diff + apply ───
+document.getElementById('d-plan-select').addEventListener('change', (e) => {
+  const key = e.target.value;
+  const diffBox = document.getElementById('d-plan-diff');
+  const content = document.getElementById('d-plan-diff-content');
+  const applyBtn = document.getElementById('d-plan-apply');
+
+  if (!key || !CURRENT_ORG) {
+    diffBox.classList.add('hidden');
+    applyBtn.disabled = true;
+    return;
+  }
+
+  const oldTier = CURRENT_ORG.plan_definition || {};
+  const newTier = PLANS[key] || {};
+  const oldFeat = oldTier.features || {};
+  const newFeat = newTier.features || {};
+
+  const rows = [];
+  const allKeys = new Set([...Object.keys(oldFeat), ...Object.keys(newFeat)]);
+  for (const f of allKeys) {
+    const a = !!oldFeat[f], b = !!newFeat[f];
+    if (a === b) continue;
+    const label = (FEATURES[f] && FEATURES[f].label) || f;
+    if (b) rows.push(`<div class="diff-row diff-gain"><i class="fa-solid fa-plus text-xs"></i> ${esc(label)}</div>`);
+    else   rows.push(`<div class="diff-row diff-lose"><i class="fa-solid fa-minus text-xs"></i> ${esc(label)}</div>`);
+  }
+
+  const oldCap = oldTier.max_skus;
+  const newCap = newTier.max_skus;
+  if (oldCap !== newCap) {
+    const from = oldCap == null ? 'unlimited' : oldCap;
+    const to   = newCap == null ? 'unlimited' : newCap;
+    rows.push(`<div class="diff-row ${newCap > oldCap ? 'diff-gain' : 'diff-lose'}"><i class="fa-solid fa-database text-xs"></i> SKU cap: ${from} → ${to}</div>`);
+  }
+  const oldLoc = oldTier.max_locations, newLoc = newTier.max_locations;
+  if (oldLoc !== newLoc) {
+    const from = oldLoc == null ? 'unlimited' : oldLoc;
+    const to   = newLoc == null ? 'unlimited' : newLoc;
+    rows.push(`<div class="diff-row ${newLoc > oldLoc ? 'diff-gain' : 'diff-lose'}"><i class="fa-solid fa-location-dot text-xs"></i> Location cap: ${from} → ${to}</div>`);
+  }
+
+  if (!rows.length) {
+    content.innerHTML = '<div class="text-xs text-slate-500">No change to features or caps. Only the plan label and price will change.</div>';
+  } else {
+    content.innerHTML = rows.join('');
+  }
+  diffBox.classList.remove('hidden');
+  applyBtn.disabled = false;
+});
+
+document.getElementById('d-plan-apply').addEventListener('click', async () => {
+  if (!CURRENT_ORG) return;
+  const key = document.getElementById('d-plan-select').value;
+  if (!key) return;
+  try {
+    await adminFetch(`/admin/orgs/${CURRENT_ORG.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ plan_tier: key }),
+    });
+    toast('Plan updated');
+    await loadDrawer(CURRENT_ORG.id);
+    await bootstrap();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+});
+
+// ─── Features tab ───
+function renderFeaturesTab() {
+  const o = CURRENT_ORG;
+  if (!o) return;
+  const tier = o.plan_definition || PLANS[o.plan_tier] || {};
+  const tierFeatures = tier.features || {};
+
+  const container = document.getElementById('d-features-list');
+  const rows = Object.entries(FEATURES).map(([key, meta]) => {
+    const tierVal = !!tierFeatures[key];
+    const hasOverride = PENDING_FEATURE_OVERRIDES && Object.prototype.hasOwnProperty.call(PENDING_FEATURE_OVERRIDES, key);
+    const currentVal = hasOverride ? PENDING_FEATURE_OVERRIDES[key] : tierVal;
+
+    const inheritActive = !hasOverride;
+    const onActive = hasOverride && PENDING_FEATURE_OVERRIDES[key] === true;
+    const offActive = hasOverride && PENDING_FEATURE_OVERRIDES[key] === false;
+
+    return `
+      <div class="bg-slate-900/60 border border-slate-700 rounded-lg p-3 flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <div class="text-sm">${esc(meta.label)}</div>
+          <div class="text-xs text-slate-500">
+            tier default: ${tierVal ? '<span class="text-emerald-400">on</span>' : '<span class="text-slate-500">off</span>'}
+            ${hasOverride ? '<span class="override-dot" title="Overridden"></span>' : ''}
+          </div>
+        </div>
+        <div class="pill-group" data-feature="${esc(key)}">
+          <button class="pill-btn inherit ${inheritActive ? 'active' : ''}" data-mode="inherit">Inherit</button>
+          <button class="pill-btn on ${onActive ? 'on' : ''}" data-mode="on">On</button>
+          <button class="pill-btn off ${offActive ? 'off' : ''}" data-mode="off">Off</button>
+        </div>
+      </div>`;
+  });
+  container.innerHTML = rows.join('');
+
+  container.querySelectorAll('.pill-group').forEach(group => {
+    group.querySelectorAll('.pill-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = group.dataset.feature;
+        const mode = btn.dataset.mode;
+        if (mode === 'inherit') {
+          delete PENDING_FEATURE_OVERRIDES[key];
+        } else {
+          PENDING_FEATURE_OVERRIDES[key] = (mode === 'on');
+        }
+        renderFeaturesTab();
+      });
+    });
+  });
+}
+
+document.getElementById('d-features-reset').addEventListener('click', () => {
+  if (!CURRENT_ORG) return;
+  PENDING_FEATURE_OVERRIDES = {};
+  renderFeaturesTab();
+  toast('Overrides reset locally. Click Save to apply.', 'info');
+});
+
+document.getElementById('d-features-save').addEventListener('click', async () => {
+  if (!CURRENT_ORG) return;
+  try {
+    await adminFetch(`/admin/orgs/${CURRENT_ORG.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ feature_overrides: PENDING_FEATURE_OVERRIDES }),
+    });
+    toast('Features updated');
+    await loadDrawer(CURRENT_ORG.id);
+    await bootstrap();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+});
+
+// ─── Drawer audit ───
+async function loadDrawerAudit() {
+  if (!CURRENT_ORG) return;
+  const list = document.getElementById('d-audit-list');
+  list.innerHTML = '<div class="text-center py-6 text-slate-500 text-sm"><i class="fa-solid fa-spinner fa-pulse mr-1"></i>Loading…</div>';
+  try {
+    const data = await adminFetch(`/admin/audit?org_id=${encodeURIComponent(CURRENT_ORG.id)}&limit=50`);
+    const entries = data.entries || [];
+    if (!entries.length) {
+      list.innerHTML = '<div class="text-center py-6 text-slate-500 text-sm">No actions recorded yet.</div>';
+      return;
+    }
+    list.innerHTML = entries.map(e => renderAuditRow(e)).join('');
+  } catch (err) {
+    list.innerHTML = `<div class="text-center py-6 text-red-400 text-sm">${esc(err.message)}</div>`;
+  }
+}
+document.getElementById('d-audit-refresh').addEventListener('click', loadDrawerAudit);
+
+function renderAuditRow(e) {
+  const when = new Date(e.created_at).toLocaleString();
+  return `
+    <div class="bg-slate-900/60 border border-slate-700 rounded-lg p-3">
+      <div class="flex justify-between items-baseline gap-2">
+        <div class="text-xs kbd text-blue-300">${esc(e.action)}</div>
+        <div class="text-xs text-slate-500">${esc(when)}</div>
+      </div>
+      <div class="mt-2 grid grid-cols-2 gap-2 text-xs">
+        <div><span class="text-slate-500">from:</span> <code class="kbd text-slate-400">${esc(JSON.stringify(e.from_value))}</code></div>
+        <div><span class="text-slate-500">to:</span> <code class="kbd text-slate-300">${esc(JSON.stringify(e.to_value))}</code></div>
+      </div>
+    </div>`;
+}
+
+// ─── Global audit tab ───
+async function loadGlobalAudit() {
+  const container = document.getElementById('audit-global');
+  container.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm"><i class="fa-solid fa-spinner fa-pulse mr-1"></i>Loading…</div>';
+  try {
+    const data = await adminFetch('/admin/audit?limit=100');
+    const entries = data.entries || [];
+    if (!entries.length) {
+      container.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm">No admin actions recorded yet.</div>';
+      return;
+    }
+    container.innerHTML = entries.map(e => {
+      const org = ORGS.find(o => o.id === e.org_id);
+      const orgName = org ? org.org_name : (e.org_id ? e.org_id.slice(0, 8) : '—');
+      const when = new Date(e.created_at).toLocaleString();
+      return `
+        <div class="bg-slate-800/60 border border-slate-700 rounded-lg p-3">
+          <div class="flex justify-between items-baseline gap-2">
+            <div class="text-sm"><span class="text-blue-300 kbd text-xs">${esc(e.action)}</span> · <span class="text-slate-300">${esc(orgName)}</span></div>
+            <div class="text-xs text-slate-500">${esc(when)}</div>
+          </div>
+          <div class="mt-2 grid grid-cols-2 gap-2 text-xs">
+            <div class="truncate"><span class="text-slate-500">from:</span> <code class="kbd text-slate-400">${esc(JSON.stringify(e.from_value))}</code></div>
+            <div class="truncate"><span class="text-slate-500">to:</span> <code class="kbd text-slate-300">${esc(JSON.stringify(e.to_value))}</code></div>
+          </div>
+        </div>`;
+    }).join('');
+  } catch (err) {
+    container.innerHTML = `<div class="text-center py-8 text-red-400 text-sm">${esc(err.message)}</div>`;
+  }
+}
+document.getElementById('audit-refresh').addEventListener('click', loadGlobalAudit);
+
+// ─── Danger tab ───
+let pendingSuspendOrgId = null;
+
+document.getElementById('d-suspend-btn').addEventListener('click', () => {
+  if (!CURRENT_ORG) return;
+  pendingSuspendOrgId = CURRENT_ORG.id;
+  document.getElementById('suspend-target-name').textContent = CURRENT_ORG.org_name;
+  document.getElementById('suspend-confirm-input').value = '';
+  document.getElementById('suspend-confirm').disabled = true;
+  document.getElementById('suspend-modal').classList.remove('hidden');
+});
+
+document.getElementById('suspend-confirm-input').addEventListener('input', (e) => {
+  const expected = CURRENT_ORG ? CURRENT_ORG.org_name : '';
+  document.getElementById('suspend-confirm').disabled = (e.target.value !== expected);
+});
+
+document.getElementById('suspend-cancel').addEventListener('click', () => {
+  document.getElementById('suspend-modal').classList.add('hidden');
+  pendingSuspendOrgId = null;
+});
+
+document.getElementById('suspend-confirm').addEventListener('click', async () => {
+  if (!pendingSuspendOrgId) return;
+  try {
+    await adminFetch(`/admin/orgs/${pendingSuspendOrgId}/suspend`, { method: 'POST' });
+    toast('Organisation suspended', 'info');
+    document.getElementById('suspend-modal').classList.add('hidden');
+    await loadDrawer(pendingSuspendOrgId);
+    await bootstrap();
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    pendingSuspendOrgId = null;
+  }
+});
+
+document.getElementById('d-reactivate-btn').addEventListener('click', async () => {
+  if (!CURRENT_ORG) return;
+  try {
+    await adminFetch(`/admin/orgs/${CURRENT_ORG.id}/reactivate`, { method: 'POST' });
+    toast('Organisation reactivated');
+    await loadDrawer(CURRENT_ORG.id);
+    await bootstrap();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+});
+
+// ─── Create flow (unchanged behaviour) ───
 document.getElementById('new-btn').addEventListener('click', () => {
   document.getElementById('create-panel').classList.remove('hidden');
   document.getElementById('f-org-name').focus();
@@ -495,7 +1360,6 @@ function closeCreate() {
   document.getElementById('create-error').classList.add('hidden');
 }
 
-// Live slug preview from name.
 document.getElementById('f-org-name').addEventListener('input', e => {
   const slugInput = document.getElementById('f-slug');
   if (slugInput.dataset.touched === 'true') return;
@@ -520,7 +1384,6 @@ document.getElementById('create-submit').addEventListener('click', async () => {
     location: document.getElementById('f-location').value.trim(),
     niche:    document.getElementById('f-niche').value,
     budget:   parseInt(document.getElementById('f-budget').value, 10) || 0,
-    // NEW:
     owner_email:      document.getElementById('f-owner-email').value.trim() || null,
     owner_first_name: document.getElementById('f-owner-first-name').value.trim() || null,
     owner_last_name:  document.getElementById('f-owner-last-name').value.trim() || null,
@@ -538,26 +1401,23 @@ document.getElementById('create-submit').addEventListener('click', async () => {
   btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Creating…';
 
   try {
-    const res = await fetch(`${API_BASE}/admin/orgs`, {
+    const data = await adminFetch('/admin/orgs', {
       method: 'POST',
-      headers: { 'X-Admin-Key': ADMIN_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
 
     closeCreate();
     ['f-org-name','f-slug','f-location','f-niche',
      'f-owner-email','f-owner-first-name','f-owner-last-name','f-owner-phone'].forEach(id => {
       const el = document.getElementById(id);
-      if (el.tagName === 'SELECT') el.value = ''; else el.value = '';
+      el.value = '';
     });
     document.getElementById('f-budget').value = '0';
     document.getElementById('f-slug').dataset.touched = 'false';
     document.getElementById('slug-preview').textContent = '';
 
     showSuccess(data);
-    loadOrgs();
+    await bootstrap();
   } catch (e) {
     errEl.textContent = e.message;
     errEl.classList.remove('hidden');
@@ -624,62 +1484,8 @@ document.getElementById('success-close').addEventListener('click', () => {
   document.getElementById('success-modal').classList.add('hidden');
 });
 
-// ─── edit ───
-function openEdit(orgId) {
-  const org = ORGS.find(o => o.id === orgId);
-  if (!org) return;
-  document.getElementById('edit-org-id').value = org.id;
-  document.getElementById('edit-name').value = org.org_name || '';
-  document.getElementById('edit-slug').value = org.slug || '';
-  document.getElementById('edit-vertical').value = org.vertical || 'retail';
-  document.getElementById('edit-error').classList.add('hidden');
-  document.getElementById('edit-modal').classList.remove('hidden');
-}
-
-document.getElementById('edit-close').addEventListener('click', closeEdit);
-document.getElementById('edit-cancel').addEventListener('click', closeEdit);
-function closeEdit() {
-  document.getElementById('edit-modal').classList.add('hidden');
-}
-
-document.getElementById('edit-submit').addEventListener('click', async () => {
-  const orgId = document.getElementById('edit-org-id').value;
-  const errEl = document.getElementById('edit-error');
-  errEl.classList.add('hidden');
-
-  const payload = {};
-  const newName = document.getElementById('edit-name').value.trim();
-  const newSlug = document.getElementById('edit-slug').value.trim();
-  const newVert = document.getElementById('edit-vertical').value;
-
-  const existing = ORGS.find(o => o.id === orgId);
-  if (!existing) return;
-
-  if (newName && newName !== existing.org_name) payload.org_name = newName;
-  if (newSlug && newSlug !== existing.slug)     payload.slug = newSlug;
-  if (newVert && newVert !== existing.vertical) payload.vertical = newVert;
-
-  if (!Object.keys(payload).length) { closeEdit(); return; }
-
-  try {
-    const res = await fetch(`${API_BASE}/admin/orgs/${orgId}`, {
-      method: 'PATCH',
-      headers: { 'X-Admin-Key': ADMIN_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
-    toast('Saved');
-    closeEdit();
-    loadOrgs();
-  } catch (e) {
-    errEl.textContent = e.message;
-    errEl.classList.remove('hidden');
-  }
-});
-
 // ─── boot ───
-document.getElementById('refresh-btn').addEventListener('click', loadOrgs);
+document.getElementById('refresh-btn').addEventListener('click', () => bootstrap());
 
 if (ADMIN_KEY) {
   document.getElementById('admin-key').value = ADMIN_KEY;
