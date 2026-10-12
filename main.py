@@ -6966,10 +6966,6 @@ async def admin_regenerate_invite(
 
 @app.get("/public/storefront/{slug}")
 async def get_public_storefront(slug: str, request: Request):
-    """
-    Public, unauthenticated. Returns the storefront config for a published org.
-    Used by the storefront page on first load.
-    """
     await rate_limit(get_client_ip(request))
 
     client = get_supabase()
@@ -6987,12 +6983,15 @@ async def get_public_storefront(slug: str, request: Request):
         raise HTTPException(status_code=404, detail="Store not found")
 
     org = res.data
+
+    # Feature gate: ecommerce
+    await check_org_feature(org["id"], "ecommerce")
+
     if not org.get("storefront_published"):
         raise HTTPException(status_code=404, detail="Store is not yet live")
 
     config = merge_storefront_config(org.get("storefront_config"))
 
-    # Sensible fallbacks
     if not config["branding"]["store_name"]:
         config["branding"]["store_name"] = org["org_name"]
     if not config["seo"]["meta_title"]:
@@ -7007,7 +7006,6 @@ async def get_public_storefront(slug: str, request: Request):
         "vertical": validate_org_vertical(org.get("vertical")),
         "config":   config,
     }
-
 
 # ─────────────────────────────────────────────────────────────────
 # STOREFRONT — owner read / write
@@ -7358,8 +7356,10 @@ async def public_storefront_checkout(
     if req.fulfillment_mode == "delivery" and not (req.shipping_address or "").strip():
         raise HTTPException(status_code=400, detail="Delivery address is required")
 
-    client = get_supabase()
+    # Feature gate: ecommerce (guest checkout is an ecommerce feature)
+    await check_org_feature(resolved_org_id, "ecommerce")
 
+    client = get_supabase()
     org_res = await run_sync_db_call(
         client.table("organisations")
         .select(
@@ -14191,16 +14191,19 @@ async def serve_storefront_for_org(slug: str):
     client = get_supabase()
     res = await run_sync_db_call(
         client.table("organisations")
-        .select("id, slug")
+        .select("id, slug, storefront_published")
         .eq("slug", slug)
         .maybe_single()
         .execute
     )
     if not res or not res.data:
         raise HTTPException(status_code=404, detail="Store not found")
+
+    # Feature gate: ecommerce must be enabled for the org
+    await check_org_feature(res.data["id"], "ecommerce")
+
     with open("kdstore.html", "r", encoding="utf-8") as f:
         return f.read()
-
 
 @app.get("/store/{slug}/manifest.json")
 async def serve_storefront_manifest(slug: str):
