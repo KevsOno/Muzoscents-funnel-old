@@ -3395,6 +3395,19 @@ async def startup_event():
 
     logger.info("Startup complete - all tables and functions ready")
 
+@app.on_event("startup")
+async def _verify_plan_catalog():
+    for key, tier in PLAN_TIERS.items():
+        unknown = set(tier["features"]) - set(FEATURE_CATALOG)
+        if unknown:
+            logger.error(f"plan {key}: unknown feature keys {unknown}")
+    logger.info(
+        "plan catalog loaded",
+        tiers=len(PLAN_TIERS),
+        features=len(FEATURE_CATALOG),
+        metrics=len(METRIC_CATALOG),
+    )
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     error_detail = traceback.format_exc()
