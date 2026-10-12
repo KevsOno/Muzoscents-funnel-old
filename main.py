@@ -6041,6 +6041,37 @@ def _require_admin_key(x_admin_key: Optional[str]) -> None:
     if not x_admin_key or x_admin_key != ADMIN_SECRET_KEY:
         raise HTTPException(status_code=403, detail="Invalid admin key")
 
+async def _log_admin_action(
+    admin_ip: Optional[str],
+    org_id: Optional[str],
+    action: str,
+    from_value: Optional[dict],
+    to_value: Optional[dict],
+) -> None:
+    """
+    Append an entry to admin_audit. Best-effort: a failure to write the
+    audit row must never fail the underlying operation, but it is logged
+    at WARNING so we notice.
+    """
+    try:
+        client = get_admin_supabase()
+        payload = {
+            "admin_ip":   admin_ip,
+            "org_id":     org_id,
+            "action":     action,
+            "from_value": from_value,
+            "to_value":   to_value,
+        }
+        await run_sync_db_call(
+            client.table("admin_audit").insert(payload).execute
+        )
+    except Exception as e:
+        logger.warning(
+            "admin_audit write failed",
+            action=action, org_id=org_id, error=str(e),
+        )
+
+
 
 @app.get("/admin/orgs")
 async def admin_list_orgs(
