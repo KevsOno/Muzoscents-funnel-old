@@ -13694,7 +13694,12 @@ async def reconcile_stock(
     if x_admin_key != ADMIN_SECRET_KEY:
         raise HTTPException(status_code=403, detail="Invalid admin key")
 
-    client = get_supabase()
+    # Admin client: fresh service-role client per call. Every operation
+    # here iterates the whole platform — listing orgs, calling drift
+    # audits, healing rows — so RLS must not scope any of it to the
+    # caller's membership. Under the polluted singleton, this endpoint
+    # would only see orgs visible to the last-logged-in user.
+    client = get_admin_supabase()
 
     if req.stale_org_ids:
         org_ids = list(req.stale_org_ids)
@@ -13779,7 +13784,6 @@ async def reconcile_stock(
         "sample_drifts": drifts[:sample_size],
         "total_drifts_returned": len(drifts),
     }
-
 
 
 
