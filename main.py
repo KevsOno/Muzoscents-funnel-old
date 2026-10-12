@@ -745,23 +745,79 @@ async def _admin_set_app_metadata(user_id: str, metadata: dict) -> bool:
 
 
 # ===================== BRANCH RESOLUTION =====================
+
+async def ensure_branches_table():
+    """
+    Create the branches table if it's missing, plus indexes that
+    enforce (a) one default branch per org, (b) fast lookup by org.
+    Idempotent — safe to call on every boot.
+    """
+    sql = """
+    CREATE TABLE IF NOT EXISTS public.branches (
+        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        org_id      UUID NOT NULL REFERENCES public.organisations(id) ON DELETE CASCADE,
+        name        TEXT NOT NULL,
+        code        TEXT,
+        is_default  BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_branches_org_created
+        ON public.branches (org_id, created_at);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_branches_org_default
+        ON public.branches (org_id)
+        WHERE is_default = TRUE;
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_branches_org_code
+        ON public.branches (org_id, code)
+        WHERE code IS NOT NULL;
+    """
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"branches table migration failed: {resp.text}")
+        raise RuntimeError(f"branches table migration failed: {resp.text}")
+    logger.info("branches table installed (or already present)")
+    
+
 async def resolve_default_branch(org_id: str) -> Optional[str]:
     """
-    Return the org's default (oldest) branch id. Every org gets a MAIN
-    branch seeded at migration time. Returns None only if the org has
-    no branches at all, which is unreachable post-migration.
+    PURE READ. Return the id of the org's default branch, or the
+    oldest branch if no row is marked default. Returns None if the
+    org has no branches yet. Does NOT create anything.
 
-    Uses the admin client. Callers include public checkout, webhook
-    handlers, and admin paths that run without — or on behalf of —
-    any single authenticated user. RLS scoping would return nothing
-    in those contexts, silently leaving branch_id NULL on the row
-    being written. The explicit .eq("org_id", org_id) filter is the
-    real tenant boundary here.
+    Callers that need a guaranteed branch id should use
+    ensure_default_branch() or resolve_branch_for_write().
     """
     if not org_id:
         return None
     client = get_admin_supabase()
-    result = await run_sync_db_call(
+
+    # Prefer the row explicitly flagged default.
+    default_res = await run_sync_db_call(
+        client.table("branches")
+        .select("id")
+        .eq("org_id", org_id)
+        .eq("is_default", True)
+        .limit(1)
+        .execute
+    )
+    if default_res.data:
+        return default_res.data[0]["id"]
+
+    # Fall back to the oldest branch on the org.
+    oldest_res = await run_sync_db_call(
         client.table("branches")
         .select("id")
         .eq("org_id", org_id)
@@ -769,7 +825,48 @@ async def resolve_default_branch(org_id: str) -> Optional[str]:
         .limit(1)
         .execute
     )
-    return result.data[0]["id"] if result.data else None
+    return oldest_res.data[0]["id"] if oldest_res.data else None
+
+
+async def ensure_default_branch(org_id: str) -> Optional[str]:
+    """
+    Idempotent. Return the org's default branch id, creating a MAIN
+    branch if the org has none. Safe to call concurrently — the
+    partial unique index on (org_id) WHERE is_default=TRUE plus the
+    follow-up select handles the race.
+
+    Uses the admin client so this works from public checkout, webhook
+    handlers, and admin paths that run without an authenticated user.
+    """
+    if not org_id:
+        return None
+
+    existing = await resolve_default_branch(org_id)
+    if existing:
+        return existing
+
+    client = get_admin_supabase()
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        ins = await run_sync_db_call(
+            client.table("branches").insert({
+                "org_id":     org_id,
+                "name":       "Main",
+                "code":       "MAIN",
+                "is_default": True,
+                "created_at": now,
+                "updated_at": now,
+            }).execute
+        )
+        if ins.data:
+            logger.info("ensure_default_branch: seeded MAIN", org_id=org_id)
+            return ins.data[0]["id"]
+    except Exception as e:
+        # Lost a race — someone else created the default. Re-read.
+        logger.warning("ensure_default_branch: insert lost or failed, re-reading",
+                       org_id=org_id, error=str(e)[:200])
+
+    return await resolve_default_branch(org_id)
 
 
 async def resolve_branch_for_write(
@@ -779,16 +876,17 @@ async def resolve_branch_for_write(
     """
     Decide which branch_id a new row should carry.
 
-    Resolution order (until session-aware branch selection lands):
-      1. `requested` if non-empty (future: validate against branch_scope)
-      2. The org's default branch (MAIN)
+    Resolution order:
+      1. `requested` if non-empty (caller already validated ownership)
+      2. The org's default branch, seeding MAIN if none exists
 
-    Returns None if the org has no branches, but branch_id columns are
-    nullable so callers can pass the value through safely.
+    Never returns None for a real org after this fix, because the
+    seed path guarantees a branch.
     """
     if requested:
         return requested
-    return await resolve_default_branch(org_id)
+    return await ensure_default_branch(org_id)
+    
 # ===================== ASYNC DB HELPER =====================
 async def run_sync_db_call(sync_func, *args, **kwargs):
     """Run a sync supabase-py call in a thread to avoid blocking the event loop."""
@@ -3481,6 +3579,43 @@ async def startup_event():
     logger.info("Startup complete - all tables and functions ready")
 
 @app.on_event("startup")
+async def startup_event():
+    if os.environ.get("SKIP_MIGRATIONS", "false").lower() == "true":
+        logger.info("⏩ Skipping migrations (SKIP_MIGRATIONS=true)")
+        return
+
+    await ensure_branches_table()
+    await ensure_cost_price_column()
+    await ensure_delivery_fee_columns()
+    await ensure_org_delivery_columns()
+    await ensure_role_column()
+    await ensure_org_registry_schema()
+    await ensure_health_check_schema()
+    await ensure_knowledge_audit_table()
+    await ensure_vector_support()
+    await ensure_loyalty_tables()
+    await ensure_stock_transfers_table()
+    await ensure_stock_transfer_rpcs()
+    await ensure_transfer_suggestions_last_updated_column()   # ← new
+    await ensure_decrement_stock_fefo()
+    await ensure_finalize_online_order()
+    await ensure_webhook_events()
+    await ensure_stock_reconciliation()
+    await ensure_sales_fulfillment_columns()
+    await ensure_alert_log_table()
+    await ensure_transfer_suggestions_table()
+    await ensure_stock_limits_table()
+    await ensure_product_risk_view()
+    await ensure_transfer_suggestions_view()
+    await ensure_system_logs_table()
+    await ensure_rpc_functions()
+
+    await ensure_hr_tables()
+
+    await ensure_accounting_tables()
+    await ensure_is_cogs_column()
+
+    logger.info("Startup complete - all tables and functions ready")
 async def _verify_plan_catalog():
     for key, tier in PLAN_TIERS.items():
         unknown = set(tier["features"]) - set(FEATURE_CATALOG)
@@ -4662,15 +4797,20 @@ class LocationCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     address: Optional[str] = None
     type: Literal["warehouse", "store", "online_fulfillment"] = "store"
+    branch_id: Optional[str] = Field(
+        None,
+        description="Branch this location belongs to. Defaults to the org's MAIN branch.",
+    )
     is_warehouse: Optional[bool] = None  # deprecated, derived from type
 
 class LocationUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=200)
     address: Optional[str] = None
     type: Optional[Literal["warehouse", "store", "online_fulfillment"]] = None
+    branch_id: Optional[str] = None
     is_warehouse: Optional[bool] = None
     is_active: Optional[bool] = None
-
+    
 class StockTransferRequest(BaseModel):
     from_location_id: Optional[str] = None   # locations.id is UUID
     to_location_id: str                       # locations.id is UUID
@@ -4865,22 +5005,51 @@ async def create_location(
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
     client = get_supabase()
+
+    # ── Branch resolution ──
+    if loc.branch_id:
+        # Caller supplied one — validate it belongs to this org.
+        branch_check = await run_sync_db_call(
+            client.table("branches")
+            .select("id")
+            .eq("id", loc.branch_id)
+            .eq("org_id", org_id)
+            .maybe_single()
+            .execute
+        )
+        if not branch_check or not branch_check.data:
+            raise HTTPException(
+                status_code=400,
+                detail="Branch not found in this organisation",
+            )
+        resolved_branch = loc.branch_id
+    else:
+        # Fall back to the org's default branch, seeding MAIN if needed.
+        resolved_branch = await ensure_default_branch(org_id)
+        if not resolved_branch:
+            raise HTTPException(
+                status_code=500,
+                detail="Could not resolve a default branch for this organisation",
+            )
+
+    now = datetime.now(timezone.utc).isoformat()
     data = {
-        "org_id": org_id,
-        "name": loc.name,
-        "address": loc.address,
-        "type": loc.type,
+        "org_id":       org_id,
+        "name":         loc.name,
+        "address":      loc.address,
+        "type":         loc.type,
+        "branch_id":    resolved_branch,
         # keep is_warehouse consistent with type for the legacy readers
         "is_warehouse": loc.type == "warehouse",
-        "is_active": True,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "updated_at": datetime.now(timezone.utc).isoformat()
+        "is_active":    True,
+        "created_at":   now,
+        "updated_at":   now,
     }
     result = await run_sync_db_call(client.table("locations").insert(data).execute)
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to create location")
     return {"location": result.data[0]}
-
+    
 @app.put("/locations/{location_id}")
 async def update_location(
     request: Request,
@@ -4903,7 +5072,26 @@ async def update_location(
     if not existing.data:
         raise HTTPException(status_code=404, detail="Location not found")
 
-    update_data = {k: v for k, v in loc.dict(exclude_unset=True).items() if v is not None}
+    update_data = {
+        k: v for k, v in loc.dict(exclude_unset=True).items()
+        if v is not None
+    }
+
+    # Validate branch_id if the caller is changing it.
+    if "branch_id" in update_data:
+        branch_check = await run_sync_db_call(
+            client.table("branches")
+            .select("id")
+            .eq("id", update_data["branch_id"])
+            .eq("org_id", org_id)
+            .maybe_single()
+            .execute
+        )
+        if not branch_check or not branch_check.data:
+            raise HTTPException(
+                status_code=400,
+                detail="Branch not found in this organisation",
+            )
 
     if "type" in update_data:
         # keep is_warehouse in sync when type changes
@@ -4922,6 +5110,7 @@ async def update_location(
         raise HTTPException(status_code=500, detail="Failed to update location")
 
     return {"location": result.data[0]}
+    
 
 
 @app.delete("/locations/{location_id}")
@@ -5466,21 +5655,29 @@ async def register(request: Request, auth: RegisterRequest):
         org_id = new_org.data[0]["id"]
         role = "owner"
 
+        # Seed a MAIN branch, then the default warehouse pointing at it.
         try:
+            seeded_branch_id = await ensure_default_branch(org_id)
+            now_iso = datetime.now(timezone.utc).isoformat()
             await run_sync_db_call(
                 client.table("locations").insert({
-                    "org_id": org_id,
-                    "name": "Main Warehouse",
-                    "address": auth.store_address or "Main Store",
+                    "org_id":       org_id,
+                    "name":         "Main Warehouse",
+                    "address":      auth.store_address or "Main Store",
+                    "branch_id":    seeded_branch_id,
+                    "type":         "warehouse",
                     "is_warehouse": True,
-                    "is_active": True,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    "updated_at": datetime.now(timezone.utc).isoformat()
+                    "is_active":    True,
+                    "created_at":   now_iso,
+                    "updated_at":   now_iso,
                 }).execute
             )
-            logger.info(f"Created default location for org {org_id}")
+            logger.info(
+                "Created default branch+location for org",
+                org_id=org_id, branch_id=seeded_branch_id,
+            )
         except Exception as loc_err:
-            logger.warning(f"Failed to create default location: {loc_err}")
+            logger.warning(f"Failed to create default branch/location: {loc_err}")
     else:
         default_org_id = PUBLIC_STORE_ORG_ID
         if not default_org_id:
@@ -6615,22 +6812,29 @@ async def admin_create_org(
 
     org = result.data[0]
 
-    # ── Seed the default warehouse so inventory has a home ──
+    # ── Seed the default branch + warehouse so inventory has a home ──
     try:
+        seeded_branch_id = await ensure_default_branch(org["id"])
+        now_iso = datetime.now(timezone.utc).isoformat()
         await run_sync_db_call(
             client.table("locations").insert({
                 "org_id":       org["id"],
                 "name":         "Main Warehouse",
                 "address":      req.location,
+                "branch_id":    seeded_branch_id,
                 "type":         "warehouse",
                 "is_warehouse": True,
                 "is_active":    True,
-                "created_at":   datetime.now(timezone.utc).isoformat(),
-                "updated_at":   datetime.now(timezone.utc).isoformat(),
+                "created_at":   now_iso,
+                "updated_at":   now_iso,
             }).execute
         )
+        logger.info(
+            "Seeded MAIN branch + warehouse",
+            org_id=org["id"], branch_id=seeded_branch_id,
+        )
     except Exception as e:
-        logger.warning(f"Failed to seed warehouse for org {org['id']}: {e}")
+        logger.warning(f"Failed to seed branch/warehouse for org {org['id']}: {e}")
 
     # ── Create or attach the first owner ──
     owner_info = None
