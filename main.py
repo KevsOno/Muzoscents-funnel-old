@@ -5031,7 +5031,10 @@ async def register(request: Request, auth: RegisterRequest):
         role = "customer"
 
     try:
-        resp = await run_sync_db_call(client.auth.sign_up, {"email": auth.email, "password": auth.password})
+        # Auth operations use a throwaway anon client so the shared
+        # service-role client never carries a user session.
+        auth_client = get_user_supabase()
+        resp = await run_sync_db_call(auth_client.auth.sign_up, {"email": auth.email, "password": auth.password})
         if not resp.user:
             raise HTTPException(status_code=400, detail="Registration failed")
         user_id = resp.user.id
