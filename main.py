@@ -162,35 +162,136 @@ def get_client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 # ------------------------------------------------------------------
-# Supabase client (cached, uses service role key if available)
+# Supabase clients
+#
+# Three distinct clients, three distinct jobs:
+#
+#   get_supabase()        Cached, service-role client for business reads
+#                         and writes. Its `.auth` surface is guarded so
+#                         no code path can attach a user JWT to it. That
+#                         was the cause of the /admin/orgs RLS-scoping
+#                         bug: an anonymous sign_in() on the shared
+#                         client silently scoped every subsequent
+#                         request to the last-logged-in user, because
+#                         PostgREST prefers the Authorization header
+#                         over the apikey header when both are present.
+#
+#   get_admin_supabase()  Fresh service-role client, built per call.
+#                         Never cached. For one-shot admin and system
+#                         operations that want a clean, un-sessioned
+#                         client every time.
+#
+#   get_user_supabase()   Fresh anon-key client, built per call. ONLY
+#                         for auth operations (sign_in, sign_up,
+#                         refresh_session, sign_out, get_user,
+#                         reset_password_for_email). Never cache this.
 # ------------------------------------------------------------------
+
+# Auth methods that mutate the client's in-memory session.
+# Any call to these on a guarded client raises immediately, so a
+# regression here fails loudly at the call site instead of silently
+# poisoning the process for up to an hour.
+_AUTH_MUTATORS = frozenset({
+    "sign_in",
+    "sign_in_with_password",
+    "sign_in_with_otp",
+    "sign_up",
+    "sign_out",
+    "refresh_session",
+    "set_session",
+    "verify_otp",
+    "reauthenticate",
+    "reset_password_for_email",
+})
+
+
+class _GuardedAuth:
+    """
+    Wraps a Supabase `client.auth` object and blocks any method that would
+    mutate the underlying client's session. Reads (get_user, get_session,
+    get_claims) pass through untouched.
+    """
+    __slots__ = ("_inner",)
+
+    def __init__(self, inner):
+        self._inner = inner
+
+    def __getattr__(self, name):
+        if name in _AUTH_MUTATORS:
+            raise RuntimeError(
+                f"auth.{name}() mutates the shared Supabase client and would "
+                f"poison every subsequent request with the caller's JWT. "
+                f"Use get_user_supabase() for authentication calls."
+            )
+        return getattr(self._inner, name)
+
+
+class _GuardedClient:
+    """
+    Wraps the cached Supabase client. `.auth` returns the guarded variant.
+    Every other attribute falls through to the real client unchanged, so
+    .table(...), .rpc(...), .storage, etc. all work as before.
+    """
+    __slots__ = ("_inner",)
+
+    def __init__(self, inner):
+        self._inner = inner
+
+    def __getattr__(self, name):
+        if name == "auth":
+            return _GuardedAuth(self._inner.auth)
+        return getattr(self._inner, name)
+
+
 supabase_client: Optional[Client] = None
 last_client_check = None
 
+
 def get_supabase():
+    """
+    Cached service-role client. Its `.auth` is guarded so it can never be
+    mutated with a user session. Use get_user_supabase() for auth.
+    """
     global supabase_client, last_client_check
     now = datetime.now(timezone.utc)
     if supabase_client is None or (last_client_check and (now - last_client_check).seconds > 3600):
         if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
             if SUPABASE_ANON_KEY:
                 logger.warning("SUPABASE_SERVICE_ROLE_KEY missing – falling back to anon key (RLS may block access)")
-                supabase_client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+                raw = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
             else:
                 raise RuntimeError("No Supabase credentials (neither service role nor anon key)")
         else:
-            supabase_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+            raw = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
             logger.info("Supabase client created with SERVICE ROLE KEY (RLS bypassed)")
+        supabase_client = _GuardedClient(raw)
         last_client_check = now
     return supabase_client
 
+
 def get_admin_supabase() -> Client:
-    """Return a brand‑new Supabase client with the service role key.
-    This client must NEVER be used for authentication (sign_in, etc.)
-    so it will always bypass RLS."""
+    """
+    Fresh service-role client, built per call. Never cached, never carries
+    a user session. Use for /admin/* and one-off system operations.
+    """
     if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
         raise RuntimeError("Missing service role key for admin client")
     return create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
+
+def get_user_supabase() -> Client:
+    """
+    Fresh anon-key client for authentication calls ONLY:
+      sign_in, sign_up, refresh_session, sign_out, get_user,
+      reset_password_for_email.
+
+    Must NEVER be cached and must NEVER be used for data reads — it carries
+    no service role, so RLS applies with whatever user session is attached.
+    Build a new one on every auth operation and let it be garbage collected.
+    """
+    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+        raise RuntimeError("Missing anon key for user auth client")
+    return create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 # ===================== JWT ENRICHMENT =====================
 async def _admin_set_app_metadata(user_id: str, metadata: dict) -> bool:
     """
