@@ -6029,13 +6029,20 @@ class AdminCreateOrgRequest(BaseModel):
 
 
 class AdminUpdateOrgRequest(BaseModel):
+    # Basic identity
     org_name: Optional[str] = Field(None, min_length=2, max_length=200)
-    slug: Optional[str] = Field(None, max_length=60)
+    slug:     Optional[str] = Field(None, max_length=60)
     vertical: Optional[Literal["retail", "food", "service"]] = None
     location: Optional[str] = None
-    niche: Optional[str] = None
-    budget: Optional[int] = None
+    niche:    Optional[str] = None
+    budget:   Optional[int] = None
 
+    # Control center fields
+    plan_tier:         Optional[str] = None
+    status:            Optional[Literal["trial", "active", "suspended", "churned"]] = None
+    feature_overrides: Optional[Dict[str, bool]] = None
+    limits_overrides:  Optional[Dict[str, Any]] = None
+    admin_notes:       Optional[str] = Field(None, max_length=5000)
 
 def _require_admin_key(x_admin_key: Optional[str]) -> None:
     if not x_admin_key or x_admin_key != ADMIN_SECRET_KEY:
@@ -6597,12 +6604,35 @@ async def admin_update_org(
     _require_admin_key(x_admin_key)
 
     # Admin client: fresh service-role client per call. The slug clash
-    # check must see every org in the table, not just the ones the last
-    # logged-in user happens to belong to.
+    # check must see every org in the table.
     client = get_admin_supabase()
 
-    update = {k: v for k, v in req.dict(exclude_unset=True).items() if v is not None}
+    # 1. Load current state — we need it for the audit diff.
+    current_res = await run_sync_db_call(
+        client.table("organisations")
+        .select(
+            "id, org_name, slug, vertical, location, niche, budget, "
+            "plan_tier, status, feature_overrides, limits_overrides, admin_notes"
+        )
+        .eq("id", org_id)
+        .maybe_single()
+        .execute
+    )
+    if not current_res or not current_res.data:
+        raise HTTPException(status_code=404, detail="Organisation not found")
+    current = current_res.data
 
+    # 2. Build the update dict from explicitly-provided fields only.
+    update = {
+        k: v for k, v in req.dict(exclude_unset=True).items()
+        if v is not None
+    }
+    if not update:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+
+    # 3. Validate the fields that need validation.
+
+    # 3a. Slug — normalise and check collision
     if "slug" in update:
         new_slug = slugify(update["slug"])
         if not new_slug:
@@ -6617,17 +6647,174 @@ async def admin_update_org(
             raise HTTPException(status_code=409, detail=f"Slug '{new_slug}' is already taken")
         update["slug"] = new_slug
 
-    if not update:
-        raise HTTPException(status_code=400, detail="Nothing to update")
+    # 3b. Plan tier — must be a known catalog key
+    if "plan_tier" in update:
+        if update["plan_tier"] not in PLAN_TIERS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown plan_tier '{update['plan_tier']}'. "
+                       f"Valid keys: {sorted(PLAN_TIERS.keys())}",
+            )
 
+    # 3c. Feature overrides — keys must be known features, values boolean
+    if "feature_overrides" in update:
+        fo = update["feature_overrides"]
+        if not isinstance(fo, dict):
+            raise HTTPException(status_code=400, detail="feature_overrides must be an object")
+        unknown = set(fo.keys()) - set(FEATURE_CATALOG.keys())
+        if unknown:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown feature keys: {sorted(unknown)}",
+            )
+        for k, v in fo.items():
+            if not isinstance(v, bool):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"feature_overrides['{k}'] must be true or false",
+                )
+
+    # 3d. Limits overrides — values must be int or null
+    if "limits_overrides" in update:
+        lo = update["limits_overrides"]
+        if not isinstance(lo, dict):
+            raise HTTPException(status_code=400, detail="limits_overrides must be an object")
+        for k, v in lo.items():
+            if v is not None and not isinstance(v, int):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"limits_overrides['{k}'] must be an integer or null",
+                )
+
+    # 4. Apply
     update["updated_at"] = datetime.now(timezone.utc).isoformat()
-
     res = await run_sync_db_call(
         client.table("organisations").update(update).eq("id", org_id).execute
     )
     if not res.data:
-        raise HTTPException(status_code=404, detail="Organisation not found")
+        raise HTTPException(status_code=500, detail="Update failed")
+
+    # 5. Audit — one row per logical change group
+    admin_ip = get_client_ip(request)
+
+    # Split the update into logical actions so the audit log is readable.
+    basic_keys   = {"org_name", "slug", "vertical", "location", "niche", "budget"}
+    basic_diff   = {k: update[k] for k in basic_keys if k in update}
+    if basic_diff:
+        from_subset = {k: current.get(k) for k in basic_diff}
+        await _log_admin_action(
+            admin_ip, org_id, "org.update_basic",
+            from_value=from_subset, to_value=basic_diff,
+        )
+
+    if "plan_tier" in update and update["plan_tier"] != current.get("plan_tier"):
+        await _log_admin_action(
+            admin_ip, org_id, "plan.change",
+            from_value={"plan_tier": current.get("plan_tier")},
+            to_value={"plan_tier":   update["plan_tier"]},
+        )
+
+    if "status" in update and update["status"] != current.get("status"):
+        await _log_admin_action(
+            admin_ip, org_id, "status.change",
+            from_value={"status": current.get("status")},
+            to_value={"status":   update["status"]},
+        )
+
+    if "feature_overrides" in update:
+        await _log_admin_action(
+            admin_ip, org_id, "features.override",
+            from_value={"feature_overrides": current.get("feature_overrides") or {}},
+            to_value={"feature_overrides": update["feature_overrides"]},
+        )
+
+    if "limits_overrides" in update:
+        await _log_admin_action(
+            admin_ip, org_id, "limits.override",
+            from_value={"limits_overrides": current.get("limits_overrides") or {}},
+            to_value={"limits_overrides": update["limits_overrides"]},
+        )
+
+    if "admin_notes" in update:
+        await _log_admin_action(
+            admin_ip, org_id, "notes.update",
+            from_value=None,   # notes may be long; don't store the old
+            to_value={"admin_notes": update["admin_notes"]},
+        )
+
     return {"organisation": res.data[0]}
+
+
+@app.post("/admin/orgs/{org_id}/suspend")
+async def admin_suspend_org(
+    request: Request,
+    org_id: str,
+    x_admin_key: str = Header(..., alias="X-Admin-Key"),
+):
+    await rate_limit(get_client_ip(request))
+    _require_admin_key(x_admin_key)
+    client = get_admin_supabase()
+
+    current = await run_sync_db_call(
+        client.table("organisations").select("status")
+        .eq("id", org_id).maybe_single().execute
+    )
+    if not current or not current.data:
+        raise HTTPException(status_code=404, detail="Organisation not found")
+    old_status = current.data.get("status") or "active"
+    if old_status == "suspended":
+        return {"status": "suspended", "organisation": current.data}
+
+    await run_sync_db_call(
+        client.table("organisations").update({
+            "status": "suspended",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", org_id).execute
+    )
+    await _log_admin_action(
+        get_client_ip(request), org_id, "status.suspend",
+        from_value={"status": old_status},
+        to_value={"status": "suspended"},
+    )
+    return {"status": "suspended"}
+
+
+@app.post("/admin/orgs/{org_id}/reactivate")
+async def admin_reactivate_org(
+    request: Request,
+    org_id: str,
+    x_admin_key: str = Header(..., alias="X-Admin-Key"),
+):
+    await rate_limit(get_client_ip(request))
+    _require_admin_key(x_admin_key)
+    client = get_admin_supabase()
+
+    current = await run_sync_db_call(
+        client.table("organisations").select("status")
+        .eq("id", org_id).maybe_single().execute
+    )
+    if not current or not current.data:
+        raise HTTPException(status_code=404, detail="Organisation not found")
+    old_status = current.data.get("status") or "active"
+    if old_status == "active":
+        return {"status": "active"}
+
+    await run_sync_db_call(
+        client.table("organisations").update({
+            "status": "active",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", org_id).execute
+    )
+    await _log_admin_action(
+        get_client_ip(request), org_id, "status.reactivate",
+        from_value={"status": old_status},
+        to_value={"status": "active"},
+    )
+    return {"status": "active"}
+
+
+
+
 
 
 @app.post("/admin/orgs/{org_id}/publish")
