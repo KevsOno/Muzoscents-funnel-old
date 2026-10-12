@@ -3534,7 +3534,12 @@ async def send_status_update_email(sale_id: str, old_status: str, new_status: st
 # Helper functions
 # ------------------------------------------------------------------
 async def generate_invite_code() -> str:
-    client = get_supabase()
+    # Reads every row of organisations.invite_code to compute the next
+    # KD### code. Must use the admin client so RLS can't hide rows from
+    # us — otherwise a polluted cached client (carrying some user's JWT)
+    # would only see that user's orgs and hand out an invite code that
+    # collides with an existing one.
+    client = get_admin_supabase()
     result = await run_sync_db_call(client.table("organisations").select("invite_code").execute)
     codes = [row["invite_code"] for row in result.data if row.get("invite_code")]
     max_num = 0
@@ -3548,6 +3553,7 @@ async def generate_invite_code() -> str:
                 pass
     next_num = max_num + 1
     return f"KD{next_num:03d}"
+    
 def slugify(text: str) -> str:
     """URL-safe slug: 'Acme Pharmacy Ltd.' → 'acme-pharmacy-ltd'"""
     if not text:
