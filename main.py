@@ -125,6 +125,292 @@ structlog.configure(
 
 logger = structlog.get_logger()
 
+
+# ====================================================================
+# CONTROL CENTER — plan & feature catalog
+#
+# Static definitions. Never mutate a tier once released; add a new one
+# with a new key. Per-org state lives on organisations.plan_tier and
+# organisations.feature_overrides.
+# ====================================================================
+
+PLAN_TIERS: Dict[str, Dict] = {
+    # ── Retail ───────────────────────────────────────────────────
+    "convenience": {
+        "label":         "Convenience Store",
+        "vertical":      "retail",
+        "monthly_naira": 150_000,
+        "setup_base":    200_000,
+        "max_skus":      1_500,
+        "max_locations": 1,
+        "features": {
+            "ecommerce":       True,
+            "offline_pos":     True,
+            "multi_location":  False,
+            "expiry_tracking": False,
+            "accounting":      True,
+            "hr_module":       False,
+            "procurement":     True,
+            "ai_assistant":    False,
+            "loyalty":         True,
+            "fulfillment":     False,
+            "mobile_apps":     False,
+            "kitchen_display": False,
+            "live_dispatch":   False,
+        },
+    },
+    "pharmacy_indie": {
+        "label":         "Independent Pharmacy",
+        "vertical":      "retail",
+        "monthly_naira": 250_000,
+        "setup_base":    200_000,
+        "max_skus":      3_000,
+        "max_locations": 1,
+        "features": {
+            "ecommerce":       True,
+            "offline_pos":     True,
+            "multi_location":  False,
+            "expiry_tracking": True,
+            "accounting":      True,
+            "hr_module":       False,
+            "procurement":     True,
+            "ai_assistant":    False,
+            "loyalty":         True,
+            "fulfillment":     False,
+            "mobile_apps":     False,
+            "kitchen_display": False,
+            "live_dispatch":   False,
+        },
+    },
+    "pharmacy_chain": {
+        "label":         "Pharmacy Chain",
+        "vertical":      "retail",
+        "monthly_naira": 350_000,
+        "setup_base":    200_000,
+        "max_skus":      5_000,
+        "max_locations": 10,
+        "features": {
+            "ecommerce":       True,
+            "offline_pos":     True,
+            "multi_location":  True,
+            "expiry_tracking": True,
+            "accounting":      True,
+            "hr_module":       True,
+            "procurement":     True,
+            "ai_assistant":    False,
+            "loyalty":         True,
+            "fulfillment":     False,
+            "mobile_apps":     False,
+            "kitchen_display": False,
+            "live_dispatch":   False,
+        },
+    },
+    "supermarket_med": {
+        "label":         "Supermarket (Medium)",
+        "vertical":      "retail",
+        "monthly_naira": 400_000,
+        "setup_base":    200_000,
+        "max_skus":      15_000,
+        "max_locations": 5,
+        "features": {
+            "ecommerce":       True,
+            "offline_pos":     True,
+            "multi_location":  True,
+            "expiry_tracking": True,
+            "accounting":      True,
+            "hr_module":       True,
+            "procurement":     True,
+            "ai_assistant":    True,
+            "loyalty":         True,
+            "fulfillment":     True,
+            "mobile_apps":     True,
+            "kitchen_display": False,
+            "live_dispatch":   False,
+        },
+    },
+    "supermarket_large": {
+        "label":         "Supermarket (Large)",
+        "vertical":      "retail",
+        "monthly_naira": 500_000,
+        "setup_base":    200_000,
+        "max_skus":      None,
+        "max_locations": None,
+        "features": {
+            "ecommerce":       True,
+            "offline_pos":     True,
+            "multi_location":  True,
+            "expiry_tracking": True,
+            "accounting":      True,
+            "hr_module":       True,
+            "procurement":     True,
+            "ai_assistant":    True,
+            "loyalty":         True,
+            "fulfillment":     True,
+            "mobile_apps":     True,
+            "kitchen_display": False,
+            "live_dispatch":   False,
+        },
+    },
+
+    # ── Food & Beverage ─────────────────────────────────────────
+    "fb_express": {
+        "label":         "F&B Express",
+        "vertical":      "food",
+        "monthly_naira": 220_000,
+        "setup_base":    750_000,
+        "max_skus":      500,
+        "max_locations": 1,
+        "features": {
+            "ecommerce":       True,
+            "offline_pos":     True,
+            "multi_location":  False,
+            "expiry_tracking": True,
+            "accounting":      True,
+            "hr_module":       False,
+            "procurement":     True,
+            "ai_assistant":    False,
+            "loyalty":         True,
+            "fulfillment":     False,
+            "mobile_apps":     False,
+            "kitchen_display": True,
+            "live_dispatch":   False,
+        },
+    },
+    "fb_multi": {
+        "label":         "F&B Multi-Chain",
+        "vertical":      "food",
+        "monthly_naira": 350_000,
+        "setup_base":    1_200_000,
+        "max_skus":      2_000,
+        "max_locations": 20,
+        "features": {
+            "ecommerce":       True,
+            "offline_pos":     True,
+            "multi_location":  True,
+            "expiry_tracking": True,
+            "accounting":      True,
+            "hr_module":       True,
+            "procurement":     True,
+            "ai_assistant":    True,
+            "loyalty":         True,
+            "fulfillment":     True,
+            "mobile_apps":     True,
+            "kitchen_display": True,
+            "live_dispatch":   True,
+        },
+    },
+    "qsr_enterprise": {
+        "label":         "QSR Enterprise AI",
+        "vertical":      "food",
+        "monthly_naira": 500_000,
+        "setup_base":    1_800_000,
+        "max_skus":      None,
+        "max_locations": None,
+        "features": {
+            "ecommerce":       True,
+            "offline_pos":     True,
+            "multi_location":  True,
+            "expiry_tracking": True,
+            "accounting":      True,
+            "hr_module":       True,
+            "procurement":     True,
+            "ai_assistant":    True,
+            "loyalty":         True,
+            "fulfillment":     True,
+            "mobile_apps":     True,
+            "kitchen_display": True,
+            "live_dispatch":   True,
+        },
+    },
+
+    # ── Service ─────────────────────────────────────────────────
+    "service_basic": {
+        "label":         "Service Business",
+        "vertical":      "service",
+        "monthly_naira": 150_000,
+        "setup_base":    200_000,
+        "max_skus":      None,
+        "max_locations": None,
+        "features": {
+            "ecommerce":       True,
+            "offline_pos":     True,
+            "multi_location":  False,
+            "expiry_tracking": False,
+            "accounting":      True,
+            "hr_module":       True,
+            "procurement":     False,
+            "ai_assistant":    True,
+            "loyalty":         True,
+            "fulfillment":     False,
+            "mobile_apps":     False,
+            "kitchen_display": False,
+            "live_dispatch":   False,
+        },
+    },
+}
+
+
+FEATURE_CATALOG: Dict[str, Dict[str, str]] = {
+    "ecommerce":       {"label": "Public storefront",        "category": "commerce"},
+    "offline_pos":     {"label": "Offline POS",              "category": "sales"},
+    "multi_location":  {"label": "Multi-location stock",     "category": "inventory"},
+    "expiry_tracking": {"label": "Expiry & batch tracking",  "category": "inventory"},
+    "accounting":      {"label": "Accounting module",        "category": "finance"},
+    "hr_module":       {"label": "HR & payroll",             "category": "operations"},
+    "procurement":     {"label": "Purchase orders & GRN",    "category": "operations"},
+    "ai_assistant":    {"label": "AI customer assistant",    "category": "ai"},
+    "loyalty":         {"label": "Loyalty points",           "category": "commerce"},
+    "fulfillment":     {"label": "Fulfillment dashboard",    "category": "logistics"},
+    "mobile_apps":     {"label": "iOS + Android apps",       "category": "mobile"},
+    "kitchen_display": {"label": "KDS + tableside QR",       "category": "food"},
+    "live_dispatch":   {"label": "Live spatial dispatch",    "category": "food"},
+}
+
+
+METRIC_CATALOG: Dict[str, Dict[str, str]] = {
+    "skus":            {"label": "SKUs",             "unit": "count"},
+    "members":         {"label": "Team members",     "unit": "count"},
+    "locations":       {"label": "Locations",        "unit": "count"},
+    "orders_30d":      {"label": "Orders (30d)",     "unit": "count"},
+    "gmv_30d":         {"label": "GMV (30d)",        "unit": "naira"},
+    "ai_queries_30d":  {"label": "AI queries (30d)", "unit": "count"},
+    "storage_mb":      {"label": "Storage",          "unit": "MB"},
+    "active_users_7d": {"label": "Active users (7d)","unit": "count"},
+}
+
+
+def effective_features(org: Dict) -> Dict[str, bool]:
+    """
+    Merge tier defaults with per-org overrides.
+    Suspended and churned orgs get nothing — the kill switch.
+    Overrides win over tier in both directions (grant and revoke).
+    """
+    status = (org or {}).get("status") or "active"
+    if status in ("suspended", "churned"):
+        return {k: False for k in FEATURE_CATALOG}
+
+    tier = PLAN_TIERS.get((org or {}).get("plan_tier") or "", {})
+    base = dict(tier.get("features") or {})
+    base.update((org or {}).get("feature_overrides") or {})
+    # Any feature not otherwise set defaults to False
+    for key in FEATURE_CATALOG:
+        base.setdefault(key, False)
+    return base
+
+
+def effective_limit(org: Dict, metric: str):
+    """
+    Resolve a numeric cap for a metric.
+      - per-org limits_overrides win
+      - else fall back to the tier's max_<metric> (may be None = unlimited)
+    """
+    overrides = (org or {}).get("limits_overrides") or {}
+    if metric in overrides:
+        return overrides[metric]
+    tier = PLAN_TIERS.get((org or {}).get("plan_tier") or "", {})
+    return tier.get(f"max_{metric}")
+
+
 # ------------------------------------------------------------------
 # FastAPI app – MUST BE DEFINED BEFORE ANY DECORATOR
 # ------------------------------------------------------------------
