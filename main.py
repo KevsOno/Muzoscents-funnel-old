@@ -747,9 +747,16 @@ async def _admin_set_app_metadata(user_id: str, metadata: dict) -> bool:
 
 async def ensure_branches_table():
     """
-    Create the branches table if it's missing, plus indexes that
-    enforce (a) one default branch per org, (b) fast lookup by org.
-    Idempotent — safe to call on every boot.
+    Create the branches table if it's missing, heal any columns a legacy
+    copy of the table is missing, backfill NULL is_default values, and
+    then create the indexes that enforce (a) one default branch per org,
+    (b) fast lookup by org, (c) unique code per org.
+
+    Idempotent and safe against a partially-migrated table: every step
+    uses CREATE TABLE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS, so a
+    table created by a prior version of this migration — one that might
+    lack `is_default` or any other column — gets healed in place rather
+    than tripping the CREATE INDEX that follows.
     """
     sql = """
     CREATE TABLE IF NOT EXISTS public.branches (
@@ -761,6 +768,27 @@ async def ensure_branches_table():
         created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    -- Heal a legacy branches table that predates one or more columns.
+    -- ADD COLUMN IF NOT EXISTS is a no-op when the column is already
+    -- present, so this is safe to run on every boot.
+    ALTER TABLE public.branches
+        ADD COLUMN IF NOT EXISTS org_id      UUID,
+        ADD COLUMN IF NOT EXISTS name        TEXT,
+        ADD COLUMN IF NOT EXISTS code        TEXT,
+        ADD COLUMN IF NOT EXISTS is_default  BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        ADD COLUMN IF NOT EXISTS updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+    -- Backfill any NULL is_default values. A row that predates the
+    -- column has NULL, and the partial unique index below treats NULL
+    -- as "not true", which would let the org drift into having no
+    -- well-defined default. Normalising to FALSE makes the state
+    -- explicit; ensure_default_branch() will seed a TRUE row on the
+    -- next write.
+    UPDATE public.branches
+       SET is_default = FALSE
+     WHERE is_default IS NULL;
 
     CREATE INDEX IF NOT EXISTS idx_branches_org_created
         ON public.branches (org_id, created_at);
@@ -787,8 +815,7 @@ async def ensure_branches_table():
     if resp.status_code not in (200, 204):
         logger.error(f"branches table migration failed: {resp.text}")
         raise RuntimeError(f"branches table migration failed: {resp.text}")
-    logger.info("branches table installed (or already present)")
-    
+    logger.info("branches table installed (or already present)")    
 
 async def resolve_default_branch(org_id: str) -> Optional[str]:
     """
