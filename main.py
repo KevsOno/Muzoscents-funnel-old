@@ -5684,7 +5684,24 @@ async def admin_list_orgs(
 ):
     await rate_limit(get_client_ip(request))
     _require_admin_key(x_admin_key)
-    client = get_supabase()
+
+    # Admin endpoints use a fresh service-role client per call. Never the
+    # cached singleton, because a stray user session on that singleton
+    # would silently scope this query to that user's orgs via RLS.
+    client = get_admin_supabase()
+
+    # Canary: if this ever logs a session, something upstream is leaking
+    # a user JWT onto an admin client. Should always be None.
+    try:
+        _sess = client.auth.get_session()
+        if _sess is not None:
+            logger.error(
+                "admin_list_orgs: admin client carried a user session — "
+                "RLS will scope results. Investigate immediately.",
+                session_user=getattr(getattr(_sess, "user", None), "email", None),
+            )
+    except Exception:
+        pass
 
     res = await run_sync_db_call(
         client.table("organisations")
@@ -5730,7 +5747,6 @@ async def admin_list_orgs(
             logger.warning(f"admin_list_orgs enrichment failed for {org['id']}: {e}")
 
     return {"organisations": orgs}
-
 
 async def _create_or_attach_owner(
     org_id: str,
