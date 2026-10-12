@@ -6156,6 +6156,43 @@ async def admin_list_orgs(
 
     return {"organisations": orgs}
 
+@app.get("/admin/orgs/stats")
+async def admin_org_stats(
+    request: Request,
+    x_admin_key: str = Header(..., alias="X-Admin-Key"),
+):
+    await rate_limit(get_client_ip(request))
+    _require_admin_key(x_admin_key)
+
+    # Admin client: fresh service-role client per call. This endpoint
+    # counts every org and every membership platform-wide, so RLS must
+    # not scope either query to any single user's view. Under the old
+    # polluted singleton, these counts silently matched one user's
+    # memberships instead of the whole platform.
+    client = get_admin_supabase()
+
+    orgs_res = await run_sync_db_call(
+        client.table("organisations").select("id, vertical, storefront_published").execute
+    )
+    orgs = orgs_res.data or []
+
+    members_res = await run_sync_db_call(
+        client.table("org_members").select("user_id").execute
+    )
+    members = members_res.data or []
+
+    return {
+        "total_orgs":       len(orgs),
+        "published_orgs":   sum(1 for o in orgs if o.get("storefront_published")),
+        "by_vertical": {
+            "retail":  sum(1 for o in orgs if o.get("vertical") == "retail"),
+            "food":    sum(1 for o in orgs if o.get("vertical") == "food"),
+            "service": sum(1 for o in orgs if o.get("vertical") == "service"),
+        },
+        "total_users": len(members),
+    }
+
+
 
 @app.get("/admin/orgs/{org_id}")
 async def admin_get_org(
@@ -6619,41 +6656,6 @@ async def admin_regenerate_invite(
     return {"invite_code": new_code}
 
 
-@app.get("/admin/orgs/stats")
-async def admin_org_stats(
-    request: Request,
-    x_admin_key: str = Header(..., alias="X-Admin-Key"),
-):
-    await rate_limit(get_client_ip(request))
-    _require_admin_key(x_admin_key)
-
-    # Admin client: fresh service-role client per call. This endpoint
-    # counts every org and every membership platform-wide, so RLS must
-    # not scope either query to any single user's view. Under the old
-    # polluted singleton, these counts silently matched one user's
-    # memberships instead of the whole platform.
-    client = get_admin_supabase()
-
-    orgs_res = await run_sync_db_call(
-        client.table("organisations").select("id, vertical, storefront_published").execute
-    )
-    orgs = orgs_res.data or []
-
-    members_res = await run_sync_db_call(
-        client.table("org_members").select("user_id").execute
-    )
-    members = members_res.data or []
-
-    return {
-        "total_orgs":       len(orgs),
-        "published_orgs":   sum(1 for o in orgs if o.get("storefront_published")),
-        "by_vertical": {
-            "retail":  sum(1 for o in orgs if o.get("vertical") == "retail"),
-            "food":    sum(1 for o in orgs if o.get("vertical") == "food"),
-            "service": sum(1 for o in orgs if o.get("vertical") == "service"),
-        },
-        "total_users": len(members),
-    }
 
 # ─────────────────────────────────────────────────────────────────
 # STOREFRONT — public read
