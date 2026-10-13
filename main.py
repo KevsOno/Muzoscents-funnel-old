@@ -14415,24 +14415,81 @@ async def get_stock_limits(
         # org_id scoping is the only boundary. The service-role client
         # bypasses RLS, so without this filter a fresh org would see
         # every stock_limits row in the platform.
+        #
+        # Selected columns are the ones that actually exist on
+        # stock_limits (verified 2026-10-13 via information_schema).
+        # The previous shape returned branch_id and product_id, neither
+        # of which exists on this table — they were always null.
         query = (
             client.table("stock_limits")
-            .select("*")
+            .select(
+                "id, org_id, location_id, inventory_id, "
+                "avg_daily_demand, safety_stock, reorder_point, max_stock, "
+                "calculated_at, updated_at"
+            )
             .eq("org_id", org_id)
         )
         result = await run_sync_db_call(query.range(offset, offset + limit - 1).execute)
+        rows = result.data or []
+
+        # ── Enrich with product + location display fields. ──
+
+        # Inventory: both sides are INTEGER (stock_limits.inventory_id
+        # and inventory.id), so a bounded .in_() lookup is safe and
+        # cheap. Scoped to the org for defence in depth — a stray
+        # inventory_id pointing at another tenant's row cannot leak
+        # that row's description.
+        inventory_ids = list({r["inventory_id"] for r in rows if r.get("inventory_id")})
+        inv_map: Dict[int, Dict] = {}
+        if inventory_ids:
+            inv_res = await run_sync_db_call(
+                client.table("inventory")
+                .select("id, description, item_code, current_qty")
+                .eq("org_id", org_id)
+                .in_("id", inventory_ids)
+                .execute
+            )
+            inv_map = {p["id"]: p for p in (inv_res.data or [])}
+
+        # Locations: locations.id type has been inconsistent across
+        # this codebase's migrations (INTEGER in some, UUID in others).
+        # Rather than bet on one, pull the org's locations once and
+        # match on str() for both sides. An org has a handful of
+        # locations, so the full pull is cheap and safe regardless of
+        # which type is live.
+        loc_map: Dict[str, str] = {}
+        loc_res = await run_sync_db_call(
+            client.table("locations")
+            .select("id, name")
+            .eq("org_id", org_id)
+            .execute
+        )
+        for l in (loc_res.data or []):
+            loc_map[str(l.get("id"))] = l.get("name")
 
         limits = []
-        for row in result.data or []:
+        for row in rows:
+            inv = inv_map.get(row.get("inventory_id")) or {}
+            loc_name = loc_map.get(str(row.get("location_id")))
             limits.append({
-                "id": row.get('id'),
-                "branch_id": row.get('branch_id'),
-                "product_id": row.get('product_id'),
-                "avg_daily_demand": float(row.get('avg_daily_demand', 0)),
-                "safety_stock": int(row.get('safety_stock', 0)),
-                "reorder_point": int(row.get('reorder_point', 0)),
-                "max_stock": int(row.get('max_stock', 0)),
-                "calculated_at": row.get('calculated_at')
+                "id":               row.get("id"),
+                "org_id":           row.get("org_id"),
+                "inventory_id":     row.get("inventory_id"),
+                "location_id":      row.get("location_id"),
+
+                # Enriched display fields. null when the FK points at
+                # a missing or foreign inventory/location row.
+                "product_name":     inv.get("description"),
+                "sku":              inv.get("item_code"),
+                "current_qty":      inv.get("current_qty"),
+                "location_name":    loc_name,
+
+                "avg_daily_demand": float(row.get("avg_daily_demand") or 0),
+                "safety_stock":     int(row.get("safety_stock") or 0),
+                "reorder_point":    int(row.get("reorder_point") or 0),
+                "max_stock":        int(row.get("max_stock") or 0),
+                "calculated_at":    row.get("calculated_at"),
+                "updated_at":       row.get("updated_at"),
             })
 
         return {
@@ -14441,7 +14498,8 @@ async def get_stock_limits(
             "limit": limit,
             "offset": offset
         }
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error fetching stock limits: {e}")
         return {
             "stock_limits": [],
             "total": 0,
