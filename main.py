@@ -5507,7 +5507,10 @@ async def get_current_user(authorization: str = Header(None)) -> Optional[Tuple[
         logger.warning(f"get_current_user: Invalid token - {e}")
         return None
         
-async def get_current_org(authorization: str = Header(None), x_selected_org_id: Optional[str] = None) -> Tuple[str, str]:
+async def get_current_org(
+    authorization: str = Header(None),
+    x_selected_org_id: Optional[str] = Header(None, alias="X-Selected-Org-Id"),
+) -> Tuple[str, str]:
     """FIXED: Enforces role validation per tenant instance - prevents cross-tenant privilege escalation."""
     user_info = await get_current_user(authorization)
     if not user_info:
@@ -5614,7 +5617,10 @@ async def get_current_org(authorization: str = Header(None), x_selected_org_id: 
     )
 
 
-async def get_current_user_with_role(authorization: str = Header(None), x_selected_org_id: Optional[str] = None) -> Tuple[str, str, str]:
+async def get_current_user_with_role(
+    authorization: str = Header(None),
+    x_selected_org_id: Optional[str] = Header(None, alias="X-Selected-Org-Id"),
+) -> Tuple[str, str, str]:
     """FIXED: Includes role validation per tenant instance."""
     user_id, org_id = await get_current_org(authorization, x_selected_org_id)
     client = get_supabase()
