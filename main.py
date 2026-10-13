@@ -537,14 +537,28 @@ async def fetch_org_flags(org_id: str) -> Optional[Dict]:
 
 async def check_org_feature(org_id: str, feature_key: str) -> None:
     """
-    Raise 402 if the org is not entitled to the feature.
+    Raise 402 if the org is suspended or not entitled to the feature.
     No-op when ENFORCE_FEATURES is off.
+
+    Two distinct 402 reasons are produced here:
+      - "Organisation suspended. Contact support to reactivate."
+        (status is suspended or churned)
+      - "Feature '<key>' is not enabled ... Contact support to upgrade
+        your plan." (status is fine, feature simply not on this tier)
+
+    The frontend can key on the message prefix to show either a
+    pay-your-bill screen or an upgrade-your-plan prompt.
     """
     if not ENFORCE_FEATURES:
         return
     org = await fetch_org_flags(org_id)
     if not org:
         raise HTTPException(status_code=404, detail="Organisation not found")
+    if (org.get("status") or "active") in ("suspended", "churned"):
+        raise HTTPException(
+            status_code=402,
+            detail="Organisation suspended. Contact support to reactivate.",
+        )
     features = effective_features(org)
     if not features.get(feature_key, False):
         raise HTTPException(
@@ -5529,53 +5543,6 @@ async def get_current_user(authorization: str = Header(None)) -> Optional[Tuple[
         logger.warning(f"get_current_user: Invalid token - {e}")
         return None
 
-async def _assert_org_not_suspended(org_id: str) -> None:
-    """
-    Raise 402 if the org is suspended.
-
-    Suspension is the platform's kill switch. effective_features() already
-    returns all-false for suspended orgs, so every feature-gated endpoint
-    would 402 anyway — but the message would read "Feature 'X' is not
-    enabled", which is the wrong UX for a suspension. A suspended client
-    should see "pay your bill", not "upgrade your plan".
-
-    This helper runs on every authenticated request after org_id is
-    resolved, so a suspended org's users get a distinct, actionable 402
-    regardless of which endpoint they hit and whether or not that
-    endpoint happens to be feature-gated.
-
-    Design constraints:
-      - Read-only. Never raises on a DB error — a transient hiccup on
-        the status read should not lock every user out of the app.
-        Logs and returns on failure; feature checks downstream still
-        catch suspended orgs with the generic message.
-      - One indexed PK lookup on organisations.id. Microsecond-scale
-        on any Supabase tier.
-    """
-    if not org_id:
-        return
-    client = get_admin_supabase()
-    try:
-        res = await run_sync_db_call(
-            client.table("organisations")
-            .select("status")
-            .eq("id", org_id)
-            .maybe_single()
-            .execute
-        )
-    except Exception as e:
-        logger.error(
-            "_assert_org_not_suspended: status read failed",
-            org_id=org_id, error=str(e),
-        )
-        return
-    if res and res.data and res.data.get("status") == "suspended":
-        raise HTTPException(
-            status_code=402,
-            detail="Organisation suspended. Contact support to reactivate.",
-        )
-
-
         
 async def get_current_org(
     authorization: str = Header(None),
@@ -5584,12 +5551,15 @@ async def get_current_org(
     """
     Resolve the caller's (user_id, org_id).
 
-    Wave 3 addition: after org_id is resolved, the org's status is
-    checked. A suspended org short-circuits with a 402 whose message is
-    distinct from a feature-not-enabled 402, so the frontend can tell
-    "pay your bill" apart from "upgrade your plan". This makes suspension
-    the enforcement mechanism for non-payment, independent of which
-    feature any individual endpoint is gated on.
+    This is the identity pipeline. It must always succeed for a valid
+    session — /auth/me goes through it, and /auth/me is how the
+    frontend learns who is signed in and what orgs they belong to.
+    Suspension is checked at the authorisation boundary
+    (require_role, check_org_feature), not here.
+
+    When the client sends no X-Selected-Org-Id, the default org is
+    picked with _pick_default_org: owner > admin > everyone else, and
+    within each tier, active orgs come before suspended ones.
     """
     user_info = await get_current_user(authorization)
     if not user_info:
@@ -5606,7 +5576,6 @@ async def get_current_org(
         logger.info(f"🔍 Query org_members with user_id={token_user_id}")
         res = await run_sync_db_call(client.table("org_members").select("org_id, role").eq("user_id", token_user_id).order("org_id", desc=False).execute)
         logger.info(f"🔍 org_members response (direct): {res.data}")
-        logger.info(f"✅ Using org_id = {org_id} for user {token_user_id}")
         org_rows = getattr(res, "data", []) or []
 
         if x_selected_org_id:
@@ -5620,23 +5589,16 @@ async def get_current_org(
                     status_code=403,
                     detail="You are not a member of the requested organisation"
                 )
-
             logger.info(f"User {token_user_id} has role '{user_role_in_tenant}' in org {x_selected_org_id}")
-            await _assert_org_not_suspended(x_selected_org_id)
             return token_user_id, x_selected_org_id
         else:
             if org_rows:
-                _prio = {"owner": 0, "admin": 1}
-                org_rows.sort(key=lambda r: (
-                    _prio.get(r.get("role"), 2),
-                    r.get("org_id") or "",
-                ))
-                org_id = org_rows[0]["org_id"]
+                chosen = await _pick_default_org(client, org_rows)
+                org_id = chosen["org_id"]
                 logger.info(
                     f"✅ Org resolved (no header): user={token_user_id}, "
-                    f"chosen_role={org_rows[0].get('role')}, org_id={org_id}"
+                    f"chosen_role={chosen.get('role')}, org_id={org_id}"
                 )
-                await _assert_org_not_suspended(org_id)
                 return token_user_id, org_id
             else:
                 logger.warning(f"Direct lookup returned no rows for user_id={token_user_id}")
@@ -5667,20 +5629,14 @@ async def get_current_org(
                             status_code=403,
                             detail="You are not a member of the requested organisation"
                         )
-                    await _assert_org_not_suspended(x_selected_org_id)
                     return resolved_user_id, x_selected_org_id
                 elif org_rows:
-                    _prio = {"owner": 0, "admin": 1}
-                    org_rows.sort(key=lambda r: (
-                        _prio.get(r.get("role"), 2),
-                        r.get("org_id") or "",
-                    ))
-                    org_id = org_rows[0]["org_id"]
+                    chosen = await _pick_default_org(client, org_rows)
+                    org_id = chosen["org_id"]
                     logger.info(
                         f"✅ Org resolved (email fallback): user={resolved_user_id}, "
-                        f"chosen_role={org_rows[0].get('role')}, org_id={org_id}"
+                        f"chosen_role={chosen.get('role')}, org_id={org_id}"
                     )
-                    await _assert_org_not_suspended(org_id)
                     return resolved_user_id, org_id
                 else:
                     logger.warning(f"Email fallback: no org_members row for resolved_user_id={resolved_user_id}")
@@ -5711,11 +5667,96 @@ async def get_current_user_with_role(
     role = member.data["role"] if member and member.data else "customer"
     return user_id, org_id, role
 
+async def _assert_org_not_suspended(org_id: str) -> None:
+    """
+    Raise 402 if the org is suspended or churned.
+
+    Called from require_role — the authorisation boundary — never from
+    get_current_org. The identity pipeline must always succeed for a
+    valid session so /auth/me can tell the frontend who is signed in
+    and what orgs they belong to. Suspension becomes a hard stop only
+    when a caller actually tries to do org-scoped work.
+
+    Never raises on a DB error — a transient hiccup on the status read
+    must not lock every user out of the app. Logs and returns on
+    failure; check_org_feature still catches suspended orgs downstream.
+    """
+    if not org_id:
+        return
+    client = get_admin_supabase()
+    try:
+        res = await run_sync_db_call(
+            client.table("organisations")
+            .select("status")
+            .eq("id", org_id)
+            .maybe_single()
+            .execute
+        )
+    except Exception as e:
+        logger.error(
+            "_assert_org_not_suspended: status read failed",
+            org_id=org_id, error=str(e),
+        )
+        return
+    if res and res.data and res.data.get("status") in ("suspended", "churned"):
+        raise HTTPException(
+            status_code=402,
+            detail="Organisation suspended. Contact support to reactivate.",
+        )
+
+
+async def _pick_default_org(client, org_rows: List[Dict]) -> Optional[Dict]:
+    """
+    Given a user's org_members rows, pick the one to use as the default
+    when the client sent no X-Selected-Org-Id header.
+
+    Preference order:
+      1. Owner over admin over everything else
+      2. Active over suspended/churned (within each role tier)
+      3. Stable sort by org_id
+
+    A user who owns several orgs, one of which is suspended, lands on
+    an active one by default. Only when every org they belong to is
+    suspended does the caller fall through to a suspended org — and in
+    that case require_role will 402 them with the suspension message
+    the moment they try to do anything.
+    """
+    if not org_rows:
+        return None
+
+    org_ids = [r["org_id"] for r in org_rows]
+    status_by_id: Dict[str, str] = {}
+    try:
+        status_res = await run_sync_db_call(
+            client.table("organisations")
+            .select("id, status")
+            .in_("id", org_ids)
+            .execute
+        )
+        status_by_id = {
+            o["id"]: (o.get("status") or "active")
+            for o in (status_res.data or [])
+        }
+    except Exception as e:
+        logger.warning(f"_pick_default_org: status lookup failed: {e}")
+
+    _prio = {"owner": 0, "admin": 1}
+
+    def sort_key(r):
+        role_rank = _prio.get(r.get("role"), 2)
+        status = status_by_id.get(r["org_id"], "active")
+        status_rank = 1 if status in ("suspended", "churned") else 0
+        return (role_rank, status_rank, r.get("org_id") or "")
+
+    return sorted(org_rows, key=sort_key)[0]
+
+
 def require_role(allowed_roles: List[str]):
     async def role_checker(user_data: Tuple[str, str, str] = Depends(get_current_user_with_role)):
-        _, _, role = user_data
+        user_id, org_id, role = user_data
         if role not in allowed_roles:
             raise HTTPException(status_code=403, detail=f"Access denied. Required role: {allowed_roles}")
+        await _assert_org_not_suspended(org_id)
         return user_data
     return role_checker
 
@@ -7207,6 +7248,15 @@ async def logout(request: Request, authorization: str = Header(None)):
 
 @app.get("/auth/me")
 async def me(request: Request, authorization: str = Header(None), x_selected_org_id: Optional[str] = Header(None)):
+    """
+    Return the caller's identity and current org.
+
+    Always 200 for a valid session. /auth/me is how the frontend learns
+    who is signed in — it must never 402 on a suspended org, or the
+    frontend will redirect the user out of the app even though they
+    still belong to other active orgs. Instead, this endpoint reports
+    the org's status so the frontend can show the right banner.
+    """
     await rate_limit(get_client_ip(request))
     user_data = await get_current_user_with_role(authorization, x_selected_org_id)
     if not user_data:
@@ -7223,7 +7273,6 @@ async def me(request: Request, authorization: str = Header(None), x_selected_org
     display_name = f"{first_name} {last_name}".strip()
 
     # branch_scope is stamped into the JWT app_metadata at signup/staff-create time.
-    # We expose it here so the frontend can reason about branch visibility.
     branch_scope = None
     try:
         token = None
@@ -7238,6 +7287,24 @@ async def me(request: Request, authorization: str = Header(None), x_selected_org
     except Exception as e:
         logger.warning(f"Could not read branch_scope from token: {e}")
 
+    # Read the resolved org's status so the frontend can show a
+    # suspension banner without needing to probe another endpoint and
+    # interpret a 402. /auth/me itself always succeeds for a valid
+    # session.
+    org_status = "active"
+    try:
+        org_row = await run_sync_db_call(
+            client.table("organisations")
+            .select("status")
+            .eq("id", org_id)
+            .maybe_single()
+            .execute
+        )
+        if org_row and org_row.data:
+            org_status = org_row.data.get("status") or "active"
+    except Exception as e:
+        logger.warning(f"Could not read org status for /auth/me: {e}")
+
     return {
         "user_id": user_id,
         "org_id": org_id,
@@ -7247,6 +7314,7 @@ async def me(request: Request, authorization: str = Header(None), x_selected_org
         "last_name": last_name,
         "email": email,
         "branch_scope": branch_scope,
+        "org_status": org_status,
     }
 
 @app.get("/auth/my-orgs")
