@@ -14412,7 +14412,14 @@ async def get_stock_limits(
     client = get_supabase()
 
     try:
-        query = client.table("stock_limits").select("*")
+        # org_id scoping is the only boundary. The service-role client
+        # bypasses RLS, so without this filter a fresh org would see
+        # every stock_limits row in the platform.
+        query = (
+            client.table("stock_limits")
+            .select("*")
+            .eq("org_id", org_id)
+        )
         result = await run_sync_db_call(query.range(offset, offset + limit - 1).execute)
 
         limits = []
@@ -14434,7 +14441,7 @@ async def get_stock_limits(
             "limit": limit,
             "offset": offset
         }
-    except:
+    except Exception:
         return {
             "stock_limits": [],
             "total": 0,
@@ -14442,7 +14449,6 @@ async def get_stock_limits(
             "offset": offset,
             "message": "Stock limits table not configured"
         }
-
 
 # ============================================================
 # DASHBOARD METRICS
