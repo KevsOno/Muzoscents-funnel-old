@@ -3048,54 +3048,238 @@ async def ensure_alert_log_backfill() -> None:
     
 
 async def ensure_transfer_suggestions_table():
-    supabase = get_supabase()
-    try:
-        test = await run_sync_db_call(supabase.table("transfer_suggestions").select("id").limit(1).execute)
-        logger.info("transfer_suggestions table already exists.")
-    except Exception as e:
-        if 'relation "transfer_suggestions" does not exist' in str(e):
-            logger.warning("transfer_suggestions table missing. Creating it now...")
-            try:
-                sql = """
-                CREATE TABLE IF NOT EXISTS public.transfer_suggestions (
-                    id SERIAL PRIMARY KEY,
-                    from_location_id INTEGER,
-                    to_location_id INTEGER NOT NULL,
-                    product_id INTEGER NOT NULL,
-                    batch VARCHAR(100),
-                    quantity INTEGER NOT NULL,
-                    completed_quantity INTEGER DEFAULT 0,
-                    urgency VARCHAR(20),
-                    reason TEXT,
-                    status VARCHAR(20) DEFAULT 'Pending',
-                    notes TEXT,
-                    created_at TIMESTAMPTZ DEFAULT now(),
-                    updated_at TIMESTAMPTZ DEFAULT now(),
-                    last_updated TIMESTAMPTZ DEFAULT now()
-                );
-                
-                CREATE INDEX IF NOT EXISTS idx_transfer_suggestions_status ON public.transfer_suggestions(status);
-                CREATE INDEX IF NOT EXISTS idx_transfer_suggestions_from ON public.transfer_suggestions(from_location_id);
-                CREATE INDEX IF NOT EXISTS idx_transfer_suggestions_to ON public.transfer_suggestions(to_location_id);
-                """
-                headers = {
-                    "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
-                    "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}"
-                }
-                async with httpx.AsyncClient() as client:
-                    resp = await client.post(
-                        f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
-                        json={"query": sql},
-                        headers=headers
-                    )
-                    if resp.status_code not in (200, 204):
-                        logger.error(f"Failed to create transfer_suggestions table: {resp.text}")
-                    else:
-                        logger.info("Successfully created transfer_suggestions table.")
-            except Exception as migration_err:
-                logger.error(f"Transfer suggestions migration error: {migration_err}")
-        else:
-            logger.error(f"Unexpected error checking transfer_suggestions: {e}")
+    """
+    ═══════════════════════════════════════════════════════════════════════
+    BELT-AND-BRACES MIGRATION — 2026-10-13. DO NOT REVERT.
+
+    Same shape as ensure_branches_table, ensure_alert_log_table, and
+    ensure_stock_limits_table: full SQL on every boot, every statement
+    idempotent, any failure raises so the boot aborts rather than
+    serving a drifted schema.
+
+    WRONG IN THE PREVIOUS VERSION (verified against the live schema on
+    2026-10-13 via information_schema):
+
+        from_location_id INTEGER         → real type is UUID.
+        to_location_id   INTEGER NOT NULL → real type is UUID, and the
+                                            live column is nullable, not
+                                            NOT NULL.
+        product_id       INTEGER NOT NULL → column does not exist at all.
+                                            The real FK is
+                                            inventory_id INTEGER.
+
+        A fresh CREATE from the old template would have produced a
+        table with a NOT NULL product_id that no writer fills and a
+        NOT NULL to_location_id that the same writer would have been
+        inserting as a UUID into an INTEGER slot — every single insert
+        on a reset environment would have failed at the type boundary
+        or the null constraint. Nothing would have noticed until the
+        first transfer suggestion was attempted.
+
+    MISSING FROM THE PREVIOUS VERSION:
+        inventory_id, org_id
+
+    COLUMN AUTHORITY:
+        Verified 2026-10-13 with:
+            SELECT column_name, data_type, is_nullable
+              FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'transfer_suggestions'
+             ORDER BY ordinal_position;
+
+    NOT-NULL NUANCE:
+        quantity is NOT NULL on production. The CREATE below preserves
+        that. The ALTER adds it as nullable, because Postgres will not
+        add a NOT NULL column to a populated table without a default.
+        On any table that already has the column the ALTER is a no-op
+        and the NOT NULL from the CREATE stands.
+
+    COMPANION:
+        ensure_transfer_suggestions_backfill() resolves org_id for
+        legacy rows via inventory_id → inventory.org_id (primary),
+        from_location_id → locations.org_id (fallback),
+        to_location_id → locations.org_id (fallback), and finally
+        PUBLIC_STORE_ORG_ID for any remaining orphans.
+    ═══════════════════════════════════════════════════════════════════════
+    """
+    sql = """
+    -- ── 1. Create the table if missing. ──
+    CREATE TABLE IF NOT EXISTS public.transfer_suggestions (
+        id                 SERIAL PRIMARY KEY,
+        from_location_id   UUID,
+        to_location_id     UUID,
+        inventory_id       INTEGER,
+        batch              VARCHAR(100),
+        quantity           INTEGER NOT NULL,
+        completed_quantity INTEGER DEFAULT 0,
+        urgency            VARCHAR(20),
+        reason             TEXT,
+        status             VARCHAR(20) DEFAULT 'Pending',
+        notes              TEXT,
+        created_at         TIMESTAMPTZ DEFAULT now(),
+        updated_at         TIMESTAMPTZ DEFAULT now(),
+        last_updated       TIMESTAMPTZ DEFAULT now(),
+        org_id             UUID REFERENCES public.organisations(id) ON DELETE CASCADE
+    );
+
+    -- ── 2. Heal a drifted table by adding missing columns. ──
+    ALTER TABLE public.transfer_suggestions
+        ADD COLUMN IF NOT EXISTS from_location_id   UUID,
+        ADD COLUMN IF NOT EXISTS to_location_id     UUID,
+        ADD COLUMN IF NOT EXISTS inventory_id       INTEGER,
+        ADD COLUMN IF NOT EXISTS batch              VARCHAR(100),
+        ADD COLUMN IF NOT EXISTS quantity           INTEGER,
+        ADD COLUMN IF NOT EXISTS completed_quantity INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS urgency            VARCHAR(20),
+        ADD COLUMN IF NOT EXISTS reason             TEXT,
+        ADD COLUMN IF NOT EXISTS status             VARCHAR(20) DEFAULT 'Pending',
+        ADD COLUMN IF NOT EXISTS notes              TEXT,
+        ADD COLUMN IF NOT EXISTS created_at         TIMESTAMPTZ DEFAULT now(),
+        ADD COLUMN IF NOT EXISTS updated_at         TIMESTAMPTZ DEFAULT now(),
+        ADD COLUMN IF NOT EXISTS last_updated       TIMESTAMPTZ DEFAULT now(),
+        ADD COLUMN IF NOT EXISTS org_id             UUID;
+
+    -- ── 3. Ensure the org_id FK exists (ADD COLUMN cannot attach one). ──
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+              FROM pg_constraint c
+              JOIN pg_attribute  a
+                ON a.attrelid = c.conrelid
+               AND a.attnum   = ANY (c.conkey)
+             WHERE c.conrelid = 'public.transfer_suggestions'::regclass
+               AND c.contype  = 'f'
+               AND a.attname  = 'org_id'
+        ) THEN
+            ALTER TABLE public.transfer_suggestions
+                ADD CONSTRAINT transfer_suggestions_org_id_fkey
+                FOREIGN KEY (org_id)
+                REFERENCES public.organisations(id)
+                ON DELETE CASCADE;
+        END IF;
+    END $$;
+
+    -- ── 4. Indexes. ──
+    -- Composite tenant + recency, since the endpoint filters by org_id
+    -- and orders by created_at DESC.
+    CREATE INDEX IF NOT EXISTS idx_transfer_suggestions_org_created
+        ON public.transfer_suggestions(org_id, created_at DESC);
+
+    -- Join key used by the backfill to resolve org_id from inventory.
+    CREATE INDEX IF NOT EXISTS idx_transfer_suggestions_inventory
+        ON public.transfer_suggestions(inventory_id);
+
+    -- Location filter keys. Both columns are UUID.
+    CREATE INDEX IF NOT EXISTS idx_transfer_suggestions_from
+        ON public.transfer_suggestions(from_location_id);
+    CREATE INDEX IF NOT EXISTS idx_transfer_suggestions_to
+        ON public.transfer_suggestions(to_location_id);
+
+    -- Status filter used by the endpoint.
+    CREATE INDEX IF NOT EXISTS idx_transfer_suggestions_status
+        ON public.transfer_suggestions(status);
+    """
+
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"transfer_suggestions table migration failed: {resp.text}")
+        raise RuntimeError(f"transfer_suggestions table migration failed: {resp.text}")
+    logger.info("transfer_suggestions table installed (or already present)")
+
+async def ensure_transfer_suggestions_backfill() -> None:
+    """
+    Backfill transfer_suggestions.org_id for rows written before the
+    column existed.
+
+    Three join paths, in preference order:
+
+        1. inventory_id     INTEGER → inventory.id     → inventory.org_id
+        2. from_location_id UUID    → locations.id     → locations.org_id
+        3. to_location_id   UUID    → locations.id     → locations.org_id
+
+    inventory_id is preferred because it is a direct FK to the item
+    the suggestion is about, and inventory rows always carry org_id.
+    The location joins are fallbacks for rows where inventory_id is
+    NULL or points at a deleted inventory row.
+
+    Any row that resolves via none of the three goes to
+    PUBLIC_STORE_ORG_ID, because once the endpoint filter is applied,
+    a NULL org_id makes the row invisible to every org.
+
+    Idempotent. Safe on every boot.
+    """
+    if not PUBLIC_STORE_ORG_ID:
+        logger.warning(
+            "ensure_transfer_suggestions_backfill: PUBLIC_STORE_ORG_ID not set — "
+            "orphan transfer_suggestions rows will stay NULL and invisible to all orgs"
+        )
+
+    sql_parts = [
+        # Path 1: via inventory_id → inventory.org_id (INTEGER join)
+        """
+        UPDATE public.transfer_suggestions ts
+           SET org_id = i.org_id
+          FROM public.inventory i
+         WHERE ts.inventory_id = i.id
+           AND ts.org_id IS NULL
+           AND i.org_id IS NOT NULL;
+        """,
+        # Path 2: via from_location_id → locations.org_id (UUID join)
+        """
+        UPDATE public.transfer_suggestions ts
+           SET org_id = l.org_id
+          FROM public.locations l
+         WHERE ts.from_location_id::text = l.id::text
+           AND ts.org_id IS NULL
+           AND l.org_id IS NOT NULL;
+        """,
+        # Path 3: via to_location_id → locations.org_id (UUID join)
+        """
+        UPDATE public.transfer_suggestions ts
+           SET org_id = l.org_id
+          FROM public.locations l
+         WHERE ts.to_location_id::text = l.id::text
+           AND ts.org_id IS NULL
+           AND l.org_id IS NOT NULL;
+        """,
+    ]
+
+    if PUBLIC_STORE_ORG_ID:
+        sql_parts.append(f"""
+            UPDATE public.transfer_suggestions
+               SET org_id = '{PUBLIC_STORE_ORG_ID}'::uuid
+             WHERE org_id IS NULL;
+        """)
+
+    sql = "\n".join(sql_parts)
+
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"transfer_suggestions backfill failed: {resp.text}")
+        raise RuntimeError(f"transfer_suggestions backfill failed: {resp.text}")
+    logger.info("transfer_suggestions org_id backfill complete")
+
+
 
 async def ensure_stock_limits_table():
     """
@@ -3975,6 +4159,7 @@ async def startup_event():
     await ensure_alert_log_table()
     await ensure_alert_log_backfill()                         # ← new: backfill legacy rows
     await ensure_transfer_suggestions_table()
+    await ensure_transfer_suggestions_backfill()              # ← new: backfill legacy rows
     await ensure_stock_limits_table()
     await ensure_stock_limits_backfill()                # ← new: backfill legacy rows
     await ensure_product_risk_view()
@@ -14602,13 +14787,18 @@ async def get_transfer_suggestions(
     client = get_supabase()
 
     try:
+        # Primary query: relies on PostgREST FK inference for the
+        # locations and inventory joins. org_id scoping is applied
+        # here just as it is on the fallback below — if the service
+        # role can see every row, the app-layer filter is the only
+        # tenant boundary there is.
         query = client.table("transfer_suggestions").select(
             "id, from_location_id, to_location_id, inventory_id, batch, quantity, completed_quantity, "
             "urgency, reason, status, notes, created_at, updated_at, last_updated, "
             "from_location:locations!from_location_id(name), "
             "to_location:locations!to_location_id(name), "
             "inventory:inventory!inventory_id(description, item_code)"
-        )
+        ).eq("org_id", org_id)
 
         if location_id:
             query = query.eq("from_location_id", location_id)
@@ -14649,8 +14839,11 @@ async def get_transfer_suggestions(
         }
     except Exception as e:
         logger.error(f"Error fetching transfer suggestions: {e}")
+        # Fallback query. Still org-scoped. Without the org filter
+        # here, a PostgREST join failure on the primary path would
+        # silently degrade this endpoint to a full-table read.
         try:
-            query = client.table("transfer_suggestions").select("*")
+            query = client.table("transfer_suggestions").select("*").eq("org_id", org_id)
             if location_id:
                 query = query.eq("from_location_id", location_id)
             if status and status != "All":
