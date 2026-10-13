@@ -8973,6 +8973,12 @@ async def public_storefront_checkout(
     # Feature gate: ecommerce (guest checkout is an ecommerce feature)
     await check_org_feature(resolved_org_id, "ecommerce")
 
+    # Feature gate: kitchen_display. A dine-in order is the tableside
+    # flow — the one that produces a KDS ticket. Only this request shape
+    # needs the feature. Delivery and pickup do not.
+    if req.fulfillment_mode == "dine_in":
+        await check_org_feature(resolved_org_id, "kitchen_display")
+
     client = get_supabase()
     org_res = await run_sync_db_call(
         client.table("organisations")
@@ -13581,6 +13587,12 @@ async def chat_stream(
         user_id = f"guest_{get_client_ip(request)}"
         role = "guest"
 
+    # Feature gate: ai_assistant. Applies to both authenticated and guest
+    # callers — an org without the AI feature answers 402 regardless of
+    # who is asking. The check runs after org_id is definitively resolved
+    # on either path.
+    await check_org_feature(org_id, "ai_assistant")
+
     reply, ticket_id = await get_strategic_reply(
         req.message, user_id, org_id, req.session_id, "web_widget"
     )
@@ -13658,21 +13670,29 @@ async def track_order(request: Request, receipt_number: str, email: str):
     try:
         result = await run_sync_db_call(
             client.table("sales")
-            .select("receipt_number, total_amount, shipping_status, tracking_number, shipping_carrier, estimated_delivery, created_at")
+            .select("receipt_number, total_amount, shipping_status, tracking_number, shipping_carrier, estimated_delivery, created_at, org_id")
             .eq("receipt_number", receipt_number)
             .eq("customer_email", email)
             .execute
         )
-        if result and result.data and len(result.data) > 0:
-            return result.data[0]
-        else:
+        if not result or not result.data or len(result.data) == 0:
             raise HTTPException(status_code=404, detail="Order not found")
+
+        order = result.data[0]
+
+        # Feature gate: fulfillment. The org is implied by the order, so
+        # there is no API change — the gate is resolved from the sale's
+        # own org_id.
+        await check_org_feature(order["org_id"], "fulfillment")
+
+        # Strip org_id from the public payload.
+        order.pop("org_id", None)
+        return order
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Track order error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
-
 # ------------------------------------------------------------------
 # SHIPPING STATUS (role-protected for logistics)
 # ------------------------------------------------------------------
@@ -13683,7 +13703,7 @@ class ShippingUpdate(BaseModel):
     estimated_delivery: Optional[str] = None
 
 @app.patch("/pos/sale/{sale_id}/shipping")
-async def update_shipping(request: Request, sale_id: str, update: ShippingUpdate, user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "logistics"]))):
+async def update_shipping(request: Request, sale_id: str, update: ShippingUpdate, user_data: Tuple[str, str, str] = Depends(require_feature("fulfillment", allowed_roles=["owner", "admin", "logistics"]))):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
     client = get_supabase()
@@ -13830,7 +13850,7 @@ async def list_fulfillment_orders(
     limit: int = 50,
     offset: int = 0,
     include_pending: bool = False,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "logistics"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("fulfillment", allowed_roles=["owner", "admin", "logistics"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -13864,7 +13884,7 @@ async def list_fulfillment_orders(
     return {"orders": orders}
 
 @app.get("/fulfillment/order/{order_id}")
-async def get_fulfillment_order(request: Request, order_id: str, user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "logistics"]))):
+async def get_fulfillment_order(request: Request, order_id: str, user_data: Tuple[str, str, str] = Depends(require_feature("fulfillment", allowed_roles=["owner", "admin", "logistics"]))):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
     client = get_supabase()
@@ -13902,7 +13922,7 @@ async def update_fulfillment_status(
     order_id: str,
     update: FulfillmentUpdate,
     background_tasks: BackgroundTasks,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "logistics"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("fulfillment", allowed_roles=["owner", "admin", "logistics"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -13949,14 +13969,14 @@ async def update_fulfillment_status(
 # LOYALTY ENDPOINTS
 # ------------------------------------------------------------------
 @app.get("/loyalty/balance")
-async def loyalty_balance(request: Request, user_data: Tuple[str, str, str] = Depends(get_current_user_with_role)):
+async def loyalty_balance(request: Request, user_data: Tuple[str, str, str] = Depends(require_feature("loyalty"))):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     user_id, _, _ = user_data
     balance = await get_loyalty_balance(user_id)
     return balance
 
 @app.get("/loyalty/transactions")
-async def loyalty_transactions(request: Request, limit: int = 50, offset: int = 0, user_data: Tuple[str, str, str] = Depends(get_current_user_with_role)):
+async def loyalty_transactions(request: Request, limit: int = 50, offset: int = 0, user_data: Tuple[str, str, str] = Depends(require_feature("loyalty"))):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     user_id, _, _ = user_data
     txns = await get_loyalty_transactions(user_id, limit, offset)
@@ -13966,7 +13986,7 @@ class RedeemRequest(BaseModel):
     points: int = Field(..., gt=0)
 
 @app.post("/loyalty/redeem")
-async def redeem_points(request: Request, req: RedeemRequest, user_data: Tuple[str, str, str] = Depends(get_current_user_with_role)):
+async def redeem_points(request: Request, req: RedeemRequest, user_data: Tuple[str, str, str] = Depends(require_feature("loyalty"))):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     user_id, _, _ = user_data
     credit_added = await redeem_points_to_credit(user_id, req.points)
@@ -14501,7 +14521,7 @@ class RegisterCustomerRequest(BaseModel):
 async def register_customer(
     request: Request,
     customer: RegisterCustomerRequest,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "loyalty_manager"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("loyalty", allowed_roles=["owner", "admin", "loyalty_manager"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -16094,11 +16114,16 @@ async def serve_storefront_manifest(slug: str):
     """
     Per-org PWA manifest. Reads branding from storefront_config so each
     installed app carries the org's name and icon.
+
+    Gated on mobile_apps. Returns 404 rather than 402 when the feature
+    is off: a browser requesting a manifest should not see a
+    payment-required error. 404 is the correct semantic — the manifest
+    does not exist for this store on this plan.
     """
     client = get_supabase()
     res = await run_sync_db_call(
         client.table("organisations")
-        .select("org_name, storefront_config, storefront_published")
+        .select("id, org_name, storefront_config, storefront_published")
         .eq("slug", slug)
         .maybe_single()
         .execute
@@ -16109,6 +16134,14 @@ async def serve_storefront_manifest(slug: str):
     org = res.data
     if not org.get("storefront_published"):
         raise HTTPException(status_code=404, detail="Store is not yet live")
+
+    # Feature gate: mobile_apps. Bypasses check_org_feature because the
+    # desired status code is 404, not 402. Respected ENFORCE_FEATURES so
+    # the rollback switch still short-circuits everything.
+    if ENFORCE_FEATURES:
+        flags = await fetch_org_flags(org["id"])
+        if not flags or not effective_features(flags).get("mobile_apps", False):
+            raise HTTPException(status_code=404, detail="Manifest not available")
 
     cfg = merge_storefront_config(org.get("storefront_config"))
     branding = cfg.get("branding", {})
