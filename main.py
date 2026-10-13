@@ -3572,63 +3572,78 @@ async def ensure_product_risk_view():
 async def ensure_transfer_suggestions_view():
     """
     ═══════════════════════════════════════════════════════════════════════
-    CORRECTED VIEW — 2026-10-13. DO NOT REVERT.
+    BELT-AND-BRACES MIGRATION — 2026-10-13. DO NOT REVERT.
 
-    Shape follows the belt-and-braces migrations: full SQL on every
-    boot, one idempotent statement, failure raises. CREATE OR REPLACE
-    VIEW is inherently idempotent — no probe query needed — so this
-    function just runs the definition.
+    DROP + CREATE instead of CREATE OR REPLACE.
+
+    WHY:
+
+        The first attempt at this rewrite used CREATE OR REPLACE VIEW.
+        Postgres rejected it with SQLSTATE 42P16:
+
+            cannot change name of view column "from_location_id" to "org_id"
+
+        CREATE OR REPLACE VIEW can only add new columns at the END of
+        the projection. It cannot rename, retype, or reorder any column
+        that already exists in the live view. The old view had
+        from_location_id at position 2; the new projection puts org_id
+        there. The mismatch aborts the replacement.
+
+        DROP VIEW IF EXISTS + CREATE VIEW has no such restriction. It
+        discards whatever shape exists and rebuilds from scratch. That
+        is what this rewrite has needed from the start.
+
+    DROP IS GUARDED BUT NOT CASCADED:
+
+        IF EXISTS so a fresh environment with no view does not fail.
+        No CASCADE — if some external object depends on this view, the
+        DROP should fail loudly rather than silently tear down the
+        dependency tree.
+
+    TRANSIENT ABSENCE WINDOW:
+
+        The view is gone between the DROP and the CREATE. In a
+        single-process deploy where this runs before the app accepts
+        traffic, the window is invisible. If migrations ever move to a
+        separate worker, sequence them so the API does not serve
+        queries against this view during the swap. Nothing in main.py
+        reads it, so today this is a non-issue.
 
     WRONG IN THE PREVIOUS DEFINITION:
 
         JOIN products p ON ts.product_id = p.id
 
-        ts.product_id does not exist on transfer_suggestions. Verified
-        against the live schema on 2026-10-13. Any environment that
-        did not already have this view has been failing to create it
-        silently for as long as the schema has been drifted. Any
-        environment that did have it has been querying a view that
-        returns nothing.
+        ts.product_id does not exist on transfer_suggestions. Every
+        environment that has been running the old function has either
+        failed the CREATE silently or is querying a view built from
+        some other source. Either way, no caller has been getting
+        reliable data from it.
 
-    MISSING FROM THE PREVIOUS DEFINITION:
+    LIVE transfer_suggestions COLUMNS (verified 2026-10-13):
+        id, from_location_id (uuid), to_location_id (uuid),
+        inventory_id (integer), batch, quantity, completed_quantity,
+        urgency, reason, status, notes, created_at, updated_at,
+        last_updated
 
-        completed_quantity, notes, org_id
-
-        All three exist on transfer_suggestions. The org_id omission
-        is the one that matters for multi-tenancy: without it in the
-        projection, a consumer querying the view cannot enforce a
-        tenant boundary at the view layer.
-
-    JOIN STRATEGY CHANGED FROM INNER TO LEFT:
-
-        The old view used `JOIN products`, which silently dropped any
-        suggestion whose product_id did not match a products row.
-        LEFT JOIN keeps the row and returns NULL for the joined
-        columns. For a diagnostics view, "row with missing product" is
-        information you want to see, not data you want filtered out.
-
-    COLUMN NAMES FOLLOW THE INVENTORY SCHEMA:
-
-        inventory.description → aliased as product_name
-        inventory.item_code   → aliased as sku
-
-        Same aliases the old view used, so any consumer that was
-        written against the old shape (assuming it ever got a non-empty
-        result) sees the same field names. Only the source table changed.
+    This projection reproduces those plus product_name, sku,
+    from_location, to_location, and org_id — the tenant key that the
+    old view omitted entirely.
     ═══════════════════════════════════════════════════════════════════════
     """
     sql = """
-    CREATE OR REPLACE VIEW public.view_all_transfer_suggestions AS
+    DROP VIEW IF EXISTS public.view_all_transfer_suggestions;
+
+    CREATE VIEW public.view_all_transfer_suggestions AS
     SELECT
         ts.id,
         ts.org_id,
         ts.from_location_id,
-        fl.name  AS from_location,
+        fl.name           AS from_location,
         ts.to_location_id,
-        tl.name  AS to_location,
+        tl.name           AS to_location,
         ts.inventory_id,
-        inv.description AS product_name,
-        inv.item_code   AS sku,
+        inv.description   AS product_name,
+        inv.item_code     AS sku,
         ts.batch,
         ts.quantity,
         ts.completed_quantity,
