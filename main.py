@@ -12921,6 +12921,11 @@ async def retry_pending_orders(
 class ChatStreamReq(BaseModel):
     session_id: str = Field(..., min_length=1, max_length=100)
     message: str = Field(..., min_length=1, max_length=2000)
+    # Optional tenant hint. The storefront widget sends this so an
+    # unauthenticated visitor chats against the store they are actually
+    # browsing, not an arbitrary org. Ignored for authenticated callers.
+    org_slug: Optional[str] = Field(None, min_length=1, max_length=60)
+
 
 async def get_current_user_with_role_optional(authorization: Optional[str] = Header(None)) -> Optional[Tuple[str, str, str]]:
     if not authorization or not authorization.startswith("Bearer "):
@@ -12942,14 +12947,55 @@ async def chat_stream(
         raise HTTPException(status_code=400, detail="Invalid session_id format")
 
     user_org = await get_current_user_with_role_optional(authorization)
+    client = get_supabase()
+
     if user_org:
+        # Authenticated caller. The JWT is authoritative. Any org_slug
+        # the client may have sent is deliberately ignored — a logged-in
+        # user must not be able to re-scope their own chat to a tenant
+        # they do not belong to.
         user_id, org_id, role = user_org
     else:
-        client = get_supabase()
-        org_res = await run_sync_db_call(client.table("organisations").select("id").limit(1).execute)
-        if not org_res.data:
-            raise HTTPException(status_code=500, detail="No organisation found")
-        org_id = org_res.data[0]["id"]
+        # Guest caller. Resolve the tenant from the slug the storefront
+        # widget sent. Never guess: the previous code called
+        # .limit(1) on organisations with no ordering, so guests were
+        # routed to whichever tenant Postgres returned first — a real
+        # cross-tenant leak once more than one org was live.
+
+        if req.org_slug:
+            # Explicit slug. The widget is embedded on a tenant
+            # storefront page. If the slug does not resolve to a
+            # published store, refuse with the same 404 the public
+            # storefront returns — do NOT silently fall back to the
+            # public store org, because a visitor who landed on
+            # /store/foo should never be answered by bar's assistant.
+            org_res = await run_sync_db_call(
+                client.table("organisations")
+                .select("id, storefront_published")
+                .eq("slug", req.org_slug)
+                .maybe_single()
+                .execute
+            )
+            if (
+                not org_res
+                or not org_res.data
+                or not org_res.data.get("storefront_published")
+            ):
+                # Same shape as /public/storefront/{slug} so this
+                # endpoint does not become a tenant-existence oracle.
+                raise HTTPException(status_code=404, detail="Store not found")
+            org_id = org_res.data["id"]
+        else:
+            # No slug. Caller is on the general URL (kdstore.html not
+            # served via /store/{slug}). Fall back to the designated
+            # public store org.
+            if not PUBLIC_STORE_ORG_ID:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Public store organisation not configured",
+                )
+            org_id = PUBLIC_STORE_ORG_ID
+
         user_id = f"guest_{get_client_ip(request)}"
         role = "guest"
 
