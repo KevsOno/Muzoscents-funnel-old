@@ -3474,64 +3474,100 @@ async def ensure_stock_limits_backfill() -> None:
 
 
 async def ensure_product_risk_view():
-    supabase = get_supabase()
-    try:
-        test = await run_sync_db_call(supabase.table("view_risk_list").select("id").limit(1).execute)
-        logger.info("view_risk_list view already exists.")
-    except Exception as e:
-        if 'relation "view_risk_list" does not exist' in str(e):
-            logger.warning("view_risk_list view missing. Creating it now...")
-            try:
-                sql = """
-                CREATE OR REPLACE VIEW public.view_risk_list AS
-                SELECT 
-                    inv.id,
-                    inv.location_id,
-                    l.name as location_name,
-                    inv.product_id,
-                    p.name as product_name,
-                    p.sku,
-                    inv.batch,
-                    inv.quantity,
-                    (inv.quantity * p.cost) as financial_value,
-                    inv.expiry_date,
-                    (inv.expiry_date - CURRENT_DATE) as days_to_expiry,
-                    CASE 
-                        WHEN (inv.expiry_date - CURRENT_DATE) <= 120 THEN 100
-                        WHEN (inv.expiry_date - CURRENT_DATE) <= 180 THEN 90
-                        WHEN (inv.expiry_date - CURRENT_DATE) <= 270 THEN 75
-                        WHEN (inv.expiry_date - CURRENT_DATE) <= 365 THEN 40
-                        ELSE 10
-                    END as risk_score,
-                    CASE 
-                        WHEN (inv.expiry_date - CURRENT_DATE) <= 120 THEN 'CRITICAL'
-                        WHEN (inv.expiry_date - CURRENT_DATE) <= 180 THEN 'HIGH'
-                        WHEN (inv.expiry_date - CURRENT_DATE) <= 270 THEN 'MODERATE'
-                        ELSE 'LOW'
-                    END as risk_level
-                FROM inventory inv
-                JOIN products p ON inv.product_id = p.id
-                LEFT JOIN locations l ON inv.location_id = l.id
-                WHERE inv.quantity > 0
-                """
-                headers = {
-                    "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
-                    "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}"
-                }
-                async with httpx.AsyncClient() as client:
-                    resp = await client.post(
-                        f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
-                        json={"query": sql},
-                        headers=headers
-                    )
-                    if resp.status_code not in (200, 204):
-                        logger.error(f"Failed to create view_risk_list: {resp.text}")
-                    else:
-                        logger.info("Successfully created view_risk_list view.")
-            except Exception as migration_err:
-                logger.error(f"Risk view migration error: {migration_err}")
-        else:
-            logger.error(f"Unexpected error checking view_risk_list: {e}")
+    """
+    ═══════════════════════════════════════════════════════════════════════
+    BELT-AND-BRACES MIGRATION — 2026-10-13. DO NOT REVERT.
+
+    Same shape as ensure_branches_table, ensure_alert_log_table,
+    ensure_stock_limits_table, ensure_transfer_suggestions_table: full
+    SQL on every boot, idempotent, failure raises.
+
+    WRONG IN THE PREVIOUS DEFINITION (verified against the live schemas
+    on 2026-10-13 via information_schema):
+
+        inv.product_id  → column does not exist on inventory.
+        inv.location_id → column does not exist on inventory.
+        inv.batch       → real column is batch_number.
+        inv.quantity    → real column is current_qty.
+        p.cost          → products.cost exists, but the JOIN to products
+                          is on inv.product_id which does not exist, so
+                          the join clause itself is invalid.
+
+        A fresh environment would fail this CREATE silently inside the
+        old try/except, leaving view_risk_list absent. /risk-scores
+        would then 500 into its fallback, which is also broken (it
+        selects inventory.product_id, .batch, .quantity, and .cost,
+        none of which exist). The endpoint would return an empty list
+        with no error surfaced.
+
+    LIVE view_risk_list columns (verified 2026-10-13):
+        id, inventory_id, org_id, product_name, sku, batch, quantity,
+        financial_value, expiry_date, days_to_expiry, risk_score,
+        risk_level
+
+    This rewrite reproduces that exact set from the live inventory
+    schema, so CREATE OR REPLACE VIEW produces a byte-identical column
+    list and Postgres does not reject the replacement. Because the
+    live view's column ORDER is not recorded here, the safer move is
+    DROP + CREATE, which sidesteps the "cannot change name of view
+    column" constraint that CREATE OR REPLACE imposes when order
+    differs. A fresh environment that has no view yet gets the same
+    outcome either way.
+
+    DROP is guarded by IF EXISTS. The CASCADE keyword is omitted on
+    purpose — if some external object depends on this view, we want
+    the DROP to fail loudly, not silently cascade through the
+    dependency tree.
+    ═══════════════════════════════════════════════════════════════════════
+    """
+    sql = """
+    DROP VIEW IF EXISTS public.view_risk_list;
+
+    CREATE VIEW public.view_risk_list AS
+    SELECT
+        inv.id                                AS id,
+        inv.id                                AS inventory_id,
+        inv.org_id                            AS org_id,
+        inv.description                       AS product_name,
+        inv.item_code                         AS sku,
+        inv.batch_number                      AS batch,
+        inv.current_qty::integer              AS quantity,
+        (inv.current_qty * inv.cost_price_naira) AS financial_value,
+        inv.expiry_date                       AS expiry_date,
+        (inv.expiry_date - CURRENT_DATE)      AS days_to_expiry,
+        CASE
+            WHEN (inv.expiry_date - CURRENT_DATE) <= 120 THEN 100
+            WHEN (inv.expiry_date - CURRENT_DATE) <= 180 THEN 90
+            WHEN (inv.expiry_date - CURRENT_DATE) <= 270 THEN 75
+            WHEN (inv.expiry_date - CURRENT_DATE) <= 365 THEN 40
+            ELSE 10
+        END                                   AS risk_score,
+        CASE
+            WHEN (inv.expiry_date - CURRENT_DATE) <= 120 THEN 'CRITICAL'
+            WHEN (inv.expiry_date - CURRENT_DATE) <= 180 THEN 'HIGH'
+            WHEN (inv.expiry_date - CURRENT_DATE) <= 270 THEN 'MODERATE'
+            ELSE 'LOW'
+        END                                   AS risk_level
+      FROM public.inventory inv
+     WHERE COALESCE(inv.current_qty, 0) > 0;
+    """
+
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"view_risk_list migration failed: {resp.text}")
+        raise RuntimeError(f"view_risk_list migration failed: {resp.text}")
+    logger.info("view_risk_list view installed (or already present)")
+
 
 async def ensure_transfer_suggestions_view():
     """
@@ -14490,7 +14526,10 @@ async def get_risk_scores(
     client = get_supabase()
 
     try:
-        query = client.table("view_risk_list").select("*")
+        # Primary path. The view already exposes org_id, so this is a
+        # straight filter. Without it, a fresh org sees every tenant's
+        # inventory risk rows.
+        query = client.table("view_risk_list").select("*").eq("org_id", org_id)
         if risk_level:
             query = query.eq("risk_level", risk_level)
         result = await run_sync_db_call(query.range(offset, offset + limit - 1).execute)
@@ -14517,50 +14556,61 @@ async def get_risk_scores(
             "offset": offset
         }
     except Exception as e:
+        # Fallback. Rewritten against the live inventory schema. The
+        # previous fallback selected inventory.product_id, .batch,
+        # .quantity, and .cost — none of which exist — and joined
+        # products on a nonexistent column. It always threw, so this
+        # block was effectively an empty-list generator. Now it is a
+        # real, org-scoped scan with correct column names.
+        logger.warning(f"risk-scores primary path failed, falling back: {e}")
         try:
-            inventory = await run_sync_db_call(client.table("inventory").select("id, product_id, batch, quantity, expiry_date, cost").execute)
+            inventory = await run_sync_db_call(
+                client.table("inventory")
+                .select("id, description, item_code, batch_number, current_qty, expiry_date, cost_price_naira")
+                .eq("org_id", org_id)
+                .execute
+            )
             inv_data = inventory.data or []
-            products = await run_sync_db_call(client.table("products").select("id, name, sku").execute)
-            prod_data = products.data or []
-            product_map = {p['id']: p for p in prod_data}
 
             scores = []
             today = date.today()
             for item in inv_data:
-                product = product_map.get(item.get('product_id'), {})
                 expiry = item.get('expiry_date')
                 days_to_expiry = None
                 if expiry:
                     try:
                         expiry_date = datetime.strptime(expiry, "%Y-%m-%d").date() if isinstance(expiry, str) else expiry
                         days_to_expiry = (expiry_date - today).days
-                    except:
+                    except Exception:
                         pass
 
-                risk_level = "LOW"
-                risk_score = 10
+                risk_level_val = "LOW"
+                risk_score_val = 10
                 if days_to_expiry is not None:
                     if days_to_expiry <= 120:
-                        risk_level = "CRITICAL"
-                        risk_score = 100
+                        risk_level_val = "CRITICAL"
+                        risk_score_val = 100
                     elif days_to_expiry <= 180:
-                        risk_level = "HIGH"
-                        risk_score = 90
+                        risk_level_val = "HIGH"
+                        risk_score_val = 90
                     elif days_to_expiry <= 270:
-                        risk_level = "MODERATE"
-                        risk_score = 75
+                        risk_level_val = "MODERATE"
+                        risk_score_val = 75
+
+                qty = int(item.get('current_qty') or 0)
+                cost = float(item.get('cost_price_naira') or 0)
 
                 scores.append({
                     "id": item.get('id'),
-                    "product_name": product.get('name', 'Unknown'),
-                    "sku": product.get('sku', 'N/A'),
-                    "batch": item.get('batch'),
-                    "quantity": item.get('quantity', 0),
-                    "financial_value": float(item.get('quantity', 0) * float(item.get('cost', 0))),
+                    "product_name": item.get('description', 'Unknown'),
+                    "sku": item.get('item_code', 'N/A'),
+                    "batch": item.get('batch_number'),
+                    "quantity": qty,
+                    "financial_value": float(qty * cost),
                     "expiry_date": item.get('expiry_date'),
                     "days_to_expiry": days_to_expiry,
-                    "risk_score": risk_score,
-                    "risk_level": risk_level
+                    "risk_score": risk_score_val,
+                    "risk_level": risk_level_val
                 })
 
             if risk_level:
@@ -14572,14 +14622,14 @@ async def get_risk_scores(
                 "limit": limit,
                 "offset": offset
             }
-        except:
+        except Exception as e2:
+            logger.error(f"risk-scores fallback also failed: {e2}")
             return {
                 "risk_scores": [],
                 "total": 0,
                 "limit": limit,
                 "offset": offset
             }
-
 
 @app.get("/risk-scores/summary")
 async def get_risk_summary(
