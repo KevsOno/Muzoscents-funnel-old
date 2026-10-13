@@ -3098,48 +3098,196 @@ async def ensure_transfer_suggestions_table():
             logger.error(f"Unexpected error checking transfer_suggestions: {e}")
 
 async def ensure_stock_limits_table():
-    supabase = get_supabase()
-    try:
-        test = await run_sync_db_call(supabase.table("stock_limits").select("id").limit(1).execute)
-        logger.info("stock_limits table already exists.")
-    except Exception as e:
-        if 'relation "stock_limits" does not exist' in str(e):
-            logger.warning("stock_limits table missing. Creating it now...")
-            try:
-                sql = """
-                CREATE TABLE IF NOT EXISTS public.stock_limits (
-                    id SERIAL PRIMARY KEY,
-                    location_id INTEGER,
-                    product_id INTEGER NOT NULL,
-                    avg_daily_demand NUMERIC DEFAULT 0,
-                    safety_stock INTEGER DEFAULT 0,
-                    reorder_point INTEGER DEFAULT 0,
-                    max_stock INTEGER DEFAULT 0,
-                    calculated_at TIMESTAMPTZ DEFAULT now(),
-                    updated_at TIMESTAMPTZ DEFAULT now()
-                );
-                
-                CREATE INDEX IF NOT EXISTS idx_stock_limits_location ON public.stock_limits(location_id);
-                CREATE INDEX IF NOT EXISTS idx_stock_limits_product ON public.stock_limits(product_id);
-                """
-                headers = {
-                    "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
-                    "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}"
-                }
-                async with httpx.AsyncClient() as client:
-                    resp = await client.post(
-                        f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
-                        json={"query": sql},
-                        headers=headers
-                    )
-                    if resp.status_code not in (200, 204):
-                        logger.error(f"Failed to create stock_limits table: {resp.text}")
-                    else:
-                        logger.info("Successfully created stock_limits table.")
-            except Exception as migration_err:
-                logger.error(f"Stock limits migration error: {migration_err}")
-        else:
-            logger.error(f"Unexpected error checking stock_limits: {e}")
+    """
+    ═══════════════════════════════════════════════════════════════════════
+    BELT-AND-BRACES MIGRATION — 2026-10-13. DO NOT REVERT.
+
+    Mirrors ensure_branches_table and ensure_alert_log_table: full SQL on
+    every boot, every statement idempotent, any failure raises so the boot
+    aborts rather than serving a drifted schema.
+
+    WRONG IN THE PREVIOUS VERSION (verified against the live schema on
+    2026-10-13 via information_schema):
+
+        location_id INTEGER       → real type is UUID.
+        product_id INTEGER NOT NULL → column does not exist at all.
+                                     The real FK is inventory_id INTEGER.
+                                     A fresh CREATE would have created a
+                                     NOT NULL column that no writer fills,
+                                     so every insert on a reset env would
+                                     have failed with "null value in column
+                                     product_id violates not-null constraint".
+
+    MISSING FROM THE PREVIOUS VERSION:
+        inventory_id, org_id
+
+    NO NOT-NULL ON inventory_id:
+        The live column is nullable. Making it NOT NULL here would break
+        any existing NULL row and any writer that inserts a stock_limits
+        row without a product association. Leaving it nullable matches
+        reality.
+
+    COLUMN AUTHORITY:
+        Verified 2026-10-13 with:
+            SELECT column_name, data_type, is_nullable
+              FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'stock_limits'
+             ORDER BY ordinal_position;
+
+    COMPANION:
+        ensure_stock_limits_backfill() resolves org_id for legacy rows via
+        inventory_id → inventory.org_id (primary) and location_id →
+        locations.org_id (fallback), then PUBLIC_STORE_ORG_ID for any
+        remaining orphans. Both join keys are indexed below.
+    ═══════════════════════════════════════════════════════════════════════
+    """
+    sql = """
+    -- ── 1. Create the table if missing. ──
+    CREATE TABLE IF NOT EXISTS public.stock_limits (
+        id                SERIAL PRIMARY KEY,
+        location_id       UUID,
+        inventory_id      INTEGER,
+        avg_daily_demand  NUMERIC DEFAULT 0,
+        safety_stock      INTEGER DEFAULT 0,
+        reorder_point     INTEGER DEFAULT 0,
+        max_stock         INTEGER DEFAULT 0,
+        calculated_at     TIMESTAMPTZ DEFAULT now(),
+        updated_at        TIMESTAMPTZ DEFAULT now(),
+        org_id            UUID REFERENCES public.organisations(id) ON DELETE CASCADE
+    );
+
+    -- ── 2. Heal a drifted table by adding missing columns. ──
+    ALTER TABLE public.stock_limits
+        ADD COLUMN IF NOT EXISTS location_id       UUID,
+        ADD COLUMN IF NOT EXISTS inventory_id      INTEGER,
+        ADD COLUMN IF NOT EXISTS avg_daily_demand  NUMERIC DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS safety_stock      INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS reorder_point     INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS max_stock         INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS calculated_at     TIMESTAMPTZ DEFAULT now(),
+        ADD COLUMN IF NOT EXISTS updated_at        TIMESTAMPTZ DEFAULT now(),
+        ADD COLUMN IF NOT EXISTS org_id            UUID;
+
+    -- ── 3. Ensure the org_id FK exists (ADD COLUMN cannot attach one). ──
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+              FROM pg_constraint c
+              JOIN pg_attribute  a
+                ON a.attrelid = c.conrelid
+               AND a.attnum   = ANY (c.conkey)
+             WHERE c.conrelid = 'public.stock_limits'::regclass
+               AND c.contype  = 'f'
+               AND a.attname  = 'org_id'
+        ) THEN
+            ALTER TABLE public.stock_limits
+                ADD CONSTRAINT stock_limits_org_id_fkey
+                FOREIGN KEY (org_id)
+                REFERENCES public.organisations(id)
+                ON DELETE CASCADE;
+        END IF;
+    END $$;
+
+    -- ── 4. Indexes. ──
+    -- Primary tenant filter. The endpoint will read by org_id alone.
+    CREATE INDEX IF NOT EXISTS idx_stock_limits_org
+        ON public.stock_limits(org_id);
+
+    -- Join key used by ensure_stock_limits_backfill to resolve org_id
+    -- from inventory on legacy rows.
+    CREATE INDEX IF NOT EXISTS idx_stock_limits_inventory
+        ON public.stock_limits(inventory_id);
+
+    -- Secondary backfill join key and location-scoped read filter.
+    CREATE INDEX IF NOT EXISTS idx_stock_limits_location
+        ON public.stock_limits(location_id);
+    """
+
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"stock_limits table migration failed: {resp.text}")
+        raise RuntimeError(f"stock_limits table migration failed: {resp.text}")
+    logger.info("stock_limits table installed (or already present)")
+
+async def ensure_stock_limits_backfill() -> None:
+    """
+    Backfill stock_limits.org_id for rows written before the column
+    existed.
+
+    Live schema has inventory_id (INTEGER) and location_id (UUID). Both
+    are valid join keys back to a tenant:
+        inventory_id → inventory.id → inventory.org_id
+        location_id  → locations.id → locations.org_id
+
+    Any row that resolves to neither goes to PUBLIC_STORE_ORG_ID, because
+    once the endpoint filter is applied, a NULL org_id is invisible to
+    every org.
+
+    Idempotent. Safe on every boot.
+    """
+    if not PUBLIC_STORE_ORG_ID:
+        logger.warning(
+            "ensure_stock_limits_backfill: PUBLIC_STORE_ORG_ID not set — "
+            "orphan stock_limits rows will stay NULL and invisible to all orgs"
+        )
+
+    sql_parts = [
+        # Path 1: via inventory_id → inventory.org_id (INTEGER join)
+        """
+        UPDATE public.stock_limits sl
+           SET org_id = i.org_id
+          FROM public.inventory i
+         WHERE sl.inventory_id = i.id
+           AND sl.org_id IS NULL
+           AND i.org_id IS NOT NULL;
+        """,
+        # Path 2: via location_id → locations.org_id (UUID join)
+        """
+        UPDATE public.stock_limits sl
+           SET org_id = l.org_id
+          FROM public.locations l
+         WHERE sl.location_id::text = l.id::text
+           AND sl.org_id IS NULL
+           AND l.org_id IS NOT NULL;
+        """,
+    ]
+
+    if PUBLIC_STORE_ORG_ID:
+        sql_parts.append(f"""
+            UPDATE public.stock_limits
+               SET org_id = '{PUBLIC_STORE_ORG_ID}'::uuid
+             WHERE org_id IS NULL;
+        """)
+
+    sql = "\n".join(sql_parts)
+
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"stock_limits backfill failed: {resp.text}")
+        raise RuntimeError(f"stock_limits backfill failed: {resp.text}")
+    logger.info("stock_limits org_id backfill complete")
+
 
 async def ensure_product_risk_view():
     supabase = get_supabase()
@@ -3828,6 +3976,7 @@ async def startup_event():
     await ensure_alert_log_backfill()                         # ← new: backfill legacy rows
     await ensure_transfer_suggestions_table()
     await ensure_stock_limits_table()
+    await ensure_stock_limits_backfill()                # ← new: backfill legacy rows
     await ensure_product_risk_view()
     await ensure_transfer_suggestions_view()
     await ensure_system_logs_table()
