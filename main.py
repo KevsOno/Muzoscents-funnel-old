@@ -15007,7 +15007,20 @@ async def get_products(
     _, org_id, _ = user_data
     client = get_supabase()
 
-    query = client.table("products").select("id,sku,name,category,shelf_life_days,cost")
+    # org_id scoping is the tenant boundary. The service-role client
+    # bypasses RLS, so without this filter the endpoint returns every
+    # org's products.
+    #
+    # SELECT columns match the live products schema. The previous
+    # definition selected shelf_life_days, which is not a column on
+    # products — PostgREST rejected the request with a 400 on every
+    # call. Removed. If shelf_life_days does exist on your schema,
+    # add it back.
+    query = (
+        client.table("products")
+        .select("id, org_id, sku, name, category, cost, created_at, updated_at")
+        .eq("org_id", org_id)
+    )
 
     if search:
         query = query.or_(f"sku.ilike.%{search}%,name.ilike.%{search}%")
@@ -15015,14 +15028,17 @@ async def get_products(
     if category:
         query = query.eq("category", category)
 
-    result = await run_sync_db_call(query.order("name", desc=False).range(offset, offset + limit - 1).execute)
+    result = await run_sync_db_call(
+        query.order("name", desc=False).range(offset, offset + limit - 1).execute
+    )
 
     return {
-        "products": result.data,
-        "total": len(result.data) or 0,
+        "products": result.data or [],
+        "total": len(result.data) if result.data else 0,
         "limit": limit,
         "offset": offset
     }
+
 
 @app.get("/products/search")
 async def search_products(
@@ -15035,15 +15051,19 @@ async def search_products(
     _, org_id, _ = user_data
     client = get_supabase()
 
+    # Same select-column note as GET /products. Org-scoped.
     result = await run_sync_db_call(
-        client.table("products").select(
-            "id,sku,name,category,shelf_life_days,cost"
-        ).or_(
-            f"sku.ilike.%{q}%,name.ilike.%{q}%"
-        ).limit(limit).execute
+        client.table("products")
+        .select("id, org_id, sku, name, category, cost, created_at, updated_at")
+        .eq("org_id", org_id)
+        .or_(f"sku.ilike.%{q}%,name.ilike.%{q}%")
+        .limit(limit)
+        .execute
     )
 
-    return {"results": result.data}
+    return {"results": result.data or []}
+
+
 
 @app.put("/products/{product_id}")
 async def update_product(
@@ -15056,11 +15076,36 @@ async def update_product(
     _, org_id, _ = user_data
     client = get_supabase()
 
-    result = await run_sync_db_call(client.table("products").update(update_data).eq("id", product_id).execute)
+    # Ownership pre-flight. product_id is an integer, so a caller could
+    # otherwise PUT against any tenant's product by guessing the id.
+    # This makes the "not found" path indistinguishable from "belongs
+    # to someone else" so the endpoint does not leak which ids exist.
+    existing = await run_sync_db_call(
+        client.table("products")
+        .select("id")
+        .eq("id", product_id)
+        .eq("org_id", org_id)
+        .maybe_single()
+        .execute
+    )
+    if not existing or not existing.data:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    # The update itself is scoped too. Belt and braces: the pre-flight
+    # covers the common case, and the .eq on the update closes any race
+    # where the row is moved to a different org between the two calls.
+    result = await run_sync_db_call(
+        client.table("products")
+        .update(update_data)
+        .eq("id", product_id)
+        .eq("org_id", org_id)
+        .execute
+    )
     if not result.data:
         raise HTTPException(status_code=404, detail="Product not found")
 
     return result.data[0]
+
 
 @app.delete("/products/{product_id}")
 async def delete_product(
@@ -15072,9 +15117,35 @@ async def delete_product(
     _, org_id, _ = user_data
     client = get_supabase()
 
-    await run_sync_db_call(client.table("inventory").delete().eq("product_id", product_id).execute)
+    # Ownership pre-flight, same reasoning as PUT.
+    existing = await run_sync_db_call(
+        client.table("products")
+        .select("id")
+        .eq("id", product_id)
+        .eq("org_id", org_id)
+        .maybe_single()
+        .execute
+    )
+    if not existing or not existing.data:
+        raise HTTPException(status_code=404, detail="Product not found")
 
-    result = await run_sync_db_call(client.table("products").delete().eq("id", product_id).execute)
+    # NOTE: the previous version tried to cascade the delete into
+    # inventory by matching inventory.product_id = product_id. That
+    # column does not exist on inventory — the .eq() call would 400,
+    # raise out of the endpoint, and the DELETE always 500'd. There is
+    # no FK relationship between products and inventory in this schema,
+    # so there is nothing to cascade. Removed.
+    #
+    # If your intent was "block the delete when the product is still
+    # referenced by inventory", we would need a real linking column on
+    # inventory first. That's a schema change, not an endpoint change.
+    result = await run_sync_db_call(
+        client.table("products")
+        .delete()
+        .eq("id", product_id)
+        .eq("org_id", org_id)
+        .execute
+    )
     if not result.data:
         raise HTTPException(status_code=404, detail="Product not found")
 
