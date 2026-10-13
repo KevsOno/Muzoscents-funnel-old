@@ -10979,11 +10979,13 @@ async def create_ap_from_grn(grn_id: str, org_id: str):
 
 # ===================== EXPIRY AND BATCH MANAGEMENT ENDPOINTS =====================
 @app.get("/inventory/expiring-products")
+@app.get("/inventory/expiring-products")
 async def get_expiring_products(
     request: Request,
     days_threshold: int = Query(180, ge=1, le=365),
     alert_level: Optional[str] = Query(None),
     location_id: Optional[str] = None,
+    limit: int = Query(500, ge=1, le=2000),
     user_data: Tuple[str, str, str] = Depends(
         require_feature("expiry_tracking", allowed_roles=["owner", "admin", "inventory_manager"])
     )
@@ -10995,12 +10997,27 @@ async def get_expiring_products(
     today = datetime.now(timezone.utc).date()
     threshold_date = today + timedelta(days=days_threshold)
 
+    # !inner forces PostgREST to use an INNER JOIN. Combined with the
+    # org_id filter on the joined table, this drops batches whose
+    # inventory_id points at a deleted row or a foreign org at the
+    # database — they never travel over the wire and never reach the
+    # Python loop. Without !inner the join is LEFT, the filter on
+    # inventory.org_id is decorative, and every orphan comes back with
+    # "inventory": null.
+    #
+    # The explicit column list on the embed keeps the response small.
+    # The limit caps the total row count regardless of how many
+    # batches are in scope.
     query = client.table("inventory_batches") \
-        .select("*, inventory:inventory_id(*)") \
+        .select(
+            "*, "
+            "inventory:inventory_id!inner(id, org_id, description, item_code, product_group)"
+        ) \
         .eq("inventory.org_id", org_id) \
         .lte("expiry_date", threshold_date.isoformat()) \
         .gt("quantity", 0) \
-        .order("expiry_date", desc=False)
+        .order("expiry_date", desc=False) \
+        .limit(limit)
 
     result = await run_sync_db_call(query.execute)
 
@@ -11015,6 +11032,8 @@ async def get_expiring_products(
     for batch in result.data:
         inventory = batch.get("inventory")
         if inventory is None:
+            # !inner should have filtered these out at the database.
+            # Kept as a safety net for genuinely malformed rows.
             logger.warning(f"Skipping batch {batch.get('id')} with missing inventory reference")
             continue
 
@@ -11078,7 +11097,8 @@ async def get_expiring_products(
             "warning_count": warning_count,
             "info_count": info_count
         },
-        "threshold_days": days_threshold
+        "threshold_days": days_threshold,
+        "truncated": len(result.data) >= limit
     }
 
 @app.get("/inventory/batches/{inventory_id}")
@@ -11512,7 +11532,7 @@ async def expiry_dashboard(
 
     batches = await run_sync_db_call(
         client.table("inventory_batches")
-        .select("*, inventory:inventory_id(description, item_code, product_group)")
+        .select("*, inventory:inventory_id!inner(description, item_code, product_group)")
         .eq("inventory.org_id", org_id)
         .execute
     )
