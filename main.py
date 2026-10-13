@@ -195,6 +195,29 @@ def _compute_migration_suite_hash() -> str:
 # Static definitions. Never mutate a tier once released; add a new one
 # with a new key. Per-org state lives on organisations.plan_tier and
 # organisations.feature_overrides.
+#
+# ── POLICY: POS is the floor, not a toggle ──
+#
+# offline_pos: True on every tier is deliberate, not an oversight.
+# There is no product without POS; a shop that cannot ring up sales is
+# not a shop. The gate on /pos/terminal/checkout exists so the plumbing
+# is uniform, but it never fires today because no tier sets the flag to
+# False. That is the correct behaviour.
+#
+# Non-payment is enforced by suspension, not by feature flags:
+#
+#   organisations.status = 'suspended'
+#     → effective_features() returns all-false
+#     → every gated endpoint 402s with "Feature not enabled"
+#     → _assert_org_not_suspended() in get_current_org short-circuits
+#       earlier with a distinct "Organisation suspended" 402, so the
+#       frontend can show "pay your bill" instead of "upgrade your plan"
+#
+# Feature flags are for optional capabilities a given plan does not
+# include. If you are about to set offline_pos: False on a new tier,
+# stop and ask whether that tier is a real customer segment or a config
+# mistake. Same discipline for any capability that is structurally
+# required for a shop to operate.
 # ====================================================================
 
 PLAN_TIERS: Dict[str, Dict] = {
@@ -5505,12 +5528,69 @@ async def get_current_user(authorization: str = Header(None)) -> Optional[Tuple[
     except Exception as e:
         logger.warning(f"get_current_user: Invalid token - {e}")
         return None
+
+async def _assert_org_not_suspended(org_id: str) -> None:
+    """
+    Raise 402 if the org is suspended.
+
+    Suspension is the platform's kill switch. effective_features() already
+    returns all-false for suspended orgs, so every feature-gated endpoint
+    would 402 anyway — but the message would read "Feature 'X' is not
+    enabled", which is the wrong UX for a suspension. A suspended client
+    should see "pay your bill", not "upgrade your plan".
+
+    This helper runs on every authenticated request after org_id is
+    resolved, so a suspended org's users get a distinct, actionable 402
+    regardless of which endpoint they hit and whether or not that
+    endpoint happens to be feature-gated.
+
+    Design constraints:
+      - Read-only. Never raises on a DB error — a transient hiccup on
+        the status read should not lock every user out of the app.
+        Logs and returns on failure; feature checks downstream still
+        catch suspended orgs with the generic message.
+      - One indexed PK lookup on organisations.id. Microsecond-scale
+        on any Supabase tier.
+    """
+    if not org_id:
+        return
+    client = get_admin_supabase()
+    try:
+        res = await run_sync_db_call(
+            client.table("organisations")
+            .select("status")
+            .eq("id", org_id)
+            .maybe_single()
+            .execute
+        )
+    except Exception as e:
+        logger.error(
+            "_assert_org_not_suspended: status read failed",
+            org_id=org_id, error=str(e),
+        )
+        return
+    if res and res.data and res.data.get("status") == "suspended":
+        raise HTTPException(
+            status_code=402,
+            detail="Organisation suspended. Contact support to reactivate.",
+        )
+
+
         
 async def get_current_org(
     authorization: str = Header(None),
     x_selected_org_id: Optional[str] = Header(None, alias="X-Selected-Org-Id"),
 ) -> Tuple[str, str]:
-    """FIXED: Enforces role validation per tenant instance - prevents cross-tenant privilege escalation."""
+    """
+    Resolve the caller's (user_id, org_id).
+
+    Wave 3 addition: after org_id is resolved, the org's status is
+    checked. A suspended org short-circuits with a 402 whose message is
+    distinct from a feature-not-enabled 402, so the frontend can tell
+    "pay your bill" apart from "upgrade your plan". This makes suspension
+    the enforcement mechanism for non-payment, independent of which
+    feature any individual endpoint is gated on.
+    """
     user_info = await get_current_user(authorization)
     if not user_info:
         logger.error("get_current_org: No user info")
@@ -5542,6 +5622,7 @@ async def get_current_org(
                 )
 
             logger.info(f"User {token_user_id} has role '{user_role_in_tenant}' in org {x_selected_org_id}")
+            await _assert_org_not_suspended(x_selected_org_id)
             return token_user_id, x_selected_org_id
         else:
             if org_rows:
@@ -5555,6 +5636,7 @@ async def get_current_org(
                     f"✅ Org resolved (no header): user={token_user_id}, "
                     f"chosen_role={org_rows[0].get('role')}, org_id={org_id}"
                 )
+                await _assert_org_not_suspended(org_id)
                 return token_user_id, org_id
             else:
                 logger.warning(f"Direct lookup returned no rows for user_id={token_user_id}")
@@ -5585,6 +5667,7 @@ async def get_current_org(
                             status_code=403,
                             detail="You are not a member of the requested organisation"
                         )
+                    await _assert_org_not_suspended(x_selected_org_id)
                     return resolved_user_id, x_selected_org_id
                 elif org_rows:
                     _prio = {"owner": 0, "admin": 1}
@@ -5597,6 +5680,7 @@ async def get_current_org(
                         f"✅ Org resolved (email fallback): user={resolved_user_id}, "
                         f"chosen_role={org_rows[0].get('role')}, org_id={org_id}"
                     )
+                    await _assert_org_not_suspended(org_id)
                     return resolved_user_id, org_id
                 else:
                     logger.warning(f"Email fallback: no org_members row for resolved_user_id={resolved_user_id}")
