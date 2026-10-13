@@ -2814,7 +2814,67 @@ async def ensure_alert_log_table():
                 logger.error(f"Alert log migration error: {migration_err}")
         else:
             logger.error(f"Unexpected error checking alert_log: {e}")
-            
+
+async def ensure_alert_log_backfill() -> None:
+    """
+    Backfill alert_log.org_id for rows written before the org_id column
+    existed.
+
+    Path 1 (preferred): join through inventory. alert_log.product_id is an
+    INTEGER FK to inventory.id, and inventory carries org_id. Same-type
+    join, no cast, no type mismatch.
+
+    Path 2 (fallback): any rows still NULL after Path 1 go to
+    PUBLIC_STORE_ORG_ID — the public storefront org. Without this, legacy
+    rows become invisible to every org once the endpoint filter is applied.
+
+    Idempotent. Safe to run on every boot.
+    """
+    if not PUBLIC_STORE_ORG_ID:
+        logger.warning(
+            "ensure_alert_log_backfill: PUBLIC_STORE_ORG_ID not set — "
+            "orphan alert_log rows will stay NULL and be invisible to all orgs"
+        )
+
+    sql_parts = [
+        # Path 1: via inventory. Same-type INTEGER join.
+        """
+        UPDATE public.alert_log al
+           SET org_id = i.org_id
+          FROM public.inventory i
+         WHERE al.product_id = i.id
+           AND al.org_id IS NULL
+           AND i.org_id IS NOT NULL;
+        """
+    ]
+
+    if PUBLIC_STORE_ORG_ID:
+        # Path 2: anything still NULL goes to the public store org.
+        sql_parts.append(f"""
+            UPDATE public.alert_log
+               SET org_id = '{PUBLIC_STORE_ORG_ID}'::uuid
+             WHERE org_id IS NULL;
+        """)
+
+    sql = "\n".join(sql_parts)
+
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"alert_log backfill failed: {resp.text}")
+        raise RuntimeError(f"alert_log backfill failed: {resp.text}")
+    logger.info("alert_log org_id backfill complete")
+    
+
 async def ensure_transfer_suggestions_table():
     supabase = get_supabase()
     try:
@@ -3574,44 +3634,6 @@ async def startup_event():
         logger.info("⏩ Skipping migrations (SKIP_MIGRATIONS=true)")
         return
 
-    await ensure_cost_price_column()
-    await ensure_delivery_fee_columns()
-    await ensure_org_delivery_columns()
-    await ensure_role_column()
-    await ensure_org_registry_schema()
-    await ensure_health_check_schema()
-    await ensure_knowledge_audit_table()
-    await ensure_vector_support()
-    await ensure_loyalty_tables()
-    await ensure_stock_transfers_table()
-    await ensure_stock_transfer_rpcs()
-    await ensure_transfer_suggestions_last_updated_column()   # ← new
-    await ensure_decrement_stock_fefo()
-    await ensure_finalize_online_order()
-    await ensure_webhook_events()
-    await ensure_stock_reconciliation()
-    await ensure_sales_fulfillment_columns()
-    await ensure_alert_log_table()
-    await ensure_transfer_suggestions_table()
-    await ensure_stock_limits_table()
-    await ensure_product_risk_view()
-    await ensure_transfer_suggestions_view()
-    await ensure_system_logs_table()
-    await ensure_rpc_functions()
-
-    await ensure_hr_tables()
-
-    await ensure_accounting_tables()
-    await ensure_is_cogs_column()
-
-    logger.info("Startup complete - all tables and functions ready")
-
-@app.on_event("startup")
-async def startup_event():
-    if os.environ.get("SKIP_MIGRATIONS", "false").lower() == "true":
-        logger.info("⏩ Skipping migrations (SKIP_MIGRATIONS=true)")
-        return
-
     await ensure_branches_table()
     await ensure_cost_price_column()
     await ensure_delivery_fee_columns()
@@ -3631,6 +3653,7 @@ async def startup_event():
     await ensure_stock_reconciliation()
     await ensure_sales_fulfillment_columns()
     await ensure_alert_log_table()
+    await ensure_alert_log_backfill()                         # ← new: backfill legacy rows
     await ensure_transfer_suggestions_table()
     await ensure_stock_limits_table()
     await ensure_product_risk_view()
@@ -14135,26 +14158,30 @@ async def get_dashboard_metrics(
         waste_val = float(risk_rpc_res.data or 0.0)
         logger.info(f"🚨 RPC Computed Waste Risk Value (120d): {waste_val}")
 
-        alert_page_size = 1000
-        offset = 0
-        alerts_data = []
-        while True:
-            alert_res = await run_sync_db_call(
-                client.table("alert_log")
-                .select("action_taken")
-                .range(offset, offset + alert_page_size - 1)
-                .execute
-            )
-            chunk = alert_res.data or []
-            if not chunk:
-                break
-            alerts_data.extend(chunk)
-            offset += alert_page_size
-            if len(chunk) < alert_page_size:
-                break
+        # Two count-only queries, both scoped to the caller's org.
+        # Previously this paginated the entire alert_log table 1000 rows at a
+        # time and len()-ed the result in Python — no org filter, and the cost
+        # grew linearly with total platform-wide alert volume. Now it is two
+        # indexed COUNT(*)s constrained to one tenant.
+        total_res = await run_sync_db_call(
+            client.table("alert_log")
+            .select("id", count="exact")
+            .eq("org_id", org_id)
+            .limit(1)
+            .execute
+        )
+        total_alerts = total_res.count or 0
 
-        total_alerts = len(alerts_data)
-        resolved = sum(1 for a in alerts_data if a.get('action_taken') is not None)
+        resolved_res = await run_sync_db_call(
+            client.table("alert_log")
+            .select("id", count="exact")
+            .eq("org_id", org_id)
+            .not_.is_("action_taken", "null")
+            .limit(1)
+            .execute
+        )
+        resolved = resolved_res.count or 0
+
         active_alerts = total_alerts - resolved
         compliance = round(resolved / total_alerts * 100, 1) if total_alerts else 0.0
 
@@ -14173,7 +14200,6 @@ async def get_dashboard_metrics(
         "alert_type_breakdown": {},
         "branch_id": None
     }
-
 # ============================================================
 # TRANSFER SUGGESTIONS
 # ============================================================
