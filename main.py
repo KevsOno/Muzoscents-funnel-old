@@ -5543,8 +5543,16 @@ async def get_current_org(authorization: str = Header(None), x_selected_org_id: 
             return token_user_id, x_selected_org_id
         else:
             if org_rows:
+                _prio = {"owner": 0, "admin": 1}
+                org_rows.sort(key=lambda r: (
+                    _prio.get(r.get("role"), 2),
+                    r.get("org_id") or "",
+                ))
                 org_id = org_rows[0]["org_id"]
-                logger.info(f"✅ Org found via token user_id: {token_user_id}, org_id={org_id}")
+                logger.info(
+                    f"✅ Org resolved (no header): user={token_user_id}, "
+                    f"chosen_role={org_rows[0].get('role')}, org_id={org_id}"
+                )
                 return token_user_id, org_id
             else:
                 logger.warning(f"Direct lookup returned no rows for user_id={token_user_id}")
@@ -5577,8 +5585,16 @@ async def get_current_org(authorization: str = Header(None), x_selected_org_id: 
                         )
                     return resolved_user_id, x_selected_org_id
                 elif org_rows:
+                    _prio = {"owner": 0, "admin": 1}
+                    org_rows.sort(key=lambda r: (
+                        _prio.get(r.get("role"), 2),
+                        r.get("org_id") or "",
+                    ))
                     org_id = org_rows[0]["org_id"]
-                    logger.info(f"✅ Org found via email-resolved user_id: {resolved_user_id}, org_id={org_id}")
+                    logger.info(
+                        f"✅ Org resolved (email fallback): user={resolved_user_id}, "
+                        f"chosen_role={org_rows[0].get('role')}, org_id={org_id}"
+                    )
                     return resolved_user_id, org_id
                 else:
                     logger.warning(f"Email fallback: no org_members row for resolved_user_id={resolved_user_id}")
@@ -5596,6 +5612,7 @@ async def get_current_org(authorization: str = Header(None), x_selected_org_id: 
         status_code=403,
         detail="Workspace Access Denied. Your credentials match, but you have not been assigned to an organization profile yet."
     )
+
 
 async def get_current_user_with_role(authorization: str = Header(None), x_selected_org_id: Optional[str] = None) -> Tuple[str, str, str]:
     """FIXED: Includes role validation per tenant instance."""
@@ -7142,6 +7159,68 @@ async def me(request: Request, authorization: str = Header(None), x_selected_org
         "email": email,
         "branch_scope": branch_scope,
     }
+
+@app.get("/auth/my-orgs")
+async def my_orgs(
+    request: Request,
+    authorization: str = Header(None),
+):
+    """
+    Return every organisation the caller belongs to, with their role.
+    Used by the org switcher on the frontend. Ordered so owners come
+    first, then admins, then everyone else — the same preference the
+    backend uses when no org is explicitly selected.
+    """
+    await rate_limit(get_client_ip(request))
+
+    user_info = await get_current_user(authorization)
+    if not user_info:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    user_id, email = user_info
+
+    client = get_supabase()
+
+    mem_res = await run_sync_db_call(
+        client.table("org_members")
+        .select("org_id, role")
+        .eq("user_id", user_id)
+        .execute
+    )
+    memberships = mem_res.data or []
+    if not memberships:
+        return {"orgs": []}
+
+    org_ids = [m["org_id"] for m in memberships]
+    org_res = await run_sync_db_call(
+        client.table("organisations")
+        .select("id, org_name, slug, status")
+        .in_("id", org_ids)
+        .execute
+    )
+    orgs_by_id = {o["id"]: o for o in (org_res.data or [])}
+
+    out = []
+    for m in memberships:
+        o = orgs_by_id.get(m["org_id"])
+        if not o:
+            continue
+        out.append({
+            "id":       m["org_id"],
+            "org_name": o["org_name"],
+            "slug":     o.get("slug"),
+            "status":   o.get("status") or "active",
+            "role":     m["role"],
+        })
+
+    _prio = {"owner": 0, "admin": 1}
+    out.sort(key=lambda x: (
+        _prio.get(x["role"], 2),
+        (x["org_name"] or "").lower(),
+    ))
+    return {"orgs": out}
+
+
+
 # ------------------------------------------------------------------
 # TEAM MANAGEMENT
 # ------------------------------------------------------------------
