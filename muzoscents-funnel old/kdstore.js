@@ -38,6 +38,15 @@ let selectedCategory = '';
 let categories = [];
 let sessionId = localStorage.getItem('pf_session') || ('web_' + Date.now() + '_' + Math.random().toString(36).substr(2, 10));
 localStorage.setItem('pf_session', sessionId);
+
+// ========== TENANT SLUG (for guest chat routing) ==========
+// When the storefront is served at /store/{slug}, the URL is the
+// authoritative source for which tenant the visitor is browsing.
+// When served at /kdstore, there is no slug and guests are routed
+// to the public store org server-side.
+const _slugMatch = window.location.pathname.match(/^\/store\/([^\/?#]+)/);
+const ORG_SLUG = _slugMatch ? decodeURIComponent(_slugMatch[1]) : null;
+
 let currentView = 'shop';
 let currentProductForModal = null;
 let isRecalcInProgress = false;
@@ -1915,8 +1924,13 @@ async function sendChatMessage() {
     addChatMsg('assistant', '', true);
     const lastMsgDiv = chatMessagesDiv.lastChild;
     try {
-        const data = await apiCall('/support/chat-stream', { method: 'POST', body: JSON.stringify({ session_id: chatSessionId,
-                message: msg }) });
+        const payload = { session_id: chatSessionId, message: msg };
+        if (ORG_SLUG) payload.org_slug = ORG_SLUG;
+
+        const data = await apiCall('/support/chat-stream', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
         if (lastMsgDiv && lastMsgDiv.classList.contains('bg-gray-100')) lastMsgDiv.remove();
         addChatMsg('assistant', data.response || "Got it!");
     } catch (e) {
