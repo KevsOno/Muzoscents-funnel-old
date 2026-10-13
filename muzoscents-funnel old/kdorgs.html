@@ -224,6 +224,16 @@
         </select>
       </div>
 
+      <div class="md:col-span-2">
+        <label class="block text-xs text-slate-400 mb-1">Plan tier *</label>
+        <select id="f-plan-tier" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm focus:border-blue-500 outline-none">
+          <option value="">Select a plan…</option>
+        </select>
+        <p class="text-xs text-slate-500 mt-1">
+          Options are filtered by the vertical above.
+        </p>
+      </div>
+
       <div>
         <label class="block text-xs text-slate-400 mb-1">City / region *</label>
         <input id="f-location" type="text" placeholder="Lagos"
@@ -692,6 +702,7 @@ async function bootstrap() {
     loadStats();
     loadGlobalAudit();
     renderOverviewSummary(orgsData.organisations || []);
+    refreshPlanOptions();
   } catch (e) {
     document.getElementById('org-list').innerHTML =
       `<div class="text-center py-12 text-red-400">Failed to load: ${esc(e.message)}</div>`;
@@ -1377,6 +1388,13 @@ document.getElementById('create-submit').addEventListener('click', async () => {
   const errEl = document.getElementById('create-error');
   errEl.classList.add('hidden');
 
+  const plan_tier = document.getElementById('f-plan-tier').value;
+  if (!plan_tier) {
+    errEl.textContent = 'Plan tier is required.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
   const payload = {
     org_name: document.getElementById('f-org-name').value.trim(),
     slug:     document.getElementById('f-slug').value.trim() || null,
@@ -1384,6 +1402,7 @@ document.getElementById('create-submit').addEventListener('click', async () => {
     location: document.getElementById('f-location').value.trim(),
     niche:    document.getElementById('f-niche').value,
     budget:   parseInt(document.getElementById('f-budget').value, 10) || 0,
+    plan_tier: plan_tier,
     owner_email:      document.getElementById('f-owner-email').value.trim() || null,
     owner_first_name: document.getElementById('f-owner-first-name').value.trim() || null,
     owner_last_name:  document.getElementById('f-owner-last-name').value.trim() || null,
@@ -1415,6 +1434,8 @@ document.getElementById('create-submit').addEventListener('click', async () => {
     document.getElementById('f-budget').value = '0';
     document.getElementById('f-slug').dataset.touched = 'false';
     document.getElementById('slug-preview').textContent = '';
+    document.getElementById('f-plan-tier').value = '';
+    refreshPlanOptions();
 
     showSuccess(data);
     await bootstrap();
@@ -1483,6 +1504,26 @@ document.getElementById('success-copy-all').addEventListener('click', () => {
 document.getElementById('success-close').addEventListener('click', () => {
   document.getElementById('success-modal').classList.add('hidden');
 });
+
+// ─── Plan tier dropdown (create form) ───
+function refreshPlanOptions() {
+  const vertical = document.getElementById('f-vertical').value;
+  const sel = document.getElementById('f-plan-tier');
+  if (!sel) return;
+  const previous = sel.value;
+  sel.innerHTML = '<option value="">Select a plan…</option>';
+  for (const [key, plan] of Object.entries(PLANS)) {
+    if (plan.vertical !== vertical) continue;
+    const opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = `${plan.label} — ${fmtNaira(plan.monthly_naira)}/mo`;
+    sel.appendChild(opt);
+  }
+  // Preserve selection if still valid
+  if ([...sel.options].some(o => o.value === previous)) sel.value = previous;
+}
+document.getElementById('f-vertical').addEventListener('change', refreshPlanOptions);
+refreshPlanOptions();   // initial call
 
 // ─── boot ───
 document.getElementById('refresh-btn').addEventListener('click', () => bootstrap());
