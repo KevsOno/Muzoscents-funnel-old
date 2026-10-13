@@ -7151,6 +7151,9 @@ class AdminCreateOrgRequest(BaseModel):
     niche: str = Field(..., min_length=1, max_length=100)
     budget: int = 0
 
+    # NEW — required, validated against PLAN_TIERS
+    plan_tier: str = Field(..., min_length=1, max_length=50)
+
     # Optional owner — if provided, user is created (or attached) as owner
     owner_email: Optional[str] = Field(None, max_length=200)
     owner_first_name: Optional[str] = Field(None, max_length=100)
@@ -7637,6 +7640,22 @@ async def admin_create_org(
     else:
         candidate = await generate_unique_slug(req.org_name)
 
+    # ── Plan tier validation ──
+    if req.plan_tier not in PLAN_TIERS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown plan_tier '{req.plan_tier}'. "
+                   f"Valid: {sorted(PLAN_TIERS.keys())}",
+        )
+
+    tier_def = PLAN_TIERS[req.plan_tier]
+    if tier_def.get("vertical") != req.vertical:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Plan '{req.plan_tier}' is for vertical '{tier_def.get('vertical')}', "
+                   f"but org vertical is '{req.vertical}'.",
+        )
+
     invite_code = await generate_invite_code()
 
     insert_payload = {
@@ -7649,6 +7668,10 @@ async def admin_create_org(
         "invite_code":          invite_code,
         "storefront_config":    {},
         "storefront_published": False,
+        "plan_tier":            req.plan_tier,
+        "plan_started_at":      datetime.now(timezone.utc).isoformat(),
+        "plan_renews_at":       (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
+        "status":               "active",
         "created_at":           datetime.now(timezone.utc).isoformat(),
         "payment_gateway_config": {"provider": "paystack", "credentials": {}},
     }
@@ -7730,6 +7753,7 @@ async def admin_create_org(
         "published":      False,
         "owner":          owner_info,
     }
+
 
 @app.patch("/admin/orgs/{org_id}")
 async def admin_update_org(
