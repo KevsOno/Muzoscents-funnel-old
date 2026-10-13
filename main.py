@@ -2014,6 +2014,107 @@ async def ensure_stock_transfers_table():
         logger.error(f"Stock transfers migration error: {e}")
 
 
+async def ensure_location_stocks_constraints():
+    """
+    Ensure location_stocks has a UNIQUE constraint on
+    (location_id, inventory_id).
+
+    ensure_stock_transfers_table() declares this constraint via
+    CREATE TABLE IF NOT EXISTS. That clause is a no-op when the table
+    already exists, so on any environment where location_stocks
+    predates the UNIQUE clause, the constraint is missing. Every
+    .upsert(..., on_conflict="location_id,inventory_id") then fails
+    with Postgres error 42P10, "no unique or exclusion constraint
+    matching the ON CONFLICT specification".
+
+    Idempotent. Also merges any pre-existing (location_id,
+    inventory_id) duplicates before adding the constraint, so the
+    ALTER cannot fail on a table that accumulated duplicate rows
+    while unconstrained.
+    """
+    sql = """
+    DO $$
+    DECLARE
+        v_constraint_exists BOOLEAN;
+    BEGIN
+        SELECT EXISTS (
+            SELECT 1
+              FROM pg_constraint c
+              JOIN pg_class      t ON t.oid = c.conrelid
+              JOIN pg_namespace  n ON n.oid = t.relnamespace
+             WHERE n.nspname = 'public'
+               AND t.relname = 'location_stocks'
+               AND c.contype IN ('u', 'p')
+               AND (
+                   SELECT array_agg(a.attname::text ORDER BY a.attname)
+                     FROM unnest(c.conkey) AS k
+                     JOIN pg_attribute a
+                       ON a.attrelid = c.conrelid
+                      AND a.attnum   = k
+               ) = ARRAY['inventory_id', 'location_id']
+        ) INTO v_constraint_exists;
+
+        IF NOT v_constraint_exists THEN
+            -- Merge quantities across duplicate (location_id,
+            -- inventory_id) pairs into the row with the lowest id.
+            -- Preserves the running total rather than discarding rows,
+            -- because the table is a balance, not an append log.
+            WITH merged AS (
+                SELECT
+                    location_id,
+                    inventory_id,
+                    MIN(id)                                       AS keep_id,
+                    SUM(COALESCE(quantity, 0))::integer           AS total_quantity,
+                    SUM(COALESCE(reserved_quantity, 0))::integer  AS total_reserved
+                  FROM public.location_stocks
+                 GROUP BY location_id, inventory_id
+                HAVING COUNT(*) > 1
+            )
+            UPDATE public.location_stocks ls
+               SET quantity          = m.total_quantity,
+                   reserved_quantity = m.total_reserved,
+                   updated_at        = NOW()
+              FROM merged m
+             WHERE ls.id = m.keep_id;
+
+            -- Delete the non-keeper rows.
+            DELETE FROM public.location_stocks ls
+             USING (
+                SELECT
+                    location_id,
+                    inventory_id,
+                    MIN(id) AS keep_id
+                  FROM public.location_stocks
+                 GROUP BY location_id, inventory_id
+                HAVING COUNT(*) > 1
+             ) dup
+             WHERE ls.location_id  = dup.location_id
+               AND ls.inventory_id = dup.inventory_id
+               AND ls.id          <> dup.keep_id;
+
+            ALTER TABLE public.location_stocks
+                ADD CONSTRAINT location_stocks_location_id_inventory_id_key
+                UNIQUE (location_id, inventory_id);
+        END IF;
+    END $$;
+    """
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"location_stocks constraint migration failed: {resp.text}")
+        raise RuntimeError(f"location_stocks constraint migration failed: {resp.text}")
+    logger.info("location_stocks UNIQUE(location_id, inventory_id) installed (or already present)")
+
+
 async def ensure_stock_transfer_rpcs():
     """
     Install the approve/complete RPCs the /stock-transfers/{id}/status
@@ -4426,6 +4527,7 @@ async def startup_event():
     await ensure_vector_support()
     await ensure_loyalty_tables()
     await ensure_stock_transfers_table()
+    await ensure_location_stocks_constraints()
     await ensure_stock_transfer_rpcs()
     await ensure_transfer_suggestions_last_updated_column()   # ← new
     await ensure_decrement_stock_fefo()
