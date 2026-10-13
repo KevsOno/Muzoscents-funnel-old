@@ -2777,6 +2777,7 @@ async def ensure_alert_log_table():
                 sql = """
                 CREATE TABLE IF NOT EXISTS public.alert_log (
                     id SERIAL PRIMARY KEY,
+                    org_id UUID REFERENCES public.organisations(id) ON DELETE CASCADE,
                     location_id INTEGER,
                     product_id INTEGER,
                     batch VARCHAR(100),
@@ -2790,6 +2791,7 @@ async def ensure_alert_log_table():
                     updated_at TIMESTAMPTZ DEFAULT now()
                 );
                 
+                CREATE INDEX IF NOT EXISTS idx_alert_log_org ON public.alert_log(org_id);
                 CREATE INDEX IF NOT EXISTS idx_alert_log_location ON public.alert_log(location_id);
                 CREATE INDEX IF NOT EXISTS idx_alert_log_type ON public.alert_log(alert_type);
                 CREATE INDEX IF NOT EXISTS idx_alert_log_created ON public.alert_log(created_at DESC);
@@ -2812,7 +2814,7 @@ async def ensure_alert_log_table():
                 logger.error(f"Alert log migration error: {migration_err}")
         else:
             logger.error(f"Unexpected error checking alert_log: {e}")
-
+            
 async def ensure_transfer_suggestions_table():
     supabase = get_supabase()
     try:
@@ -13769,9 +13771,13 @@ async def get_alerts(
     client = get_supabase()
 
     try:
-        query = client.table("alert_log").select(
-            "id, alert_type, details, created_at, action_taken, action_date, batch, "
-            "item_code, description"
+        query = (
+            client.table("alert_log")
+            .select(
+                "id, alert_type, details, created_at, action_taken, action_date, "
+                "batch, item_code, description"
+            )
+            .eq("org_id", org_id)          # ← the missing line
         )
         if alert_type:
             query = query.eq("alert_type", alert_type)
@@ -13780,7 +13786,9 @@ async def get_alerts(
         elif status == "Resolved":
             query = query.not_.is_("action_taken", "null")
 
-        result = await run_sync_db_call(query.order("created_at", desc=True).range(offset, offset + limit - 1).execute)
+        result = await run_sync_db_call(
+            query.order("created_at", desc=True).range(offset, offset + limit - 1).execute
+        )
         alerts_data = result.data or []
 
         alerts = []
@@ -13814,7 +13822,7 @@ async def get_alerts(
             "offset": offset,
             "message": "Alert table not configured"
         }
-
+        
 @app.get("/alerts/dashboard")
 async def get_alert_dashboard(
     request: Request,
@@ -13825,9 +13833,13 @@ async def get_alert_dashboard(
     client = get_supabase()
 
     try:
-        alerts = await run_sync_db_call(client.table("alert_log").select("alert_type, action_taken").execute)
+        alerts = await run_sync_db_call(
+            client.table("alert_log")
+            .select("alert_type, action_taken")
+            .eq("org_id", org_id)          # ← the missing line
+            .execute
+        )
         alerts_data = alerts.data or []
-
         total_alerts = len(alerts_data)
         resolved = sum(1 for a in alerts_data if a.get('action_taken') is not None)
         compliance = round(resolved / total_alerts * 100, 1) if total_alerts else 0
@@ -13866,22 +13878,29 @@ async def resolve_alert(
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     user_id, org_id, _ = user_data
-
     client = get_supabase()
 
+    # Ownership check first
+    existing = await run_sync_db_call(
+        client.table("alert_log")
+        .select("id")
+        .eq("id", alert_id)
+        .eq("org_id", org_id)
+        .maybe_single()
+        .execute
+    )
+    if not existing or not existing.data:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
     try:
-        result = await run_sync_db_call(
+        await run_sync_db_call(
             client.table("alert_log").update({
                 "action_taken": action_data.get("action_type", "ACKNOWLEDGE"),
                 "action_date": datetime.now(timezone.utc).isoformat(),
                 "action_notes": action_data.get("notes", f"Resolved by {user_id}")
-            }).eq("id", alert_id).execute
+            }).eq("id", alert_id).eq("org_id", org_id).execute
         )
-
-        return {
-            "success": True,
-            "message": f"Alert {alert_id} resolved successfully"
-        }
+        return {"success": True, "message": f"Alert {alert_id} resolved successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to resolve alert: {str(e)}")
 
