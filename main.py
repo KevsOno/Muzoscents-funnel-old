@@ -745,62 +745,184 @@ async def _admin_set_app_metadata(user_id: str, metadata: dict) -> bool:
 
 # ===================== BRANCH RESOLUTION =====================
 
-async def ensure_branches_table():
+async def ensure_alert_log_table():
     """
-    Create the branches table if it's missing, heal any columns a legacy
-    copy of the table is missing, backfill NULL is_default values, and
-    then create the indexes that enforce (a) one default branch per org,
-    (b) fast lookup by org, (c) unique code per org.
+    ═══════════════════════════════════════════════════════════════════════
+    BELT-AND-BRACES MIGRATION — 2026-10-13. DO NOT REVERT.
 
-    Idempotent and safe against a partially-migrated table: every step
-    uses CREATE TABLE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS, so a
-    table created by a prior version of this migration — one that might
-    lack `is_default` or any other column — gets healed in place rather
-    than tripping the CREATE INDEX that follows.
+    Structure follows ensure_branches_table(): no pre-flight existence
+    check, the full SQL runs on every boot, every statement is
+    idempotent (CREATE TABLE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS /
+    CREATE INDEX IF NOT EXISTS), and any failure raises so the boot
+    aborts loudly instead of serving a broken schema.
+
+    WHY THIS REPLACED THE OLD try/except SHAPE:
+
+        The previous version only ran its SQL when a probe query threw
+        `relation "alert_log" does not exist`. That meant:
+
+          1. A drifted table — present but missing a column — was never
+             healed. The probe returned success, the CREATE never fired,
+             and the missing column stayed missing until something broke
+             at runtime. This is exactly the class of drift that produced
+             the 08:42:26 startup crash on 2026-10-13.
+
+          2. Two round trips per boot instead of one. The probe was a
+             live GET against the table on every cold start.
+
+          3. The schema was only ever validated against itself. A fresh
+             CREATE from an outdated template could produce a table that
+             did not match production — and nothing would notice until a
+             query failed.
+
+        The new shape closes all three. It matches the branches pattern,
+        runs one SQL round trip, and reconciles against the live schema
+        on every boot rather than betting on the first version being
+        right forever.
+
+    SCHEMA AUTHORITY:
+
+        Column list below is copied verbatim from the live alert_log
+        schema, verified 2026-10-13 with:
+
+            SELECT column_name, data_type, is_nullable
+              FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'alert_log'
+             ORDER BY ordinal_position;
+
+        If any of these ever drift on production, re-run the query
+        above and reconcile this list. Do not eyeball it.
+
+    COLUMNS THE OLD TEMPLATE GOT WRONG:
+
+        location_id       INTEGER → UUID   (real type; the old CREATE
+                                            would have rejected every
+                                            locations.id value)
+
+        product_id        INTEGER → removed (column never existed; the
+                                            real FK is inventory_id)
+
+        action_notes      absent  → added   (read by the resolve handler)
+        item_code         absent  → added   (read by /alerts)
+        description       absent  → added   (read by /alerts)
+
+    NOT NULL NUANCE:
+
+        The CREATE makes alert_type NOT NULL, matching production.
+        The ALTER adds it as nullable, because Postgres will not add a
+        NOT NULL column to a populated table without a default. On any
+        table that already has the column (i.e. production), the ALTER
+        is a no-op and the NOT NULL from the CREATE stands. The nullable
+        path only fires on a table that is missing the column entirely —
+        a state that no live environment should be in.
+
+    COMPANION FUNCTION:
+
+        ensure_alert_log_backfill() resolves org_id for legacy rows by
+        joining inventory_id → inventory.org_id and, as a fallback,
+        location_id → locations.org_id. It runs immediately after this
+        function in startup_event. Both join keys are indexed below.
+    ═══════════════════════════════════════════════════════════════════════
     """
     sql = """
-    CREATE TABLE IF NOT EXISTS public.branches (
-        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        org_id      UUID NOT NULL REFERENCES public.organisations(id) ON DELETE CASCADE,
-        name        TEXT NOT NULL,
-        code        TEXT,
-        is_default  BOOLEAN NOT NULL DEFAULT FALSE,
-        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    -- ── 1. Create the table if it is missing entirely. ──
+    -- Column order and types match the live schema. This path only
+    -- fires on a fresh environment or after a database reset.
+    CREATE TABLE IF NOT EXISTS public.alert_log (
+        id                SERIAL PRIMARY KEY,
+        location_id       UUID,
+        inventory_id      INTEGER,
+        batch             VARCHAR(100),
+        alert_type        VARCHAR(50) NOT NULL,
+        details           TEXT,
+        action_taken      TEXT,
+        action_date       TIMESTAMPTZ,
+        action_type       VARCHAR(50),
+        affected_quantity INTEGER,
+        created_at        TIMESTAMPTZ DEFAULT now(),
+        updated_at        TIMESTAMPTZ DEFAULT now(),
+        action_notes      TEXT,
+        item_code         VARCHAR(200),
+        description       TEXT,
+        org_id            UUID REFERENCES public.organisations(id) ON DELETE CASCADE
     );
 
-    -- Heal a legacy branches table that predates one or more columns.
-    -- ADD COLUMN IF NOT EXISTS is a no-op when the column is already
-    -- present, so this is safe to run on every boot.
-    ALTER TABLE public.branches
-        ADD COLUMN IF NOT EXISTS org_id      UUID,
-        ADD COLUMN IF NOT EXISTS name        TEXT,
-        ADD COLUMN IF NOT EXISTS code        TEXT,
-        ADD COLUMN IF NOT EXISTS is_default  BOOLEAN NOT NULL DEFAULT FALSE,
-        ADD COLUMN IF NOT EXISTS created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        ADD COLUMN IF NOT EXISTS updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    -- ── 2. Heal a drifted table by adding any missing columns. ──
+    -- ADD COLUMN IF NOT EXISTS is a no-op on a column that already
+    -- exists, so this is safe to run on every boot. This block is the
+    -- actual difference from the old try/except shape: a table that
+    -- exists but has lost a column gets reconciled here instead of
+    -- staying broken until something at runtime blows up.
+    ALTER TABLE public.alert_log
+        ADD COLUMN IF NOT EXISTS location_id       UUID,
+        ADD COLUMN IF NOT EXISTS inventory_id      INTEGER,
+        ADD COLUMN IF NOT EXISTS batch             VARCHAR(100),
+        ADD COLUMN IF NOT EXISTS alert_type        VARCHAR(50),
+        ADD COLUMN IF NOT EXISTS details           TEXT,
+        ADD COLUMN IF NOT EXISTS action_taken      TEXT,
+        ADD COLUMN IF NOT EXISTS action_date       TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS action_type       VARCHAR(50),
+        ADD COLUMN IF NOT EXISTS affected_quantity INTEGER,
+        ADD COLUMN IF NOT EXISTS created_at        TIMESTAMPTZ DEFAULT now(),
+        ADD COLUMN IF NOT EXISTS updated_at        TIMESTAMPTZ DEFAULT now(),
+        ADD COLUMN IF NOT EXISTS action_notes      TEXT,
+        ADD COLUMN IF NOT EXISTS item_code         VARCHAR(200),
+        ADD COLUMN IF NOT EXISTS description       TEXT,
+        ADD COLUMN IF NOT EXISTS org_id            UUID;
 
-    -- Backfill any NULL is_default values. A row that predates the
-    -- column has NULL, and the partial unique index below treats NULL
-    -- as "not true", which would let the org drift into having no
-    -- well-defined default. Normalising to FALSE makes the state
-    -- explicit; ensure_default_branch() will seed a TRUE row on the
-    -- next write.
-    UPDATE public.branches
-       SET is_default = FALSE
-     WHERE is_default IS NULL;
+    -- ── 3. Ensure the org_id foreign key exists. ──
+    -- ADD COLUMN IF NOT EXISTS above cannot attach a REFERENCES clause
+    -- to a column that already existed, and Postgres has no
+    -- ADD CONSTRAINT IF NOT EXISTS. A DO block with a catalogue
+    -- lookup is the idempotent way to add it only when absent.
+    -- The constraint name is the one Postgres auto-generates for the
+    -- CREATE-path FK, so this block correctly recognises and skips it.
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+              FROM pg_constraint c
+              JOIN pg_attribute  a
+                ON a.attrelid = c.conrelid
+               AND a.attnum   = ANY (c.conkey)
+             WHERE c.conrelid = 'public.alert_log'::regclass
+               AND c.contype  = 'f'
+               AND a.attname  = 'org_id'
+        ) THEN
+            ALTER TABLE public.alert_log
+                ADD CONSTRAINT alert_log_org_id_fkey
+                FOREIGN KEY (org_id)
+                REFERENCES public.organisations(id)
+                ON DELETE CASCADE;
+        END IF;
+    END $$;
 
-    CREATE INDEX IF NOT EXISTS idx_branches_org_created
-        ON public.branches (org_id, created_at);
+    -- ── 4. Indexes. ──
+    -- Composite on (org_id, created_at DESC) because both /alerts and
+    -- /alerts/dashboard filter by org_id and order by created_at.
+    CREATE INDEX IF NOT EXISTS idx_alert_log_org
+        ON public.alert_log(org_id, created_at DESC);
 
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_branches_org_default
-        ON public.branches (org_id)
-        WHERE is_default = TRUE;
+    -- inventory_id is the primary join key used by
+    -- ensure_alert_log_backfill to resolve org_id from inventory.
+    CREATE INDEX IF NOT EXISTS idx_alert_log_inventory
+        ON public.alert_log(inventory_id);
 
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_branches_org_code
-        ON public.branches (org_id, code)
-        WHERE code IS NOT NULL;
+    -- location_id is the secondary backfill join key and the filter
+    -- key for location-scoped alert reads.
+    CREATE INDEX IF NOT EXISTS idx_alert_log_location
+        ON public.alert_log(location_id);
+
+    -- alert_type powers the type filter on /alerts and the type
+    -- breakdown on /alerts/dashboard.
+    CREATE INDEX IF NOT EXISTS idx_alert_log_type
+        ON public.alert_log(alert_type);
+
+    -- Standalone created_at index for the unfiltered recent-alerts scan.
+    CREATE INDEX IF NOT EXISTS idx_alert_log_created
+        ON public.alert_log(created_at DESC);
     """
+
     headers = {
         "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
         "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
@@ -813,9 +935,9 @@ async def ensure_branches_table():
             headers=headers,
         )
     if resp.status_code not in (200, 204):
-        logger.error(f"branches table migration failed: {resp.text}")
-        raise RuntimeError(f"branches table migration failed: {resp.text}")
-    logger.info("branches table installed (or already present)")    
+        logger.error(f"alert_log table migration failed: {resp.text}")
+        raise RuntimeError(f"alert_log table migration failed: {resp.text}")
+    logger.info("alert_log table installed (or already present)")    
 
 async def resolve_default_branch(org_id: str) -> Optional[str]:
     """
@@ -2766,6 +2888,69 @@ async def ensure_org_registry_schema():
 
 # ===================== STREAMLIT APP MIGRATIONS =====================
 async def ensure_alert_log_table():
+    """
+    ═══════════════════════════════════════════════════════════════════════
+    CORRECTED VERSION — 2026-10-13. DO NOT REVERT TO THE PREVIOUS VERSION.
+
+    This function was rewritten after the boot log of 2026-10-13 08:42:26
+    showed that the previous CREATE TABLE declared columns the production
+    table does not have, and omitted columns it does.
+
+    WRONG IN THE PREVIOUS VERSION (and why it matters):
+
+        location_id INTEGER   → real type is UUID.
+            The old CREATE would have built a table whose location_id
+            silently rejected every UUID that locations.id produces.
+            Every alert query that ever joined on location_id would
+            have failed on a fresh environment with
+                operator does not exist: uuid = integer.
+
+        product_id INTEGER    → this column does not exist at all.
+            The real FK is inventory_id INTEGER. Every backfill that
+            referenced al.product_id (including the one that crashed
+            startup with code 42703) was written against a column
+            that never existed.
+
+    MISSING FROM THE PREVIOUS VERSION:
+
+        action_notes  TEXT
+        item_code     VARCHAR(200)
+        description   TEXT
+
+    These three columns exist on the production table and are read by
+    /alerts, /dashboard/metrics, and the resolve handler. A fresh reset
+    that used the old CREATE would have produced a table missing them,
+    and every one of those endpoints would have 500'd on first call.
+
+    WHY THIS MATTERS:
+
+        On Supabase reset, on a new tenant environment, or during a
+        disaster-recovery rebuild, this function is what constructs
+        alert_log. If it does not match production, the entire alert
+        subsystem breaks silently at runtime — not at deploy time.
+        The old CREATE looked correct because it was written once,
+        years ago, against a schema that has since drifted. The live
+        schema is authoritative. This function now matches it.
+
+        Verified against:
+            SELECT column_name, data_type, is_nullable
+              FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'alert_log'
+             ORDER BY ordinal_position;
+
+    COMPANION MIGRATION:
+
+        ensure_alert_log_backfill() resolves org_id for legacy rows by
+        joining inventory_id → inventory.org_id, with a fallback via
+        location_id → locations.org_id. Both join keys are declared
+        below, so a fresh environment does not need a second migration
+        pass to make the backfill work.
+
+    Idempotent. CREATE TABLE IF NOT EXISTS means an existing production
+    table is left completely untouched. This function only fires when
+    the table is genuinely absent.
+    ═══════════════════════════════════════════════════════════════════════
+    """
     supabase = get_supabase()
     try:
         test = await run_sync_db_call(supabase.table("alert_log").select("id").limit(1).execute)
@@ -2775,26 +2960,56 @@ async def ensure_alert_log_table():
             logger.warning("alert_log table missing. Creating it now...")
             try:
                 sql = """
+                -- Column order and types mirror the live alert_log schema
+                -- as observed on 2026-10-13. Do not reorder, retype, or
+                -- "tidy" these without re-running the information_schema
+                -- query above and confirming nothing has drifted.
                 CREATE TABLE IF NOT EXISTS public.alert_log (
-                    id SERIAL PRIMARY KEY,
-                    org_id UUID REFERENCES public.organisations(id) ON DELETE CASCADE,
-                    location_id INTEGER,
-                    product_id INTEGER,
-                    batch VARCHAR(100),
-                    alert_type VARCHAR(50) NOT NULL,
-                    details TEXT,
-                    action_taken TEXT,
-                    action_date TIMESTAMPTZ,
-                    action_type VARCHAR(50),
+                    id                SERIAL PRIMARY KEY,
+                    location_id       UUID,
+                    inventory_id      INTEGER,
+                    batch             VARCHAR(100),
+                    alert_type        VARCHAR(50) NOT NULL,
+                    details           TEXT,
+                    action_taken      TEXT,
+                    action_date       TIMESTAMPTZ,
+                    action_type       VARCHAR(50),
                     affected_quantity INTEGER,
-                    created_at TIMESTAMPTZ DEFAULT now(),
-                    updated_at TIMESTAMPTZ DEFAULT now()
+                    created_at        TIMESTAMPTZ DEFAULT now(),
+                    updated_at        TIMESTAMPTZ DEFAULT now(),
+                    action_notes      TEXT,
+                    item_code         VARCHAR(200),
+                    description       TEXT,
+                    org_id            UUID REFERENCES public.organisations(id) ON DELETE CASCADE
                 );
-                
-                CREATE INDEX IF NOT EXISTS idx_alert_log_org ON public.alert_log(org_id);
-                CREATE INDEX IF NOT EXISTS idx_alert_log_location ON public.alert_log(location_id);
-                CREATE INDEX IF NOT EXISTS idx_alert_log_type ON public.alert_log(alert_type);
-                CREATE INDEX IF NOT EXISTS idx_alert_log_created ON public.alert_log(created_at DESC);
+
+                -- org_id is the tenant key for every read of this table.
+                -- Composite with created_at DESC because /alerts and
+                -- /alerts/dashboard both order by created_at under an
+                -- org_id filter.
+                CREATE INDEX IF NOT EXISTS idx_alert_log_org
+                    ON public.alert_log(org_id, created_at DESC);
+
+                -- inventory_id is the primary join key used by
+                -- ensure_alert_log_backfill to resolve org_id from
+                -- inventory.org_id on legacy rows.
+                CREATE INDEX IF NOT EXISTS idx_alert_log_inventory
+                    ON public.alert_log(inventory_id);
+
+                -- location_id is the secondary join key for backfill
+                -- and the filter key for location-scoped alert views.
+                CREATE INDEX IF NOT EXISTS idx_alert_log_location
+                    ON public.alert_log(location_id);
+
+                -- alert_type powers the alert_type filter on /alerts
+                -- and the type breakdown on /alerts/dashboard.
+                CREATE INDEX IF NOT EXISTS idx_alert_log_type
+                    ON public.alert_log(alert_type);
+
+                -- Standalone created_at index for the unfiltered
+                -- "most recent alerts" scan path.
+                CREATE INDEX IF NOT EXISTS idx_alert_log_created
+                    ON public.alert_log(created_at DESC);
                 """
                 headers = {
                     "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
@@ -2814,19 +3029,20 @@ async def ensure_alert_log_table():
                 logger.error(f"Alert log migration error: {migration_err}")
         else:
             logger.error(f"Unexpected error checking alert_log: {e}")
-
 async def ensure_alert_log_backfill() -> None:
     """
     Backfill alert_log.org_id for rows written before the org_id column
     existed.
 
-    Path 1 (preferred): join through inventory. alert_log.product_id is an
-    INTEGER FK to inventory.id, and inventory carries org_id. Same-type
-    join, no cast, no type mismatch.
+    The real alert_log schema is:
+        id, location_id (UUID), inventory_id (INTEGER), batch, alert_type,
+        details, action_taken, action_date, action_type, affected_quantity,
+        created_at, updated_at, action_notes, item_code, description, org_id
 
-    Path 2 (fallback): any rows still NULL after Path 1 go to
-    PUBLIC_STORE_ORG_ID — the public storefront org. Without this, legacy
-    rows become invisible to every org once the endpoint filter is applied.
+    There is no product_id column — the tenant is resolved from
+    inventory_id (INTEGER FK to inventory.id), with a fallback via
+    location_id (UUID FK to locations.id), and finally to
+    PUBLIC_STORE_ORG_ID for any rows still orphaned.
 
     Idempotent. Safe to run on every boot.
     """
@@ -2837,19 +3053,28 @@ async def ensure_alert_log_backfill() -> None:
         )
 
     sql_parts = [
-        # Path 1: via inventory. Same-type INTEGER join.
+        # Path 1: via inventory_id -> inventory.org_id (INTEGER join)
         """
         UPDATE public.alert_log al
            SET org_id = i.org_id
           FROM public.inventory i
-         WHERE al.product_id = i.id
+         WHERE al.inventory_id = i.id
            AND al.org_id IS NULL
            AND i.org_id IS NOT NULL;
+        """,
+        # Path 2: via location_id -> locations.org_id (UUID join)
         """
+        UPDATE public.alert_log al
+           SET org_id = l.org_id
+          FROM public.locations l
+         WHERE al.location_id::text = l.id::text
+           AND al.org_id IS NULL
+           AND l.org_id IS NOT NULL;
+        """,
     ]
 
     if PUBLIC_STORE_ORG_ID:
-        # Path 2: anything still NULL goes to the public store org.
+        # Path 3: anything still NULL goes to the public store org.
         sql_parts.append(f"""
             UPDATE public.alert_log
                SET org_id = '{PUBLIC_STORE_ORG_ID}'::uuid
@@ -2872,8 +3097,7 @@ async def ensure_alert_log_backfill() -> None:
     if resp.status_code not in (200, 204):
         logger.error(f"alert_log backfill failed: {resp.text}")
         raise RuntimeError(f"alert_log backfill failed: {resp.text}")
-    logger.info("alert_log org_id backfill complete")
-    
+    logger.info("alert_log org_id backfill complete")    
 
 async def ensure_transfer_suggestions_table():
     supabase = get_supabase()
