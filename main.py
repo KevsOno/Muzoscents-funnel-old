@@ -594,8 +594,7 @@ else:
     logger.warning(f"images/ directory not found at {_images_dir} — /images/* will 404")
 
 
-# ===================== HR ROUTER (integrated) =====================
-hr_router = APIRouter(prefix="/hr", tags=["Human Resources"])
+
 
 def get_client_ip(request: Request) -> str:
     forwarded = request.headers.get("X-Forwarded-For")
@@ -9420,7 +9419,7 @@ async def get_org_name(request: Request, user_org: Tuple[str, str] = Depends(get
 async def list_suppliers(
     request: Request,
     status: Optional[str] = None,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("procurement", allowed_roles=["owner", "admin", "inventory_manager"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -9433,11 +9432,12 @@ async def list_suppliers(
     result = await run_sync_db_call(query.order("name", desc=False).execute)
     return {"suppliers": result.data}
 
+
 @app.post("/suppliers")
 async def create_supplier(
     request: Request,
     supplier: SupplierCreate,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("procurement", allowed_roles=["owner", "admin", "inventory_manager"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -9457,7 +9457,7 @@ async def create_supplier(
 async def get_supplier(
     request: Request,
     supplier_id: UUID,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("procurement", allowed_roles=["owner", "admin", "inventory_manager"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -9480,7 +9480,7 @@ async def update_supplier(
     request: Request,
     supplier_id: UUID,
     supplier: SupplierUpdate,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("procurement", allowed_roles=["owner", "admin", "inventory_manager"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -9506,7 +9506,7 @@ async def update_supplier(
 async def delete_supplier(
     request: Request,
     supplier_id: UUID,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("procurement", allowed_roles=["owner", "admin"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -9547,7 +9547,7 @@ async def list_purchase_orders(
     to_date: Optional[date] = None,
     limit: int = 50,
     offset: int = 0,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("procurement", allowed_roles=["owner", "admin", "inventory_manager"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -9579,7 +9579,7 @@ async def list_purchase_orders(
 async def create_purchase_order(
     request: Request,
     po: POCreate,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("procurement", allowed_roles=["owner", "admin", "inventory_manager"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     user_id, org_id, _ = user_data
@@ -9657,7 +9657,7 @@ async def create_purchase_order(
 async def get_purchase_order(
     request: Request,
     po_id: UUID,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("procurement", allowed_roles=["owner", "admin", "inventory_manager"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -9680,7 +9680,7 @@ async def update_purchase_order(
     request: Request,
     po_id: UUID,
     po: POUpdate,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("procurement", allowed_roles=["owner", "admin", "inventory_manager"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -9753,7 +9753,7 @@ async def update_purchase_order(
 async def delete_purchase_order(
     request: Request,
     po_id: UUID,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("procurement", allowed_roles=["owner", "admin"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -9777,7 +9777,7 @@ async def update_po_status(
     request: Request,
     po_id: UUID,
     status_update: POStatusUpdate,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("procurement", allowed_roles=["owner", "admin", "inventory_manager"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -9826,7 +9826,7 @@ async def list_grn(
     to_date: Optional[date] = None,
     limit: int = 50,
     offset: int = 0,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("procurement", allowed_roles=["owner", "admin", "inventory_manager"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -9854,7 +9854,7 @@ async def list_grn(
 async def create_grn(
     request: Request,
     grn: GRNCreate,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("procurement", allowed_roles=["owner", "admin", "inventory_manager"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     user_id, org_id, _ = user_data
@@ -9946,7 +9946,7 @@ async def create_grn(
 async def get_grn(
     request: Request,
     grn_id: UUID,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("procurement", allowed_roles=["owner", "admin", "inventory_manager"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -9969,7 +9969,7 @@ async def update_grn(
     request: Request,
     grn_id: UUID,
     grn: GRNUpdate,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("procurement", allowed_roles=["owner", "admin", "inventory_manager"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -10027,7 +10027,7 @@ async def update_grn(
 async def delete_grn(
     request: Request,
     grn_id: UUID,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("procurement", allowed_roles=["owner", "admin"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -10050,7 +10050,7 @@ async def delete_grn(
 async def post_grn(
     request: Request,
     grn_id: UUID,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("procurement", allowed_roles=["owner", "admin", "inventory_manager"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -13977,7 +13977,7 @@ async def redeem_points(request: Request, req: RedeemRequest, user_data: Tuple[s
 async def list_chart_of_accounts(
     request: Request,
     account_type: Optional[AccountType] = None,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "finance", "auditor"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("accounting", allowed_roles=["owner", "admin", "finance", "auditor"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -13992,7 +13992,7 @@ async def list_chart_of_accounts(
 async def create_chart_account(
     request: Request,
     account: ChartAccountCreate,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "finance"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("accounting", allowed_roles=["owner", "admin", "finance"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -14011,7 +14011,7 @@ async def update_chart_account(
     request: Request,
     account_id: UUID,
     account: ChartAccountUpdate,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "finance"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("accounting", allowed_roles=["owner", "admin", "finance"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -14033,7 +14033,7 @@ async def update_chart_account(
 async def delete_chart_account(
     request: Request,
     account_id: UUID,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "finance"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("accounting", allowed_roles=["owner", "admin", "finance"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -14062,7 +14062,7 @@ async def list_journal_entries(
     to_date: Optional[date] = None,
     limit: int = 50,
     offset: int = 0,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "finance", "auditor"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("accounting", allowed_roles=["owner", "admin", "finance", "auditor"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -14081,7 +14081,7 @@ async def list_journal_entries(
 async def get_journal_entry(
     request: Request,
     entry_id: UUID,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "finance", "auditor"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("accounting", allowed_roles=["owner", "admin", "finance", "auditor"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -14102,7 +14102,7 @@ async def get_journal_entry(
 async def create_manual_journal_entry(
     request: Request,
     je: JournalEntryCreate,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "finance"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("accounting", allowed_roles=["owner", "admin", "finance"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     user_id, org_id, _ = user_data
@@ -14132,7 +14132,7 @@ async def create_manual_journal_entry(
 async def post_journal_entry_endpoint(
     request: Request,
     entry_id: UUID,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "finance"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("accounting", allowed_roles=["owner", "admin", "finance"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     user_id, org_id, _ = user_data
@@ -14146,7 +14146,7 @@ async def list_ar(
     customer_id: Optional[UUID] = None,
     limit: int = 50,
     offset: int = 0,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "finance", "auditor"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("accounting", allowed_roles=["owner", "admin", "finance", "auditor"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -14213,7 +14213,7 @@ async def register_ar_payment(
     request: Request,
     ar_id: UUID,
     payment: PaymentRegister,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "finance"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("accounting", allowed_roles=["owner", "admin", "finance"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     user_id, org_id, _ = user_data
@@ -14292,7 +14292,7 @@ async def list_ap(
     supplier_id: Optional[UUID] = None,
     limit: int = 50,
     offset: int = 0,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "finance", "auditor"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("accounting", allowed_roles=["owner", "admin", "finance", "auditor"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -14310,7 +14310,7 @@ async def register_ap_payment(
     request: Request,
     ap_id: UUID,
     payment: PaymentRegister,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "finance"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("accounting", allowed_roles=["owner", "admin", "finance"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     user_id, org_id, _ = user_data
@@ -14386,7 +14386,7 @@ async def register_ap_payment(
 async def generate_pl(
     request: Request,
     pl_req: PLRequest,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "finance", "auditor"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("accounting", allowed_roles=["owner", "admin", "finance", "auditor"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -14398,7 +14398,7 @@ async def get_pl_summary(
     request: Request,
     period_start: date,
     period_end: date,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "finance", "auditor"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("accounting", allowed_roles=["owner", "admin", "finance", "auditor"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -14421,7 +14421,7 @@ async def get_pl_summary(
 async def export_accounting_data(
     request: Request,
     export_req: ExportRequest,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "finance", "auditor"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("accounting", allowed_roles=["owner", "admin", "finance", "auditor"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -14456,7 +14456,7 @@ async def export_accounting_data(
 @app.post("/accounts/sync-webhook")
 async def trigger_sync_webhook(
     request: Request,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "finance"]))
+    user_data: Tuple[str, str, str] = Depends(require_feature("accounting", allowed_roles=["owner", "admin", "finance"]))
 ):
     org_id = user_data[1]
     client = get_supabase()
@@ -16576,6 +16576,13 @@ async def debug_current_db_role(request: Request):
         "session_user_email": session_user,
     }
 
+
+# ===================== HR ROUTER (Wave 3: feature-gated) =====================
+hr_router = APIRouter(
+    prefix="/hr",
+    tags=["Human Resources"],
+    dependencies=[Depends(require_feature("hr_module"))],
+)
 
 # ===================== HR ENDPOINTS =====================
 @hr_router.get("/departments")
