@@ -420,6 +420,12 @@ def effective_limit(org: Dict, metric: str):
 
 ENFORCE_FEATURES = os.environ.get("ENFORCE_FEATURES", "false").lower() == "true"
 
+# Org-scope canary. When true, get_supabase() wraps every query builder
+# so a read or write against an org-scoped table without an org_id
+# filter logs a warning. Off by default — flip it on for an audit, then
+# off again. Never raises, never alters query behaviour.
+ORG_SCOPE_CANARY = os.environ.get("ORG_SCOPE_CANARY", "false").lower() == "true"
+
 
 async def fetch_org_flags(org_id: str) -> Optional[Dict]:
     """
@@ -495,6 +501,9 @@ def require_feature_any(*feature_keys: str, allowed_roles: Optional[List[str]] =
         return user_data
     return check
 
+
+
+
 # ------------------------------------------------------------------
 # FastAPI app – MUST BE DEFINED BEFORE ANY DECORATOR
 # ------------------------------------------------------------------
@@ -530,6 +539,62 @@ def get_client_ip(request: Request) -> str:
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
+
+_ORG_SCOPED_TABLES = frozenset({
+    # The tables that leaked in the 2026-10 sweep
+    "alert_log",
+    "stock_limits",
+    "transfer_suggestions",
+    "products",
+
+    # Core tenant data
+    "inventory",
+    "inventory_batches",
+    "sales",
+    "sale_items",
+    "locations",
+    "location_stocks",
+    "stock_transfers",
+    "branches",
+
+    # Procurement
+    "suppliers",
+    "purchase_orders",
+    "purchase_order_items",
+    "grn",
+    "grn_items",
+
+    # CRM / support
+    "org_leads",
+    "support_tickets",
+    "ticket_messages",
+    "chat_sessions",
+    "chat_messages",
+    "general_knowledge",
+    "knowledge_audit",
+
+    # Accounting
+    "chart_of_accounts",
+    "journal_entries",
+    "journal_lines",
+    "accounts_receivable",
+    "accounts_payable",
+    "profit_loss_summary",
+
+    # HR
+    "hr_departments",
+    "hr_employees",
+    "hr_attendance",
+    "hr_leave_requests",
+    "hr_leave_balances",
+    "hr_payroll",
+
+    # Infrastructure
+    "system_logs",
+    "webhook_events",
+    "admin_audit",
+    "audit_events",
+})
 
 # ------------------------------------------------------------------
 # Supabase clients
@@ -588,6 +653,93 @@ class _GuardedAuth:
             )
         return getattr(self._inner, name)
 
+class _CanaryBuilder:
+    """
+    Wraps a supabase-py request builder. On .execute(), if the target
+    table is in _ORG_SCOPED_TABLES and the accumulated query params
+    carry no org_id filter, logs a warning with the caller's file:line.
+
+    Design constraints:
+      - No-op unless ORG_SCOPE_CANARY is true.
+      - Never raises. Never blocks. Never changes what the query does.
+        The wrapped .execute() always calls through to the real one.
+      - Every method on the builder chain is transparently re-wrapped,
+        so the terminal .execute() is intercepted no matter how long
+        the chain is or which order the filters were applied in.
+
+    Why this is not a hard block:
+      Some legitimate reads do not filter by org_id — cross-tenant
+      admin paths, invitation-code lookups, webhook handlers resolving
+      a tenant from the payload. The canary is an audit signal, not an
+      enforcement layer. Enforcement is what the explicit .eq() calls
+      in each endpoint already do.
+    """
+    __slots__ = ("_inner", "_table")
+
+    def __init__(self, inner, table):
+        self._inner = inner
+        self._table = table
+
+    def execute(self, *args, **kwargs):
+        self._maybe_warn()
+        return self._inner.execute(*args, **kwargs)
+
+    def _maybe_warn(self):
+        if not ORG_SCOPE_CANARY:
+            return
+        if self._table not in _ORG_SCOPED_TABLES:
+            return
+
+        params = getattr(self._inner, "params", None)
+        if params is None:
+            return
+        try:
+            keys = list(params.keys())
+        except Exception:
+            return
+
+        # PostgREST represents a filter as param key "org_id" with value
+        # "eq.<uuid>". Embedded filters on joined tables use the key
+        # "table.org_id". Either shape satisfies the check.
+        for k in keys:
+            if k == "org_id" or k.endswith(".org_id"):
+                return
+
+        # No org_id filter on an org-scoped table. Identify the caller
+        # by walking the stack for the first frame that is inside the
+        # application rather than inside site-packages.
+        caller = None
+        try:
+            for frame in reversed(traceback.extract_stack()):
+                if "site-packages" in frame.filename:
+                    continue
+                if "/app/" in frame.filename or frame.filename.endswith("main.py"):
+                    caller = f"{frame.filename.rsplit('/', 1)[-1]}:{frame.lineno} {frame.name}"
+                    break
+        except Exception:
+            pass
+
+        logger.warning(
+            "org_scope_canary",
+            table=self._table,
+            caller=caller,
+        )
+
+    def __getattr__(self, name):
+        attr = getattr(self._inner, name)
+        if not callable(attr):
+            return attr
+
+        def wrapped(*args, **kwargs):
+            result = attr(*args, **kwargs)
+            # Chainable builder methods return a builder (usually self).
+            # Keep wrapping so the terminal .execute() is intercepted.
+            if hasattr(result, "execute"):
+                return _CanaryBuilder(result, self._table)
+            return result
+
+        return wrapped
+
 
 class _GuardedClient:
     """
@@ -603,8 +755,14 @@ class _GuardedClient:
     def __getattr__(self, name):
         if name == "auth":
             return _GuardedAuth(self._inner.auth)
+        if name == "table":
+            def wrapped_table(table_name):
+                builder = self._inner.table(table_name)
+                if ORG_SCOPE_CANARY:
+                    return _CanaryBuilder(builder, table_name)
+                return builder
+            return wrapped_table
         return getattr(self._inner, name)
-
 
 def _force_clear_auth_session(client: Client) -> None:
     """
@@ -4107,28 +4265,56 @@ async def ensure_hr_tables():
 
 
 async def ensure_is_cogs_column():
-    supabase = get_supabase()
-    try:
-        test = await run_sync_db_call(supabase.table("chart_of_accounts").select("is_cogs").limit(1).execute)
-        logger.info("is_cogs column already exists.")
-    except Exception as e:
-        if 'column "is_cogs" does not exist' in str(e):
-            logger.warning("Adding is_cogs column to chart_of_accounts...")
-            sql = "ALTER TABLE public.chart_of_accounts ADD COLUMN IF NOT EXISTS is_cogs BOOLEAN DEFAULT FALSE;"
-            headers = {
-                "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
-                "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}"
-            }
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
-                    json={"query": sql},
-                    headers=headers
-                )
-                if resp.status_code not in (200, 204):
-                    logger.error(f"Failed to add is_cogs column: {resp.text}")
-                else:
-                    logger.info("is_cogs column added.")
+    """
+    ═══════════════════════════════════════════════════════════════════════
+    BELT-AND-BRACES MIGRATION — 2026-10-13. DO NOT REVERT.
+
+    WHY THE PREVIOUS SHAPE FAILED:
+
+        The old version probed with .select("is_cogs") and matched the
+        exception against the literal string
+        'column "is_cogs" does not exist'. PostgREST does not return
+        that string. A missing column surfaces as a 400 with a JSON
+        body whose message format differs. Neither the if branch nor
+        the else branch matched, so:
+
+          - the column was never added
+          - nothing was logged
+          - startup continued as if the migration had succeeded
+
+        The 2026-10-13 10:13 boot log shows the exact failure mode:
+        a bare GET ...?select=is_cogs returning 400, then
+        "Startup complete" with no follow-up line. Silent miss.
+
+    THE FIX:
+
+        No probe. Run the ALTER directly. It is idempotent, so it is
+        safe on every boot whether the column exists or not. Raise on
+        failure. There is no string to match, so there is no way for
+        the code to get the match wrong.
+    ═══════════════════════════════════════════════════════════════════════
+    """
+    sql = """
+    ALTER TABLE public.chart_of_accounts
+        ADD COLUMN IF NOT EXISTS is_cogs BOOLEAN DEFAULT FALSE;
+    """
+
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"is_cogs column migration failed: {resp.text}")
+        raise RuntimeError(f"is_cogs column migration failed: {resp.text}")
+    logger.info("is_cogs column installed (or already present)")
+
 
 async def ensure_accounting_tables():
     supabase = get_supabase()
@@ -8610,8 +8796,18 @@ async def compute_embedding(request: Request, x_admin_key: str = Header(..., ali
 # DEBUG ENDPOINTS
 # ------------------------------------------------------------------
 @app.get("/debug/check-org-members")
-async def debug_org_members(request: Request, user_id: str, x_admin_key: Optional[str] = Header(None, alias="X-Admin-Key")):
+async def debug_org_members(
+    request: Request,
+    user_id: str,
+    x_admin_key: Optional[str] = Header(None, alias="X-Admin-Key"),
+):
     await rate_limit(get_client_ip(request))
+    # Admin key required. This endpoint dumps a user's full
+    # org_members rows, which is an information-disclosure surface if
+    # left open. _require_admin_key raises 403 when the key is missing
+    # or wrong, so nothing below runs for unauthenticated callers.
+    _require_admin_key(x_admin_key)
+
     client = get_supabase()
     try:
         result = await run_sync_db_call(client.table("org_members").select("*").eq("user_id", user_id).execute)
@@ -8626,8 +8822,17 @@ async def debug_org_members(request: Request, user_id: str, x_admin_key: Optiona
         return {"error": str(e), "user_id_queried": user_id}
 
 @app.get("/debug/key-info")
-async def debug_key_info(request: Request):
+async def debug_key_info(
+    request: Request,
+    x_admin_key: Optional[str] = Header(None, alias="X-Admin-Key"),
+):
     await rate_limit(get_client_ip(request))
+    # Admin key required. This endpoint returns the first 20 characters
+    # of the service role key and the Supabase URL, which together are
+    # a partial credential disclosure. _require_admin_key raises 403
+    # on missing or wrong key.
+    _require_admin_key(x_admin_key)
+
     return {
         "has_service_key": bool(SUPABASE_SERVICE_ROLE_KEY),
         "key_prefix": (SUPABASE_SERVICE_ROLE_KEY[:20] if SUPABASE_SERVICE_ROLE_KEY else "none"),
@@ -8635,6 +8840,7 @@ async def debug_key_info(request: Request):
         "anon_prefix": (SUPABASE_ANON_KEY[:20] if SUPABASE_ANON_KEY else "none"),
         "supabase_url": SUPABASE_URL
     }
+
 
 @app.get("/auth/org")
 async def get_org_name(request: Request, user_org: Tuple[str, str] = Depends(get_current_org)):
