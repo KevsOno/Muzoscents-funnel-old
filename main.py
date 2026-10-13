@@ -3534,56 +3534,96 @@ async def ensure_product_risk_view():
             logger.error(f"Unexpected error checking view_risk_list: {e}")
 
 async def ensure_transfer_suggestions_view():
-    supabase = get_supabase()
-    try:
-        test = await run_sync_db_call(supabase.table("view_all_transfer_suggestions").select("id").limit(1).execute)
-        logger.info("view_all_transfer_suggestions view already exists.")
-    except Exception as e:
-        if 'relation "view_all_transfer_suggestions" does not exist' in str(e):
-            logger.warning("view_all_transfer_suggestions view missing. Creating it now...")
-            try:
-                sql = """
-                CREATE OR REPLACE VIEW public.view_all_transfer_suggestions AS
-                SELECT 
-                    ts.id,
-                    ts.from_location_id,
-                    fl.name as from_location,
-                    ts.to_location_id,
-                    tl.name as to_location,
-                    ts.product_id,
-                    p.name as product_name,
-                    p.sku,
-                    ts.batch,
-                    ts.quantity,
-                    ts.urgency,
-                    ts.reason,
-                    ts.status,
-                    ts.created_at,
-                    ts.updated_at,
-                    ts.last_updated
-                FROM transfer_suggestions ts
-                JOIN products p ON ts.product_id = p.id
-                LEFT JOIN locations fl ON ts.from_location_id = fl.id
-                LEFT JOIN locations tl ON ts.to_location_id = tl.id
-                """
-                headers = {
-                    "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
-                    "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}"
-                }
-                async with httpx.AsyncClient() as client:
-                    resp = await client.post(
-                        f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
-                        json={"query": sql},
-                        headers=headers
-                    )
-                    if resp.status_code not in (200, 204):
-                        logger.error(f"Failed to create view_all_transfer_suggestions: {resp.text}")
-                    else:
-                        logger.info("Successfully created view_all_transfer_suggestions view.")
-            except Exception as migration_err:
-                logger.error(f"Transfer suggestions view migration error: {migration_err}")
-        else:
-            logger.error(f"Unexpected error checking view_all_transfer_suggestions: {e}")
+    """
+    ═══════════════════════════════════════════════════════════════════════
+    CORRECTED VIEW — 2026-10-13. DO NOT REVERT.
+
+    Shape follows the belt-and-braces migrations: full SQL on every
+    boot, one idempotent statement, failure raises. CREATE OR REPLACE
+    VIEW is inherently idempotent — no probe query needed — so this
+    function just runs the definition.
+
+    WRONG IN THE PREVIOUS DEFINITION:
+
+        JOIN products p ON ts.product_id = p.id
+
+        ts.product_id does not exist on transfer_suggestions. Verified
+        against the live schema on 2026-10-13. Any environment that
+        did not already have this view has been failing to create it
+        silently for as long as the schema has been drifted. Any
+        environment that did have it has been querying a view that
+        returns nothing.
+
+    MISSING FROM THE PREVIOUS DEFINITION:
+
+        completed_quantity, notes, org_id
+
+        All three exist on transfer_suggestions. The org_id omission
+        is the one that matters for multi-tenancy: without it in the
+        projection, a consumer querying the view cannot enforce a
+        tenant boundary at the view layer.
+
+    JOIN STRATEGY CHANGED FROM INNER TO LEFT:
+
+        The old view used `JOIN products`, which silently dropped any
+        suggestion whose product_id did not match a products row.
+        LEFT JOIN keeps the row and returns NULL for the joined
+        columns. For a diagnostics view, "row with missing product" is
+        information you want to see, not data you want filtered out.
+
+    COLUMN NAMES FOLLOW THE INVENTORY SCHEMA:
+
+        inventory.description → aliased as product_name
+        inventory.item_code   → aliased as sku
+
+        Same aliases the old view used, so any consumer that was
+        written against the old shape (assuming it ever got a non-empty
+        result) sees the same field names. Only the source table changed.
+    ═══════════════════════════════════════════════════════════════════════
+    """
+    sql = """
+    CREATE OR REPLACE VIEW public.view_all_transfer_suggestions AS
+    SELECT
+        ts.id,
+        ts.org_id,
+        ts.from_location_id,
+        fl.name  AS from_location,
+        ts.to_location_id,
+        tl.name  AS to_location,
+        ts.inventory_id,
+        inv.description AS product_name,
+        inv.item_code   AS sku,
+        ts.batch,
+        ts.quantity,
+        ts.completed_quantity,
+        ts.urgency,
+        ts.reason,
+        ts.status,
+        ts.notes,
+        ts.created_at,
+        ts.updated_at,
+        ts.last_updated
+      FROM public.transfer_suggestions ts
+      LEFT JOIN public.inventory inv ON ts.inventory_id = inv.id
+      LEFT JOIN public.locations fl  ON ts.from_location_id = fl.id
+      LEFT JOIN public.locations tl  ON ts.to_location_id   = tl.id;
+    """
+
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"view_all_transfer_suggestions migration failed: {resp.text}")
+        raise RuntimeError(f"view_all_transfer_suggestions migration failed: {resp.text}")
+    logger.info("view_all_transfer_suggestions view installed (or already present)")
 
 async def ensure_system_logs_table():
     supabase = get_supabase()
