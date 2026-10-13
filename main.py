@@ -125,6 +125,69 @@ structlog.configure(
 
 logger = structlog.get_logger()
 
+# ─────────────────────────────────────────────────────────────────────
+# Migration suite hash
+#
+# Computed once at import time from the source of every ensure_* /
+# backfill_* function referenced by startup_event. Stored in the
+# schema_migrations table on successful completion. On next boot, if
+# the stored hash matches, startup_event skips the entire suite.
+#
+# Change any migration function body → hash changes → suite re-runs.
+# No code change → hash matches → boot skips straight past the
+# migration section.
+#
+# Set FORCE_MIGRATIONS=true in the environment to force a full re-run
+# without a code change (useful after manually altering the schema).
+# ─────────────────────────────────────────────────────────────────────
+def _compute_migration_suite_hash() -> str:
+    import inspect
+    names = [
+        "ensure_branches_table",
+        "ensure_location_stocks_constraints",
+        "ensure_cost_price_column",
+        "ensure_delivery_fee_columns",
+        "ensure_org_delivery_columns",
+        "ensure_role_column",
+        "ensure_org_registry_schema",
+        "ensure_health_check_schema",
+        "ensure_knowledge_audit_table",
+        "ensure_vector_support",
+        "ensure_loyalty_tables",
+        "ensure_stock_transfers_table",
+        "ensure_stock_transfer_rpcs",
+        "ensure_transfer_suggestions_last_updated_column",
+        "ensure_decrement_stock_fefo",
+        "ensure_finalize_online_order",
+        "ensure_webhook_events",
+        "ensure_stock_reconciliation",
+        "ensure_sales_fulfillment_columns",
+        "ensure_alert_log_table",
+        "ensure_alert_log_backfill",
+        "ensure_transfer_suggestions_table",
+        "ensure_transfer_suggestions_backfill",
+        "ensure_stock_limits_table",
+        "ensure_stock_limits_backfill",
+        "ensure_product_risk_view",
+        "ensure_transfer_suggestions_view",
+        "ensure_system_logs_table",
+        "ensure_rpc_functions",
+        "ensure_hr_tables",
+        "ensure_accounting_tables",
+        "ensure_is_cogs_column",
+    ]
+    h = hashlib.sha256()
+    for name in names:
+        fn = globals().get(name)
+        if fn is None:
+            h.update(f"MISSING:{name}\n".encode())
+            continue
+        try:
+            src = inspect.getsource(fn)
+        except Exception:
+            src = f"UNREADABLE:{name}"
+        h.update(f"{name}\n{src}\n".encode())
+    return h.hexdigest()
 
 # ====================================================================
 # CONTROL CENTER — plan & feature catalog
@@ -4507,6 +4570,140 @@ async def ensure_accounting_tables():
         else:
             logger.info("Accounting tables created/verified.")
 
+async def _read_stored_migration_hash() -> Optional[str]:
+    """
+    Return the hash of the last successful migration suite run, or
+    None if the schema_migrations table does not yet exist (first ever
+    boot on this database) or has no row.
+    """
+    sql = """
+    CREATE TABLE IF NOT EXISTS public.schema_migrations (
+        id              SERIAL PRIMARY KEY,
+        suite_hash      TEXT NOT NULL,
+        applied_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        applied_by      TEXT
+    );
+    """
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        # Ensure the table exists — this is the one statement that must
+        # run on every boot, because it's how we bootstrap the gate.
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+        if resp.status_code not in (200, 204):
+            logger.error(f"schema_migrations bootstrap failed: {resp.text}")
+            return None
+
+        # Read the most recent row.
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": "SELECT suite_hash FROM public.schema_migrations ORDER BY applied_at DESC LIMIT 1;"},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        return None
+    try:
+        rows = resp.json()
+    except Exception:
+        return None
+    if not rows:
+        return None
+    return rows[0].get("suite_hash")
+
+
+async def _record_migration_hash(suite_hash: str, applied_by: str) -> None:
+    sql = f"""
+    INSERT INTO public.schema_migrations (suite_hash, applied_at, applied_by)
+    VALUES ('{suite_hash}', NOW(), '{applied_by}');
+    """
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"failed to record migration hash: {resp.text}")
+
+# ─────────────────────────────────────────────────────────────────────
+# Migration gate — multi-instance safe
+#
+# advisory lock key. Any integer. Same across all instances. Chosen
+# arbitrarily and noted here so no other code accidentally claims it.
+# ─────────────────────────────────────────────────────────────────────
+_MIGRATION_ADVISORY_LOCK_KEY = 8127346521
+
+
+async def _try_acquire_migration_lock() -> bool:
+    """Try to acquire the migration advisory lock. Non-blocking."""
+    sql = f"SELECT pg_try_advisory_lock({_MIGRATION_ADVISORY_LOCK_KEY}) AS acquired;"
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        return False
+    try:
+        rows = resp.json()
+        return bool(rows and rows[0].get("acquired"))
+    except Exception:
+        return False
+
+
+async def _release_migration_lock() -> None:
+    sql = f"SELECT pg_advisory_unlock({_MIGRATION_ADVISORY_LOCK_KEY});"
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.post(
+                f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+                json={"query": sql},
+                headers=headers,
+            )
+    except Exception:
+        # The connection drop releases the lock anyway.
+        pass
+
+
+async def _wait_for_hash(stored_hash_wanted: str, timeout_s: float = 60.0) -> bool:
+    """
+    Poll the schema_migrations table until its latest row matches
+    stored_hash_wanted, or the timeout elapses.
+    """
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        await asyncio.sleep(0.5)
+        h = await _read_stored_migration_hash()
+        if h == stored_hash_wanted:
+            return True
+    return False
+
+
+
+
 # ------------------------------------------------------------------
 # SINGLE STARTUP EVENT - ALL MIGRATIONS CONSOLIDATED
 # ------------------------------------------------------------------
@@ -4514,44 +4711,121 @@ async def ensure_accounting_tables():
 async def startup_event():
     if os.environ.get("SKIP_MIGRATIONS", "false").lower() == "true":
         logger.info("⏩ Skipping migrations (SKIP_MIGRATIONS=true)")
+        await _verify_plan_catalog()
         return
 
-    await ensure_branches_table()
-    await ensure_cost_price_column()
-    await ensure_delivery_fee_columns()
-    await ensure_org_delivery_columns()
-    await ensure_role_column()
-    await ensure_org_registry_schema()
-    await ensure_health_check_schema()
-    await ensure_knowledge_audit_table()
-    await ensure_vector_support()
-    await ensure_loyalty_tables()
-    await ensure_stock_transfers_table()
-    await ensure_location_stocks_constraints()
-    await ensure_stock_transfer_rpcs()
-    await ensure_transfer_suggestions_last_updated_column()   # ← new
-    await ensure_decrement_stock_fefo()
-    await ensure_finalize_online_order()
-    await ensure_webhook_events()
-    await ensure_stock_reconciliation()
-    await ensure_sales_fulfillment_columns()
-    await ensure_alert_log_table()
-    await ensure_alert_log_backfill()                         # ← new: backfill legacy rows
-    await ensure_transfer_suggestions_table()
-    await ensure_transfer_suggestions_backfill()              # ← new: backfill legacy rows
-    await ensure_stock_limits_table()
-    await ensure_stock_limits_backfill()                # ← new: backfill legacy rows
-    await ensure_product_risk_view()
-    await ensure_transfer_suggestions_view()
-    await ensure_system_logs_table()
-    await ensure_rpc_functions()
+    force = os.environ.get("FORCE_MIGRATIONS", "false").lower() == "true"
+    current_hash = _compute_migration_suite_hash()
+    instance_id = os.environ.get("RENDER_INSTANCE_ID") or os.environ.get("SPACE_ID") or "unknown"
 
-    await ensure_hr_tables()
+    if not force:
+        stored_hash = await _read_stored_migration_hash()
+        if stored_hash == current_hash:
+            logger.info(
+                "migration suite up to date — skipping",
+                suite_hash=current_hash[:12],
+                instance=instance_id,
+            )
+            await _verify_plan_catalog()
+            return
 
-    await ensure_accounting_tables()
-    await ensure_is_cogs_column()
+    # We need to run migrations. Try to acquire the cluster lock.
+    acquired = await _try_acquire_migration_lock()
 
-    logger.info("Startup complete - all tables and functions ready")
+    if not acquired:
+        # Another instance is already running them. Wait for it.
+        logger.info(
+            "another instance holds the migration lock — waiting",
+            instance=instance_id,
+            suite_hash=current_hash[:12],
+        )
+        if await _wait_for_hash(current_hash, timeout_s=90.0):
+            logger.info(
+                "migration lock released — suite is up to date",
+                instance=instance_id,
+            )
+            await _verify_plan_catalog()
+            return
+        else:
+            # Another instance is taking too long. Boot anyway; a
+            # slightly stale schema is better than a dead instance.
+            logger.warning(
+                "timed out waiting for migration lock — booting anyway",
+                instance=instance_id,
+            )
+            await _verify_plan_catalog()
+            return
+
+    # We hold the lock. Re-check the hash — someone may have finished
+    # the run while we were waiting to acquire it.
+    try:
+        if not force:
+            stored_hash = await _read_stored_migration_hash()
+            if stored_hash == current_hash:
+                logger.info(
+                    "migration suite already applied by another instance — skipping",
+                    suite_hash=current_hash[:12],
+                    instance=instance_id,
+                )
+                await _verify_plan_catalog()
+                return
+
+        logger.info(
+            "migration suite running under advisory lock",
+            instance=instance_id,
+            suite_hash=current_hash[:12],
+        )
+
+        await ensure_branches_table()
+        await ensure_location_stocks_constraints()
+        await ensure_cost_price_column()
+        await ensure_delivery_fee_columns()
+        await ensure_org_delivery_columns()
+        await ensure_role_column()
+        await ensure_org_registry_schema()
+        await ensure_health_check_schema()
+        await ensure_knowledge_audit_table()
+        await ensure_vector_support()
+        await ensure_loyalty_tables()
+        await ensure_stock_transfers_table()
+        await ensure_stock_transfer_rpcs()
+        await ensure_transfer_suggestions_last_updated_column()
+        await ensure_decrement_stock_fefo()
+        await ensure_finalize_online_order()
+        await ensure_webhook_events()
+        await ensure_stock_reconciliation()
+        await ensure_sales_fulfillment_columns()
+        await ensure_alert_log_table()
+        await ensure_alert_log_backfill()
+        await ensure_transfer_suggestions_table()
+        await ensure_transfer_suggestions_backfill()
+        await ensure_stock_limits_table()
+        await ensure_stock_limits_backfill()
+        await ensure_product_risk_view()
+        await ensure_transfer_suggestions_view()
+        await ensure_system_logs_table()
+        await ensure_rpc_functions()
+
+        await ensure_hr_tables()
+
+        await ensure_accounting_tables()
+        await ensure_is_cogs_column()
+
+        await _record_migration_hash(
+            suite_hash=current_hash,
+            applied_by=instance_id,
+        )
+
+        logger.info(
+            "Startup complete — all tables and functions ready",
+            suite_hash=current_hash[:12],
+            instance=instance_id,
+        )
+    finally:
+        await _release_migration_lock()
+
+    await _verify_plan_catalog()
+
 async def _verify_plan_catalog():
     for key, tier in PLAN_TIERS.items():
         unknown = set(tier["features"]) - set(FEATURE_CATALOG)
