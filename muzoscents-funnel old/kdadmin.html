@@ -303,6 +303,7 @@
                 <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="limits">📊 Stock Limits</button>
                 <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="logs">📋 Logs</button>
                 <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="locations">🏢 Locations</button>
+                <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="flash-sales">🏷️ Flash Sales</button>
             </div>
 
             <!-- ========================================================== -->
@@ -321,6 +322,9 @@
                         </div>
                         <button id="refresh-inventory" class="bg-slate-700 hover:bg-slate-600 text-sm px-3 py-2 rounded-lg"><i class="fa-solid fa-rotate-right mr-1"></i> Refresh</button>
                         <button id="show-transfer-modal" class="bg-indigo-600 hover:bg-indigo-700 text-sm px-3 py-2 rounded-lg"><i class="fa-solid fa-arrow-right-arrow-left"></i> Transfer Stock</button>
+                        <button id="show-flash-sale-modal" class="bg-amber-600 hover:bg-amber-700 text-sm px-3 py-2 rounded-lg">
+                            <i class="fa-solid fa-tags"></i> Special Offer
+                        </button>
                         <button id="show-location-modal" class="bg-emerald-600 hover:bg-emerald-700 text-sm px-3 py-2 rounded-lg"><i class="fa-solid fa-plus"></i> Add Location</button>
                     </div>
                 </div>
@@ -669,6 +673,33 @@
                 </div>
             </div>
 
+            <!-- ========================================================== -->
+            <!-- TAB: FLASH SALES                                            -->
+            <!-- ========================================================== -->
+            <div id="tab-flash-sales" class="tab-content hidden">
+                <div class="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
+                    <div class="flex flex-wrap justify-between items-center mb-4">
+                        <div>
+                            <h2 class="text-xl font-bold flex items-center gap-2">
+                                <i class="fa-solid fa-tags text-amber-400"></i> Flash Sales & Scheduled Discounts
+                            </h2>
+                            <p class="text-xs text-slate-400 mt-1">Products on an active sale show the slashed price to storefront visitors and POS cashiers.</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="loadFlashSales()" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-sm">
+                                <i class="fa-solid fa-refresh"></i>
+                            </button>
+                            <button id="new-flash-sale-btn" class="bg-amber-600 hover:bg-amber-700 px-4 py-2 rounded-lg text-sm font-medium">
+                                <i class="fa-solid fa-plus mr-1"></i> New Flash Sale
+                            </button>
+                        </div>
+                    </div>
+                    <div id="flash-sales-container">
+                        <div class="text-center py-8 text-slate-400">Loading flash sales…</div>
+                    </div>
+                </div>
+            </div>
+
         </div><!-- end admin-panel -->
     </div><!-- end max-w-7xl -->
 
@@ -676,26 +707,49 @@
     <!-- MODALS                                                        -->
     <!-- ============================================================ -->
 
-    <!-- Transfer Modal (searchable product picker, close button, ESC) -->
+    <!-- Transfer Modal (multi-line) -->
     <div id="transfer-modal" class="modal-lift hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4">
-        <div class="bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-slate-600 relative">
-            <div class="flex justify-between items-center mb-4">
+        <div class="bg-slate-800 rounded-2xl max-w-3xl w-full border border-slate-600 max-h-[90vh] flex flex-col">
+            <div class="p-5 border-b border-slate-700 flex justify-between items-center">
                 <h3 class="text-xl font-bold">Transfer Stock</h3>
                 <button id="transfer-modal-close" type="button" class="text-slate-400 hover:text-white text-2xl leading-none" aria-label="Close">&times;</button>
             </div>
-            <div class="space-y-3">
-                <div class="relative">
-                    <label class="block text-sm mb-1">Product *</label>
-                    <input type="text" id="transfer-product-search" placeholder="Type SKU or description..." autocomplete="off" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2" />
-                    <input type="hidden" id="transfer-product-id" value="" />
-                    <div id="transfer-product-results" class="hidden absolute left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-lg max-h-60 overflow-y-auto shadow-2xl"></div>
-                    <div id="transfer-product-selected" class="text-xs text-green-400 mt-1"></div>
+            <div class="p-5 overflow-y-auto flex-1">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                    <div>
+                        <label class="block text-sm mb-1">From Location</label>
+                        <select id="transfer-from" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select>
+                    </div>
+                    <div>
+                        <label class="block text-sm mb-1">To Location</label>
+                        <select id="transfer-to" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select>
+                    </div>
                 </div>
-                <div><label class="block text-sm mb-1">From Location</label><select id="transfer-from" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select></div>
-                <div><label class="block text-sm mb-1">To Location</label><select id="transfer-to" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2"></select></div>
-                <div><label class="block text-sm mb-1">Quantity</label><input id="transfer-qty" type="number" min="1" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2" /></div>
-                <div><label class="block text-sm mb-1">Request Notes</label><input id="transfer-reason" placeholder="Optional notes" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2" /></div>
-                <div class="flex gap-3 mt-4"><button id="transfer-submit" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg">Transfer</button><button id="transfer-cancel" class="bg-slate-600 hover:bg-slate-500 px-4 py-2 rounded-lg">Cancel</button></div>
+
+                <div class="border-t border-slate-700 pt-4">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-sm font-medium">Products</span>
+                        <span class="text-xs text-slate-500" id="transfer-count">0 lines</span>
+                    </div>
+                    <div class="relative mb-3">
+                        <input id="transfer-product-search" type="text" placeholder="Search a product to add…" autocomplete="off"
+                               class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 pl-9 text-sm" />
+                        <i class="fa-solid fa-search absolute left-3 top-3 text-slate-500 text-xs"></i>
+                        <div id="transfer-product-results" class="hidden absolute left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-lg max-h-60 overflow-y-auto shadow-2xl z-10"></div>
+                    </div>
+                    <div id="transfer-items" class="space-y-2"></div>
+                </div>
+
+                <div class="mt-4">
+                    <label class="block text-sm mb-1">Request Notes</label>
+                    <input id="transfer-reason" placeholder="Optional notes" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2" />
+                </div>
+            </div>
+            <div class="p-5 border-t border-slate-700 flex justify-end gap-3">
+                <button id="transfer-cancel" class="bg-slate-600 hover:bg-slate-500 px-4 py-2 rounded-lg">Cancel</button>
+                <button id="transfer-submit" class="bg-indigo-600 hover:bg-indigo-700 px-6 py-2 rounded-lg font-medium">
+                    Transfer All
+                </button>
             </div>
         </div>
     </div>
@@ -718,6 +772,62 @@
                 <div class="flex gap-3 mt-4"><button id="location-modal-submit" class="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg">Create</button><button id="location-modal-cancel" class="bg-slate-600 hover:bg-slate-500 px-4 py-2 rounded-lg">Cancel</button></div>
             </div>
             <div id="existing-locations" class="mt-4 pt-4 border-t border-slate-700"><h4 class="text-sm font-semibold mb-2">Existing Locations</h4><div id="locations-list" class="text-xs space-y-1 max-h-32 overflow-y-auto"></div></div>
+        </div>
+    </div>
+
+    <!-- Flash Sale Modal -->
+    <div id="flash-sale-modal" class="modal-lift hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4">
+        <div class="bg-slate-800 rounded-2xl max-w-3xl w-full border border-slate-600 max-h-[90vh] flex flex-col">
+            <div class="p-5 border-b border-slate-700 flex justify-between items-center">
+                <h3 class="text-xl font-bold flex items-center gap-2">
+                    <i class="fa-solid fa-tags text-amber-400"></i> New Flash Sale
+                </h3>
+                <button id="flash-sale-close" type="button" class="text-slate-400 hover:text-white text-2xl leading-none" aria-label="Close">&times;</button>
+            </div>
+            <div class="p-5 overflow-y-auto flex-1">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                    <div class="md:col-span-3">
+                        <label class="block text-xs text-slate-400 mb-1">Sale name *</label>
+                        <input id="flash-sale-name" type="text" placeholder="Black Friday 2026"
+                               class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm" />
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">Starts at *</label>
+                        <input id="flash-sale-start" type="datetime-local"
+                               class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm" />
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">Ends at *</label>
+                        <input id="flash-sale-end" type="datetime-local"
+                               class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm" />
+                    </div>
+                    <div class="flex items-end">
+                        <button id="flash-sale-quick-24h" class="w-full bg-slate-700 hover:bg-slate-600 rounded-lg py-2.5 text-sm">
+                            24-hour sale starting now
+                        </button>
+                    </div>
+                </div>
+
+                <div class="border-t border-slate-700 pt-4">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-sm font-medium">Products on sale</span>
+                        <span class="text-xs text-slate-500" id="flash-sale-count">0 selected</span>
+                    </div>
+                    <div class="relative mb-3">
+                        <input id="flash-sale-search" type="text" placeholder="Search product by SKU or name…" autocomplete="off"
+                               class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 pl-9 text-sm" />
+                        <i class="fa-solid fa-search absolute left-3 top-3 text-slate-500 text-xs"></i>
+                        <div id="flash-sale-results" class="hidden absolute left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-lg max-h-60 overflow-y-auto shadow-2xl z-10"></div>
+                    </div>
+                    <div id="flash-sale-items" class="space-y-2"></div>
+                </div>
+            </div>
+            <div class="p-5 border-t border-slate-700 flex justify-end gap-3">
+                <button id="flash-sale-cancel" class="bg-slate-700 hover:bg-slate-600 px-5 py-2 rounded-lg">Cancel</button>
+                <button id="flash-sale-submit" class="bg-amber-600 hover:bg-amber-700 px-6 py-2 rounded-lg font-medium">
+                    Create Flash Sale
+                </button>
+            </div>
         </div>
     </div>
 
@@ -844,10 +954,11 @@
         // ESC closes any open modal.
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') {
-                ['transfer-modal', 'location-modal', 'add-batch-modal', 'batch-details-modal', 'fefo-modal']
+                ['transfer-modal', 'location-modal', 'add-batch-modal', 'batch-details-modal', 'fefo-modal', 'flash-sale-modal']
                     .forEach(id => document.getElementById(id)?.classList.add('hidden'));
                 // Also close the transfer-product-results dropdown
                 document.getElementById('transfer-product-results')?.classList.add('hidden');
+                document.getElementById('flash-sale-results')?.classList.add('hidden');
             }
         });
 
@@ -1831,46 +1942,99 @@
         });
 
         // ================================================================
-        // TRANSFER MODAL — searchable product picker
+        // TRANSFER MODAL — multi-line
         // ================================================================
-        const transferSearchInput = document.getElementById('transfer-product-search');
-        const transferResultsBox = document.getElementById('transfer-product-results');
-        const transferProductIdInput = document.getElementById('transfer-product-id');
-        const transferSelectedLabel = document.getElementById('transfer-product-selected');
+        let transferItems = []; // [{inventory_id, description, item_code, available, quantity}]
+
+        function renderTransferItems() {
+            const c = document.getElementById('transfer-items');
+            if (!c) return;
+            if (!transferItems.length) {
+                c.innerHTML = '<div class="text-xs text-slate-500 italic text-center py-3">No products added yet. Use the search box above.</div>';
+            } else {
+                c.innerHTML = transferItems.map((it, idx) => `
+                    <div class="flex items-center gap-3 bg-slate-900/60 border border-slate-700 rounded-lg p-2">
+                        <div class="flex-1 min-w-0">
+                            <div class="text-sm truncate">${escapeHtml(it.description)}</div>
+                            <div class="text-xs text-slate-500">${escapeHtml(it.item_code || '')}${it.available != null ? ` • stock ${it.available}` : ''}</div>
+                        </div>
+                        <input type="number" min="1" value="${it.quantity}" data-idx="${idx}"
+                               class="transfer-qty w-24 bg-slate-950 border border-slate-700 rounded p-1.5 text-sm text-right" />
+                        <button class="transfer-remove text-red-400 hover:text-red-300 text-sm" data-idx="${idx}">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
+                `).join('');
+            }
+            document.getElementById('transfer-count').textContent =
+                `${transferItems.length} line${transferItems.length === 1 ? '' : 's'}`;
+
+            c.querySelectorAll('.transfer-qty').forEach(el => {
+                el.addEventListener('input', e => {
+                    const idx = parseInt(e.target.dataset.idx);
+                    transferItems[idx].quantity = parseInt(e.target.value) || 1;
+                });
+            });
+            c.querySelectorAll('.transfer-remove').forEach(el => {
+                el.addEventListener('click', e => {
+                    const idx = parseInt(e.currentTarget.dataset.idx);
+                    transferItems.splice(idx, 1);
+                    renderTransferItems();
+                });
+            });
+        }
 
         async function performTransferProductSearch(query) {
+            const box = document.getElementById('transfer-product-results');
             if (!query || query.length < 2) {
-                transferResultsBox.classList.add('hidden');
-                transferResultsBox.innerHTML = '';
+                box.classList.add('hidden');
+                box.innerHTML = '';
                 return;
             }
             try {
                 const data = await apiCall(`/inventory/search?q=${encodeURIComponent(query)}&limit=15&offset=0`);
                 const results = data.items || [];
-                if (results.length === 0) {
-                    transferResultsBox.innerHTML = '<div class="p-3 text-sm text-slate-400">No products found</div>';
+                if (!results.length) {
+                    box.innerHTML = '<div class="p-3 text-sm text-slate-400">No products found</div>';
                 } else {
-                    transferResultsBox.innerHTML = results.map(p => `
-                        <div class="p-2 hover:bg-slate-800 cursor-pointer border-b border-slate-700 last:border-0"
-                             data-id="${p.id}"
-                             data-label="${escapeHtml(p.description)} (${escapeHtml(p.item_code || p.id)})">
-                            <div class="text-sm text-white">${escapeHtml(p.description)}</div>
-                            <div class="text-xs text-slate-400">${escapeHtml(p.item_code || '')} • Stock: ${p.current_qty || 0}</div>
-                        </div>
-                    `).join('');
-                    transferResultsBox.querySelectorAll('[data-id]').forEach(el => {
+                    box.innerHTML = results.map(p => {
+                        const already = transferItems.some(x => x.inventory_id === p.id);
+                        return `
+                            <div class="p-2 hover:bg-slate-800 cursor-pointer border-b border-slate-700 last:border-0 ${already ? 'opacity-50' : ''}"
+                                 data-id="${p.id}"
+                                 data-desc="${escapeHtml(p.description)}"
+                                 data-code="${escapeHtml(p.item_code || '')}"
+                                 data-stock="${p.current_qty || 0}">
+                                <div class="text-sm text-white">${escapeHtml(p.description)}</div>
+                                <div class="text-xs text-slate-400">${escapeHtml(p.item_code || '')} • Stock: ${p.current_qty || 0}${already ? ' • already added' : ''}</div>
+                            </div>
+                        `;
+                    }).join('');
+                    box.querySelectorAll('[data-id]').forEach(el => {
                         el.addEventListener('click', function() {
-                            transferProductIdInput.value = this.dataset.id;
-                            transferSearchInput.value = this.dataset.label;
-                            transferSelectedLabel.textContent = `Selected: ${this.dataset.label}`;
-                            transferResultsBox.classList.add('hidden');
+                            const invId = parseInt(this.dataset.id);
+                            if (transferItems.some(x => x.inventory_id === invId)) {
+                                document.getElementById('transfer-product-search').value = '';
+                                box.classList.add('hidden');
+                                return;
+                            }
+                            transferItems.push({
+                                inventory_id: invId,
+                                description:  this.dataset.desc,
+                                item_code:    this.dataset.code,
+                                available:    parseInt(this.dataset.stock) || 0,
+                                quantity:     1,
+                            });
+                            renderTransferItems();
+                            document.getElementById('transfer-product-search').value = '';
+                            box.classList.add('hidden');
                         });
                     });
                 }
-                transferResultsBox.classList.remove('hidden');
+                box.classList.remove('hidden');
             } catch (err) {
-                transferResultsBox.innerHTML = `<div class="p-3 text-sm text-red-400">Search error: ${escapeHtml(err.message)}</div>`;
-                transferResultsBox.classList.remove('hidden');
+                box.innerHTML = `<div class="p-3 text-sm text-red-400">Search error: ${escapeHtml(err.message)}</div>`;
+                box.classList.remove('hidden');
             }
         }
 
@@ -1878,16 +2042,14 @@
             performTransferProductSearch(this.value.trim());
         }, 300);
 
-        transferSearchInput?.addEventListener('input', debouncedTransferSearch);
-        transferSearchInput?.addEventListener('focus', function() {
+        document.getElementById('transfer-product-search')?.addEventListener('input', debouncedTransferSearch);
+        document.getElementById('transfer-product-search')?.addEventListener('focus', function() {
             const q = this.value.trim();
             if (q.length >= 2) performTransferProductSearch(q);
         });
-
-        // Close the dropdown when clicking outside it
         document.addEventListener('click', function(e) {
             if (!e.target.closest('#transfer-product-search') && !e.target.closest('#transfer-product-results')) {
-                transferResultsBox?.classList.add('hidden');
+                document.getElementById('transfer-product-results')?.classList.add('hidden');
             }
         });
 
@@ -1896,23 +2058,19 @@
                 showToast('Need at least 2 locations for transfer', 'error');
                 return;
             }
-            // Close the global product search overlay so it can't sit on top
             closeSearchResults();
-
-            // Reset the picker
-            transferSearchInput.value = '';
-            transferProductIdInput.value = '';
-            transferSelectedLabel.textContent = '';
-            transferResultsBox.classList.add('hidden');
-            transferResultsBox.innerHTML = '';
-
+            transferItems = [];
+            renderTransferItems();
+            document.getElementById('transfer-product-search').value = '';
+            document.getElementById('transfer-reason').value = '';
+            document.getElementById('transfer-product-results').classList.add('hidden');
             document.getElementById('transfer-modal').classList.remove('hidden');
-            setTimeout(() => transferSearchInput?.focus(), 80);
+            setTimeout(() => document.getElementById('transfer-product-search')?.focus(), 80);
         }
 
         function closeTransferModal() {
             document.getElementById('transfer-modal').classList.add('hidden');
-            transferResultsBox?.classList.add('hidden');
+            document.getElementById('transfer-product-results')?.classList.add('hidden');
         }
 
         document.getElementById('transfer-modal-close')?.addEventListener('click', closeTransferModal);
@@ -1920,44 +2078,373 @@
         document.getElementById('show-transfer-modal')?.addEventListener('click', showTransferModal);
 
         document.getElementById('transfer-submit')?.addEventListener('click', async function() {
-            const productId = transferProductIdInput.value;
             const fromLoc = document.getElementById('transfer-from').value;
-            const toLoc = document.getElementById('transfer-to').value;
-            const qty = parseInt(document.getElementById('transfer-qty').value);
-            const request_notes = document.getElementById('transfer-reason').value;
+            const toLoc   = document.getElementById('transfer-to').value;
+            const notes   = document.getElementById('transfer-reason').value || null;
 
-            if (!productId) { showToast('Please select a product', 'error'); return; }
-            if (!fromLoc || !toLoc || !qty || qty <= 0) { showToast('Please fill all fields', 'error'); return; }
-            if (fromLoc === toLoc) { showToast('Source and destination cannot be the same', 'error'); return; }
+            if (!transferItems.length) { showToast('Add at least one product', 'error'); return; }
+            if (!toLoc) { showToast('Select a destination location', 'error'); return; }
+            if (fromLoc && fromLoc === toLoc) { showToast('Source and destination cannot be the same', 'error'); return; }
+
+            const btn = this;
+            btn.disabled = true;
+            const originalLabel = btn.innerHTML;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Transferring…';
 
             try {
-                await apiCall('/stock-transfers/request', {
+                const data = await apiCall('/stock-transfers/bulk-request', {
                     method: 'POST',
                     body: JSON.stringify({
                         from_location_id: fromLoc || null,
-                        to_location_id: toLoc,
-                        inventory_id: parseInt(productId),
-                        quantity: qty,
-                        request_notes: request_notes || null
-                    })
+                        to_location_id:   toLoc,
+                        items:            transferItems.map(x => ({ inventory_id: x.inventory_id, quantity: x.quantity })),
+                        request_notes:    notes,
+                    }),
                 });
-                showToast('Transfer completed!', 'success');
-                closeTransferModal();
-                // Reset the picker for next time
-                document.getElementById('transfer-qty').value = '';
-                document.getElementById('transfer-reason').value = '';
-                transferSearchInput.value = '';
-                transferProductIdInput.value = '';
-                transferSelectedLabel.textContent = '';
 
-                // Refresh the stock-transfers tab (where the completed row now lives),
-                // and refresh the inventory so location_stocks reflects the move.
+                const succ = data.succeeded || 0;
+                const fail = data.failed || 0;
+
+                if (fail === 0) {
+                    showToast(`✅ All ${succ} line${succ === 1 ? '' : 's'} completed`, 'success');
+                    closeTransferModal();
+                } else {
+                    // Show per-line failures so the operator knows which ones need retrying.
+                    const failedLines = (data.results || []).filter(r => r.status !== 'completed');
+                    const errs = failedLines.slice(0, 5).map(r => `• #${r.inventory_id}: ${r.error || 'failed'}`).join('\n');
+                    showToast(`⚠️ ${succ} succeeded, ${fail} failed:\n${errs}${failedLines.length > 5 ? '\n…' : ''}`, 'error');
+                    // Keep the modal open with the failed lines only.
+                    transferItems = transferItems.filter(x =>
+                        failedLines.some(f => f.inventory_id === x.inventory_id)
+                    );
+                    renderTransferItems();
+                }
+
+                // Refresh history and stock regardless.
                 await loadStockTransfers();
                 await loadInventory();
             } catch (err) {
-                showToast(`Failed: ${err.message}`, 'error');
+                showToast(`Transfer failed: ${err.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalLabel;
             }
         });
+
+        // ================================================================
+        // FLASH SALES
+        // ================================================================
+        let flashSaleItems = []; // [{inventory_id, description, item_code, original_price, sale_price}]
+
+        function renderFlashSaleItems() {
+            const c = document.getElementById('flash-sale-items');
+            if (!c) return;
+            if (!flashSaleItems.length) {
+                c.innerHTML = '<div class="text-xs text-slate-500 italic text-center py-3">No products added yet.</div>';
+            } else {
+                c.innerHTML = flashSaleItems.map((it, idx) => {
+                    const discount = it.original_price > 0
+                        ? Math.round(((it.original_price - it.sale_price) / it.original_price) * 100)
+                        : 0;
+                    return `
+                        <div class="flex items-center gap-3 bg-slate-900/60 border border-slate-700 rounded-lg p-2">
+                            <div class="flex-1 min-w-0">
+                                <div class="text-sm truncate">${escapeHtml(it.description)}</div>
+                                <div class="text-xs text-slate-500">
+                                    ${escapeHtml(it.item_code || '')} • was ₦${Number(it.original_price).toLocaleString()}
+                                    ${discount > 0 ? ` • <span class="text-amber-400">−${discount}%</span>` : ''}
+                                </div>
+                            </div>
+                            <input type="number" step="0.01" min="0.01" value="${it.sale_price}" data-idx="${idx}"
+                                   class="flash-price w-28 bg-slate-950 border border-slate-700 rounded p-1.5 text-sm text-right" />
+                            <button class="flash-remove text-red-400 hover:text-red-300 text-sm" data-idx="${idx}">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
+                    `;
+                }).join('');
+            }
+            document.getElementById('flash-sale-count').textContent =
+                `${flashSaleItems.length} selected`;
+
+            c.querySelectorAll('.flash-price').forEach(el => {
+                el.addEventListener('input', e => {
+                    const idx = parseInt(e.target.dataset.idx);
+                    flashSaleItems[idx].sale_price = parseFloat(e.target.value) || 0;
+                    // Re-render just the discount label in place without losing focus.
+                    const row = e.target.closest('.flex');
+                    const label = row?.querySelector('.text-xs.text-slate-500');
+                    const it = flashSaleItems[idx];
+                    if (label && it.original_price > 0) {
+                        const d = Math.round(((it.original_price - it.sale_price) / it.original_price) * 100);
+                        label.innerHTML = `${escapeHtml(it.item_code || '')} • was ₦${Number(it.original_price).toLocaleString()}${d > 0 ? ` • <span class="text-amber-400">−${d}%</span>` : ''}`;
+                    }
+                });
+            });
+            c.querySelectorAll('.flash-remove').forEach(el => {
+                el.addEventListener('click', e => {
+                    const idx = parseInt(e.currentTarget.dataset.idx);
+                    flashSaleItems.splice(idx, 1);
+                    renderFlashSaleItems();
+                });
+            });
+        }
+
+        async function performFlashSaleSearch(query) {
+            const box = document.getElementById('flash-sale-results');
+            if (!query || query.length < 2) {
+                box.classList.add('hidden');
+                box.innerHTML = '';
+                return;
+            }
+            try {
+                const data = await apiCall(`/inventory/search?q=${encodeURIComponent(query)}&limit=15&offset=0`);
+                const results = data.items || [];
+                if (!results.length) {
+                    box.innerHTML = '<div class="p-3 text-sm text-slate-400">No products found</div>';
+                } else {
+                    box.innerHTML = results.map(p => {
+                        const already = flashSaleItems.some(x => x.inventory_id === p.id);
+                        return `
+                            <div class="p-2 hover:bg-slate-800 cursor-pointer border-b border-slate-700 last:border-0 ${already ? 'opacity-50' : ''}"
+                                 data-id="${p.id}"
+                                 data-desc="${escapeHtml(p.description)}"
+                                 data-code="${escapeHtml(p.item_code || '')}"
+                                 data-price="${p.price_naira || 0}">
+                                <div class="text-sm text-white">${escapeHtml(p.description)}</div>
+                                <div class="text-xs text-slate-400">
+                                    ${escapeHtml(p.item_code || '')} • ₦${Number(p.price_naira || 0).toLocaleString()}
+                                    ${already ? ' • already added' : ''}
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                    box.querySelectorAll('[data-id]').forEach(el => {
+                        el.addEventListener('click', function() {
+                            const invId = parseInt(this.dataset.id);
+                            if (flashSaleItems.some(x => x.inventory_id === invId)) {
+                                document.getElementById('flash-sale-search').value = '';
+                                box.classList.add('hidden');
+                                return;
+                            }
+                            const original = parseFloat(this.dataset.price) || 0;
+                            // Default new price = 20% off, rounded to a whole naira.
+                            const defaultSale = Math.max(1, Math.round(original * 0.8));
+                            flashSaleItems.push({
+                                inventory_id:   invId,
+                                description:    this.dataset.desc,
+                                item_code:      this.dataset.code,
+                                original_price: original,
+                                sale_price:     defaultSale,
+                            });
+                            renderFlashSaleItems();
+                            document.getElementById('flash-sale-search').value = '';
+                            box.classList.add('hidden');
+                        });
+                    });
+                }
+                box.classList.remove('hidden');
+            } catch (err) {
+                box.innerHTML = `<div class="p-3 text-sm text-red-400">Search error: ${escapeHtml(err.message)}</div>`;
+                box.classList.remove('hidden');
+            }
+        }
+
+        const debouncedFlashSearch = debounce(function() {
+            performFlashSaleSearch(this.value.trim());
+        }, 300);
+
+        document.getElementById('flash-sale-search')?.addEventListener('input', debouncedFlashSearch);
+        document.getElementById('flash-sale-search')?.addEventListener('focus', function() {
+            const q = this.value.trim();
+            if (q.length >= 2) performFlashSaleSearch(q);
+        });
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('#flash-sale-search') && !e.target.closest('#flash-sale-results')) {
+                document.getElementById('flash-sale-results')?.classList.add('hidden');
+            }
+        });
+
+        function toLocalInputValue(date) {
+            // datetime-local wants "YYYY-MM-DDTHH:mm" in the user's local timezone.
+            const pad = n => String(n).padStart(2, '0');
+            return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+        }
+
+        function openFlashSaleModal() {
+            closeSearchResults();
+            flashSaleItems = [];
+            renderFlashSaleItems();
+            document.getElementById('flash-sale-name').value = '';
+            const now = new Date();
+            const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+            document.getElementById('flash-sale-start').value = toLocalInputValue(now);
+            document.getElementById('flash-sale-end').value   = toLocalInputValue(tomorrow);
+            document.getElementById('flash-sale-search').value = '';
+            document.getElementById('flash-sale-results').classList.add('hidden');
+            document.getElementById('flash-sale-modal').classList.remove('hidden');
+            setTimeout(() => document.getElementById('flash-sale-name')?.focus(), 80);
+        }
+
+        function closeFlashSaleModal() {
+            document.getElementById('flash-sale-modal').classList.add('hidden');
+            document.getElementById('flash-sale-results')?.classList.add('hidden');
+        }
+
+        document.getElementById('flash-sale-close')?.addEventListener('click', closeFlashSaleModal);
+        document.getElementById('flash-sale-cancel')?.addEventListener('click', closeFlashSaleModal);
+        document.getElementById('show-flash-sale-modal')?.addEventListener('click', openFlashSaleModal);
+        document.getElementById('new-flash-sale-btn')?.addEventListener('click', openFlashSaleModal);
+
+        document.getElementById('flash-sale-quick-24h')?.addEventListener('click', () => {
+            const now = new Date();
+            const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+            document.getElementById('flash-sale-start').value = toLocalInputValue(now);
+            document.getElementById('flash-sale-end').value   = toLocalInputValue(tomorrow);
+        });
+
+        document.getElementById('flash-sale-submit')?.addEventListener('click', async function() {
+            const name  = document.getElementById('flash-sale-name').value.trim();
+            const start = document.getElementById('flash-sale-start').value;
+            const end   = document.getElementById('flash-sale-end').value;
+
+            if (!name)  { showToast('Sale name is required', 'error'); return; }
+            if (!start) { showToast('Start date is required', 'error'); return; }
+            if (!end)   { showToast('End date is required', 'error'); return; }
+            if (new Date(end) <= new Date(start)) { showToast('End must be after start', 'error'); return; }
+            if (!flashSaleItems.length) { showToast('Add at least one product', 'error'); return; }
+
+            for (const it of flashSaleItems) {
+                if (!it.sale_price || it.sale_price <= 0) {
+                    showToast(`Sale price for "${it.description}" must be > 0`, 'error');
+                    return;
+                }
+                if (it.sale_price >= it.original_price) {
+                    showToast(`Sale price for "${it.description}" must be below ₦${Number(it.original_price).toLocaleString()}`, 'error');
+                    return;
+                }
+            }
+
+            const btn = this;
+            btn.disabled = true;
+            const originalLabel = btn.innerHTML;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Creating…';
+
+            try {
+                // datetime-local gives "YYYY-MM-DDTHH:mm" (no timezone). new Date()
+                // interprets that as local time. toISOString() converts to UTC.
+                const startsAt = new Date(start).toISOString();
+                const endsAt   = new Date(end).toISOString();
+
+                await apiCall('/flash-sales', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        name,
+                        starts_at: startsAt,
+                        ends_at:   endsAt,
+                        items: flashSaleItems.map(it => ({
+                            inventory_id: it.inventory_id,
+                            sale_price:   it.sale_price,
+                        })),
+                    }),
+                });
+                showToast(`Flash sale "${name}" created (${flashSaleItems.length} products)`, 'success');
+                closeFlashSaleModal();
+                await loadFlashSales();
+            } catch (err) {
+                showToast(`Failed: ${err.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalLabel;
+            }
+        });
+
+        function renderFlashSales(sales) {
+            const c = document.getElementById('flash-sales-container');
+            if (!c) return;
+            if (!sales || !sales.length) {
+                c.innerHTML = '<div class="text-center py-8 text-slate-400">No flash sales yet.</div>';
+                return;
+            }
+
+            const phaseBadge = phase => ({
+                live:      'bg-green-600/20 text-green-400',
+                scheduled: 'bg-blue-600/20 text-blue-400',
+                ended:     'bg-slate-600/20 text-slate-400',
+            })[phase] || 'bg-slate-600/20 text-slate-400';
+
+            c.innerHTML = sales.map(s => {
+                const phase = s.phase || 'ended';
+                const starts = s.starts_at ? new Date(s.starts_at).toLocaleString() : '—';
+                const ends   = s.ends_at   ? new Date(s.ends_at).toLocaleString()   : '—';
+                const items  = s.flash_sale_items || [];
+                return `
+                    <div class="border border-slate-700 rounded-lg p-4 mb-3">
+                        <div class="flex flex-wrap justify-between items-start gap-3">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="font-bold text-white">${escapeHtml(s.name)}</span>
+                                    <span class="text-xs px-2 py-0.5 rounded-full ${phaseBadge(phase)}">${phase.toUpperCase()}</span>
+                                    <span class="text-xs text-slate-500">${items.length} product${items.length === 1 ? '' : 's'}</span>
+                                </div>
+                                <div class="text-xs text-slate-400 mt-1">
+                                    ${escapeHtml(starts)} → ${escapeHtml(ends)}
+                                </div>
+                            </div>
+                            <div class="flex gap-2 flex-shrink-0">
+                                ${phase === 'live' ? `
+                                    <button class="flash-sale-end bg-amber-600 hover:bg-amber-700 text-xs px-3 py-1.5 rounded-lg" data-id="${s.id}">
+                                        End now
+                                    </button>
+                                ` : ''}
+                                <button class="flash-sale-delete bg-red-600/80 hover:bg-red-600 text-xs px-3 py-1.5 rounded-lg" data-id="${s.id}">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            c.querySelectorAll('.flash-sale-delete').forEach(el => {
+                el.addEventListener('click', async e => {
+                    const id = e.currentTarget.dataset.id;
+                    if (!confirm('Delete this flash sale? Products revert to normal price immediately.')) return;
+                    try {
+                        await apiCall(`/flash-sales/${id}`, { method: 'DELETE' });
+                        showToast('Flash sale deleted', 'success');
+                        loadFlashSales();
+                    } catch (err) {
+                        showToast(`Failed: ${err.message}`, 'error');
+                    }
+                });
+            });
+            c.querySelectorAll('.flash-sale-end').forEach(el => {
+                el.addEventListener('click', async e => {
+                    const id = e.currentTarget.dataset.id;
+                    if (!confirm('End this flash sale now? Products revert to normal price immediately.')) return;
+                    try {
+                        await apiCall(`/flash-sales/${id}/end`, { method: 'POST' });
+                        showToast('Flash sale ended', 'success');
+                        loadFlashSales();
+                    } catch (err) {
+                        showToast(`Failed: ${err.message}`, 'error');
+                    }
+                });
+            });
+        }
+
+        async function loadFlashSales() {
+            const c = document.getElementById('flash-sales-container');
+            if (!c) return;
+            c.innerHTML = '<div class="text-center py-8 text-slate-400">Loading…</div>';
+            try {
+                const data = await apiCall('/flash-sales?include_inactive=false&limit=100');
+                renderFlashSales(data.flash_sales || []);
+            } catch (err) {
+                c.innerHTML = `<div class="text-center py-8 text-red-400">❌ ${escapeHtml(err.message)}</div>`;
+            }
+        }
 
         // ================================================================
         // LOCATION MODAL (quick add from inventory tab)
@@ -2251,6 +2738,7 @@
                 else if (tab === 'logs') loadSystemLogs();
                 else if (tab === 'locations') loadLocationsUI();
                 else if (tab === 'expiry') loadExpiringProducts();
+                else if (tab === 'flash-sales') loadFlashSales();
             });
         });
 
@@ -2491,6 +2979,7 @@
             await loadStockLimits();
             await loadSystemLogs();
             await loadExpiringProducts();
+            await loadFlashSales();
 
             document.getElementById('expiry_date')?.addEventListener('change', function() {
                 const hint = document.getElementById('expiry-hint');
@@ -2603,6 +3092,7 @@
                         await loadStockLimits();
                         await loadSystemLogs();
                         await loadExpiringProducts();
+                        await loadFlashSales();
                         return;
                     }
                 }
