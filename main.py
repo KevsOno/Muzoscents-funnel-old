@@ -5724,6 +5724,30 @@ async def _assert_org_not_suspended(org_id: str) -> None:
         )
 
 
+async def _assert_storefront_live(org_id: str) -> None:
+    """
+    Raise 404 if the org is suspended or churned, or does not exist.
+
+    404 rather than 402 so a public visitor cannot probe an org's
+    billing status by hitting a storefront data endpoint. Same shape
+    as /public/storefront/{slug} and /store/{slug} so a suspended
+    org's storefront is dark and indistinguishable from a store
+    that has not been published yet.
+
+    Called by every public storefront data endpoint. When the shell
+    and the data endpoints agree, a suspended org goes dark end to
+    end — the shell 404s and the products 404 with it.
+    """
+    if not org_id:
+        raise HTTPException(status_code=404, detail="Store not found")
+    org = await fetch_org_flags(org_id)
+    if not org:
+        raise HTTPException(status_code=404, detail="Store not found")
+    if (org.get("status") or "active") in ("suspended", "churned"):
+        raise HTTPException(status_code=404, detail="Store not found")
+
+
+
 async def _pick_default_org(client, org_rows: List[Dict]) -> Optional[Dict]:
     """
     Given a user's org_members rows, pick the one to use as the default
@@ -10556,6 +10580,11 @@ async def public_inventory(
     if not resolved_org_id:
         raise HTTPException(status_code=400, detail="Organisation not specified")
 
+    # Suspension is unconditional. A suspended org's storefront data
+    # endpoints are dark regardless of ENFORCE_FEATURES. 404, not 402,
+    # so a visitor cannot probe billing status.
+    await _assert_storefront_live(resolved_org_id)
+
     online_location_id = await get_location_for_channel(resolved_org_id, "online")
 
     if not online_location_id:
@@ -10606,6 +10635,9 @@ async def public_categories(
     resolved_org_id = org_id or PUBLIC_STORE_ORG_ID
     if not resolved_org_id:
         raise HTTPException(status_code=400, detail="Organisation not specified")
+
+    # Suspension is unconditional — see _assert_storefront_live.
+    await _assert_storefront_live(resolved_org_id)
 
     online_location_id = await get_location_for_channel(resolved_org_id, "online")
     client = get_supabase()
@@ -10693,6 +10725,9 @@ async def get_top_products(
     resolved_org_id = org_id or PUBLIC_STORE_ORG_ID
     if not resolved_org_id:
         raise HTTPException(status_code=400, detail="Organisation not specified")
+
+    # Suspension is unconditional — see _assert_storefront_live.
+    await _assert_storefront_live(resolved_org_id)
 
     client = get_supabase()
     try:
