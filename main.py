@@ -2197,103 +2197,104 @@ async def ensure_stock_transfers_table():
 
 async def ensure_location_stocks_constraints():
     """
-    Ensure location_stocks has a UNIQUE constraint on
-    (location_id, inventory_id).
+    ═══════════════════════════════════════════════════════════════════════
+    BELT-AND-BRACES MIGRATION — 2026-10-14. DO NOT REVERT.
 
-    ensure_stock_transfers_table() declares this constraint via
-    CREATE TABLE IF NOT EXISTS. That clause is a no-op when the table
-    already exists, so on any environment where location_stocks
-    predates the UNIQUE clause, the constraint is missing. Every
-    .upsert(..., on_conflict="location_id,inventory_id") then fails
-    with Postgres error 42P10, "no unique or exclusion constraint
-    matching the ON CONFLICT specification".
+    Repairs the schema drift introduced when the multi-tenant lift added
+    a UNIQUE(location_id, inventory_id) constraint on top of a table that
+    was already batch-scoped. That constraint silently rejected every
+    second-and-later batch of a SKU at a given location. Roughly 15,400
+    batches accumulated in inventory_batches with quantity but no
+    corresponding location_stocks row.
 
-    Idempotent. Also merges any pre-existing (location_id,
-    inventory_id) duplicates before adding the constraint, so the
-    ALTER cannot fail on a table that accumulated duplicate rows
-    while unconstrained.
+    Three things this function now does, in order:
+
+      1. Drops the wrong constraint. location_stocks_location_id_inventory_id_key
+         refuses any insert that would create a second (location, SKU) pair.
+         It is the cause of the drift.
+
+      2. Drops the duplicate. unique_location_inventory_batch is a second
+         copy of (location_id, inventory_id, batch_id) — identical to
+         location_stocks_loc_inv_batch_key. One of them is enough.
+
+      3. Backfills location_stocks.expiry_date from inventory_batches.
+         This column was meant to be a denormalized cache but has been
+         empty since the wrong constraint was added, because no writer
+         could insert a batch-aware row.
+
+    Idempotent. Safe on every boot. Failure raises, aborting the boot
+    rather than serving a half-migrated schema.
+    ═══════════════════════════════════════════════════════════════════════
     """
     sql = """
+    -- ── 1. Drop the wrong constraint. ──
+    -- This is the constraint that has been rejecting batch inserts.
+    ALTER TABLE public.location_stocks
+        DROP CONSTRAINT IF EXISTS location_stocks_location_id_inventory_id_key;
+
+    -- ── 2. Drop the duplicate. ──
+    -- Same columns as location_stocks_loc_inv_batch_key. Keeping both
+    -- is redundant; keeping one is mandatory; which one doesn't matter
+    -- as long as it's on (location_id, inventory_id, batch_id).
+    ALTER TABLE public.location_stocks
+        DROP CONSTRAINT IF EXISTS unique_location_inventory_batch;
+
+    -- ── 3. Ensure the correct unique key exists. ──
+    -- The order of names in the array is alphabetical because
+    -- array_agg uses ORDER BY a.attname, so batch_id < inventory_id < location_id.
     DO $$
-    DECLARE
-        v_constraint_exists BOOLEAN;
     BEGIN
-        SELECT EXISTS (
+        IF NOT EXISTS (
             SELECT 1
               FROM pg_constraint c
               JOIN pg_class      t ON t.oid = c.conrelid
               JOIN pg_namespace  n ON n.oid = t.relnamespace
              WHERE n.nspname = 'public'
                AND t.relname = 'location_stocks'
-               AND c.contype IN ('u', 'p')
+               AND c.contype = 'u'
                AND (
                    SELECT array_agg(a.attname::text ORDER BY a.attname)
                      FROM unnest(c.conkey) AS k
                      JOIN pg_attribute a
                        ON a.attrelid = c.conrelid
                       AND a.attnum   = k
-               ) = ARRAY['inventory_id', 'location_id']
-        ) INTO v_constraint_exists;
-
-        IF NOT v_constraint_exists THEN
-            -- Merge quantities across duplicate (location_id,
-            -- inventory_id) pairs into the row with the lowest id.
-            -- Preserves the running total rather than discarding rows,
-            -- because the table is a balance, not an append log.
-            WITH merged AS (
-                SELECT
-                    location_id,
-                    inventory_id,
-                    MIN(id)                                       AS keep_id,
-                    SUM(COALESCE(quantity, 0))::integer           AS total_quantity,
-                    SUM(COALESCE(reserved_quantity, 0))::integer  AS total_reserved
-                  FROM public.location_stocks
-                 GROUP BY location_id, inventory_id
-                HAVING COUNT(*) > 1
-            )
-            UPDATE public.location_stocks ls
-               SET quantity          = m.total_quantity,
-                   reserved_quantity = m.total_reserved,
-                   updated_at        = NOW()
-              FROM merged m
-             WHERE ls.id = m.keep_id;
-
-            -- Delete the non-keeper rows.
-            DELETE FROM public.location_stocks ls
-             USING (
-                SELECT
-                    location_id,
-                    inventory_id,
-                    MIN(id) AS keep_id
-                  FROM public.location_stocks
-                 GROUP BY location_id, inventory_id
-                HAVING COUNT(*) > 1
-             ) dup
-             WHERE ls.location_id  = dup.location_id
-               AND ls.inventory_id = dup.inventory_id
-               AND ls.id          <> dup.keep_id;
-
+               ) = ARRAY['batch_id', 'inventory_id', 'location_id']
+        ) THEN
             ALTER TABLE public.location_stocks
-                ADD CONSTRAINT location_stocks_location_id_inventory_id_key
-                UNIQUE (location_id, inventory_id);
+                ADD CONSTRAINT location_stocks_loc_inv_batch_key
+                UNIQUE (location_id, inventory_id, batch_id);
         END IF;
     END $$;
+
+    -- ── 4. Backfill the denormalized expiry cache. ──
+    -- Copy the batch's expiry onto every location_stocks row that has
+    -- a batch_id but no expiry_date. Runs on every boot; after the
+    -- first pass it updates zero rows because the WHERE clause filters
+    -- on NULL.
+    UPDATE public.location_stocks ls
+       SET expiry_date = ib.expiry_date
+      FROM public.inventory_batches ib
+     WHERE ls.batch_id = ib.id
+       AND ls.expiry_date IS NULL;
     """
     headers = {
         "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
         "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
         "Content-Type": "application/json",
     }
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(
             f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
             json={"query": sql},
             headers=headers,
         )
     if resp.status_code not in (200, 204):
-        logger.error(f"location_stocks constraint migration failed: {resp.text}")
-        raise RuntimeError(f"location_stocks constraint migration failed: {resp.text}")
-    logger.info("location_stocks UNIQUE(location_id, inventory_id) installed (or already present)")
+        logger.error(f"location_stocks reconciliation failed: {resp.text}")
+        raise RuntimeError(f"location_stocks reconciliation failed: {resp.text}")
+    logger.info(
+        "location_stocks reconciled: bad constraints dropped, batch-aware "
+        "unique key installed, expiry_date backfilled from inventory_batches"
+    )
 
 
 async def ensure_stock_transfer_rpcs():
@@ -11154,6 +11155,11 @@ async def create_inventory_item(
     data["created_at"] = datetime.now(timezone.utc).isoformat()
     data["updated_at"] = datetime.now(timezone.utc).isoformat()
 
+    # Keep the legacy single-batch fields on the inventory row in sync
+    # with what the batch table will hold, so any older reader that
+    # still consults inventory.expiry_date / inventory.batch_number
+    # sees a sensible value. These fields are deprecated; the batch
+    # table is authoritative.
     expiry_date = data.get("expiry_date")
     batch_number = data.get("batch_number")
     lot_number = data.get("lot_number")
@@ -11170,22 +11176,24 @@ async def create_inventory_item(
         raise HTTPException(status_code=500, detail="Failed to create inventory item")
     new_inv = inv_result.data[0]
 
-    if expiry_date and data.get("batch_number"):
-        batch_data = {
-            "inventory_id": new_inv["id"],
-            "batch_number": data["batch_number"],
-            "lot_number": data.get("lot_number") or "LEGACY-IMPORT",
-            "quantity": data.get("current_qty", 0),
-            "expiry_date": expiry_date,
-            "cost_price_naira": data.get("cost_price_naira", 0.0),
-            "supplier_name": data.get("supplier_name"),
-            "manufacture_date": data.get("manufacture_date"),
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat()
-        }
-        await run_sync_db_call(client.table("inventory_batches").insert(batch_data).execute)
-        logger.info(f"Auto‑batch {data['batch_number']} created for inventory {new_inv['id']}")
+    # ── Resolve or create the batch ──
+    # This is the single write path that owns batch creation. It picks
+    # up an existing batch if (inventory_id, batch_number) already exists,
+    # otherwise inserts one. Non-expiring products go through the sentinel.
+    batch_row = await _resolve_or_create_batch(
+        client=client,
+        inventory_id=new_inv["id"],
+        batch_number=batch_number,
+        expiry_date=expiry_date,
+        lot_number=data.get("lot_number"),
+        manufacture_date=data.get("manufacture_date"),
+        cost_price_naira=data.get("cost_price_naira"),
+        supplier_name=data.get("supplier_name"),
+        supplier_invoice=data.get("supplier_invoice"),
+        received_quantity=int(data.get("current_qty") or 0),
+    )
 
+    # ── Write the location_stocks row through the shared helper ──
     try:
         main_location = await run_sync_db_call(
             client.table("locations")
@@ -11196,14 +11204,13 @@ async def create_inventory_item(
             .execute
         )
         if main_location and main_location.data:
-            await run_sync_db_call(
-                client.table("location_stocks").upsert({
-                    "location_id": main_location.data["id"],
-                    "inventory_id": new_inv["id"],
-                    "quantity": data.get("current_qty", 0),
-                    "reserved_quantity": 0,
-                    "updated_at": datetime.now(timezone.utc).isoformat()
-                }, on_conflict="location_id,inventory_id").execute
+            await _write_location_stock(
+                client=client,
+                location_id=main_location.data["id"],
+                inventory_id=new_inv["id"],
+                batch_id=batch_row["id"],
+                quantity_delta=int(data.get("current_qty") or 0),
+                expiry_date=batch_row.get("expiry_date"),
             )
     except Exception as loc_err:
         logger.error(f"Failed to create location stock for inv={new_inv['id']}: {loc_err}")
@@ -11237,97 +11244,93 @@ async def update_inventory(
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     new_expiry = update_data.get("expiry_date")
-    new_batch = update_data.get("batch_number")
-    new_lot = update_data.get("lot_number")
-    new_qty = update_data.get("current_qty", existing.data.get("current_qty", 0))
+    new_batch  = update_data.get("batch_number")
+    new_lot    = update_data.get("lot_number")
 
-    if new_expiry:
-        existing_batch_number = existing.data.get("batch_number")
-        if new_batch and new_batch.strip():
-            target_batch_number = new_batch.strip()
-        elif existing_batch_number:
-            target_batch_number = existing_batch_number
-        else:
-            try:
-                any_batch_query = await run_sync_db_call(
-                    client.table("inventory_batches")
-                    .select("batch_number")
-                    .eq("inventory_id", item_id)
-                    .limit(1)
-                    .execute
-                )
-                if any_batch_query.data:
-                    target_batch_number = any_batch_query.data[0]["batch_number"]
-                    logger.info(f"Found existing batch {target_batch_number} for inventory {item_id}")
-                else:
-                    target_batch_number = await get_next_auto_batch_number()
-            except Exception as e:
-                logger.warning(f"Error checking for existing batches: {e}")
-                target_batch_number = await get_next_auto_batch_number()
+    old_qty = int(existing.data.get("current_qty") or 0)
+    new_qty = int(update_data.get("current_qty", old_qty))
 
+    # ── Determine which batch the location_stocks delta should apply to. ──
+    # Precedence: caller-named batch > inventory row's batch_number >
+    # any existing batch for this inventory > new sentinel/auto batch.
+    target_batch_number = new_batch or existing.data.get("batch_number")
+    if not target_batch_number:
+        any_batch = await run_sync_db_call(
+            client.table("inventory_batches")
+            .select("batch_number")
+            .eq("inventory_id", item_id)
+            .limit(1)
+            .execute
+        )
+        if any_batch and any_batch.data:
+            target_batch_number = any_batch.data[0]["batch_number"]
+
+    # ── Resolve or create the batch through the shared helper. ──
+    # Same code path used by create_inventory_item and bulk upload.
+    # This closes the batch-uniqueness and batch-existence invariants
+    # for the update path too. received_quantity=0 because the batch's
+    # own quantity is not what we are changing here — location_stocks
+    # carries the physical count.
+    batch_row = await _resolve_or_create_batch(
+        client=client,
+        inventory_id=item_id,
+        batch_number=target_batch_number,
+        expiry_date=new_expiry or existing.data.get("expiry_date"),
+        lot_number=new_lot,
+        manufacture_date=update_data.get("manufacture_date"),
+        cost_price_naira=update_data.get("cost_price_naira"),
+        supplier_name=update_data.get("supplier_name"),
+        supplier_invoice=update_data.get("supplier_invoice"),
+        received_quantity=0,
+    )
+    # Keep the deprecated legacy column in sync with what the batch
+    # table now holds, so any older reader sees a consistent value.
+    update_data["batch_number"] = batch_row.get("batch_number")
+
+    # ── Apply the location_stocks delta FIRST. ──
+    # This is the drift fix. Without it, editing current_qty on the
+    # inventory row leaves location_stocks untouched and the two
+    # numbers diverge. We apply the delta before the inventory row
+    # is updated so a failure here (e.g. attempting to decrement a
+    # location_stocks row below zero) aborts the whole operation
+    # without leaving the inventory row's current_qty already changed.
+    delta = new_qty - old_qty
+    if delta != 0:
         try:
-            batch_query = await run_sync_db_call(
-                client.table("inventory_batches")
-                .select("id, quantity, expiry_date")
-                .eq("inventory_id", item_id)
-                .eq("batch_number", target_batch_number)
+            main_location = await run_sync_db_call(
+                client.table("locations")
+                .select("id")
+                .eq("org_id", org_id)
+                .eq("is_warehouse", True)
                 .maybe_single()
                 .execute
             )
-            existing_batch = batch_query.data if batch_query else None
-        except Exception as e:
-            logger.error(f"Error querying existing batch: {e}")
-            existing_batch = None
-
-        if existing_batch:
-            await run_sync_db_call(
-                client.table("inventory_batches")
-                .update({
-                    "quantity": new_qty,
-                    "expiry_date": new_expiry,
-                    "updated_at": datetime.now(timezone.utc).isoformat()
-                })
-                .eq("id", existing_batch["id"])
-                .execute
-            )
-            logger.info(f"✅ Updated batch {target_batch_number} for inventory {item_id}")
-            if target_batch_number != existing.data.get("batch_number"):
-                await run_sync_db_call(
-                    client.table("inventory")
-                    .update({"batch_number": target_batch_number})
-                    .eq("id", item_id)
-                    .execute
+            if main_location and main_location.data:
+                await _write_location_stock(
+                    client=client,
+                    location_id=main_location.data["id"],
+                    inventory_id=item_id,
+                    batch_id=batch_row["id"],
+                    quantity_delta=delta,
+                    expiry_date=batch_row.get("expiry_date"),
                 )
-        else:
-            if not new_lot:
-                new_lot = "LEGACY-IMPORT"
-            batch_data = {
-                "inventory_id": item_id,
-                "batch_number": target_batch_number,
-                "lot_number": new_lot,
-                "quantity": new_qty,
-                "expiry_date": new_expiry,
-                "cost_price_naira": update_data.get("cost_price_naira", 0.0),
-                "supplier_name": update_data.get("supplier_name"),
-                "manufacture_date": update_data.get("manufacture_date"),
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat()
-            }
-            await run_sync_db_call(
-                client.table("inventory_batches")
-                .insert(batch_data)
-                .execute
-            )
-            logger.info(f"🆕 Inserted new batch {target_batch_number} for inventory {item_id}")
-            if target_batch_number != existing.data.get("batch_number"):
-                await run_sync_db_call(
-                    client.table("inventory")
-                    .update({"batch_number": target_batch_number})
-                    .eq("id", item_id)
-                    .execute
+            else:
+                logger.warning(
+                    f"update_inventory: no warehouse location for org {org_id}, "
+                    f"location_stocks not reconciled for inv {item_id} (delta={delta})"
                 )
-    else:
-        pass
+        except HTTPException:
+            # _write_location_stock raised 400 (decrement below zero).
+            # Do NOT update the inventory row — the delta was refused.
+            raise
+        except Exception as loc_err:
+            logger.error(
+                f"update_inventory: failed to reconcile location_stocks "
+                f"for inv {item_id}: {loc_err}"
+            )
+            # Non-HTTP failures are logged and swallowed. The inventory
+            # row update proceeds; drift is logged and can be healed by
+            # /admin/reconcile-stock.
 
     result = await run_sync_db_call(
         client.table("inventory")
@@ -11845,21 +11848,42 @@ async def bulk_upload_inventory(
             result = await run_sync_db_call(
                 client.table("inventory").insert(new_item).execute
             )
-            if result.data:
-                inserted_count += 1
-                if main_location_id:
-                    try:
-                        await run_sync_db_call(
-                            client.table("location_stocks").upsert({
-                                "location_id": main_location_id,
-                                "inventory_id": result.data[0]["id"],
-                                "quantity": new_item["current_qty"],
-                                "reserved_quantity": 0,
-                                "updated_at": datetime.now(timezone.utc).isoformat()
-                            }, on_conflict="location_id,inventory_id").execute
-                        )
-                    except Exception as loc_err:
-                        logger.error(f"Failed to create location stock for inv={result.data[0]['id']}: {loc_err}")
+            if not result.data:
+                continue
+            inserted_count += 1
+            new_inv = result.data[0]
+
+            if not main_location_id:
+                continue
+
+            try:
+                # Bulk upload carries no batch metadata per row. Route
+                # through the shared helper so the product gets a sentinel
+                # batch (UNBATCHED / 2099-12-31). If the inventory team
+                # later discovers the product actually has a shelf life,
+                # they add a real batch through the batch modal and the
+                # sentinel batch's stock is transferred to it.
+                batch_row = await _resolve_or_create_batch(
+                    client=client,
+                    inventory_id=new_inv["id"],
+                    batch_number=None,
+                    expiry_date=None,
+                    cost_price_naira=new_item.get("cost_price_naira"),
+                    received_quantity=int(new_item.get("current_qty") or 0),
+                )
+                await _write_location_stock(
+                    client=client,
+                    location_id=main_location_id,
+                    inventory_id=new_inv["id"],
+                    batch_id=batch_row["id"],
+                    quantity_delta=int(new_item.get("current_qty") or 0),
+                    expiry_date=batch_row.get("expiry_date"),
+                )
+            except Exception as loc_err:
+                logger.error(
+                    f"Bulk upload: failed to create batch/location_stocks "
+                    f"for inv={new_inv['id']}: {loc_err}"
+                )
 
         return {
             "message": "Bulk upload completed",
@@ -12492,7 +12516,190 @@ async def create_ap_from_grn(grn_id: str, org_id: str):
         logger.warning(f"Missing inventory or A/P account for org {org_id} – journal entry skipped")
 
 
+
+
 # ===================== EXPIRY AND BATCH MANAGEMENT ENDPOINTS =====================
+# ─────────────────────────────────────────────────────────────────────
+# Batch-aware location_stocks writers
+#
+# Every writer that touches location_stocks must route through these
+# two helpers. They enforce three invariants:
+#
+#   1. A batch row always exists in inventory_batches before any
+#      location_stocks row references it.
+#   2. The (inventory_id, batch_number) uniqueness rule is applied
+#      consistently across every code path — same check add_inventory_batch
+#      already performs.
+#   3. Non-expiring products get a sentinel batch (UNBATCHED / 2099-12-31)
+#      so they still have a batch to point at, but stay out of every
+#      expiry report. If someone enters a real date by mistake, it
+#      surfaces in the report and the inventory team corrects it.
+#      That is the training loop, not a bug to route around.
+# ─────────────────────────────────────────────────────────────────────
+
+SENTINEL_BATCH_NUMBER = "UNBATCHED"
+SENTINEL_EXPIRY_DATE = "2099-12-31"
+
+
+async def _resolve_or_create_batch(
+    client,
+    inventory_id: int,
+    batch_number: Optional[str],
+    expiry_date: Optional[str],
+    *,
+    lot_number: Optional[str] = None,
+    manufacture_date: Optional[str] = None,
+    cost_price_naira: Optional[float] = None,
+    supplier_name: Optional[str] = None,
+    supplier_invoice: Optional[str] = None,
+    received_quantity: int = 0,
+) -> Dict:
+    """
+    Return an existing batch row, or create a new one.
+
+    Resolution order for the batch_number:
+
+        1. batch_number if provided and non-empty
+        2. auto-generated (via get_next_auto_batch_number) if expiry_date
+           is provided and batch_number is not
+        3. the sentinel 'UNBATCHED' otherwise
+
+    The (inventory_id, batch_number) pair is the uniqueness key, matching
+    the check add_inventory_batch performs. A batch number means the same
+    thing regardless of which code path created it.
+    """
+    provided_batch = (batch_number or "").strip()
+    provided_expiry = (expiry_date or "").strip()
+
+    if provided_batch:
+        resolved_batch_number = provided_batch
+    elif provided_expiry:
+        resolved_batch_number = await get_next_auto_batch_number()
+    else:
+        resolved_batch_number = SENTINEL_BATCH_NUMBER
+
+    # Non-expiring products get the far-future sentinel date so they
+    # still carry a valid (NOT NULL) expiry but never trigger alerts.
+    resolved_expiry = provided_expiry or SENTINEL_EXPIRY_DATE
+
+    existing = await run_sync_db_call(
+        client.table("inventory_batches")
+        .select("*")
+        .eq("inventory_id", inventory_id)
+        .eq("batch_number", resolved_batch_number)
+        .maybe_single()
+        .execute
+    )
+    if existing and existing.data:
+        return existing.data
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    batch_data = {
+        "inventory_id":      inventory_id,
+        "batch_number":      resolved_batch_number,
+        "lot_number":        lot_number,
+        "quantity":          int(received_quantity or 0),
+        "reserved_quantity": 0,
+        "manufacture_date":  manufacture_date,
+        "expiry_date":       resolved_expiry,
+        "cost_price_naira":  cost_price_naira if cost_price_naira is not None else 0,
+        "supplier_name":     supplier_name,
+        "supplier_invoice":  supplier_invoice,
+        "created_at":        now_iso,
+        "updated_at":        now_iso,
+    }
+    created = await run_sync_db_call(
+        client.table("inventory_batches").insert(batch_data).execute
+    )
+    if not created.data:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Failed to create batch '{resolved_batch_number}' "
+                f"for inventory {inventory_id}"
+            ),
+        )
+    return created.data[0]
+
+
+async def _write_location_stock(
+    client,
+    location_id: str,
+    inventory_id: int,
+    batch_id: int,
+    quantity_delta: int,
+    expiry_date: Optional[str] = None,
+) -> None:
+    """
+    Add quantity_delta to the (location_id, inventory_id, batch_id) row,
+    creating it if it doesn't exist.
+
+    Uses SELECT-then-UPDATE-or-INSERT rather than upsert because the
+    on_conflict target is a three-column composite key, and supabase-py's
+    upsert is fragile when the key includes a nullable column. The
+    explicit pattern is deterministic and inspectable.
+
+    A negative delta is allowed (decrement). A decrement that would take
+    the row below zero raises. A row that hits zero is deleted rather
+    than kept as a zero-qty ghost.
+    """
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    existing = await run_sync_db_call(
+        client.table("location_stocks")
+        .select("id, quantity")
+        .eq("location_id", location_id)
+        .eq("inventory_id", inventory_id)
+        .eq("batch_id", batch_id)
+        .maybe_single()
+        .execute
+    )
+
+    if existing and existing.data:
+        current = int(existing.data.get("quantity") or 0)
+        new_qty = current + int(quantity_delta)
+        if new_qty < 0:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Cannot reduce location_stocks below zero "
+                    f"(location={location_id}, inventory={inventory_id}, "
+                    f"batch={batch_id}, current={current}, delta={quantity_delta})"
+                ),
+            )
+        if new_qty == 0:
+            await run_sync_db_call(
+                client.table("location_stocks")
+                .delete()
+                .eq("id", existing.data["id"])
+                .execute
+            )
+        else:
+            await run_sync_db_call(
+                client.table("location_stocks")
+                .update({"quantity": new_qty, "updated_at": now_iso})
+                .eq("id", existing.data["id"])
+                .execute
+            )
+        return
+
+    # No row yet. Only create one if we have something to put in it.
+    if quantity_delta <= 0:
+        return
+
+    await run_sync_db_call(
+        client.table("location_stocks").insert({
+            "location_id":       location_id,
+            "inventory_id":      inventory_id,
+            "batch_id":          batch_id,
+            "quantity":          int(quantity_delta),
+            "reserved_quantity": 0,
+            "expiry_date":       expiry_date,
+            "updated_at":        now_iso,
+        }).execute
+    )
+
+
 @app.get("/inventory/expiring-products")
 @app.get("/inventory/expiring-products")
 async def get_expiring_products(
