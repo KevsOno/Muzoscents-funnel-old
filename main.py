@@ -159,7 +159,7 @@ def _compute_migration_suite_hash() -> str:
         "ensure_transfer_suggestions_last_updated_column",
         "ensure_decrement_stock_fefo",
         "ensure_finalize_online_order",
-		"ensure_process_batch_checkout_v2",
+        "ensure_process_batch_checkout_v2",
         "ensure_webhook_events",
         "ensure_stock_reconciliation",
         "ensure_sales_fulfillment_columns",
@@ -171,7 +171,7 @@ def _compute_migration_suite_hash() -> str:
         "ensure_stock_limits_backfill",
         "ensure_product_risk_view",
         "ensure_transfer_suggestions_view",
-		"ensure_flash_sales_tables",
+        "ensure_flash_sales_tables",
         "ensure_system_logs_table",
         "ensure_rpc_functions",
         "ensure_hr_tables",
@@ -5252,7 +5252,7 @@ async def startup_event():
         await ensure_transfer_suggestions_last_updated_column()
         await ensure_decrement_stock_fefo()
         await ensure_finalize_online_order()
-		await ensure_process_batch_checkout_v2() 
+        await ensure_process_batch_checkout_v2()
         await ensure_webhook_events()
         await ensure_stock_reconciliation()
         await ensure_sales_fulfillment_columns()
@@ -5264,7 +5264,7 @@ async def startup_event():
         await ensure_stock_limits_backfill()
         await ensure_product_risk_view()
         await ensure_transfer_suggestions_view()
-		await ensure_flash_sales_tables() 
+        await ensure_flash_sales_tables()
         await ensure_system_logs_table()
         await ensure_rpc_functions()
 
@@ -5355,6 +5355,7 @@ async def startup_event():
         await ensure_transfer_suggestions_last_updated_column()
         await ensure_decrement_stock_fefo()
         await ensure_finalize_online_order()
+        await ensure_process_batch_checkout_v2()
         await ensure_webhook_events()
         await ensure_stock_reconciliation()
         await ensure_sales_fulfillment_columns()
@@ -5366,6 +5367,7 @@ async def startup_event():
         await ensure_stock_limits_backfill()
         await ensure_product_risk_view()
         await ensure_transfer_suggestions_view()
+        await ensure_flash_sales_tables()
         await ensure_system_logs_table()
         await ensure_rpc_functions()
 
