@@ -809,9 +809,18 @@
                 </div>
 
                 <div class="border-t border-slate-700 pt-4">
-                    <div class="flex justify-between items-center mb-2">
+                    <div class="flex justify-between items-center mb-2 flex-wrap gap-2">
                         <span class="text-sm font-medium">Products on sale</span>
-                        <span class="text-xs text-slate-500" id="flash-sale-count">0 selected</span>
+                        <div class="flex items-center gap-3">
+                            <div class="flex items-center gap-2">
+                                <label class="text-xs text-slate-400" for="flash-discount-type">Discount Type:</label>
+                                <select id="flash-discount-type" class="bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-xs">
+                                    <option value="percentage">Percentage (%)</option>
+                                    <option value="price">Exact Price (₦)</option>
+                                </select>
+                            </div>
+                            <span class="text-xs text-slate-500" id="flash-sale-count">0 selected</span>
+                        </div>
                     </div>
                     <div class="relative mb-3">
                         <input id="flash-sale-search" type="text" placeholder="Search product by SKU or name…" autocomplete="off"
@@ -2135,6 +2144,7 @@
         // FLASH SALES
         // ================================================================
         let flashSaleItems = []; // [{inventory_id, description, item_code, original_price, sale_price}]
+        let flashSaleDiscountType = 'percentage'; // 'percentage' | 'price'
 
         function renderFlashSaleItems() {
             const c = document.getElementById('flash-sale-items');
@@ -2146,6 +2156,16 @@
                     const discount = it.original_price > 0
                         ? Math.round(((it.original_price - it.sale_price) / it.original_price) * 100)
                         : 0;
+
+                    // Percentage mode: input shows the discount %, user types 1–99
+                    // Exact-price mode: input shows the sale price in naira
+                    const inputHtml = flashSaleDiscountType === 'percentage'
+                        ? `<input type="number" step="1" min="1" max="99" value="${discount}" data-idx="${idx}"
+                                  class="flash-percent w-20 bg-slate-950 border border-slate-700 rounded p-1.5 text-sm text-right" />
+                           <span class="text-xs text-slate-400 whitespace-nowrap">% off</span>`
+                        : `<input type="number" step="0.01" min="0.01" value="${it.sale_price}" data-idx="${idx}"
+                                  class="flash-price w-28 bg-slate-950 border border-slate-700 rounded p-1.5 text-sm text-right" />`;
+
                     return `
                         <div class="flex items-center gap-3 bg-slate-900/60 border border-slate-700 rounded-lg p-2">
                             <div class="flex-1 min-w-0">
@@ -2155,8 +2175,7 @@
                                     ${discount > 0 ? ` • <span class="text-amber-400">−${discount}%</span>` : ''}
                                 </div>
                             </div>
-                            <input type="number" step="0.01" min="0.01" value="${it.sale_price}" data-idx="${idx}"
-                                   class="flash-price w-28 bg-slate-950 border border-slate-700 rounded p-1.5 text-sm text-right" />
+                            ${inputHtml}
                             <button class="flash-remove text-red-400 hover:text-red-300 text-sm" data-idx="${idx}">
                                 <i class="fa-solid fa-trash"></i>
                             </button>
@@ -2167,6 +2186,26 @@
             document.getElementById('flash-sale-count').textContent =
                 `${flashSaleItems.length} selected`;
 
+            // Percentage input handler — user types 1..99, we derive sale_price
+            c.querySelectorAll('.flash-percent').forEach(el => {
+                el.addEventListener('input', e => {
+                    const idx = parseInt(e.target.dataset.idx);
+                    const pct = parseFloat(e.target.value) || 0;
+                    const item = flashSaleItems[idx];
+
+                    // Calculate the new sale price based on percentage
+                    item.sale_price = Math.max(1, Math.round(item.original_price * (1 - pct / 100)));
+
+                    // Update the label dynamically
+                    const row = e.target.closest('.flex');
+                    const label = row?.querySelector('.text-xs.text-slate-500');
+                    if (label) {
+                        label.innerHTML = `${escapeHtml(item.item_code || '')} • was ₦${Number(item.original_price).toLocaleString()} • <span class="text-amber-400">−${pct}%</span>`;
+                    }
+                });
+            });
+
+            // Exact-price input handler — user types a sale price in naira
             c.querySelectorAll('.flash-price').forEach(el => {
                 el.addEventListener('input', e => {
                     const idx = parseInt(e.target.dataset.idx);
@@ -2181,6 +2220,7 @@
                     }
                 });
             });
+
             c.querySelectorAll('.flash-remove').forEach(el => {
                 el.addEventListener('click', e => {
                     const idx = parseInt(e.currentTarget.dataset.idx);
@@ -2265,6 +2305,12 @@
             }
         });
 
+        // Discount type toggle: switch between percentage input and exact price input.
+        document.getElementById('flash-discount-type')?.addEventListener('change', function() {
+            flashSaleDiscountType = this.value;
+            renderFlashSaleItems();
+        });
+
         function toLocalInputValue(date) {
             // datetime-local wants "YYYY-MM-DDTHH:mm" in the user's local timezone.
             const pad = n => String(n).padStart(2, '0');
@@ -2274,6 +2320,9 @@
         function openFlashSaleModal() {
             closeSearchResults();
             flashSaleItems = [];
+            flashSaleDiscountType = 'percentage';
+            const dt = document.getElementById('flash-discount-type');
+            if (dt) dt.value = 'percentage';
             renderFlashSaleItems();
             document.getElementById('flash-sale-name').value = '';
             const now = new Date();
