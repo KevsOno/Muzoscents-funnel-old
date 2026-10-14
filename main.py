@@ -16352,7 +16352,7 @@ async def serve_kdstore_js():
     return FileResponse(path, media_type="application/javascript")
 
 
-@app.get("/kd402.js")
+@app.get("/kdint.js")
 async def serve_kd402_js():
     path = os.path.join(BASE_DIR, "kd402.js")
     if not os.path.isfile(path):
