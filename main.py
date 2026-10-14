@@ -571,22 +571,43 @@ async def check_org_feature(org_id: str, feature_key: str) -> None:
 def require_feature(feature_key: str, allowed_roles: Optional[List[str]] = None):
     """
     FastAPI dependency. Resolves org_id from the caller's membership,
-    optionally enforces a role list, and then checks the feature
-    entitlement. Returns the (user_id, org_id, role) tuple.
+    optionally enforces a role list, then checks suspension and feature
+    entitlement.
+
+    Two independent gates, two independent switches:
+
+      - Suspension is unconditional. _assert_org_not_suspended is called
+        here on every request, regardless of ENFORCE_FEATURES. A
+        suspended or churned org 402s before feature logic even runs.
+
+      - Feature entitlement is gated on ENFORCE_FEATURES inside
+        check_org_feature. With the flag off, this dependency becomes
+        "authenticated + right role + org not suspended."
+
+    Returns the (user_id, org_id, role) tuple.
     """
     async def check(user_data: Tuple[str, str, str] = Depends(get_current_user_with_role)):
         user_id, org_id, role = user_data
         if allowed_roles is not None and role not in allowed_roles:
             raise HTTPException(status_code=403, detail=f"Access denied. Required role: {allowed_roles}")
+        await _assert_org_not_suspended(org_id)
         await check_org_feature(org_id, feature_key)
         return user_data
     return check
 
 def require_feature_any(*feature_keys: str, allowed_roles: Optional[List[str]] = None):
+    """
+    FastAPI dependency. Like require_feature, but passes when the org
+    has any one of the listed features enabled.
+
+    Suspension is unconditional, same as require_feature.
+    Feature entitlement is gated on ENFORCE_FEATURES.
+    """
     async def check(user_data: Tuple[str, str, str] = Depends(get_current_user_with_role)):
         user_id, org_id, role = user_data
         if allowed_roles is not None and role not in allowed_roles:
             raise HTTPException(status_code=403, detail=f"Access denied. Required role: {allowed_roles}")
+        await _assert_org_not_suspended(org_id)
         if not ENFORCE_FEATURES:
             return user_data
         org = await fetch_org_flags(org_id)
@@ -600,8 +621,6 @@ def require_feature_any(*feature_keys: str, allowed_roles: Optional[List[str]] =
             )
         return user_data
     return check
-
-
 
 
 # ------------------------------------------------------------------
@@ -8739,7 +8758,7 @@ async def get_public_storefront(slug: str, request: Request):
         client.table("organisations")
         .select(
             "id, org_name, slug, vertical, location, niche, "
-            "storefront_config, storefront_published"
+            "storefront_config, storefront_published, status"
         )
         .eq("slug", slug)
         .maybe_single()
@@ -8749,6 +8768,13 @@ async def get_public_storefront(slug: str, request: Request):
         raise HTTPException(status_code=404, detail="Store not found")
 
     org = res.data
+
+    # Suspension is unconditional. A suspended or churned org's storefront
+    # is dark regardless of ENFORCE_FEATURES. Reported as 404 (same shape
+    # as "not yet published") so this endpoint cannot be used by a random
+    # visitor to probe an org's billing status.
+    if (org.get("status") or "active") in ("suspended", "churned"):
+        raise HTTPException(status_code=404, detail="Store not found")
 
     # Feature gate: ecommerce
     await check_org_feature(org["id"], "ecommerce")
@@ -8773,7 +8799,7 @@ async def get_public_storefront(slug: str, request: Request):
         "config":   config,
     }
 
-# ─────────────────────────────────────────────────────────────────
+#─────────────────────────────────────────────────────────────────
 # STOREFRONT — owner read / write
 # ─────────────────────────────────────────────────────────────────
 
@@ -16247,12 +16273,18 @@ async def serve_storefront_for_org(slug: str):
     client = get_supabase()
     res = await run_sync_db_call(
         client.table("organisations")
-        .select("id, slug, storefront_published")
+        .select("id, slug, storefront_published, status")
         .eq("slug", slug)
         .maybe_single()
         .execute
     )
     if not res or not res.data:
+        raise HTTPException(status_code=404, detail="Store not found")
+
+    # Suspension is unconditional. Same reasoning as
+    # get_public_storefront above — the HTML shell and the JSON payload
+    # it hydrates from must agree on whether a store exists.
+    if (res.data.get("status") or "active") in ("suspended", "churned"):
         raise HTTPException(status_code=404, detail="Store not found")
 
     # Feature gate: ecommerce must be enabled for the org
