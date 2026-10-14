@@ -16356,8 +16356,13 @@ async def serve_kdstore_js():
 async def serve_kd402_js():
     path = os.path.join(BASE_DIR, "kd402.js")
     if not os.path.isfile(path):
-        raise HTTPException(status_code=404, detail="kd402.js not found")
-    return FileResponse(path, media_type="application/javascript")
+        raise HTTPException(status_code=404, detail=f"kd402.js not found at {path}")
+    return FileResponse(
+        path,
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-cache"},
+    )
+
 
 
 @app.get("/kdpos", response_class=HTMLResponse)
