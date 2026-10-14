@@ -159,6 +159,7 @@ def _compute_migration_suite_hash() -> str:
         "ensure_transfer_suggestions_last_updated_column",
         "ensure_decrement_stock_fefo",
         "ensure_finalize_online_order",
+	"ensure_process_batch_checkout_v2",
         "ensure_webhook_events",
         "ensure_stock_reconciliation",
         "ensure_sales_fulfillment_columns",
@@ -170,6 +171,7 @@ def _compute_migration_suite_hash() -> str:
         "ensure_stock_limits_backfill",
         "ensure_product_risk_view",
         "ensure_transfer_suggestions_view",
+	"ensure_flash_sales_tables",
         "ensure_system_logs_table",
         "ensure_rpc_functions",
         "ensure_hr_tables",
@@ -1302,7 +1304,68 @@ async def get_location_for_channel(org_id: str, channel: str) -> Optional[str]:
     )
     return fallback.data[0]["id"] if fallback.data else None
 
+async def get_active_sale_prices(
+    org_id: str,
+    inventory_ids: Optional[List[int]] = None,
+) -> Dict[int, Dict]:
+    """
+    Return a dict mapping inventory_id -> active sale info for products
+    currently on an active flash sale.
 
+    An active sale is one where:
+        is_active  = TRUE
+        starts_at <= NOW()
+        ends_at   >= NOW()
+
+    When a product appears in more than one active sale, the lowest
+    sale_price wins. That is the price the customer should pay.
+
+    Returns {} on any failure — callers treat an empty dict as
+    "no sale active", which is the correct fallback.
+    """
+    if not org_id:
+        return {}
+    client = get_supabase()
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    try:
+        q = (
+            client.table("flash_sales")
+            .select(
+                "id, name, ends_at, "
+                "flash_sale_items(inventory_id, original_price, sale_price)"
+            )
+            .eq("org_id", org_id)
+            .eq("is_active", True)
+            .lte("starts_at", now_iso)
+            .gte("ends_at", now_iso)
+        )
+        res = await run_sync_db_call(q.execute)
+    except Exception as e:
+        logger.error("get_active_sale_prices failed", org_id=org_id, error=str(e))
+        return {}
+
+    wanted = set(inventory_ids) if inventory_ids is not None else None
+    out: Dict[int, Dict] = {}
+
+    for sale in (res.data or []):
+        for item in (sale.get("flash_sale_items") or []):
+            inv_id = item.get("inventory_id")
+            if inv_id is None:
+                continue
+            if wanted is not None and inv_id not in wanted:
+                continue
+            sale_price = float(item.get("sale_price") or 0)
+            existing = out.get(inv_id)
+            if existing is None or sale_price < existing["sale_price"]:
+                out[inv_id] = {
+                    "sale_price":     sale_price,
+                    "original_price": float(item.get("original_price") or 0),
+                    "sale_id":        sale.get("id"),
+                    "sale_name":      sale.get("name"),
+                    "ends_at":        sale.get("ends_at"),
+                }
+    return out
 # ===================== LOCATION-SCOPED INVENTORY READS =====================
 
 async def fetch_inventory_scoped_to_location(
@@ -2876,6 +2939,311 @@ async def ensure_webhook_events():
         raise RuntimeError(f"webhook_events migration failed: {resp.text}")
     logger.info("webhook_events table and RPCs installed")
 
+async def ensure_process_batch_checkout_v2():
+    """
+    Re-install process_batch_checkout_v2 with flash-sale-aware pricing.
+
+    Identical to the previous version in every respect except how the
+    unit price for each line is computed. Previously it read
+    inventory.price_naira directly. Now it resolves:
+
+        effective_price = MIN(active_flash_sale_price)
+                          ?? inventory.price_naira
+
+    where "active" means a flash_sales row with:
+        is_active  = TRUE
+        starts_at <= NOW()
+        ends_at   >= NOW()
+
+    When a product is on more than one overlapping active sale, the
+    lowest sale_price wins, matching get_active_sale_prices() in the
+    application layer so the price a cashier sees on the terminal is
+    the same price that lands on the sale row.
+
+    The function signature is byte-for-byte identical to the previous
+    version — same parameter names, same types, same defaults, same
+    return type. CREATE OR REPLACE therefore preserves every existing
+    caller without a DROP.
+
+    Idempotent. Safe on every boot.
+    """
+    sql = r"""
+CREATE OR REPLACE FUNCTION public.process_batch_checkout_v2(
+    p_org_id uuid,
+    p_user_id uuid,
+    p_items jsonb,
+    p_payment_method text,
+    p_receipt_number text,
+    p_customer_name text DEFAULT NULL::text,
+    p_customer_phone text DEFAULT NULL::text,
+    p_customer_email text DEFAULT NULL::text,
+    p_shipping_address text DEFAULT NULL::text,
+    p_delivery_fee numeric DEFAULT 0,
+    p_handling_fee numeric DEFAULT 0,
+    p_location_id uuid DEFAULT NULL::uuid,
+    p_offline_meta jsonb DEFAULT NULL::jsonb
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+AS $function$
+DECLARE
+    v_item RECORD;
+    v_sale_id UUID;
+    v_total NUMERIC := 0;
+    v_price_naira NUMERIC;
+    v_description TEXT;
+    v_start_time TIMESTAMP := clock_timestamp();
+    v_updated_stock JSONB := jsonb_build_array();
+    v_payment_ref TEXT;
+    v_actual_location_id UUID;
+    v_batch RECORD;
+    v_remaining INT;
+    v_take INT;
+    v_available INT;
+    v_offline_ref TEXT;
+    v_offline_cashier UUID;
+    v_effective_user_id UUID;
+    v_existing_id UUID;
+    v_existing_total NUMERIC;
+    v_existing_payment_ref TEXT;
+    v_existing_receipt TEXT;
+BEGIN
+    v_payment_ref := gen_random_uuid()::text;
+
+    IF p_offline_meta IS NOT NULL THEN
+        v_offline_ref := NULLIF(p_offline_meta->>'reference', '');
+        BEGIN
+            v_offline_cashier := NULLIF(p_offline_meta->>'cashier_id', '')::uuid;
+        EXCEPTION WHEN OTHERS THEN
+            v_offline_cashier := NULL;
+        END;
+    END IF;
+
+    -- Idempotency: if this reference already produced a sale, return it
+    IF v_offline_ref IS NOT NULL THEN
+        SELECT id, total_amount, payment_reference, receipt_number
+          INTO v_existing_id, v_existing_total, v_existing_payment_ref, v_existing_receipt
+          FROM public.sales
+         WHERE org_id = p_org_id
+           AND offline_reference = v_offline_ref
+         LIMIT 1;
+
+        IF v_existing_id IS NOT NULL THEN
+            RETURN jsonb_build_object(
+                'success', true,
+                'sale_id', v_existing_id,
+                'total_amount', v_existing_total,
+                'payment_reference', v_existing_payment_ref,
+                'receipt_number', v_existing_receipt,
+                'duplicate', true,
+                'execution_ms', ROUND(EXTRACT(epoch FROM (clock_timestamp() - v_start_time)) * 1000)
+            );
+        END IF;
+    END IF;
+
+    -- Attribute to the original cashier when we can verify them, else the caller
+    v_effective_user_id := p_user_id;
+    IF v_offline_cashier IS NOT NULL THEN
+        IF EXISTS (
+            SELECT 1 FROM public.org_members
+             WHERE user_id = v_offline_cashier AND org_id = p_org_id
+        ) THEN
+            v_effective_user_id := v_offline_cashier;
+        END IF;
+    END IF;
+
+    v_actual_location_id := p_location_id;
+    IF v_actual_location_id IS NULL THEN
+        RAISE EXCEPTION 'location_id is required for stock deduction';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM public.locations
+        WHERE id = v_actual_location_id AND org_id = p_org_id
+    ) THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'Invalid location for this organisation',
+            'execution_ms', ROUND(EXTRACT(epoch FROM (clock_timestamp() - v_start_time)) * 1000)
+        );
+    END IF;
+
+    INSERT INTO public.sales (
+        org_id, user_id, sale_date, total_amount, payment_method,
+        payment_reference, status, receipt_number, customer_name,
+        customer_phone, customer_email, created_at,
+        shipping_address, delivery_fee, handling_fee,
+        location_id, offline_reference
+    ) VALUES (
+        p_org_id, v_effective_user_id, NOW(), 0, p_payment_method,
+        v_payment_ref, 'completed', p_receipt_number,
+        p_customer_name, p_customer_phone, p_customer_email, NOW(),
+        p_shipping_address, p_delivery_fee, p_handling_fee,
+        v_actual_location_id, v_offline_ref
+    )
+    ON CONFLICT (org_id, offline_reference) WHERE offline_reference IS NOT NULL
+    DO NOTHING
+    RETURNING id INTO v_sale_id;
+
+    -- Concurrent duplicate raced us; return the winner
+    IF v_sale_id IS NULL THEN
+        SELECT id, total_amount, payment_reference, receipt_number
+          INTO v_sale_id, v_existing_total, v_existing_payment_ref, v_existing_receipt
+          FROM public.sales
+         WHERE org_id = p_org_id
+           AND offline_reference = v_offline_ref
+         LIMIT 1;
+
+        RETURN jsonb_build_object(
+            'success', true,
+            'sale_id', v_sale_id,
+            'total_amount', v_existing_total,
+            'payment_reference', v_existing_payment_ref,
+            'receipt_number', v_existing_receipt,
+            'duplicate', true,
+            'execution_ms', ROUND(EXTRACT(epoch FROM (clock_timestamp() - v_start_time)) * 1000)
+        );
+    END IF;
+
+    FOR v_item IN
+        SELECT (x->>'inventory_id')::INT AS inventory_id,
+               (x->>'quantity')::INT AS quantity
+        FROM jsonb_array_elements(p_items) AS x
+        ORDER BY 1 ASC
+    LOOP
+        -- ── Flash-sale-aware pricing ──
+        --
+        -- v_price_naira is the effective price the customer pays:
+        -- the lowest active flash sale price if one exists, otherwise
+        -- the base inventory.price_naira. Mirrors the MIN-wins rule
+        -- used by get_active_sale_prices() in the application layer.
+        SELECT
+            inv.description,
+            COALESCE(
+                (
+                    SELECT MIN(fsi.sale_price)
+                      FROM public.flash_sale_items fsi
+                      JOIN public.flash_sales fs
+                        ON fs.id = fsi.flash_sale_id
+                     WHERE fsi.inventory_id = inv.id
+                       AND fs.is_active = TRUE
+                       AND fs.starts_at <= NOW()
+                       AND fs.ends_at   >= NOW()
+                ),
+                inv.price_naira
+            )
+        INTO v_description, v_price_naira
+        FROM public.inventory inv
+        WHERE inv.id = v_item.inventory_id
+          AND inv.org_id = p_org_id;
+
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'Product % not found in this organisation', v_item.inventory_id;
+        END IF;
+
+        SELECT COALESCE(SUM(quantity), 0)::INT
+        INTO v_available
+        FROM public.location_stocks
+        WHERE inventory_id = v_item.inventory_id
+          AND location_id  = v_actual_location_id;
+
+        IF v_available = 0 THEN
+            RAISE EXCEPTION 'Product % not found at this location', v_item.inventory_id;
+        END IF;
+
+        IF v_available < v_item.quantity THEN
+            RAISE EXCEPTION 'Insufficient stock for "%" (requested: %, available: %)',
+                            v_description, v_item.quantity, v_available;
+        END IF;
+
+        v_remaining := v_item.quantity;
+
+        FOR v_batch IN
+            SELECT id, quantity
+            FROM public.location_stocks
+            WHERE inventory_id = v_item.inventory_id
+              AND location_id  = v_actual_location_id
+            ORDER BY expiry_date ASC NULLS LAST, id ASC
+            FOR UPDATE
+        LOOP
+            EXIT WHEN v_remaining <= 0;
+            v_take := LEAST(v_batch.quantity, v_remaining);
+
+            IF v_take = v_batch.quantity THEN
+                DELETE FROM public.location_stocks WHERE id = v_batch.id;
+            ELSE
+                UPDATE public.location_stocks
+                   SET quantity = quantity - v_take, updated_at = NOW()
+                 WHERE id = v_batch.id;
+            END IF;
+
+            v_remaining := v_remaining - v_take;
+        END LOOP;
+
+        UPDATE public.inventory
+           SET current_qty = GREATEST(0, COALESCE(current_qty, 0) - v_item.quantity),
+               updated_at  = NOW()
+         WHERE id = v_item.inventory_id;
+
+        v_updated_stock := v_updated_stock || jsonb_build_object(
+            'inventory_id', v_item.inventory_id,
+            'remaining_qty', v_available - v_item.quantity
+        );
+
+        INSERT INTO public.sale_items (
+            sale_id, inventory_id, product_name, quantity,
+            unit_price, subtotal, org_id
+        ) VALUES (
+            v_sale_id, v_item.inventory_id, v_description,
+            v_item.quantity, v_price_naira,
+            v_price_naira * v_item.quantity,
+            p_org_id
+        );
+
+        v_total := v_total + (v_price_naira * v_item.quantity);
+    END LOOP;
+
+    UPDATE public.sales
+       SET total_amount = v_total + p_delivery_fee + p_handling_fee
+     WHERE id = v_sale_id;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'sale_id', v_sale_id,
+        'total_amount', v_total + p_delivery_fee + p_handling_fee,
+        'payment_reference', v_payment_ref,
+        'receipt_number', p_receipt_number,
+        'duplicate', false,
+        'execution_ms', ROUND(EXTRACT(epoch FROM (clock_timestamp() - v_start_time)) * 1000),
+        'updated_stock', v_updated_stock
+    );
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', SQLERRM,
+            'execution_ms', ROUND(EXTRACT(epoch FROM (clock_timestamp() - v_start_time)) * 1000)
+        );
+END;
+$function$;
+"""
+
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"process_batch_checkout_v2 migration failed: {resp.text}")
+        raise RuntimeError(f"process_batch_checkout_v2 migration failed: {resp.text}")
+    logger.info("process_batch_checkout_v2 installed (flash-sale-aware pricing)")
+
 
 async def claim_webhook_event(
     provider: str,
@@ -3848,6 +4216,67 @@ async def ensure_stock_limits_backfill() -> None:
         logger.error(f"stock_limits backfill failed: {resp.text}")
         raise RuntimeError(f"stock_limits backfill failed: {resp.text}")
     logger.info("stock_limits org_id backfill complete")
+
+async def ensure_flash_sales_tables():
+    """
+    Flash sales / scheduled price drops.
+
+    Two tables:
+      flash_sales      — one row per campaign (name, window, is_active)
+      flash_sale_items — one row per (sale, product) with the sale price
+
+    The current price a customer sees is computed at read time by
+    joining active sales and taking the lowest sale price when a
+    product appears in more than one overlapping campaign.
+
+    Idempotent. Safe on every boot.
+    """
+    sql = """
+    CREATE TABLE IF NOT EXISTS public.flash_sales (
+        id          SERIAL PRIMARY KEY,
+        org_id      UUID NOT NULL REFERENCES public.organisations(id) ON DELETE CASCADE,
+        name        TEXT NOT NULL,
+        starts_at   TIMESTAMPTZ NOT NULL,
+        ends_at     TIMESTAMPTZ NOT NULL,
+        is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+        created_by  UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_flash_sales_org_window
+        ON public.flash_sales(org_id, is_active, starts_at, ends_at);
+
+    CREATE TABLE IF NOT EXISTS public.flash_sale_items (
+        id              SERIAL PRIMARY KEY,
+        flash_sale_id   INTEGER NOT NULL REFERENCES public.flash_sales(id) ON DELETE CASCADE,
+        inventory_id    INTEGER NOT NULL REFERENCES public.inventory(id) ON DELETE CASCADE,
+        original_price  NUMERIC(15,2) NOT NULL,
+        sale_price      NUMERIC(15,2) NOT NULL,
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(flash_sale_id, inventory_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_flash_sale_items_sale
+        ON public.flash_sale_items(flash_sale_id);
+    CREATE INDEX IF NOT EXISTS idx_flash_sale_items_inv
+        ON public.flash_sale_items(inventory_id);
+    """
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"flash_sales migration failed: {resp.text}")
+        raise RuntimeError(f"flash_sales migration failed: {resp.text}")
+    logger.info("flash_sales + flash_sale_items installed (or already present)")
 
 
 async def ensure_product_risk_view():
@@ -4823,6 +5252,7 @@ async def startup_event():
         await ensure_transfer_suggestions_last_updated_column()
         await ensure_decrement_stock_fefo()
         await ensure_finalize_online_order()
+	await ensure_process_batch_checkout_v2() 
         await ensure_webhook_events()
         await ensure_stock_reconciliation()
         await ensure_sales_fulfillment_columns()
@@ -4834,6 +5264,7 @@ async def startup_event():
         await ensure_stock_limits_backfill()
         await ensure_product_risk_view()
         await ensure_transfer_suggestions_view()
+	await ensure_flash_sales_tables() 
         await ensure_system_logs_table()
         await ensure_rpc_functions()
 
@@ -6300,6 +6731,29 @@ class StockTransferUpdate(BaseModel):
     approval_notes: Optional[str] = None
     tracking_number: Optional[str] = None
 
+class StockTransferBulkItem(BaseModel):
+    inventory_id: int
+    quantity:     int = Field(..., gt=0)
+
+
+class StockTransferBulkRequest(BaseModel):
+    from_location_id: Optional[str] = None
+    to_location_id:   str
+    items:            List[StockTransferBulkItem] = Field(..., min_items=1)
+    request_notes:    Optional[str] = None
+
+# ===================== FLASH SALES MODELS =====================
+class FlashSaleItemIn(BaseModel):
+    inventory_id: int
+    sale_price:   float = Field(..., gt=0)
+
+
+class FlashSaleCreate(BaseModel):
+    name:      str = Field(..., min_length=1, max_length=200)
+    starts_at: datetime
+    ends_at:   datetime
+    items:     List[FlashSaleItemIn] = Field(..., min_items=1)
+
 # ===================== SUPPLIER MODELS =====================
 class SupplierCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
@@ -6912,6 +7366,161 @@ async def request_stock_transfer(
         "message": "Transfer completed immediately"
     }
 
+@app.post("/stock-transfers/bulk-request")
+async def request_stock_transfer_bulk(
+    request: Request,
+    payload: StockTransferBulkRequest,
+    user_data: Tuple[str, str, str] = Depends(
+        require_role(["owner", "admin", "inventory_manager"])
+    ),
+):
+    """
+    Location-to-location transfer for multiple products in one call.
+
+    Each line is processed independently and reports its own outcome.
+    One bad line does not roll back the others — the frontend shows a
+    per-line success/failure list, which is more useful than an all-or-
+    nothing bulk operation when the operator is moving 30 SKUs from
+    warehouse to shelf.
+    """
+    await rate_limit(get_client_ip(request), user_data[1], request=request)
+    user_id, org_id, _ = user_data
+    client = get_supabase()
+
+    # Validate the endpoints once. If they don't belong to the org,
+    # every line would fail — refuse up front.
+    if payload.from_location_id:
+        from_loc = await run_sync_db_call(
+            client.table("locations").select("id")
+            .eq("id", payload.from_location_id).eq("org_id", org_id)
+            .maybe_single().execute
+        )
+        if not from_loc.data:
+            raise HTTPException(status_code=404, detail="Source location not found")
+
+    to_loc = await run_sync_db_call(
+        client.table("locations").select("id")
+        .eq("id", payload.to_location_id).eq("org_id", org_id)
+        .maybe_single().execute
+    )
+    if not to_loc.data:
+        raise HTTPException(status_code=404, detail="Destination location not found")
+
+    if payload.from_location_id and payload.from_location_id == payload.to_location_id:
+        raise HTTPException(status_code=400, detail="Source and destination cannot be the same")
+
+    # Resolve branch once.
+    branch_id = None
+    if payload.from_location_id:
+        b = await run_sync_db_call(
+            client.table("locations").select("branch_id")
+            .eq("id", payload.from_location_id).maybe_single().execute
+        )
+        if b and b.data:
+            branch_id = b.data.get("branch_id")
+    if not branch_id:
+        branch_id = await resolve_branch_for_write(org_id)
+
+    results = []
+    for line in payload.items:
+        entry = {
+            "inventory_id": line.inventory_id,
+            "quantity":     line.quantity,
+            "status":       "failed",
+            "error":        None,
+            "transfer_id":  None,
+        }
+
+        # Validate the product belongs to this org.
+        inv = await run_sync_db_call(
+            client.table("inventory").select("id, description")
+            .eq("id", line.inventory_id).eq("org_id", org_id)
+            .maybe_single().execute
+        )
+        if not inv.data:
+            entry["error"] = "Inventory item not found"
+            results.append(entry)
+            continue
+
+        # Insufficient-stock pre-check only if a source is given.
+        if payload.from_location_id:
+            stock = await run_sync_db_call(
+                client.table("location_stocks")
+                .select("quantity, reserved_quantity")
+                .eq("location_id", payload.from_location_id)
+                .eq("inventory_id", line.inventory_id)
+                .execute
+            )
+            rows = stock.data or []
+            total_qty      = sum(int(r.get("quantity", 0) or 0) for r in rows)
+            total_reserved = sum(int(r.get("reserved_quantity", 0) or 0) for r in rows)
+            available = total_qty - total_reserved
+            if available < line.quantity:
+                entry["error"] = f"Insufficient stock (available: {available})"
+                results.append(entry)
+                continue
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        try:
+            ins = await run_sync_db_call(
+                client.table("stock_transfers").insert({
+                    "org_id":           org_id,
+                    "branch_id":        branch_id,
+                    "from_location_id": payload.from_location_id,
+                    "to_location_id":   payload.to_location_id,
+                    "inventory_id":     line.inventory_id,
+                    "quantity":         line.quantity,
+                    "status":           "pending",
+                    "requested_by":     user_id,
+                    "request_notes":    payload.request_notes,
+                    "created_at":       now_iso,
+                    "updated_at":       now_iso,
+                }).execute
+            )
+            if not ins.data:
+                entry["error"] = "Failed to create transfer row"
+                results.append(entry)
+                continue
+            transfer_id = ins.data[0]["id"]
+            entry["transfer_id"] = transfer_id
+
+            try:
+                await run_sync_db_call(
+                    client.rpc("complete_stock_transfer", {
+                        "p_transfer_id":     transfer_id,
+                        "p_user_id":         user_id,
+                        "p_notes":           payload.request_notes,
+                        "p_tracking_number": None,
+                    }).execute
+                )
+                entry["status"] = "completed"
+            except Exception as rpc_err:
+                # Roll back the ghost row so the history stays clean.
+                try:
+                    await run_sync_db_call(
+                        client.table("stock_transfers").delete().eq("id", transfer_id).execute
+                    )
+                except Exception:
+                    pass
+                entry["error"] = str(rpc_err)
+                entry["status"] = "failed"
+        except Exception as e:
+            entry["error"] = str(e)
+            entry["status"] = "failed"
+
+        results.append(entry)
+
+    succeeded = sum(1 for r in results if r["status"] == "completed")
+    failed    = sum(1 for r in results if r["status"] == "failed")
+
+    return {
+        "results":   results,
+        "succeeded": succeeded,
+        "failed":    failed,
+        "message":   f"{succeeded} of {len(results)} lines completed",
+    }
+
+
 @app.get("/stock-transfers")
 async def list_stock_transfers(
     request: Request,
@@ -7040,6 +7649,183 @@ async def update_stock_transfer_status(
         .execute
     )
     return {"transfer": refreshed.data[0] if refreshed.data else None}
+
+# ------------------------------------------------------------------
+# Flash Sales endpoints
+# ------------------------------------------------------------------
+
+@app.post("/flash-sales")
+async def create_flash_sale(
+    request: Request,
+    payload: FlashSaleCreate,
+    user_data: Tuple[str, str, str] = Depends(
+        require_role(["owner", "admin", "inventory_manager"])
+    ),
+):
+    await rate_limit(get_client_ip(request), user_data[1], request=request)
+    user_id, org_id, _ = user_data
+
+    if payload.ends_at <= payload.starts_at:
+        raise HTTPException(status_code=400, detail="ends_at must be after starts_at")
+
+    inv_ids = [it.inventory_id for it in payload.items]
+    if len(set(inv_ids)) != len(inv_ids):
+        raise HTTPException(status_code=400, detail="Duplicate inventory_id in items")
+
+    client = get_supabase()
+
+    inv_res = await run_sync_db_call(
+        client.table("inventory")
+        .select("id, price_naira, description")
+        .eq("org_id", org_id)
+        .in_("id", inv_ids)
+        .execute
+    )
+    inv_map = {row["id"]: row for row in (inv_res.data or [])}
+    missing = [i for i in inv_ids if i not in inv_map]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Unknown inventory IDs: {missing}")
+
+    for it in payload.items:
+        base = float(inv_map[it.inventory_id].get("price_naira") or 0)
+        if it.sale_price >= base:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Sale price for {inv_map[it.inventory_id].get('description') or it.inventory_id} "
+                    f"must be below the current price (₦{base:,.2f})"
+                ),
+            )
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    sale_res = await run_sync_db_call(
+        client.table("flash_sales").insert({
+            "org_id":     org_id,
+            "name":       payload.name,
+            "starts_at":  payload.starts_at.isoformat(),
+            "ends_at":    payload.ends_at.isoformat(),
+            "is_active":  True,
+            "created_by": user_id,
+            "created_at": now_iso,
+            "updated_at": now_iso,
+        }).execute
+    )
+    if not sale_res.data:
+        raise HTTPException(status_code=500, detail="Failed to create flash sale")
+    sale_id = sale_res.data[0]["id"]
+
+    items = [
+        {
+            "flash_sale_id":  sale_id,
+            "inventory_id":   it.inventory_id,
+            "original_price": float(inv_map[it.inventory_id].get("price_naira") or 0),
+            "sale_price":     it.sale_price,
+        }
+        for it in payload.items
+    ]
+    await run_sync_db_call(client.table("flash_sale_items").insert(items).execute)
+
+    return {"sale_id": sale_id, "items_count": len(items), "name": payload.name}
+
+
+@app.get("/flash-sales")
+async def list_flash_sales(
+    request: Request,
+    include_inactive: bool = Query(False),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    user_data: Tuple[str, str, str] = Depends(
+        require_role(["owner", "admin", "inventory_manager"])
+    ),
+):
+    await rate_limit(get_client_ip(request), user_data[1], request=request)
+    _, org_id, _ = user_data
+    client = get_supabase()
+
+    query = (
+        client.table("flash_sales")
+        .select(
+            "id, name, starts_at, ends_at, is_active, created_at, "
+            "flash_sale_items(id, inventory_id, original_price, sale_price)"
+        )
+        .eq("org_id", org_id)
+    )
+    if not include_inactive:
+        # Hide completed AND manually-ended sales by default.
+        query = query.gte("ends_at", datetime.now(timezone.utc).isoformat())
+
+    res = await run_sync_db_call(
+        query.order("starts_at", desc=True).range(offset, offset + limit - 1).execute
+    )
+    sales = res.data or []
+    now = datetime.now(timezone.utc)
+    for s in sales:
+        start = s.get("starts_at")
+        end = s.get("ends_at")
+        try:
+            starts = datetime.fromisoformat(start.replace("Z", "+00:00")) if start else None
+            ends   = datetime.fromisoformat(end.replace("Z", "+00:00"))   if end   else None
+        except Exception:
+            starts = ends = None
+        if s.get("is_active") and starts and ends and starts <= now <= ends:
+            s["phase"] = "live"
+        elif s.get("is_active") and starts and starts > now:
+            s["phase"] = "scheduled"
+        else:
+            s["phase"] = "ended"
+    return {"flash_sales": sales, "total": len(sales)}
+
+
+@app.delete("/flash-sales/{sale_id}")
+async def delete_flash_sale(
+    request: Request,
+    sale_id: int,
+    user_data: Tuple[str, str, str] = Depends(
+        require_role(["owner", "admin", "inventory_manager"])
+    ),
+):
+    await rate_limit(get_client_ip(request), user_data[1], request=request)
+    _, org_id, _ = user_data
+    client = get_supabase()
+
+    existing = await run_sync_db_call(
+        client.table("flash_sales").select("id")
+        .eq("id", sale_id).eq("org_id", org_id).maybe_single().execute
+    )
+    if not existing or not existing.data:
+        raise HTTPException(status_code=404, detail="Flash sale not found")
+
+    await run_sync_db_call(
+        client.table("flash_sales").delete().eq("id", sale_id).eq("org_id", org_id).execute
+    )
+    return {"message": "Flash sale deleted"}
+
+
+@app.post("/flash-sales/{sale_id}/end")
+async def end_flash_sale(
+    request: Request,
+    sale_id: int,
+    user_data: Tuple[str, str, str] = Depends(
+        require_role(["owner", "admin", "inventory_manager"])
+    ),
+):
+    await rate_limit(get_client_ip(request), user_data[1], request=request)
+    _, org_id, _ = user_data
+    client = get_supabase()
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    res = await run_sync_db_call(
+        client.table("flash_sales")
+        .update({"is_active": False, "ends_at": now_iso, "updated_at": now_iso})
+        .eq("id", sale_id).eq("org_id", org_id)
+        .execute
+    )
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Flash sale not found")
+    return {"message": "Flash sale ended"}
+
+
+
 
 # ------------------------------------------------------------------
 # Auth endpoints
@@ -9156,6 +9942,7 @@ class PublicCheckoutRequest(BaseModel):
     callback_url: Optional[str] = None
 
 @app.post("/public/checkout")
+@app.post("/public/checkout")
 async def public_storefront_checkout(
     request: Request,
     req: PublicCheckoutRequest,
@@ -9188,12 +9975,10 @@ async def public_storefront_checkout(
             "id, org_name, slug, vertical, storefront_published, "
             "payment_gateway_config, subaccount_code"
         )
-        .eq("id", resolved_org_id)     # ← use resolved_org_id
+        .eq("id", resolved_org_id)
         .maybe_single()
         .execute
     )
-    # ... rest of the handler stays exactly as it is, using resolved_org_id everywhere
-
 
     if not org_res or not org_res.data:
         raise HTTPException(status_code=404, detail="Organisation not found")
@@ -9211,21 +9996,26 @@ async def public_storefront_checkout(
     )
     inv_map = {p["id"]: p for p in (inv_res.data or [])}
 
+    # Price every line at the active flash-sale price if one exists.
+    sale_map = await get_active_sale_prices(org["id"], ids)
+
     sale_items = []
     product_total = 0.0
     for item in req.items:
         prod = inv_map.get(item.inventory_id)
         if not prod:
             raise HTTPException(status_code=400, detail=f"Product {item.inventory_id} not available")
-        unit_price = float(prod.get("price_naira") or 0)
+        base_price = float(prod.get("price_naira") or 0)
+        s = sale_map.get(item.inventory_id)
+        unit_price = s["sale_price"] if s else base_price
         subtotal = unit_price * item.quantity
         product_total += subtotal
         sale_items.append({
             "inventory_id": item.inventory_id,
             "product_name": prod.get("description") or "",
-            "quantity": item.quantity,
-            "unit_price": unit_price,
-            "subtotal": subtotal,
+            "quantity":     item.quantity,
+            "unit_price":   unit_price,
+            "subtotal":     subtotal,
         })
 
     total = product_total + float(req.delivery_fee or 0) + float(req.handling_fee or 0)
@@ -10601,8 +11391,29 @@ async def public_inventory(
             query = query.eq("product_group", category)
         query = query.range(offset, offset + limit - 1)
         fallback = await run_sync_db_call(query.execute)
+        items = fallback.data or []
+
+        # ── Flash-sale price override ──
+        sale_map = await get_active_sale_prices(
+            resolved_org_id, [it["id"] for it in items]
+        )
+        for it in items:
+            s = sale_map.get(it["id"])
+            if s:
+                it["base_price_naira"]    = it.get("price_naira")
+                it["price_naira"]         = s["sale_price"]
+                it["on_sale"]             = True
+                it["sale_name"]           = s["sale_name"]
+                it["sale_ends_at"]        = s["ends_at"]
+                it["discount_pct"]        = (
+                    round(((s["original_price"] - s["sale_price"]) / s["original_price"]) * 100, 1)
+                    if s["original_price"] > 0 else 0
+                )
+            else:
+                it["on_sale"] = False
+
         return {
-            "items": fallback.data or [],
+            "items": items,
             "total": fallback.count or 0,
             "location_id": None,
             "org_id": resolved_org_id,
@@ -10618,6 +11429,26 @@ async def public_inventory(
         sort_by=sort_by,
         require_positive_stock=True,
     )
+
+    # ── Flash-sale price override ──
+    sale_map = await get_active_sale_prices(
+        resolved_org_id, [it["id"] for it in items]
+    )
+    for it in items:
+        s = sale_map.get(it["id"])
+        if s:
+            it["base_price_naira"]    = it.get("price_naira")
+            it["price_naira"]         = s["sale_price"]
+            it["on_sale"]             = True
+            it["sale_name"]           = s["sale_name"]
+            it["sale_ends_at"]        = s["ends_at"]
+            it["discount_pct"]        = (
+                round(((s["original_price"] - s["sale_price"]) / s["original_price"]) * 100, 1)
+                if s["original_price"] > 0 else 0
+            )
+        else:
+            it["on_sale"] = False
+
     return {
         "items": items,
         "total": total,
@@ -10710,8 +11541,20 @@ async def pos_inventory(
         sort_by="newest",
         require_positive_stock=False,
     )
-    return {"items": items, "total": total, "location_id": str(resolved_location_id)}
 
+    sale_map = await get_active_sale_prices(org_id, [it["id"] for it in items])
+    for it in items:
+        s = sale_map.get(it["id"])
+        if s:
+            it["base_price_naira"] = it.get("price_naira")
+            it["price_naira"]      = s["sale_price"]
+            it["on_sale"]          = True
+            it["sale_name"]        = s["sale_name"]
+            it["sale_ends_at"]     = s["ends_at"]
+        else:
+            it["on_sale"] = False
+
+    return {"items": items, "total": total, "location_id": str(resolved_location_id)}
 
 # ------------------------------------------------------------------
 # PUBLIC STOREFRONT ENDPOINTS
@@ -10772,6 +11615,21 @@ async def get_top_products(
             p["location_qty"] = qty
             p["location_id"]  = str(online_location_id)
             enriched.append(p)
+
+        # ── Flash-sale price override ──
+        sale_map = await get_active_sale_prices(
+            resolved_org_id, [p["inventory_id"] for p in top_items]
+        )
+        for p in top_items:
+            s = sale_map.get(p["inventory_id"])
+            if s:
+                p["base_price_naira"] = p.get("price_naira")
+                p["price_naira"]      = s["sale_price"]
+                p["on_sale"]          = True
+                p["sale_name"]        = s["sale_name"]
+                p["sale_ends_at"]     = s["ends_at"]
+            else:
+                p["on_sale"] = False
 
         return {
             "products": enriched[:6],
