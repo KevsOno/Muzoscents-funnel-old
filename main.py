@@ -2518,7 +2518,6 @@ DECLARE
     v_remaining    INTEGER;
     v_batch        RECORD;
     v_take         INTEGER;
-    v_dest_row_id  INTEGER;
 BEGIN
     SELECT * INTO v_transfer
       FROM stock_transfers
@@ -2551,14 +2550,18 @@ BEGIN
 
         v_remaining := v_transfer.quantity;
 
+        -- FEFO is resolved against inventory_batches.expiry_date, not
+        -- the deprecated location_stocks.expiry_date cache, which no
+        -- writer populates any more.
         FOR v_batch IN
-            SELECT id, quantity
-              FROM location_stocks
-             WHERE location_id  = v_transfer.from_location_id
-               AND inventory_id = v_transfer.inventory_id
-               AND quantity     > 0
-             ORDER BY expiry_date ASC NULLS LAST, id ASC
-               FOR UPDATE
+            SELECT ls.id, ls.batch_id, ls.quantity
+              FROM location_stocks ls
+              JOIN inventory_batches ib ON ib.id = ls.batch_id
+             WHERE ls.location_id  = v_transfer.from_location_id
+               AND ls.inventory_id = v_transfer.inventory_id
+               AND ls.quantity     > 0
+             ORDER BY ib.expiry_date ASC NULLS LAST, ls.id ASC
+               FOR UPDATE OF ls
         LOOP
             EXIT WHEN v_remaining <= 0;
 
@@ -2573,6 +2576,29 @@ BEGIN
                  WHERE id = v_batch.id;
             END IF;
 
+            -- Destination write is per-batch: the (location, inventory,
+            -- batch) tuple the source loop drew from is the same tuple
+            -- the destination now holds.
+            UPDATE location_stocks
+               SET quantity   = quantity + v_take,
+                   updated_at = NOW()
+             WHERE location_id  = v_transfer.to_location_id
+               AND inventory_id = v_transfer.inventory_id
+               AND batch_id     = v_batch.batch_id;
+
+            IF NOT FOUND THEN
+                INSERT INTO location_stocks
+                    (location_id, inventory_id, batch_id,
+                     quantity, reserved_quantity, updated_at)
+                VALUES
+                    (v_transfer.to_location_id,
+                     v_transfer.inventory_id,
+                     v_batch.batch_id,
+                     v_take,
+                     0,
+                     NOW());
+            END IF;
+
             v_remaining := v_remaining - v_take;
         END LOOP;
     ELSE
@@ -2580,28 +2606,6 @@ BEGIN
            SET current_qty = COALESCE(current_qty, 0) + v_transfer.quantity,
                updated_at  = NOW()
          WHERE id = v_transfer.inventory_id;
-    END IF;
-
-    SELECT id INTO v_dest_row_id
-      FROM location_stocks
-     WHERE location_id  = v_transfer.to_location_id
-       AND inventory_id = v_transfer.inventory_id
-     LIMIT 1;
-
-    IF v_dest_row_id IS NOT NULL THEN
-        UPDATE location_stocks
-           SET quantity   = quantity + v_transfer.quantity,
-               updated_at = NOW()
-         WHERE id = v_dest_row_id;
-    ELSE
-        INSERT INTO location_stocks
-            (location_id, inventory_id, quantity, reserved_quantity, updated_at)
-        VALUES
-            (v_transfer.to_location_id,
-             v_transfer.inventory_id,
-             v_transfer.quantity,
-             0,
-             NOW());
     END IF;
 
     UPDATE stock_transfers
@@ -3484,10 +3488,12 @@ async def ensure_stock_reconciliation():
     END;
     $$;
 
+    DROP FUNCTION IF EXISTS public.heal_stock_drift(UUID, INTEGER, INTEGER);
+
     CREATE OR REPLACE FUNCTION public.heal_stock_drift(
         p_org_id               UUID,
         p_inventory_id         INTEGER,
-        p_default_location_id  INTEGER
+        p_default_location_id  UUID
     ) RETURNS JSONB
     LANGUAGE plpgsql
     AS $$
@@ -3498,6 +3504,7 @@ async def ensure_stock_reconciliation():
         v_remaining    INTEGER;
         v_batch        RECORD;
         v_take         INTEGER;
+        v_target_batch INTEGER;
     BEGIN
         SELECT COALESCE(current_qty, 0) INTO v_current
           FROM inventory
@@ -3519,13 +3526,37 @@ async def ensure_stock_reconciliation():
         END IF;
 
         IF v_drift > 0 THEN
-            INSERT INTO location_stocks
-                (location_id, inventory_id, quantity, reserved_quantity, updated_at)
-            VALUES
-                (p_default_location_id, p_inventory_id, v_drift, 0, NOW())
-            ON CONFLICT (location_id, inventory_id)
-            DO UPDATE SET quantity   = location_stocks.quantity + EXCLUDED.quantity,
-                          updated_at = NOW();
+            -- Positive drift: attach surplus to the earliest-expiring batch
+            -- of this SKU. Matches the attachment rule used by
+            -- ensure_location_stocks_batch_backfill, so orphan stock gets
+            -- flagged alongside whatever is closest to expiry rather than
+            -- landing on an arbitrary batch.
+            SELECT id INTO v_target_batch
+              FROM inventory_batches
+             WHERE inventory_id = p_inventory_id
+             ORDER BY expiry_date ASC NULLS LAST, id ASC
+             LIMIT 1;
+
+            IF v_target_batch IS NULL THEN
+                RAISE EXCEPTION
+                    'inventory % has no batch to attach drift to', p_inventory_id;
+            END IF;
+
+            UPDATE location_stocks
+               SET quantity   = quantity + v_drift,
+                   updated_at = NOW()
+             WHERE location_id  = p_default_location_id
+               AND inventory_id = p_inventory_id
+               AND batch_id     = v_target_batch;
+
+            IF NOT FOUND THEN
+                INSERT INTO location_stocks
+                    (location_id, inventory_id, batch_id,
+                     quantity, reserved_quantity, updated_at)
+                VALUES
+                    (p_default_location_id, p_inventory_id, v_target_batch,
+                     v_drift, 0, NOW());
+            END IF;
         ELSE
             v_remaining := -v_drift;
             FOR v_batch IN
@@ -3553,7 +3584,7 @@ async def ensure_stock_reconciliation():
     $$;
 
     GRANT EXECUTE ON FUNCTION public.audit_stock_drift(UUID) TO service_role;
-    GRANT EXECUTE ON FUNCTION public.heal_stock_drift(UUID, INTEGER, INTEGER) TO service_role;
+    GRANT EXECUTE ON FUNCTION public.heal_stock_drift(UUID, INTEGER, UUID) TO service_role;
     """
 
     headers = {
