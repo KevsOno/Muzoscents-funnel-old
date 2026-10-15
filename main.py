@@ -146,6 +146,7 @@ def _compute_migration_suite_hash() -> str:
         "ensure_branches_table",
         "ensure_location_stocks_constraints",
         "ensure_location_stocks_batch_backfill",
+        "ensure_batch_verification_columns",
         "ensure_cost_price_column",
         "ensure_delivery_fee_columns",
         "ensure_org_delivery_columns",
@@ -2434,6 +2435,93 @@ async def ensure_location_stocks_batch_backfill() -> None:
         logger.error(f"location_stocks batch backfill failed: {resp.text}")
         raise RuntimeError(f"location_stocks batch backfill failed: {resp.text}")
     logger.info("location_stocks batch_id backfill complete and NOT NULL enforced")
+
+
+async def ensure_batch_verification_columns():
+    """
+    Add verification columns.
+
+    location_stocks gets last_verified_at / last_verified_by — this is
+    the real verification state. A batch at a location is the physical
+    thing an operator counts. The stamp lives on that row.
+
+    inventory_batches also gets the same two columns, but only as a
+    denormalized SUMMARY — the most recent verification of this batch
+    at any location. It is informational. Nothing that decides "is this
+    fresh?" should read it. The freshness signal lives on
+    location_stocks.
+
+    Both columns on both tables are nullable. NULL means "never
+    verified" — a distinct state, not a stale one.
+
+    Idempotent. Safe on every boot.
+    """
+    sql = """
+    ALTER TABLE public.inventory_batches
+        ADD COLUMN IF NOT EXISTS last_verified_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS last_verified_by UUID;
+
+    ALTER TABLE public.location_stocks
+        ADD COLUMN IF NOT EXISTS last_verified_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS last_verified_by UUID;
+
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+              JOIN pg_attribute a
+                ON a.attrelid = c.conrelid
+               AND a.attnum   = ANY (c.conkey)
+             WHERE c.conrelid = 'public.inventory_batches'::regclass
+               AND c.contype  = 'f'
+               AND a.attname  = 'last_verified_by'
+        ) THEN
+            ALTER TABLE public.inventory_batches
+                ADD CONSTRAINT inventory_batches_last_verified_by_fkey
+                FOREIGN KEY (last_verified_by)
+                REFERENCES public.profiles(id) ON DELETE SET NULL;
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+              JOIN pg_attribute a
+                ON a.attrelid = c.conrelid
+               AND a.attnum   = ANY (c.conkey)
+             WHERE c.conrelid = 'public.location_stocks'::regclass
+               AND c.contype  = 'f'
+               AND a.attname  = 'last_verified_by'
+        ) THEN
+            ALTER TABLE public.location_stocks
+                ADD CONSTRAINT location_stocks_last_verified_by_fkey
+                FOREIGN KEY (last_verified_by)
+                REFERENCES public.profiles(id) ON DELETE SET NULL;
+        END IF;
+    END $$;
+
+    CREATE INDEX IF NOT EXISTS idx_inventory_batches_last_verified
+        ON public.inventory_batches(last_verified_at);
+
+    CREATE INDEX IF NOT EXISTS idx_location_stocks_last_verified
+        ON public.location_stocks(last_verified_at);
+    """
+
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"batch verification columns migration failed: {resp.text}")
+        raise RuntimeError(f"batch verification columns migration failed: {resp.text}")
+    logger.info("verification columns installed on inventory_batches and location_stocks")
+
+
 
 
 
@@ -5628,6 +5716,7 @@ async def startup_event():
         await ensure_branches_table()
         await ensure_location_stocks_constraints()
         await ensure_location_stocks_batch_backfill()
+        await ensure_batch_verification_columns()
         await ensure_cost_price_column()
         await ensure_delivery_fee_columns()
         await ensure_org_delivery_columns()
@@ -5732,6 +5821,7 @@ async def startup_event():
         await ensure_branches_table()
         await ensure_location_stocks_constraints()
         await ensure_location_stocks_batch_backfill()
+        await ensure_batch_verification_columns()
         await ensure_cost_price_column()
         await ensure_delivery_fee_columns()
         await ensure_org_delivery_columns()
@@ -5781,6 +5871,10 @@ async def startup_event():
         await _release_migration_lock()
 
     await _verify_plan_catalog()
+
+#---------------
+# ASYNC VERIFY
+#----------------
 
 async def _verify_plan_catalog():
     for key, tier in PLAN_TIERS.items():
@@ -12306,6 +12400,11 @@ class BatchTransferRequest(BaseModel):
     quantity: int = Field(..., gt=0)
     request_notes: Optional[str] = None
 
+class BatchVerifyRequest(BaseModel):
+    location_id: str = Field(..., description="Location where the count was performed")
+    counted_quantity: int = Field(..., ge=0, description="What the operator physically counted")
+    notes: Optional[str] = Field(None, max_length=500)
+
 class ExpiryAlertResponse(BaseModel):
     inventory_id: int
     product_name: str
@@ -13077,19 +13176,234 @@ async def _write_location_stock(
         }).execute()
     )
 
+@app.post("/inventory/batches/{batch_id}/verify")
+async def verify_batch(
+    request: Request,
+    batch_id: int,
+    payload: BatchVerifyRequest,
+    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
+):
+    """
+    Record a physical count of a batch AT A SPECIFIC LOCATION.
 
-@app.get("/inventory/expiring-products")
+    Verification is per (location, batch). The stamp lands on the
+    location_stocks row — that is the physical thing that was counted.
+    The batch's own columns are updated as a summary (most recent
+    verification at any location), for queries that want it, but the
+    authoritative freshness signal is the location_stocks row.
+
+    Cascade:
+      - location_stocks.quantity for (location, batch) = counted
+      - location_stocks.last_verified_at / by = now / caller
+      - inventory_batches.quantity = SUM across locations
+      - inventory_batches.last_verified_at = MAX across locations
+      - inventory.current_qty = SUM across batches
+    """
+    await rate_limit(get_client_ip(request), user_data[1], request=request)
+    user_id, org_id, _ = user_data
+    client = get_supabase()
+
+    batch = await run_sync_db_call(
+        client.table("inventory_batches")
+        .select("id, inventory_id, batch_number, inventory:inventory_id(org_id, description)")
+        .eq("id", batch_id)
+        .maybe_single()
+        .execute
+    )
+    if not batch or not batch.data:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    parent_inv = batch.data.get("inventory") or {}
+    if parent_inv.get("org_id") != org_id:
+        raise HTTPException(status_code=403, detail="Access denied to this batch")
+
+    inventory_id = batch.data["inventory_id"]
+
+    location = await run_sync_db_call(
+        client.table("locations")
+        .select("id, name")
+        .eq("id", payload.location_id)
+        .eq("org_id", org_id)
+        .maybe_single()
+        .execute
+    )
+    if not location or not location.data:
+        raise HTTPException(status_code=404, detail="Location not found")
+    location_name = location.data.get("name") or "Unknown"
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    counted = int(payload.counted_quantity)
+
+    ls_res = await run_sync_db_call(
+        client.table("location_stocks")
+        .select("id, quantity")
+        .eq("location_id", payload.location_id)
+        .eq("inventory_id", inventory_id)
+        .eq("batch_id", batch_id)
+        .maybe_single()
+        .execute
+    )
+
+    old_qty_at_location = 0
+
+    if ls_res and ls_res.data:
+        old_qty_at_location = int(ls_res.data.get("quantity") or 0)
+        if counted == 0:
+            await run_sync_db_call(
+                client.table("location_stocks")
+                .delete()
+                .eq("id", ls_res.data["id"])
+                .execute
+            )
+        else:
+            await run_sync_db_call(
+                client.table("location_stocks")
+                .update({
+                    "quantity": counted,
+                    "last_verified_at": now_iso,
+                    "last_verified_by": user_id,
+                    "updated_at": now_iso,
+                })
+                .eq("id", ls_res.data["id"])
+                .execute
+            )
+    elif counted > 0:
+        await run_sync_db_call(
+            client.table("location_stocks").insert({
+                "location_id": payload.location_id,
+                "inventory_id": inventory_id,
+                "batch_id": batch_id,
+                "quantity": counted,
+                "reserved_quantity": 0,
+                "last_verified_at": now_iso,
+                "last_verified_by": user_id,
+                "updated_at": now_iso,
+            }).execute()
+        )
+
+    # ── Batch totals ──
+    all_ls = await run_sync_db_call(
+        client.table("location_stocks")
+        .select("quantity, last_verified_at")
+        .eq("inventory_id", inventory_id)
+        .eq("batch_id", batch_id)
+        .execute
+    )
+    rows = all_ls.data or []
+    batch_total = sum(int(r.get("quantity") or 0) for r in rows)
+
+    # Summary: most recent verification of this batch anywhere.
+    latest_verified_at = None
+    for r in rows:
+        lv = r.get("last_verified_at")
+        if lv and (latest_verified_at is None or lv > latest_verified_at):
+            latest_verified_at = lv
+
+    await run_sync_db_call(
+        client.table("inventory_batches")
+        .update({
+            "quantity": batch_total,
+            "last_verified_at": latest_verified_at,
+            "last_verified_by": user_id,
+            "updated_at": now_iso,
+        })
+        .eq("id", batch_id)
+        .execute
+    )
+
+    # ── Inventory total ──
+    all_batches = await run_sync_db_call(
+        client.table("inventory_batches")
+        .select("quantity")
+        .eq("inventory_id", inventory_id)
+        .execute
+    )
+    inventory_total = sum(int(r.get("quantity") or 0) for r in (all_batches.data or []))
+
+    await run_sync_db_call(
+        client.table("inventory")
+        .update({"current_qty": inventory_total, "updated_at": now_iso})
+        .eq("id", inventory_id)
+        .eq("org_id", org_id)
+        .execute
+    )
+
+    try:
+        await run_sync_db_call(
+            client.table("system_logs").insert({
+                "org_id": org_id,
+                "user_id": user_id,
+                "level": "INFO",
+                "message": (
+                    f"Batch {batch.data.get('batch_number')} verified at {location_name}: "
+                    f"{old_qty_at_location} → {counted}"
+                ),
+                "extra": {
+                    "event": "batch_verified",
+                    "batch_id": batch_id,
+                    "inventory_id": inventory_id,
+                    "location_id": payload.location_id,
+                    "old_quantity_at_location": old_qty_at_location,
+                    "new_quantity_at_location": counted,
+                    "delta_at_location": counted - old_qty_at_location,
+                    "batch_total_quantity": batch_total,
+                    "inventory_total_quantity": inventory_total,
+                    "notes": payload.notes,
+                },
+                "security": False,
+                "timestamp": now_iso,
+            }).execute()
+        )
+    except Exception as log_err:
+        logger.warning(f"verify_batch: system_logs write failed: {log_err}")
+
+    return {
+        "success": True,
+        "batch_id": batch_id,
+        "inventory_id": inventory_id,
+        "location_id": payload.location_id,
+        "location_name": location_name,
+        "old_quantity_at_location": old_qty_at_location,
+        "new_quantity_at_location": counted,
+        "delta_at_location": counted - old_qty_at_location,
+        "batch_total_quantity": batch_total,
+        "inventory_total_quantity": inventory_total,
+        "verified_at": now_iso,
+        "verified_by": user_id,
+        "message": (
+            f"Verified at {location_name}: {old_qty_at_location} → {counted}. "
+            f"Batch total now {batch_total}."
+        ),
+    }
+
 @app.get("/inventory/expiring-products")
 async def get_expiring_products(
     request: Request,
     days_threshold: int = Query(180, ge=1, le=365),
     alert_level: Optional[str] = Query(None),
+    verification_status_filter: Optional[str] = Query(
+        None, alias="verification_status",
+        description="Filter: current | due | overdue | unverified",
+    ),
     location_id: Optional[str] = None,
     limit: int = Query(500, ge=1, le=2000),
     user_data: Tuple[str, str, str] = Depends(
         require_feature("expiry_tracking", allowed_roles=["owner", "admin", "inventory_manager"])
     )
 ):
+    """
+    Batches approaching expiry, one row per (batch, location).
+
+    The list does NOT include recorded quantities. A quantity in a
+    scan-and-act list is an invitation to act on an estimate. The
+    operator sees: what product, which batch, when it expires, where
+    it lives, and how long since anyone counted it there. If they want
+    a number, they open the verification modal — where a count is the
+    next thing that happens anyway.
+
+    The freshness signal is location_stocks.last_verified_at. The
+    batch-level last_verified_at is informational only and does not
+    appear in this response.
+    """
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
     client = get_supabase()
@@ -13097,108 +13411,167 @@ async def get_expiring_products(
     today = datetime.now(timezone.utc).date()
     threshold_date = today + timedelta(days=days_threshold)
 
-    # !inner forces PostgREST to use an INNER JOIN. Combined with the
-    # org_id filter on the joined table, this drops batches whose
-    # inventory_id points at a deleted row or a foreign org at the
-    # database — they never travel over the wire and never reach the
-    # Python loop. Without !inner the join is LEFT, the filter on
-    # inventory.org_id is decorative, and every orphan comes back with
-    # "inventory": null.
-    #
-    # The explicit column list on the embed keeps the response small.
-    # The limit caps the total row count regardless of how many
-    # batches are in scope.
-    query = client.table("inventory_batches") \
+    # ── 1. Batches approaching expiry, org-scoped ──
+    batch_query = client.table("inventory_batches") \
         .select(
-            "*, "
+            "id, inventory_id, batch_number, lot_number, "
+            "expiry_date, manufacture_date, cost_price_naira, "
             "inventory:inventory_id!inner(id, org_id, description, item_code, product_group)"
         ) \
         .eq("inventory.org_id", org_id) \
         .lte("expiry_date", threshold_date.isoformat()) \
-        .gt("quantity", 0) \
         .order("expiry_date", desc=False) \
         .limit(limit)
 
-    result = await run_sync_db_call(query.execute)
+    batch_res = await run_sync_db_call(batch_query.execute)
+    batches = batch_res.data or []
 
-    if not result.data:
-        return {"expiring_products": [], "summary": {"total_expiring": 0, "critical_count": 0, "warning_count": 0, "info_count": 0}}
+    if not batches:
+        return {
+            "expiring_products": [],
+            "summary": {
+                "total_expiring": 0, "critical_count": 0,
+                "warning_count": 0, "info_count": 0,
+                "needs_verification_count": 0, "unverified_count": 0,
+            },
+        }
 
+    batch_ids = [b["id"] for b in batches]
+
+    # ── 2. All location_stocks for those batches, with locations ──
+    ls_query = client.table("location_stocks") \
+        .select(
+            "id, batch_id, location_id, quantity, "
+            "last_verified_at, last_verified_by, "
+            "locations(id, name)"
+        ) \
+        .in_("batch_id", batch_ids)
+
+    if location_id:
+        ls_query = ls_query.eq("location_id", location_id)
+
+    ls_res = await run_sync_db_call(ls_query.execute)
+    ls_rows = ls_res.data or []
+
+    # Group by batch_id
+    by_batch = {}
+    for row in ls_rows:
+        by_batch.setdefault(row["batch_id"], []).append(row)
+
+    # ── 3. Flatten to one row per (batch, location) ──
     expiring_products = []
     critical_count = 0
     warning_count = 0
     info_count = 0
+    needs_verification_count = 0
+    unverified_count = 0
 
-    for batch in result.data:
+    for batch in batches:
         inventory = batch.get("inventory")
         if inventory is None:
-            # !inner should have filtered these out at the database.
-            # Kept as a safety net for genuinely malformed rows.
-            logger.warning(f"Skipping batch {batch.get('id')} with missing inventory reference")
             continue
 
-        expiry_date = datetime.strptime(batch["expiry_date"], "%Y-%m-%d").date() if isinstance(batch["expiry_date"], str) else batch["expiry_date"]
+        try:
+            expiry_date = (
+                datetime.strptime(batch["expiry_date"], "%Y-%m-%d").date()
+                if isinstance(batch["expiry_date"], str)
+                else batch["expiry_date"]
+            )
+        except Exception:
+            continue
+
         days_until = (expiry_date - today).days
 
         if days_until <= 90:
             level = "critical"
-            critical_count += 1
         elif days_until <= 120:
             level = "warning"
-            warning_count += 1
         elif days_until <= 180:
             level = "info"
-            info_count += 1
         else:
             level = "good"
 
         if alert_level and level != alert_level:
             continue
 
-        location_stock = None
-        location_name = None
-        location_id_val = None
+        # Rows at this batch's locations. If none exist (orphan batch),
+        # emit one row with location = null so the operator still sees it.
+        per_batch_rows = by_batch.get(batch["id"], [])
+        if not per_batch_rows:
+            per_batch_rows = [None]
 
-        if location_id:
-            stock_result = await run_sync_db_call(
-                client.table("location_stocks")
-                .select("location_id, locations(name)")
-                .eq("batch_id", batch["id"])
-                .eq("location_id", location_id)
-                .maybe_single()
-                .execute
-            )
-            if stock_result.data:
-                location_id_val = location_id
-                location_name = stock_result.data.get("locations", {}).get("name") if stock_result.data.get("locations") else None
+        for ls in per_batch_rows:
+            if ls is None:
+                location_id_val = None
+                location_name = None
+                ls_verified_at = None
+            else:
+                location_id_val = ls.get("location_id")
+                loc_embedded = ls.get("locations") or {}
+                location_name = (
+                    loc_embedded.get("name")
+                    if isinstance(loc_embedded, dict) else None
+                )
+                ls_verified_at = ls.get("last_verified_at")
 
-        expiring_products.append({
-            "inventory_id": inventory.get("id"),
-            "product_name": inventory.get("description"),
-            "product_code": inventory.get("item_code"),
-            "batch_id": batch["id"],
-            "batch_number": batch["batch_number"],
-            "lot_number": batch.get("lot_number"),
-            "expiry_date": batch["expiry_date"],
-            "days_until_expiry": days_until,
-            "alert_level": level,
-            "current_stock": batch["quantity"],
-            "manufacture_date": batch.get("manufacture_date"),
-            "cost_price_naira": float(batch.get("cost_price_naira", 0)),
-            "location_id": location_id_val,
-            "location_name": location_name
-        })
+            v_status, staleness_days = _verification_status(ls_verified_at, days_until)
+
+            # Counters are per (batch, location) row, except total_expiring
+            # which is per batch. Summary handles this below.
+            if v_status in ("due", "overdue"):
+                needs_verification_count += 1
+            elif v_status == "unverified":
+                needs_verification_count += 1
+                unverified_count += 1
+
+            if verification_status_filter and v_status != verification_status_filter:
+                continue
+
+            expiring_products.append({
+                "inventory_id":        inventory.get("id"),
+                "product_name":        inventory.get("description"),
+                "product_code":        inventory.get("item_code"),
+                "product_group":       inventory.get("product_group"),
+                "batch_id":            batch["id"],
+                "batch_number":        batch["batch_number"],
+                "lot_number":          batch.get("lot_number"),
+                "expiry_date":         batch["expiry_date"],
+                "days_until_expiry":   days_until,
+                "alert_level":         level,
+
+                "location_id":         location_id_val,
+                "location_name":       location_name,
+
+                # Per-location verification — the authoritative signal.
+                "verification_status": v_status,
+                "staleness_days":      staleness_days,
+                "last_verified_at":    ls_verified_at,
+            })
+
+        # Per-batch counters for the summary (unfiltered by v_status so
+        # the summary reads the full picture, not the filtered view).
+        if level == "critical":
+            critical_count += 1
+        elif level == "warning":
+            warning_count += 1
+        elif level == "info":
+            info_count += 1
+
+    # Total unique batches, not rows.
+    total_batches = len({b["id"] for b in batches})
 
     return {
         "expiring_products": expiring_products,
         "summary": {
-            "total_expiring": len(expiring_products),
-            "critical_count": critical_count,
-            "warning_count": warning_count,
-            "info_count": info_count
+            "total_expiring":           total_batches,
+            "critical_count":           critical_count,
+            "warning_count":            warning_count,
+            "info_count":               info_count,
+            "needs_verification_count": needs_verification_count,
+            "unverified_count":         unverified_count,
         },
         "threshold_days": days_threshold,
-        "truncated": len(result.data) >= limit
+        "truncated": len(batches) >= limit,
     }
 
 @app.get("/inventory/batches/{inventory_id}")
@@ -13615,6 +13988,83 @@ async def transfer_batch_between_locations(
         "quantity": transfer.quantity
     }
 
+
+# ─────────────────────────────────────────────────────────────────────
+# Batch verification cadence
+#
+# The whole point of Option A is that the system stops presenting an
+# estimate as a fact. To do that it needs a policy for when an estimate
+# has gone stale — how long since the last physical count before the
+# number can no longer be trusted.
+#
+# The cadence is tighter near expiry because the cost of being wrong is
+# highest there: a batch two weeks from expiry that the system thinks
+# has 40 units but physically has 3 is a problem you fix today, not
+# next month.
+#
+# Values are in days. They are constants here so the policy is visible
+# in one place and can be tuned without a schema change.
+# ─────────────────────────────────────────────────────────────────────
+
+VERIFICATION_CADENCE_CRITICAL_DAYS = 14   # ≤120 days to expiry
+VERIFICATION_CADENCE_WARNING_DAYS  = 30   # 121–180 days
+VERIFICATION_CADENCE_FAR_DAYS      = 60   # >180 days
+
+
+def _verification_cadence_days(days_until_expiry: Optional[int]) -> int:
+    """
+    How often a batch near expiry should be physically re-counted.
+    """
+    if days_until_expiry is None:
+        return VERIFICATION_CADENCE_FAR_DAYS
+    if days_until_expiry <= 120:
+        return VERIFICATION_CADENCE_CRITICAL_DAYS
+    if days_until_expiry <= 180:
+        return VERIFICATION_CADENCE_WARNING_DAYS
+    return VERIFICATION_CADENCE_FAR_DAYS
+
+
+def _verification_status(
+    last_verified_at: Optional[str],
+    days_until_expiry: Optional[int],
+) -> Tuple[str, Optional[int]]:
+    """
+    Return (status, staleness_days).
+
+    status values:
+      - 'unverified' — never counted; the recorded quantity is a pure
+                       estimate from deduction rules.
+      - 'current'    — counted within the cadence window.
+      - 'due'        — past the cadence window, within 2x cadence.
+      - 'overdue'    — past 2x cadence.
+
+    staleness_days is None when never verified. Otherwise it is the
+    whole number of days since last_verified_at.
+    """
+    if not last_verified_at:
+        return ("unverified", None)
+
+    try:
+        lv = datetime.fromisoformat(last_verified_at.replace("Z", "+00:00"))
+        if lv.tzinfo is None:
+            lv = lv.replace(tzinfo=timezone.utc)
+    except Exception:
+        return ("unverified", None)
+
+    now = datetime.now(timezone.utc)
+    staleness = max(0, (now - lv).days)
+    cadence = _verification_cadence_days(days_until_expiry)
+
+    if staleness <= cadence:
+        return ("current", staleness)
+    if staleness <= cadence * 2:
+        return ("due", staleness)
+    return ("overdue", staleness)
+
+
+
+
+
 @app.get("/inventory/expiry-dashboard")
 async def expiry_dashboard(
     request: Request,
@@ -13622,83 +14072,200 @@ async def expiry_dashboard(
         require_feature("expiry_tracking", allowed_roles=["owner", "admin", "inventory_manager"])
     )
 ):
+    """
+    Verification-first expiry dashboard.
+
+    Two independent dimensions:
+
+      1. Expiry proximity — batches bucketed by days to expiry. This
+         is a batch-level fact; the batch has one expiry date.
+
+      2. Verification health — (batch, location) pairs bucketed by how
+         long since anyone counted them AT THAT LOCATION. A batch at
+         three stores produces three verification buckets.
+
+    The priority queue is the intersection: (batch, location) pairs
+    that are near expiry AND past their verification cadence. Those
+    are the ones a human walks to today.
+    """
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
     client = get_supabase()
 
     today = datetime.now(timezone.utc).date()
 
-    batches = await run_sync_db_call(
+    batches_res = await run_sync_db_call(
         client.table("inventory_batches")
-        .select("*, inventory:inventory_id!inner(description, item_code, product_group)")
+        .select(
+            "id, quantity, expiry_date, cost_price_naira, "
+            "inventory:inventory_id!inner(description, item_code, product_group, org_id)"
+        )
         .eq("inventory.org_id", org_id)
         .execute
     )
+    batches = batches_res.data or []
 
     stats = {
-        "total_batches": len(batches.data) if batches.data else 0,
-        "critical_expiring_30d": 0,
-        "critical_expiring_60d": 0,
-        "warning_expiring_90d": 0,
-        "info_expiring_180d": 0,
-        "expired_stock": 0,
-        "total_at_risk_value": 0.0,
-        "products_by_category": {},
-        "recommendations": []
+        "total_batches":               len(batches),
+        "total_location_rows":         0,
+
+        "already_expired_batches":     0,
+        "expiring_120d_batches":       0,
+        "expiring_180d_batches":       0,
+        "expiring_240d_batches":       0,
+
+        # Per (batch, location) verification buckets
+        "locations_current":           0,
+        "locations_due":               0,
+        "locations_overdue":           0,
+        "locations_unverified":        0,
+        "verification_compliance_pct": 0.0,
+
+        "priority_queue_count":        0,
+        "locations_needing_verification": 0,
+
+        "estimated_value_unverified_naira": 0.0,
+        "estimated_value_note": (
+            "Derived from last recorded quantities of unverified (batch, location) "
+            "rows. Not a physical count. Run the verification queue to make factual."
+        ),
+
+        "recommendations": [],
     }
 
-    if batches.data:
-        for batch in batches.data:
-            inventory = batch.get("inventory")
-            if inventory is None:
-                continue
-            expiry_date = datetime.strptime(batch["expiry_date"], "%Y-%m-%d").date() if isinstance(batch["expiry_date"], str) else batch["expiry_date"]
+    if not batches:
+        return {"dashboard": stats, "as_of_date": today.isoformat()}
+
+    batch_ids = [b["id"] for b in batches]
+    batch_by_id = {b["id"]: b for b in batches}
+
+    ls_res = await run_sync_db_call(
+        client.table("location_stocks")
+        .select("id, batch_id, location_id, quantity, last_verified_at, locations(name)")
+        .in_("batch_id", batch_ids)
+        .execute
+    )
+    ls_rows = ls_res.data or []
+    stats["total_location_rows"] = len(ls_rows)
+
+    # ── Expiry bucketing (per batch) ──
+    for b in batches:
+        try:
+            expiry_date = (
+                datetime.strptime(b["expiry_date"], "%Y-%m-%d").date()
+                if isinstance(b["expiry_date"], str)
+                else b["expiry_date"]
+            )
             days_until = (expiry_date - today).days
+        except Exception:
+            continue
 
-            if days_until < 0:
-                stats["expired_stock"] += batch["quantity"]
-            elif days_until <= 30:
-                stats["critical_expiring_30d"] += batch["quantity"]
-                stats["total_at_risk_value"] += batch["quantity"] * float(batch.get("cost_price_naira", 0))
-            elif days_until <= 60:
-                stats["critical_expiring_60d"] += batch["quantity"]
-                stats["total_at_risk_value"] += batch["quantity"] * float(batch.get("cost_price_naira", 0)) * 0.7
-            elif days_until <= 90:
-                stats["warning_expiring_90d"] += batch["quantity"]
-                stats["total_at_risk_value"] += batch["quantity"] * float(batch.get("cost_price_naira", 0)) * 0.5
-            elif days_until <= 180:
-                stats["info_expiring_180d"] += batch["quantity"]
+        if days_until < 0:
+            stats["already_expired_batches"] += 1
+        elif days_until <= 120:
+            stats["expiring_120d_batches"] += 1
+        elif days_until <= 180:
+            stats["expiring_180d_batches"] += 1
+        elif days_until <= 240:
+            stats["expiring_240d_batches"] += 1
 
-            product_group = inventory.get("product_group", "Uncategorized")
-            if product_group not in stats["products_by_category"]:
-                stats["products_by_category"][product_group] = {"total_quantity": 0, "expiring_soon": 0}
-            stats["products_by_category"][product_group]["total_quantity"] += batch["quantity"]
-            if days_until <= 90:
-                stats["products_by_category"][product_group]["expiring_soon"] += batch["quantity"]
+    # ── Verification bucketing (per location_stocks row) ──
+    priority_pairs = set()
 
-    if stats["critical_expiring_30d"] > 0:
+    for ls in ls_rows:
+        batch = batch_by_id.get(ls["batch_id"])
+        if not batch:
+            continue
+
+        try:
+            expiry_date = (
+                datetime.strptime(batch["expiry_date"], "%Y-%m-%d").date()
+                if isinstance(batch["expiry_date"], str)
+                else batch["expiry_date"]
+            )
+            days_until = (expiry_date - today).days
+        except Exception:
+            days_until = None
+
+        v_status, _ = _verification_status(ls.get("last_verified_at"), days_until)
+
+        if v_status == "current":
+            stats["locations_current"] += 1
+        elif v_status == "due":
+            stats["locations_due"] += 1
+        elif v_status == "overdue":
+            stats["locations_overdue"] += 1
+        else:
+            stats["locations_unverified"] += 1
+
+        near_expiry = days_until is not None and days_until <= 180
+        needs_verification = v_status in ("due", "overdue", "unverified")
+
+        if needs_verification:
+            stats["locations_needing_verification"] += 1
+            qty = int(ls.get("quantity") or 0)
+            cost = float(batch.get("cost_price_naira") or 0)
+            stats["estimated_value_unverified_naira"] += qty * cost
+
+        if near_expiry and needs_verification:
+            priority_pairs.add((ls["batch_id"], ls["location_id"]))
+
+    stats["priority_queue_count"] = len(priority_pairs)
+
+    total_ls = stats["total_location_rows"]
+    if total_ls > 0:
+        stats["verification_compliance_pct"] = round(
+            stats["locations_current"] / total_ls * 100, 1
+        )
+
+    stats["estimated_value_unverified_naira"] = round(
+        stats["estimated_value_unverified_naira"], 2
+    )
+
+    if stats["already_expired_batches"] > 0:
         stats["recommendations"].append({
-            "type": "urgent",
-            "message": f"⚠️ {stats['critical_expiring_30d']} units expiring within 30 days! Immediate action required.",
-            "action": "Run flash sale, create bundles, or consider donation"
+            "type": "verification", "severity": "high",
+            "message": (
+                f"{stats['already_expired_batches']} batches are past expiry. "
+                f"Confirm they have been physically removed and reconciled."
+            ),
+            "action": "Open the verification queue",
         })
 
-    if stats["expired_stock"] > 0:
+    if stats["priority_queue_count"] > 0:
         stats["recommendations"].append({
-            "type": "critical",
-            "message": f"❌ {stats['expired_stock']} units have expired and must be disposed.",
-            "action": "Remove from inventory and update stock records"
+            "type": "verification", "severity": "high",
+            "message": (
+                f"{stats['priority_queue_count']} (batch, location) pairs are near "
+                f"expiry and have not been counted recently."
+            ),
+            "action": "Walk the shelf and verify",
         })
 
-    stats["recommendations"].append({
-        "type": "best_practice",
-        "message": "📦 FEFO (First Expiry First Out) is recommended for shelf stacking",
-        "action": "Always pick batches with earliest expiry dates first during order fulfillment"
-    })
+    if stats["locations_overdue"] > 0:
+        stats["recommendations"].append({
+            "type": "verification", "severity": "medium",
+            "message": (
+                f"{stats['locations_overdue']} location/batch rows are significantly "
+                f"overdue for verification."
+            ),
+            "action": "Schedule a verification round",
+        })
 
-    stats["total_at_risk_value"] = round(stats["total_at_risk_value"], 2)
+    if stats["locations_unverified"] > 0:
+        stats["recommendations"].append({
+            "type": "verification", "severity": "low",
+            "message": (
+                f"{stats['locations_unverified']} location/batch rows have never "
+                f"been physically counted."
+            ),
+            "action": "Include in the next verification round",
+        })
 
     return {"dashboard": stats, "as_of_date": today.isoformat()}
+
+
+
 
 # ------------------------------------------------------------------
 # SALES SUMMARY & TREND
