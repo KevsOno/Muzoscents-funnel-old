@@ -2326,8 +2326,19 @@ async def ensure_location_stocks_batch_backfill() -> None:
     resolves to a real inventory_batches row. New orphans cannot appear
     because the writers are batch-aware.
 
+    ── Step 3: constraint lock-in ──
+
+    Once every row has a batch_id, the column is flipped to NOT NULL.
+    That is the point of no return: a future code path that tries to
+    insert without a batch_id fails at the database, not silently at
+    read time. The DO block raises if a NULL somehow survived the
+    backfill — better to abort the boot than to apply a NOT NULL on a
+    column that still contains NULLs and then watch the first insert
+    blow up at runtime.
+
     Idempotent. Second run updates zero rows because the WHERE clause
-    filters on batch_id IS NULL.
+    filters on batch_id IS NULL, and the ALTER is skipped because
+    is_nullable is already 'NO'.
     ═══════════════════════════════════════════════════════════════════════
     """
     sql = """
@@ -2382,6 +2393,31 @@ async def ensure_location_stocks_batch_backfill() -> None:
       ) AS picked
      WHERE ls.id = picked.ls_id
        AND picked.batch_id IS NOT NULL;
+
+    -- ── 3. Lock in the invariant. ──
+    -- By now every row has a batch_id, so this is a no-op check plus
+    -- the constraint enforcement. Runs on every boot; the ALTER is a
+    -- no-op after the first pass because the column is already NOT NULL.
+    DO $$
+    BEGIN
+        IF EXISTS (
+            SELECT 1 FROM public.location_stocks WHERE batch_id IS NULL
+        ) THEN
+            RAISE EXCEPTION
+                'batch_id backfill did not complete: NULL rows remain';
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public'
+               AND table_name   = 'location_stocks'
+               AND column_name  = 'batch_id'
+               AND is_nullable  = 'NO'
+        ) THEN
+            ALTER TABLE public.location_stocks
+                ALTER COLUMN batch_id SET NOT NULL;
+        END IF;
+    END $$;
     """
     headers = {
         "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
@@ -2397,7 +2433,7 @@ async def ensure_location_stocks_batch_backfill() -> None:
     if resp.status_code not in (200, 204):
         logger.error(f"location_stocks batch backfill failed: {resp.text}")
         raise RuntimeError(f"location_stocks batch backfill failed: {resp.text}")
-    logger.info("location_stocks batch_id backfill complete")
+    logger.info("location_stocks batch_id backfill complete and NOT NULL enforced")
 
 
 
