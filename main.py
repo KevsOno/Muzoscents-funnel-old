@@ -13393,12 +13393,12 @@ async def get_expiring_products(
     """
     Batches approaching expiry, one row per (batch, location).
 
-    The list does NOT include recorded quantities. A quantity in a
-    scan-and-act list is an invitation to act on an estimate. The
-    operator sees: what product, which batch, when it expires, where
-    it lives, and how long since anyone counted it there. If they want
-    a number, they open the verification modal — where a count is the
-    next thing that happens anyway.
+    Each row carries BOTH the recorded quantity AND the verification
+    status of that (batch, location) pair. The frontend uses the
+    verification status to decide whether the quantity is presented
+    as a fact (status = 'current') or as a visual estimate (any other
+    status). The endpoint does not decide the visual treatment; it
+    publishes both facts and lets the UI render them.
 
     The freshness signal is location_stocks.last_verified_at. The
     batch-level last_verified_at is informational only and does not
@@ -13505,6 +13505,7 @@ async def get_expiring_products(
                 location_id_val = None
                 location_name = None
                 ls_verified_at = None
+                recorded_qty = 0
             else:
                 location_id_val = ls.get("location_id")
                 loc_embedded = ls.get("locations") or {}
@@ -13513,11 +13514,10 @@ async def get_expiring_products(
                     if isinstance(loc_embedded, dict) else None
                 )
                 ls_verified_at = ls.get("last_verified_at")
+                recorded_qty = int(ls.get("quantity") or 0)
 
             v_status, staleness_days = _verification_status(ls_verified_at, days_until)
 
-            # Counters are per (batch, location) row, except total_expiring
-            # which is per batch. Summary handles this below.
             if v_status in ("due", "overdue"):
                 needs_verification_count += 1
             elif v_status == "unverified":
@@ -13542,14 +13542,20 @@ async def get_expiring_products(
                 "location_id":         location_id_val,
                 "location_name":       location_name,
 
+                # ── Quantity, with the context needed to read it ──
+                # recorded_quantity is the number. verification_status
+                # tells the UI how to render it. The two travel
+                # together; the frontend is responsible for the
+                # interpretation.
+                "recorded_quantity":   recorded_qty,
+                "cost_price_naira":    float(batch.get("cost_price_naira") or 0),
+
                 # Per-location verification — the authoritative signal.
                 "verification_status": v_status,
                 "staleness_days":      staleness_days,
                 "last_verified_at":    ls_verified_at,
             })
 
-        # Per-batch counters for the summary (unfiltered by v_status so
-        # the summary reads the full picture, not the filtered view).
         if level == "critical":
             critical_count += 1
         elif level == "warning":
@@ -13557,7 +13563,6 @@ async def get_expiring_products(
         elif level == "info":
             info_count += 1
 
-    # Total unique batches, not rows.
     total_batches = len({b["id"] for b in batches})
 
     return {
