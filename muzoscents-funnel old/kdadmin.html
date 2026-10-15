@@ -528,11 +528,12 @@
                                     <th class="text-left p-3">Expiry</th>
                                     <th class="text-left p-3">Days</th>
                                     <th class="text-left p-3">Location</th>
+                                    <th class="text-right p-3">Qty</th>
                                     <th class="text-left p-3">Verification</th>
                                     <th class="text-left p-3">Action</th>
                                 </tr>
                             </thead>
-                            <tbody id="expiring-products-table"><tr><td colspan="7" class="text-center p-8 text-slate-400">Loading expiring products...</td></tr></tbody>
+                            <tbody id="expiring-products-table"><tr><td colspan="8" class="text-center p-8 text-slate-400">Loading expiring products...</td></tr></tbody>
                         </table>
                     </div>
                     <div class="mt-4 p-3 bg-amber-900/20 rounded-lg border border-amber-700/50 text-xs"><i class="fa-solid fa-lightbulb text-amber-400 mr-2"></i><strong class="text-amber-300">FEFO Best Practice:</strong> <span class="text-slate-300">Always use First Expiry First Out for picking. Products with earliest expiry dates should be sold first.</span></div>
@@ -2642,14 +2643,14 @@
                 renderExpiringTable(prods, data.summary);
             } catch (err) {
                 document.getElementById('expiring-products-table').innerHTML =
-                    `<tr><td colspan="7" class="text-center p-8 text-red-400">❌ ${escapeHtml(err.message)}</td></tr>`;
+                    `<tr><td colspan="8" class="text-center p-8 text-red-400">❌ ${escapeHtml(err.message)}</td></tr>`;
             }
         }
 
         function renderExpiringTable(prods, summary) {
             const tbody = document.getElementById('expiring-products-table');
             if (!prods || prods.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" class="text-center p-8 text-slate-400">✅ No products expiring within 180 days</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center p-8 text-slate-400">✅ No products expiring within 180 days</td></tr>';
                 return;
             }
             tbody.innerHTML = prods.map(p => {
@@ -2657,6 +2658,7 @@
                     p.alert_level === 'warning' ? 'bg-orange-900/50 text-orange-300' :
                     p.alert_level === 'info' ? 'bg-yellow-900/50 text-yellow-300' : 'bg-blue-900/50 text-blue-300';
 
+                // ── Verification badge ──
                 let verifyBadge = '';
                 let verifyClass = 'bg-slate-700 text-slate-300';
                 let verifyLabel = '';
@@ -2674,6 +2676,20 @@
                     verifyLabel = 'Never verified';
                 }
                 verifyBadge = `<span class="inline-flex px-2 py-1 rounded-full text-xs ${verifyClass}">${verifyLabel}</span>`;
+
+                // ── Quantity cell — Option 3 ──
+                // 'current'  → bold white, no prefix. The number is a
+                //              fact; someone counted it recently.
+                // everything → italic grey, prefixed "Est." The number
+                //              is the system's running estimate from
+                //              deduction rules, not a physical count.
+                const qty = p.recorded_quantity != null ? p.recorded_quantity : 0;
+                let qtyCell;
+                if (p.verification_status === 'current') {
+                    qtyCell = `<span class="text-white font-medium tabular-nums">${qty}</span>`;
+                } else {
+                    qtyCell = `<span class="text-slate-500 italic tabular-nums" title="Estimated from deductions. Not verified.">Est. ${qty}</span>`;
+                }
 
                 const batchId = p.batch_id || p.id;
                 const productId = p.inventory_id || p.id;
@@ -2695,6 +2711,7 @@
                         <td class="p-3">${expiryDate}</td>
                         <td class="p-3"><span class="inline-flex px-2 py-1 rounded-full text-xs ${alertClass}">${p.days_until_expiry}d</span></td>
                         <td class="p-3">${escapeHtml(locName)}</td>
+                        <td class="p-3 text-right">${qtyCell}</td>
                         <td class="p-3">${verifyBadge}</td>
                         <td class="p-3">
                             <button onclick="viewBatchDetails(this, ${batchId}, ${productId})"
@@ -2702,6 +2719,7 @@
                                     data-expiry="${expiryDate}"
                                     data-location-id="${locId}"
                                     data-location-name="${escapeHtml(locName)}"
+                                    data-recorded="${qty}"
                                     data-last-verified="${lastVerified}"
                                     data-staleness="${staleness}"
                                     data-verification-status="${vStatus}"
