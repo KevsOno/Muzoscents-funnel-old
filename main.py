@@ -6408,6 +6408,26 @@ def slugify(text: str) -> str:
     s = re.sub(r'-+', '-', s).strip('-')
     return s[:60]
 
+def _clean_optional_email(v: Optional[str]) -> Optional[str]:
+    """
+    Normalise an optional email string from user input.
+
+    - None  → None
+    - ""    → None  (empty input means "not set", not "empty string")
+    - "  x@y.z  " → "x@y.z"  (trim whitespace)
+
+    Any non-empty string is returned trimmed. No format validation —
+    the codebase treats all other email fields (profiles.email,
+    organisations.logistics_email) as plain strings, so this stays
+    consistent.
+    """
+    if v is None:
+        return None
+    if not isinstance(v, str):
+        return v
+    v = v.strip()
+    return v if v else None
+
 def escape_html(s: str) -> str:
     if not s:
         return ""
@@ -7198,6 +7218,16 @@ class LocationCreate(BaseModel):
     )
     is_warehouse: Optional[bool] = None  # deprecated, derived from type
 
+    # Per-location contact routing. These feed the daily advisory email
+    # fan-out (daily-advise edge function) and the inbound reply handler
+    # (sendgrid-inbound edge function). All optional; empty string is
+    # normalised to NULL on write.
+    manager_email:     Optional[str] = Field(None, max_length=200)
+    inventory_email:   Optional[str] = Field(None, max_length=200)
+    procurement_email: Optional[str] = Field(None, max_length=200)
+    auditor_email:     Optional[str] = Field(None, max_length=200)
+    dev_team:          Optional[str] = Field(None, max_length=200)
+
 class LocationUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=200)
     address: Optional[str] = None
@@ -7205,6 +7235,17 @@ class LocationUpdate(BaseModel):
     branch_id: Optional[str] = None
     is_warehouse: Optional[bool] = None
     is_active: Optional[bool] = None
+
+    # Same five fields as LocationCreate. Because these are `Optional`
+    # with an explicit default of None, the update endpoint treats an
+    # explicitly-sent null (or empty string) as "clear this email",
+    # and an omitted field as "leave unchanged". See update_location
+    # for the split handling.
+    manager_email:     Optional[str] = Field(None, max_length=200)
+    inventory_email:   Optional[str] = Field(None, max_length=200)
+    procurement_email: Optional[str] = Field(None, max_length=200)
+    auditor_email:     Optional[str] = Field(None, max_length=200)
+    dev_team:          Optional[str] = Field(None, max_length=200)
     
 class StockTransferRequest(BaseModel):
     from_location_id: Optional[str] = None   # locations.id is UUID
@@ -7428,7 +7469,6 @@ async def create_location(
 
     # ── Branch resolution ──
     if loc.branch_id:
-        # Caller supplied one — validate it belongs to this org.
         branch_check = await run_sync_db_call(
             client.table("branches")
             .select("id")
@@ -7444,7 +7484,6 @@ async def create_location(
             )
         resolved_branch = loc.branch_id
     else:
-        # Fall back to the org's default branch, seeding MAIN if needed.
         resolved_branch = await ensure_default_branch(org_id)
         if not resolved_branch:
             raise HTTPException(
@@ -7462,6 +7501,16 @@ async def create_location(
         # keep is_warehouse consistent with type for the legacy readers
         "is_warehouse": loc.type == "warehouse",
         "is_active":    True,
+
+        # Per-location email routing. Empty strings normalise to NULL
+        # so the daily-advise and sendgrid-inbound readers see a clean
+        # "not configured" state instead of an empty string.
+        "manager_email":     _clean_optional_email(loc.manager_email),
+        "inventory_email":   _clean_optional_email(loc.inventory_email),
+        "procurement_email": _clean_optional_email(loc.procurement_email),
+        "auditor_email":     _clean_optional_email(loc.auditor_email),
+        "dev_team":          _clean_optional_email(loc.dev_team),
+
         "created_at":   now,
         "updated_at":   now,
     }
@@ -7494,10 +7543,43 @@ async def update_location(
     if not existing.data:
         raise HTTPException(status_code=404, detail="Location not found")
 
-    update_data = {
-        k: v for k, v in loc.dict(exclude_unset=True).items()
-        if v is not None
+    # ── Build the update payload.
+    #
+    # Two semantics in one endpoint:
+    #
+    #   - The email fields treat an explicitly-sent null (or empty
+    #     string) as "clear this field". This is what lets an operator
+    #     remove a manager_email once it has been set. The distinction
+    #     matters because the alternative — treating null as "leave
+    #     unchanged" — makes it impossible to unset an email from the
+    #     admin UI.
+    #
+    #   - Every other field keeps the existing behaviour: null means
+    #     "leave unchanged". We do not want a partial update that
+    #     sends only `{ "manager_email": "x@y.z" }` to also null out
+    #     `address` and `type` simply because the client omitted them.
+    #
+    # Pydantic v1's exclude_unset gives us the caller's explicit intent:
+    # a field absent from the request body is excluded from the dict;
+    # a field present and set to null is included as None.
+    EMAIL_FIELDS = {
+        "manager_email",
+        "inventory_email",
+        "procurement_email",
+        "auditor_email",
+        "dev_team",
     }
+
+    raw = loc.dict(exclude_unset=True)
+    update_data: Dict[str, Any] = {}
+    for k, v in raw.items():
+        if k in EMAIL_FIELDS:
+            # "clear" is a legitimate value here.
+            update_data[k] = _clean_optional_email(v)
+        else:
+            # Preserve existing semantics: only non-None values update.
+            if v is not None:
+                update_data[k] = v
 
     # Validate branch_id if the caller is changing it.
     if "branch_id" in update_data:
