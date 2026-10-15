@@ -145,6 +145,7 @@ def _compute_migration_suite_hash() -> str:
     names = [
         "ensure_branches_table",
         "ensure_location_stocks_constraints",
+        "ensure_location_stocks_batch_backfill",
         "ensure_cost_price_column",
         "ensure_delivery_fee_columns",
         "ensure_org_delivery_columns",
@@ -2295,6 +2296,109 @@ async def ensure_location_stocks_constraints():
         "location_stocks reconciled: bad constraints dropped, batch-aware "
         "unique key installed, expiry_date backfilled from inventory_batches"
     )
+
+
+async def ensure_location_stocks_batch_backfill() -> None:
+    """
+    ═══════════════════════════════════════════════════════════════════════
+    BELT-AND-BRACES MIGRATION — 2026-10-15. DO NOT REVERT.
+
+    Backfill location_stocks.batch_id for legacy rows that predate the
+    batch-aware writers. Before the writers were fixed, several code
+    paths inserted into location_stocks without a batch_id, leaving the
+    stock physically real but invisible to every per-batch read.
+
+    Attachment rule, in preference order:
+
+      1. If the inventory has exactly one batch, attach the orphan row
+         to it. No ambiguity.
+
+      2. If the inventory has multiple batches, attach to the
+         earliest-expiring batch. Conservative — if any batch of this
+         SKU is expiring, the orphan stock gets flagged alongside it.
+
+      3. If the inventory has no batches at all, create a sentinel
+         'UNBATCHED' / '2099-12-31' batch for it, then attach the orphan
+         row to that. Same sentinel pattern the writers use for
+         non-expiring products.
+
+    After this runs, every location_stocks row has a batch_id that
+    resolves to a real inventory_batches row. New orphans cannot appear
+    because the writers are batch-aware.
+
+    Idempotent. Second run updates zero rows because the WHERE clause
+    filters on batch_id IS NULL.
+    ═══════════════════════════════════════════════════════════════════════
+    """
+    sql = """
+    -- ── 1. Create sentinel batches for inventories that have no batch. ──
+    -- Runs first so step 2's attachment has something to point at.
+    INSERT INTO public.inventory_batches (
+        inventory_id, batch_number, quantity, reserved_quantity,
+        expiry_date, cost_price_naira, created_at, updated_at
+    )
+    SELECT
+        i.id,
+        'UNBATCHED',
+        0,
+        0,
+        '2099-12-31',
+        COALESCE(i.cost_price_naira, 0),
+        NOW(),
+        NOW()
+      FROM public.inventory i
+     WHERE EXISTS (
+         SELECT 1 FROM public.location_stocks ls
+          WHERE ls.inventory_id = i.id AND ls.batch_id IS NULL
+     )
+       AND NOT EXISTS (
+         SELECT 1 FROM public.inventory_batches ib
+          WHERE ib.inventory_id = i.id
+     );
+
+    -- ── 2. Attach NULL-batch rows to a real batch. ──
+    -- Picks exactly one batch per orphan row: the earliest-expiring
+    -- batch of that inventory. If the sentinel was just created in
+    -- step 1, it will be picked only when it's the sole batch.
+    UPDATE public.location_stocks ls
+       SET batch_id    = picked.batch_id,
+           expiry_date = picked.expiry_date,
+           updated_at  = NOW()
+      FROM (
+        SELECT
+            ls_inner.id AS ls_id,
+            (SELECT ib.id
+               FROM public.inventory_batches ib
+              WHERE ib.inventory_id = ls_inner.inventory_id
+              ORDER BY ib.expiry_date ASC, ib.id ASC
+              LIMIT 1) AS batch_id,
+            (SELECT ib.expiry_date
+               FROM public.inventory_batches ib
+              WHERE ib.inventory_id = ls_inner.inventory_id
+              ORDER BY ib.expiry_date ASC, ib.id ASC
+              LIMIT 1) AS expiry_date
+          FROM public.location_stocks ls_inner
+         WHERE ls_inner.batch_id IS NULL
+      ) AS picked
+     WHERE ls.id = picked.ls_id
+       AND picked.batch_id IS NOT NULL;
+    """
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"location_stocks batch backfill failed: {resp.text}")
+        raise RuntimeError(f"location_stocks batch backfill failed: {resp.text}")
+    logger.info("location_stocks batch_id backfill complete")
+
 
 
 async def ensure_stock_transfer_rpcs():
@@ -4616,83 +4720,208 @@ async def ensure_rpc_functions():
         logger.error(f"Error creating get_waste_risk RPC: {e}")
 
     sql_resolve = """
-    CREATE OR REPLACE FUNCTION resolve_alert(
-        p_alert_id INTEGER,
-        p_action_type TEXT,
-        p_quantity INTEGER,
-        p_notes TEXT,
-        p_executed_by UUID,
-        p_dest_location_id INTEGER DEFAULT NULL
+    -- Drop every prior signature so the parameter types are unambiguous.
+    DROP FUNCTION IF EXISTS public.resolve_alert(INTEGER, TEXT, INTEGER, TEXT, UUID, INTEGER);
+    DROP FUNCTION IF EXISTS public.resolve_alert(INTEGER, TEXT, INTEGER, TEXT, UUID);
+    DROP FUNCTION IF EXISTS public.resolve_alert(INTEGER, TEXT, INTEGER, TEXT, UUID, UUID);
+
+    CREATE OR REPLACE FUNCTION public.resolve_alert(
+        p_alert_id          INTEGER,
+        p_action_type       TEXT,
+        p_quantity          INTEGER,
+        p_notes             TEXT,
+        p_executed_by       UUID,
+        p_dest_location_id  UUID DEFAULT NULL
     )
     RETURNS JSONB
     LANGUAGE plpgsql
+    SECURITY INVOKER
     AS $$
     DECLARE
-        v_alert_record RECORD;
-        v_result JSONB;
+        v_alert          RECORD;
+        v_org_id         UUID;
+        v_batch_id       INTEGER;
+        v_current_qty    INTEGER;
     BEGIN
-        SELECT * INTO v_alert_record 
-        FROM alert_log 
-        WHERE id = p_alert_id 
-        AND action_taken IS NULL;
-        
+        -- Lock the alert and fetch everything in one shot.
+        SELECT *
+          INTO v_alert
+          FROM public.alert_log
+         WHERE id = p_alert_id
+           AND action_taken IS NULL
+           FOR UPDATE;
+
         IF NOT FOUND THEN
-            RETURN jsonb_build_object('success', false, 'error', 'Alert not found or already resolved');
-        END IF;
-        
-        UPDATE alert_log 
-        SET 
-            action_taken = p_notes,
-            action_date = NOW(),
-            action_type = p_action_type,
-            affected_quantity = p_quantity,
-            updated_at = NOW()
-        WHERE id = p_alert_id;
-        
-        IF p_action_type = 'TRANSFER' AND p_dest_location_id IS NOT NULL THEN
-            INSERT INTO transfer_suggestions (
-                from_location_id,
-                to_location_id,
-                product_id,
-                batch,
-                quantity,
-                urgency,
-                reason,
-                status,
-                created_at,
-                updated_at
-            ) VALUES (
-                v_alert_record.location_id,
-                p_dest_location_id,
-                v_alert_record.product_id,
-                v_alert_record.batch,
-                p_quantity,
-                'CRITICAL',
-                'Auto-created from alert ' || p_alert_id,
-                'Pending',
-                NOW(),
-                NOW()
+            RETURN jsonb_build_object(
+                'success', false,
+                'error',   'Alert not found or already resolved'
             );
         END IF;
-        
-        IF p_action_type IN ('CONSUME', 'DISPOSE') THEN
-            UPDATE inventory 
-            SET quantity = quantity - p_quantity,
-                updated_at = NOW()
-            WHERE product_id = v_alert_record.product_id 
-            AND location_id = v_alert_record.location_id
-            AND (batch = v_alert_record.batch OR v_alert_record.batch IS NULL);
+
+        -- Resolve the org through the inventory_id linkage, which is the
+        -- authoritative path for this alert. alert_log.org_id exists but
+        -- is populated only for alerts created after the multi-tenant lift;
+        -- legacy rows may have NULL. Resolving via inventory always works.
+        SELECT i.org_id
+          INTO v_org_id
+          FROM public.inventory i
+         WHERE i.id = v_alert.inventory_id;
+
+        IF v_org_id IS NULL THEN
+            RETURN jsonb_build_object(
+                'success', false,
+                'error',   'Could not resolve organisation for this alert'
+            );
         END IF;
-        
+
+        -- ── TRANSFER branch: writes a suggestion, moves no stock ──
+        IF p_action_type = 'TRANSFER' AND p_dest_location_id IS NOT NULL THEN
+
+            IF NOT EXISTS (
+                SELECT 1 FROM public.locations
+                 WHERE id = p_dest_location_id AND org_id = v_org_id
+            ) THEN
+                RETURN jsonb_build_object(
+                    'success', false,
+                    'error',   'Destination location not found in this organisation'
+                );
+            END IF;
+
+            IF v_alert.location_id IS NULL OR NOT EXISTS (
+                SELECT 1 FROM public.locations
+                 WHERE id = v_alert.location_id AND org_id = v_org_id
+            ) THEN
+                RETURN jsonb_build_object(
+                    'success', false,
+                    'error',   'Source location on the alert is invalid'
+                );
+            END IF;
+
+            -- Idempotent: skip if an identical pending suggestion exists.
+            IF NOT EXISTS (
+                SELECT 1 FROM public.transfer_suggestions
+                 WHERE org_id           = v_org_id
+                   AND from_location_id = v_alert.location_id
+                   AND to_location_id   = p_dest_location_id
+                   AND inventory_id     = v_alert.inventory_id
+                   AND status IN ('Pending', 'Partial')
+            ) THEN
+                INSERT INTO public.transfer_suggestions (
+                    org_id, from_location_id, to_location_id,
+                    inventory_id, batch, quantity, completed_quantity,
+                    urgency, reason, status, notes,
+                    created_at, updated_at, last_updated
+                ) VALUES (
+                    v_org_id,
+                    v_alert.location_id,
+                    p_dest_location_id,
+                    v_alert.inventory_id,
+                    v_alert.batch,
+                    COALESCE(p_quantity, v_alert.affected_quantity, 1),
+                    0,
+                    'CRITICAL',
+                    'Auto-created from alert ' || p_alert_id,
+                    'Pending',
+                    p_notes,
+                    NOW(), NOW(), NOW()
+                );
+            END IF;
+        END IF;
+
+        -- ── CONSUME / DISPOSE branch: physically removes stock ──
+        IF p_action_type IN ('CONSUME', 'DISPOSE') THEN
+
+            IF v_alert.location_id IS NULL THEN
+                RETURN jsonb_build_object(
+                    'success', false,
+                    'error',   'Alert has no location_id; cannot decrement location_stocks'
+                );
+            END IF;
+
+            -- Resolve the batch_id from the batch_number stored on the alert.
+            SELECT ib.id
+              INTO v_batch_id
+              FROM public.inventory_batches ib
+             WHERE ib.inventory_id = v_alert.inventory_id
+               AND ib.batch_number = v_alert.batch
+             LIMIT 1;
+
+            IF v_batch_id IS NULL THEN
+                RETURN jsonb_build_object(
+                    'success', false,
+                    'error',
+                    'Could not resolve batch ' || COALESCE(v_alert.batch, '(null)') ||
+                    ' for inventory ' || v_alert.inventory_id
+                );
+            END IF;
+
+            SELECT quantity
+              INTO v_current_qty
+              FROM public.location_stocks
+             WHERE location_id  = v_alert.location_id
+               AND inventory_id = v_alert.inventory_id
+               AND batch_id     = v_batch_id
+               FOR UPDATE;
+
+            IF NOT FOUND THEN
+                RETURN jsonb_build_object(
+                    'success', false,
+                    'error',   'No stock row for this alert''s location/batch'
+                );
+            END IF;
+
+            IF v_current_qty < p_quantity THEN
+                RETURN jsonb_build_object(
+                    'success', false,
+                    'error',
+                    'Cannot ' || p_action_type || ' ' || p_quantity ||
+                    ' units; only ' || v_current_qty || ' available'
+                );
+            END IF;
+
+            IF v_current_qty = p_quantity THEN
+                DELETE FROM public.location_stocks
+                 WHERE location_id  = v_alert.location_id
+                   AND inventory_id = v_alert.inventory_id
+                   AND batch_id     = v_batch_id;
+            ELSE
+                UPDATE public.location_stocks
+                   SET quantity   = quantity - p_quantity,
+                       updated_at = NOW()
+                 WHERE location_id  = v_alert.location_id
+                   AND inventory_id = v_alert.inventory_id
+                   AND batch_id     = v_batch_id;
+            END IF;
+
+            -- Keep inventory.current_qty in step with the sum of location_stocks.
+            UPDATE public.inventory
+               SET current_qty = GREATEST(0, COALESCE(current_qty, 0) - p_quantity),
+                   updated_at  = NOW()
+             WHERE id = v_alert.inventory_id;
+        END IF;
+
+        -- ── Mark the alert resolved, whatever the branch ──
+        UPDATE public.alert_log
+           SET action_taken      = COALESCE(NULLIF(p_notes, ''), p_action_type),
+               action_type       = p_action_type,
+               action_notes      = p_notes,
+               action_date       = NOW(),
+               affected_quantity = p_quantity,
+               updated_at        = NOW()
+         WHERE id = p_alert_id;
+
         RETURN jsonb_build_object(
-            'success', true,
+            'success',  true,
             'alert_id', p_alert_id,
-            'action', p_action_type,
+            'action',   p_action_type,
             'quantity', p_quantity,
-            'message', 'Alert resolved successfully'
+            'org_id',   v_org_id,
+            'message',  'Alert resolved successfully'
         );
     END;
     $$;
+
+    GRANT EXECUTE ON FUNCTION public.resolve_alert(INTEGER, TEXT, INTEGER, TEXT, UUID, UUID) TO service_role;
     """
     try:
         async with httpx.AsyncClient() as client:
@@ -4705,96 +4934,181 @@ async def ensure_rpc_functions():
         logger.error(f"Error creating resolve_alert RPC: {e}")
 
     sql_execute = """
-    CREATE OR REPLACE FUNCTION execute_transfer_suggestion(
+    DROP FUNCTION IF EXISTS public.execute_transfer_suggestion(INTEGER, INTEGER, TEXT, UUID);
+
+    CREATE OR REPLACE FUNCTION public.execute_transfer_suggestion(
         p_suggestion_id INTEGER,
-        p_quantity INTEGER,
-        p_notes TEXT,
-        p_executed_by UUID
+        p_quantity      INTEGER,
+        p_notes         TEXT,
+        p_executed_by   UUID
     )
     RETURNS JSONB
     LANGUAGE plpgsql
+    SECURITY INVOKER
     AS $$
     DECLARE
-        v_suggestion RECORD;
-        v_result JSONB;
+        v_suggestion    RECORD;
+        v_batch_id      INTEGER;
+        v_remaining     INTEGER;
+        v_source_qty    INTEGER;
+        v_new_completed INTEGER;
+        v_new_status    TEXT;
     BEGIN
-        SELECT * INTO v_suggestion 
-        FROM transfer_suggestions 
-        WHERE id = p_suggestion_id 
-        AND status IN ('Pending', 'Partial');
-        
-        IF NOT FOUND THEN
-            RETURN jsonb_build_object('success', false, 'error', 'Suggestion not found or already completed');
+        IF p_quantity IS NULL OR p_quantity <= 0 THEN
+            RETURN jsonb_build_object('success', false, 'error', 'Quantity must be positive');
         END IF;
-        
-        IF p_quantity > (v_suggestion.quantity - v_suggestion.completed_quantity) THEN
+
+        SELECT *
+          INTO v_suggestion
+          FROM public.transfer_suggestions
+         WHERE id = p_suggestion_id
+           AND status IN ('Pending', 'Partial')
+           FOR UPDATE;
+
+        IF NOT FOUND THEN
             RETURN jsonb_build_object(
-                'success', false, 
-                'error', 'Quantity exceeds remaining amount',
-                'remaining', (v_suggestion.quantity - v_suggestion.completed_quantity)
+                'success', false,
+                'error',   'Suggestion not found or already completed'
             );
         END IF;
-        
-        UPDATE inventory 
-        SET quantity = quantity - p_quantity,
-            updated_at = NOW()
-        WHERE product_id = v_suggestion.product_id 
-        AND location_id = v_suggestion.from_location_id
-        AND (batch = v_suggestion.batch OR v_suggestion.batch IS NULL)
-        AND quantity >= p_quantity;
-        
-        IF NOT FOUND THEN
-            RETURN jsonb_build_object('success', false, 'error', 'Insufficient stock at source location');
+
+        v_remaining := COALESCE(v_suggestion.quantity, 0)
+                     - COALESCE(v_suggestion.completed_quantity, 0);
+
+        IF p_quantity > v_remaining THEN
+            RETURN jsonb_build_object(
+                'success',   false,
+                'error',     'Quantity exceeds remaining amount',
+                'remaining', v_remaining
+            );
         END IF;
-        
-        INSERT INTO inventory (
-            location_id,
-            product_id,
-            batch,
-            quantity,
-            expiry_date,
-            created_at,
-            updated_at
-        ) VALUES (
-            v_suggestion.to_location_id,
-            v_suggestion.product_id,
-            v_suggestion.batch,
-            p_quantity,
-            (SELECT expiry_date FROM inventory 
-             WHERE product_id = v_suggestion.product_id 
-             AND location_id = v_suggestion.from_location_id
-             AND (batch = v_suggestion.batch OR v_suggestion.batch IS NULL)
-             LIMIT 1),
-            NOW(),
-            NOW()
-        ) ON CONFLICT (location_id, product_id, batch) 
-        DO UPDATE SET quantity = inventory.quantity + p_quantity;
-        
-        UPDATE transfer_suggestions 
-        SET 
-            completed_quantity = completed_quantity + p_quantity,
-            status = CASE 
-                WHEN completed_quantity + p_quantity >= quantity THEN 'Complete'
-                ELSE 'Partial'
-            END,
-            notes = COALESCE(notes, '') || ' | Executed: ' || p_notes,
-            last_updated = NOW(),
-            updated_at = NOW()
-        WHERE id = p_suggestion_id;
-        
+
+        -- Resolve the source batch_id from the batch_number on the suggestion.
+        SELECT ib.id
+          INTO v_batch_id
+          FROM public.inventory_batches ib
+         WHERE ib.inventory_id = v_suggestion.inventory_id
+           AND ib.batch_number = v_suggestion.batch
+         LIMIT 1;
+
+        IF v_batch_id IS NULL THEN
+            RETURN jsonb_build_object(
+                'success', false,
+                'error',
+                'Could not resolve batch ' || COALESCE(v_suggestion.batch, '(null)') ||
+                ' for inventory ' || v_suggestion.inventory_id
+            );
+        END IF;
+
+        -- ── Decrement the source location_stocks row ──
+        IF v_suggestion.from_location_id IS NOT NULL THEN
+            SELECT quantity
+              INTO v_source_qty
+              FROM public.location_stocks
+             WHERE location_id  = v_suggestion.from_location_id
+               AND inventory_id = v_suggestion.inventory_id
+               AND batch_id     = v_batch_id
+               FOR UPDATE;
+
+            IF NOT FOUND THEN
+                RETURN jsonb_build_object(
+                    'success', false,
+                    'error',   'No stock row at source location for this batch'
+                );
+            END IF;
+
+            IF v_source_qty < p_quantity THEN
+                RETURN jsonb_build_object(
+                    'success',   false,
+                    'error',     'Insufficient stock at source location',
+                    'available', v_source_qty,
+                    'requested', p_quantity
+                );
+            END IF;
+
+            IF v_source_qty = p_quantity THEN
+                DELETE FROM public.location_stocks
+                 WHERE location_id  = v_suggestion.from_location_id
+                   AND inventory_id = v_suggestion.inventory_id
+                   AND batch_id     = v_batch_id;
+            ELSE
+                UPDATE public.location_stocks
+                   SET quantity   = quantity - p_quantity,
+                       updated_at = NOW()
+                 WHERE location_id  = v_suggestion.from_location_id
+                   AND inventory_id = v_suggestion.inventory_id
+                   AND batch_id     = v_batch_id;
+            END IF;
+        END IF;
+
+        -- ── Increment the destination location_stocks row ──
+        -- Batch identity is preserved across the move: same batch_id, same
+        -- expiry_date on the destination row. This is what makes FEFO work
+        -- at the destination after the transfer.
+        IF v_suggestion.to_location_id IS NOT NULL THEN
+            IF EXISTS (
+                SELECT 1 FROM public.location_stocks
+                 WHERE location_id  = v_suggestion.to_location_id
+                   AND inventory_id = v_suggestion.inventory_id
+                   AND batch_id     = v_batch_id
+            ) THEN
+                UPDATE public.location_stocks
+                   SET quantity   = quantity + p_quantity,
+                       updated_at = NOW()
+                 WHERE location_id  = v_suggestion.to_location_id
+                   AND inventory_id = v_suggestion.inventory_id
+                   AND batch_id     = v_batch_id;
+            ELSE
+                INSERT INTO public.location_stocks (
+                    location_id, inventory_id, batch_id,
+                    quantity, reserved_quantity, expiry_date, updated_at
+                )
+                SELECT
+                    v_suggestion.to_location_id,
+                    v_suggestion.inventory_id,
+                    v_batch_id,
+                    p_quantity,
+                    0,
+                    ib.expiry_date,
+                    NOW()
+                  FROM public.inventory_batches ib
+                 WHERE ib.id = v_batch_id;
+            END IF;
+        END IF;
+
+        -- Note: inventory.current_qty is unchanged. A transfer moves stock
+        -- between locations; the org-wide total is conserved.
+
+        v_new_completed := COALESCE(v_suggestion.completed_quantity, 0) + p_quantity;
+        v_new_status    := CASE
+                             WHEN v_new_completed >= v_suggestion.quantity THEN 'Complete'
+                             ELSE 'Partial'
+                           END;
+
+        UPDATE public.transfer_suggestions
+           SET completed_quantity = v_new_completed,
+               status             = v_new_status,
+               notes              = CASE
+                                      WHEN notes IS NULL OR notes = '' THEN 'Executed: ' || COALESCE(p_notes, '')
+                                      ELSE notes || ' | Executed: ' || COALESCE(p_notes, '')
+                                    END || ' (' || p_quantity || ' units)',
+               last_updated       = NOW(),
+               updated_at         = NOW()
+         WHERE id = p_suggestion_id;
+
         RETURN jsonb_build_object(
-            'success', true,
-            'suggestion_id', p_suggestion_id,
+            'success',           true,
+            'suggestion_id',     p_suggestion_id,
             'quantity_executed', p_quantity,
-            'new_status', CASE 
-                WHEN v_suggestion.completed_quantity + p_quantity >= v_suggestion.quantity 
-                THEN 'Complete'
-                ELSE 'Partial'
-            END,
-            'message', 'Transfer executed successfully'
+            'new_status',        v_new_status,
+            'new_completed',     v_new_completed,
+            'batch_id',          v_batch_id,
+            'message',           'Transfer executed successfully'
         );
     END;
     $$;
+
+    GRANT EXECUTE ON FUNCTION public.execute_transfer_suggestion(INTEGER, INTEGER, TEXT, UUID) TO service_role;
     """
     try:
         async with httpx.AsyncClient() as client:
@@ -5239,6 +5553,7 @@ async def startup_event():
 
         await ensure_branches_table()
         await ensure_location_stocks_constraints()
+        await ensure_location_stocks_batch_backfill()
         await ensure_cost_price_column()
         await ensure_delivery_fee_columns()
         await ensure_org_delivery_columns()
@@ -5342,6 +5657,7 @@ async def startup_event():
 
         await ensure_branches_table()
         await ensure_location_stocks_constraints()
+        await ensure_location_stocks_batch_backfill()
         await ensure_cost_price_column()
         await ensure_delivery_fee_columns()
         await ensure_org_delivery_columns()
@@ -16628,16 +16944,18 @@ async def resolve_alert(
     request: Request,
     alert_id: int,
     action_data: dict,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
+    user_data: Tuple[str, str, str] = Depends(
+        require_role(["owner", "admin", "inventory_manager"])
+    ),
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     user_id, org_id, _ = user_data
     client = get_supabase()
 
-    # Ownership check first
+    # Ownership check first, using the admin-free read so RLS doesn't hide it.
     existing = await run_sync_db_call(
         client.table("alert_log")
-        .select("id")
+        .select("id, action_taken")
         .eq("id", alert_id)
         .eq("org_id", org_id)
         .maybe_single()
@@ -16646,17 +16964,48 @@ async def resolve_alert(
     if not existing or not existing.data:
         raise HTTPException(status_code=404, detail="Alert not found")
 
-    try:
-        await run_sync_db_call(
-            client.table("alert_log").update({
-                "action_taken": action_data.get("action_type", "ACKNOWLEDGE"),
-                "action_date": datetime.now(timezone.utc).isoformat(),
-                "action_notes": action_data.get("notes", f"Resolved by {user_id}")
-            }).eq("id", alert_id).eq("org_id", org_id).execute
+    action_type = (action_data.get("action_type") or "ACKNOWLEDGE").upper()
+    quantity    = int(action_data.get("quantity") or 0)
+    notes       = action_data.get("notes") or ""
+    dest_loc_id = action_data.get("dest_location_id")
+
+    # CONSUME / DISPOSE must carry a positive quantity, because they
+    # physically decrement stock.
+    if action_type in ("CONSUME", "DISPOSE") and quantity <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{action_type} requires a positive quantity",
         )
-        return {"success": True, "message": f"Alert {alert_id} resolved successfully"}
+
+    # TRANSFER must carry a destination location.
+    if action_type == "TRANSFER" and not dest_loc_id:
+        raise HTTPException(
+            status_code=400,
+            detail="TRANSFER requires dest_location_id",
+        )
+
+    try:
+        rpc_resp = await run_sync_db_call(
+            client.rpc("resolve_alert", {
+                "p_alert_id":         alert_id,
+                "p_action_type":      action_type,
+                "p_quantity":         quantity,
+                "p_notes":            notes,
+                "p_executed_by":      user_id,
+                "p_dest_location_id": dest_loc_id,
+            }).execute
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to resolve alert: {str(e)}")
+        logger.error(f"resolve_alert RPC failed for alert {alert_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to resolve alert: {e}")
+
+    result = rpc_resp.data or {}
+    if not result.get("success", False):
+        raise HTTPException(
+            status_code=400,
+            detail=result.get("error", "Unknown error resolving alert"),
+        )
+    return result
 
 
 # ============================================================
