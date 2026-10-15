@@ -4477,25 +4477,32 @@ async def ensure_product_risk_view():
         inv.org_id                            AS org_id,
         inv.description                       AS product_name,
         inv.item_code                         AS sku,
-        inv.batch_number                      AS batch,
+        ib.batch_number                       AS batch,
         inv.current_qty::integer              AS quantity,
         (inv.current_qty * inv.cost_price_naira) AS financial_value,
-        inv.expiry_date                       AS expiry_date,
-        (inv.expiry_date - CURRENT_DATE)      AS days_to_expiry,
+        ib.expiry_date                        AS expiry_date,
+        (ib.expiry_date - CURRENT_DATE)       AS days_to_expiry,
         CASE
-            WHEN (inv.expiry_date - CURRENT_DATE) <= 120 THEN 100
-            WHEN (inv.expiry_date - CURRENT_DATE) <= 180 THEN 90
-            WHEN (inv.expiry_date - CURRENT_DATE) <= 270 THEN 75
-            WHEN (inv.expiry_date - CURRENT_DATE) <= 365 THEN 40
+            WHEN (ib.expiry_date - CURRENT_DATE) <= 120 THEN 100
+            WHEN (ib.expiry_date - CURRENT_DATE) <= 180 THEN 90
+            WHEN (ib.expiry_date - CURRENT_DATE) <= 270 THEN 75
+            WHEN (ib.expiry_date - CURRENT_DATE) <= 365 THEN 40
             ELSE 10
         END                                   AS risk_score,
         CASE
-            WHEN (inv.expiry_date - CURRENT_DATE) <= 120 THEN 'CRITICAL'
-            WHEN (inv.expiry_date - CURRENT_DATE) <= 180 THEN 'HIGH'
-            WHEN (inv.expiry_date - CURRENT_DATE) <= 270 THEN 'MODERATE'
+            WHEN (ib.expiry_date - CURRENT_DATE) <= 120 THEN 'CRITICAL'
+            WHEN (ib.expiry_date - CURRENT_DATE) <= 180 THEN 'HIGH'
+            WHEN (ib.expiry_date - CURRENT_DATE) <= 270 THEN 'MODERATE'
             ELSE 'LOW'
         END                                   AS risk_level
       FROM public.inventory inv
+      LEFT JOIN LATERAL (
+          SELECT ib_inner.batch_number, ib_inner.expiry_date
+            FROM public.inventory_batches ib_inner
+           WHERE ib_inner.inventory_id = inv.id
+           ORDER BY ib_inner.expiry_date ASC
+           LIMIT 1
+      ) ib ON TRUE
      WHERE COALESCE(inv.current_qty, 0) > 0;
     """
 
@@ -11507,18 +11514,17 @@ async def create_inventory_item(
     data["created_at"] = datetime.now(timezone.utc).isoformat()
     data["updated_at"] = datetime.now(timezone.utc).isoformat()
 
-    # Keep the legacy single-batch fields on the inventory row in sync
-    # with what the batch table will hold, so any older reader that
-    # still consults inventory.expiry_date / inventory.batch_number
-    # sees a sensible value. These fields are deprecated; the batch
-    # table is authoritative.
-    expiry_date = data.get("expiry_date")
-    batch_number = data.get("batch_number")
-    lot_number = data.get("lot_number")
+    # Deprecated columns: strip from the inventory payload before insert.
+    # The batch table (inventory_batches) is the authoritative home for
+    # expiry and batch identity. Existing clients still send these on the
+    # Pydantic model; the values are read into locals below and routed
+    # into the batch resolver, but never written to inventory.
+    expiry_date  = data.pop("expiry_date", None)
+    batch_number = data.pop("batch_number", None)
+    lot_number   = data.get("lot_number")
 
     if expiry_date and not batch_number:
         batch_number = await get_next_auto_batch_number()
-        data["batch_number"] = batch_number
         if not lot_number:
             lot_number = "LEGACY-IMPORT"
             data["lot_number"] = lot_number
@@ -11529,9 +11535,6 @@ async def create_inventory_item(
     new_inv = inv_result.data[0]
 
     # ── Resolve or create the batch ──
-    # This is the single write path that owns batch creation. It picks
-    # up an existing batch if (inventory_id, batch_number) already exists,
-    # otherwise inserts one. Non-expiring products go through the sentinel.
     batch_row = await _resolve_or_create_batch(
         client=client,
         inventory_id=new_inv["id"],
@@ -11562,7 +11565,6 @@ async def create_inventory_item(
                 inventory_id=new_inv["id"],
                 batch_id=batch_row["id"],
                 quantity_delta=int(data.get("current_qty") or 0),
-                expiry_date=batch_row.get("expiry_date"),
             )
     except Exception as loc_err:
         logger.error(f"Failed to create location stock for inv={new_inv['id']}: {loc_err}")
@@ -11582,7 +11584,7 @@ async def update_inventory(
 
     existing = await run_sync_db_call(
         client.table("inventory")
-        .select("id, expiry_date, batch_number, current_qty")
+        .select("id, current_qty")
         .eq("id", item_id)
         .eq("org_id", org_id)
         .maybe_single()
@@ -11593,59 +11595,56 @@ async def update_inventory(
         raise HTTPException(status_code=404, detail="Inventory item not found")
 
     update_data = {k: v for k, v in item.dict().items() if v is not None}
+    # Deprecated columns: never write them back to inventory. The batch
+    # table is authoritative. Existing clients still send them; the
+    # values are read from the Pydantic model directly and routed into
+    # the batch resolver.
+    update_data.pop("expiry_date", None)
+    update_data.pop("batch_number", None)
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
 
-    new_expiry = update_data.get("expiry_date")
-    new_batch  = update_data.get("batch_number")
-    new_lot    = update_data.get("lot_number")
+    new_expiry = item.expiry_date
+    new_batch  = item.batch_number
+    new_lot    = item.lot_number
 
     old_qty = int(existing.data.get("current_qty") or 0)
-    new_qty = int(update_data.get("current_qty", old_qty))
+    new_qty = int(item.current_qty if item.current_qty is not None else old_qty)
 
-    # ── Determine which batch the location_stocks delta should apply to. ──
-    # Precedence: caller-named batch > inventory row's batch_number >
-    # any existing batch for this inventory > new sentinel/auto batch.
-    target_batch_number = new_batch or existing.data.get("batch_number")
+    # ── Determine which batch the location_stocks delta applies to. ──
+    # Precedence: caller-named batch > earliest-expiring existing batch
+    # for this inventory. Replaces the deprecated inventory.batch_number
+    # read with a lookup against the authoritative inventory_batches.
+    target_batch_number = new_batch
+    resolved_expiry     = new_expiry
     if not target_batch_number:
-        any_batch = await run_sync_db_call(
+        current_batch_res = await run_sync_db_call(
             client.table("inventory_batches")
-            .select("batch_number")
+            .select("batch_number, expiry_date")
             .eq("inventory_id", item_id)
+            .order("expiry_date", desc=False)
             .limit(1)
             .execute
         )
-        if any_batch and any_batch.data:
-            target_batch_number = any_batch.data[0]["batch_number"]
+        if current_batch_res and current_batch_res.data:
+            target_batch_number = current_batch_res.data[0].get("batch_number")
+            if not resolved_expiry:
+                resolved_expiry = current_batch_res.data[0].get("expiry_date")
 
     # ── Resolve or create the batch through the shared helper. ──
-    # Same code path used by create_inventory_item and bulk upload.
-    # This closes the batch-uniqueness and batch-existence invariants
-    # for the update path too. received_quantity=0 because the batch's
-    # own quantity is not what we are changing here — location_stocks
-    # carries the physical count.
     batch_row = await _resolve_or_create_batch(
         client=client,
         inventory_id=item_id,
         batch_number=target_batch_number,
-        expiry_date=new_expiry or existing.data.get("expiry_date"),
+        expiry_date=resolved_expiry,
         lot_number=new_lot,
-        manufacture_date=update_data.get("manufacture_date"),
-        cost_price_naira=update_data.get("cost_price_naira"),
-        supplier_name=update_data.get("supplier_name"),
-        supplier_invoice=update_data.get("supplier_invoice"),
+        manufacture_date=item.manufacture_date,
+        cost_price_naira=item.cost_price_naira,
+        supplier_name=item.supplier_name,
+        supplier_invoice=item.supplier_invoice,
         received_quantity=0,
     )
-    # Keep the deprecated legacy column in sync with what the batch
-    # table now holds, so any older reader sees a consistent value.
-    update_data["batch_number"] = batch_row.get("batch_number")
 
     # ── Apply the location_stocks delta FIRST. ──
-    # This is the drift fix. Without it, editing current_qty on the
-    # inventory row leaves location_stocks untouched and the two
-    # numbers diverge. We apply the delta before the inventory row
-    # is updated so a failure here (e.g. attempting to decrement a
-    # location_stocks row below zero) aborts the whole operation
-    # without leaving the inventory row's current_qty already changed.
     delta = new_qty - old_qty
     if delta != 0:
         try:
@@ -11664,7 +11663,6 @@ async def update_inventory(
                     inventory_id=item_id,
                     batch_id=batch_row["id"],
                     quantity_delta=delta,
-                    expiry_date=batch_row.get("expiry_date"),
                 )
             else:
                 logger.warning(
@@ -11672,17 +11670,12 @@ async def update_inventory(
                     f"location_stocks not reconciled for inv {item_id} (delta={delta})"
                 )
         except HTTPException:
-            # _write_location_stock raised 400 (decrement below zero).
-            # Do NOT update the inventory row — the delta was refused.
             raise
         except Exception as loc_err:
             logger.error(
                 f"update_inventory: failed to reconcile location_stocks "
                 f"for inv {item_id}: {loc_err}"
             )
-            # Non-HTTP failures are logged and swallowed. The inventory
-            # row update proceeds; drift is logged and can be healed by
-            # /admin/reconcile-stock.
 
     result = await run_sync_db_call(
         client.table("inventory")
@@ -12156,7 +12149,7 @@ async def bulk_upload_inventory(
                                 "old_cost": existing.get("cost_price_naira", 0),
                                 "new_cost": update_data["cost_price_naira"],
                                 "changed_at": datetime.now(timezone.utc).isoformat()
-                            }).execute
+                            }).execute()
                         )
                     except Exception as log_err:
                         logger.warning(f"Failed to log cost history for {item_code}: {log_err}")
@@ -12229,7 +12222,6 @@ async def bulk_upload_inventory(
                     inventory_id=new_inv["id"],
                     batch_id=batch_row["id"],
                     quantity_delta=int(new_item.get("current_qty") or 0),
-                    expiry_date=batch_row.get("expiry_date"),
                 )
             except Exception as loc_err:
                 logger.error(
@@ -12980,7 +12972,6 @@ async def _write_location_stock(
     inventory_id: int,
     batch_id: int,
     quantity_delta: int,
-    expiry_date: Optional[str] = None,
 ) -> None:
     """
     Add quantity_delta to the (location_id, inventory_id, batch_id) row,
@@ -12994,6 +12985,11 @@ async def _write_location_stock(
     A negative delta is allowed (decrement). A decrement that would take
     the row below zero raises. A row that hits zero is deleted rather
     than kept as a zero-qty ghost.
+
+    NOTE: location_stocks.expiry_date is deprecated — it is a
+    denormalized cache of inventory_batches.expiry_date and drifts.
+    Readers must join through inventory_batches. This writer no longer
+    populates the cache.
     """
     now_iso = datetime.now(timezone.utc).isoformat()
 
@@ -13046,9 +13042,8 @@ async def _write_location_stock(
             "batch_id":          batch_id,
             "quantity":          int(quantity_delta),
             "reserved_quantity": 0,
-            "expiry_date":       expiry_date,
             "updated_at":        now_iso,
-        }).execute
+        }).execute()
     )
 
 
@@ -13322,9 +13317,8 @@ async def add_inventory_batch(
                         "batch_id": result.data[0]["id"],
                         "quantity": batch.quantity,
                         "reserved_quantity": 0,
-                        "expiry_date": batch.expiry_date,
                         "updated_at": datetime.now(timezone.utc).isoformat()
-                    }).execute
+                    }).execute()
                 )
     except Exception as loc_err:
         logger.warning(f"Failed to assign batch to location: {loc_err}")
@@ -13578,9 +13572,8 @@ async def transfer_batch_between_locations(
                 "batch_id": transfer.batch_id,
                 "quantity": transfer.quantity,
                 "reserved_quantity": 0,
-                "expiry_date": batch.data["expiry_date"],
                 "updated_at": datetime.now(timezone.utc).isoformat()
-            }).execute
+            }).execute()
         )
 
     return {
