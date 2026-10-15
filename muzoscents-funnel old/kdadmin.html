@@ -480,22 +480,58 @@
                             <button id="show-fefo-modal" class="bg-indigo-600 hover:bg-indigo-700 text-sm px-4 py-2 rounded-lg"><i class="fa-solid fa-chart-line mr-1"></i> FEFO Recommendations</button>
                         </div>
                     </div>
-                    <!-- summary cards -->
+                    <!-- summary cards — Option A: counts of batches, not quantities -->
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                        <div class="bg-red-900/30 rounded-xl p-4 border border-red-700"><div class="text-2xl font-bold text-red-400" id="critical-30d-count">0</div><div class="text-xs text-slate-400">Expiring ≤120d</div></div>
-                        <div class="bg-orange-900/30 rounded-xl p-4 border border-orange-700"><div class="text-2xl font-bold text-orange-400" id="critical-60d-count">0</div><div class="text-xs text-slate-400">Expiring 121-180d</div></div>
-                        <div class="bg-yellow-900/30 rounded-xl p-4 border border-yellow-700"><div class="text-2xl font-bold text-yellow-400" id="warning-90d-count">0</div><div class="text-xs text-slate-400">Expiring 181-240d</div></div>
-                        <div class="bg-blue-900/30 rounded-xl p-4 border border-blue-700"><div class="text-2xl font-bold text-blue-400" id="info-180d-count">0</div><div class="text-xs text-slate-400">Expiring 241-360d</div></div>
+                        <div class="bg-red-900/30 rounded-xl p-4 border border-red-700">
+                            <div class="text-2xl font-bold text-red-400" id="critical-30d-count">0</div>
+                            <div class="text-xs text-slate-400">Critical (≤90d)</div>
+                        </div>
+                        <div class="bg-orange-900/30 rounded-xl p-4 border border-orange-700">
+                            <div class="text-2xl font-bold text-orange-400" id="critical-60d-count">0</div>
+                            <div class="text-xs text-slate-400">Warning (91–120d)</div>
+                        </div>
+                        <div class="bg-yellow-900/30 rounded-xl p-4 border border-yellow-700">
+                            <div class="text-2xl font-bold text-yellow-400" id="warning-90d-count">0</div>
+                            <div class="text-xs text-slate-400">Info (121–180d)</div>
+                        </div>
+                        <div class="bg-amber-900/30 rounded-xl p-4 border border-amber-600">
+                            <div class="text-2xl font-bold text-amber-400" id="needs-verification-count">0</div>
+                            <div class="text-xs text-slate-400">Needs verification</div>
+                        </div>
                     </div>
                     <!-- filters -->
                     <div class="flex flex-wrap gap-3 mb-4">
-                        <select id="expiry-alert-filter" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm"><option value="all">All Alerts</option><option value="critical">Critical (≤120d)</option><option value="warning">Warning (121-180d)</option><option value="info">Info (181-240d)</option></select>
-                        <select id="expiry-location-filter" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm"><option value="">All Locations</option></select>
+                        <select id="expiry-alert-filter" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
+                            <option value="all">All Alerts</option>
+                            <option value="critical">Critical (≤90d)</option>
+                            <option value="warning">Warning (91–120d)</option>
+                            <option value="info">Info (121–180d)</option>
+                        </select>
+                        <select id="expiry-verification-filter" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
+                            <option value="">All Verification</option>
+                            <option value="current">Current</option>
+                            <option value="due">Due for verification</option>
+                            <option value="overdue">Overdue</option>
+                            <option value="unverified">Never verified</option>
+                        </select>
+                        <select id="expiry-location-filter" class="bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm">
+                            <option value="">All Locations</option>
+                        </select>
                     </div>
                     <!-- table -->
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm">
-                            <thead class="bg-slate-900/50"><tr class="border-b border-slate-700"><th class="text-left p-3">Product</th><th class="text-left p-3">Batch #</th><th class="text-left p-3">Expiry Date</th><th class="text-left p-3">Days Left</th><th class="text-left p-3">Stock</th><th class="text-left p-3">Location</th><th class="text-left p-3">Actions</th></tr></thead>
+                            <thead class="bg-slate-900/50">
+                                <tr class="border-b border-slate-700">
+                                    <th class="text-left p-3">Product</th>
+                                    <th class="text-left p-3">Batch #</th>
+                                    <th class="text-left p-3">Expiry</th>
+                                    <th class="text-left p-3">Days</th>
+                                    <th class="text-left p-3">Location</th>
+                                    <th class="text-left p-3">Verification</th>
+                                    <th class="text-left p-3">Action</th>
+                                </tr>
+                            </thead>
                             <tbody id="expiring-products-table"><tr><td colspan="7" class="text-center p-8 text-slate-400">Loading expiring products...</td></tr></tbody>
                         </table>
                     </div>
@@ -2596,8 +2632,10 @@
         // ================================================================
         async function loadExpiringProducts() {
             const alertFilter = document.getElementById('expiry-alert-filter').value;
+            const verifyFilter = document.getElementById('expiry-verification-filter')?.value || '';
             let url = `/inventory/expiring-products?days_threshold=180`;
             if (alertFilter !== 'all') url += `&alert_level=${alertFilter}`;
+            if (verifyFilter) url += `&verification_status=${verifyFilter}`;
             try {
                 const data = await apiCall(url);
                 const prods = data.expiring_products || data || [];
@@ -2618,29 +2656,55 @@
                 const alertClass = p.alert_level === 'critical' ? 'bg-red-900/50 text-red-300' :
                     p.alert_level === 'warning' ? 'bg-orange-900/50 text-orange-300' :
                     p.alert_level === 'info' ? 'bg-yellow-900/50 text-yellow-300' : 'bg-blue-900/50 text-blue-300';
+
+                let verifyBadge = '';
+                let verifyClass = 'bg-slate-700 text-slate-300';
+                let verifyLabel = '';
+                if (p.verification_status === 'current') {
+                    verifyClass = 'bg-green-900/50 text-green-300';
+                    verifyLabel = `✓ ${p.staleness_days}d ago`;
+                } else if (p.verification_status === 'due') {
+                    verifyClass = 'bg-yellow-900/50 text-yellow-300';
+                    verifyLabel = `Due · ${p.staleness_days}d ago`;
+                } else if (p.verification_status === 'overdue') {
+                    verifyClass = 'bg-red-900/50 text-red-300';
+                    verifyLabel = `Overdue · ${p.staleness_days}d ago`;
+                } else {
+                    verifyClass = 'bg-slate-700 text-slate-400';
+                    verifyLabel = 'Never verified';
+                }
+                verifyBadge = `<span class="inline-flex px-2 py-1 rounded-full text-xs ${verifyClass}">${verifyLabel}</span>`;
+
                 const batchId = p.batch_id || p.id;
                 const productId = p.inventory_id || p.id;
-                const batchNumber = escapeHtml(p.batch_number || p.batch || '');
+                const batchNumber = escapeHtml(p.batch_number || '');
                 const expiryDate = p.expiry_date || '';
-                const quantity = p.current_stock || p.quantity || 0;
-                const cost = p.cost_price_naira || 0;
-                const supplier = escapeHtml(p.supplier_name || '');
-                const locName = p.location_name || getLocationName(p.location_id) || 'Main';
+                const locId = p.location_id || '';
+                const locName = p.location_name || '—';
+                const staleness = p.staleness_days != null ? p.staleness_days : '';
+                const lastVerified = p.last_verified_at || '';
+                const vStatus = p.verification_status || 'unverified';
+
                 return `
                     <tr class="border-b border-slate-700 hover:bg-slate-800/50">
-                        <td class="p-3"><div class="font-medium">${escapeHtml(p.product_name || p.description || 'Unknown')}</div><div class="text-xs text-slate-400">${escapeHtml(p.product_code || p.sku || '')}</div></td>
+                        <td class="p-3">
+                            <div class="font-medium">${escapeHtml(p.product_name || 'Unknown')}</div>
+                            <div class="text-xs text-slate-400">${escapeHtml(p.product_code || '')}</div>
+                        </td>
                         <td class="p-3 font-mono text-xs">${batchNumber}</td>
                         <td class="p-3">${expiryDate}</td>
-                        <td class="p-3"><span class="inline-flex px-2 py-1 rounded-full text-xs ${alertClass}">${p.days_until_expiry} days</span></td>
-                        <td class="p-3">${quantity}</td>
+                        <td class="p-3"><span class="inline-flex px-2 py-1 rounded-full text-xs ${alertClass}">${p.days_until_expiry}d</span></td>
                         <td class="p-3">${escapeHtml(locName)}</td>
+                        <td class="p-3">${verifyBadge}</td>
                         <td class="p-3">
-                            <button onclick="viewBatchDetails(this, ${batchId}, ${productId})" 
+                            <button onclick="viewBatchDetails(this, ${batchId}, ${productId})"
                                     data-batch-number="${batchNumber}"
                                     data-expiry="${expiryDate}"
-                                    data-quantity="${quantity}"
-                                    data-cost="${cost}"
-                                    data-supplier="${supplier}"
+                                    data-location-id="${locId}"
+                                    data-location-name="${escapeHtml(locName)}"
+                                    data-last-verified="${lastVerified}"
+                                    data-staleness="${staleness}"
+                                    data-verification-status="${vStatus}"
                                     class="text-blue-400 hover:text-blue-300">
                                 <i class="fa-solid fa-eye"></i>
                             </button>
@@ -2648,11 +2712,13 @@
                     </tr>
                 `;
             }).join('');
+
             if (summary) {
                 document.getElementById('critical-30d-count').innerText = summary.critical_count || 0;
-                document.getElementById('critical-60d-count').innerText = summary.critical_count || 0;
-                document.getElementById('warning-90d-count').innerText = summary.warning_count || 0;
-                document.getElementById('info-180d-count').innerText = summary.info_count || 0;
+                document.getElementById('critical-60d-count').innerText = summary.warning_count || 0;
+                document.getElementById('warning-90d-count').innerText = summary.info_count || 0;
+                const nvc = document.getElementById('needs-verification-count');
+                if (nvc) nvc.innerText = summary.needs_verification_count || 0;
             }
         }
 
@@ -2662,46 +2728,144 @@
         window.viewBatchDetails = async function(button, batchId, productId) {
             try {
                 const dataset = button.dataset;
-                let batchNumber = dataset.batchNumber || 'N/A';
-                let expiryDate = dataset.expiry || 'N/A';
-                let quantity = dataset.quantity || '0';
-                let cost = dataset.cost || '0';
-                let supplier = dataset.supplier || 'N/A';
+                const batchNumber = dataset.batchNumber || 'N/A';
+                const expiryDate = dataset.expiry || 'N/A';
+                const presetLocationId = dataset.locationId || '';
+                const presetLocationName = dataset.locationName || '';
+                const lastVerifiedAt = dataset.lastVerified || '';
+                const staleness = dataset.staleness || '';
+                const vStatus = dataset.verificationStatus || 'unverified';
 
-                let apiBatch = null;
-                try { apiBatch = await apiCall(`/inventory/batches/${batchId}`); } catch (e) {}
+                const product = productId ? products.find(p => p.id == productId) : null;
+                const productName = product ? product.description : 'N/A';
+                const productSku = product ? product.item_code : 'N/A';
 
-                if (apiBatch) {
-                    if (apiBatch.batch_number) batchNumber = apiBatch.batch_number;
-                    if (apiBatch.expiry_date) expiryDate = apiBatch.expiry_date;
-                    if (apiBatch.quantity !== undefined) quantity = apiBatch.quantity;
-                    if (apiBatch.cost_price_naira !== undefined) cost = apiBatch.cost_price_naira;
-                    else if (apiBatch.cost_price !== undefined) cost = apiBatch.cost_price;
-                    else if (apiBatch.cost !== undefined) cost = apiBatch.cost;
-                    if (apiBatch.supplier_name) supplier = apiBatch.supplier_name;
-                    else if (apiBatch.supplier) supplier = apiBatch.supplier;
+                let verifyLine = '';
+                if (vStatus === 'current') {
+                    verifyLine = `<span class="text-green-400">✓ Counted ${staleness} days ago</span>`;
+                } else if (vStatus === 'due') {
+                    verifyLine = `<span class="text-yellow-400">⚠ Due — last count ${staleness} days ago</span>`;
+                } else if (vStatus === 'overdue') {
+                    verifyLine = `<span class="text-red-400">✗ Overdue — last count ${staleness} days ago</span>`;
+                } else {
+                    verifyLine = `<span class="text-slate-400">— Never counted at this location</span>`;
                 }
 
-                let product = null;
-                if (productId) { product = products.find(p => p.id == productId); } else if (apiBatch && apiBatch
-                    .inventory_id) { product = products.find(p => p.id == apiBatch.inventory_id); }
-                const productName = product ? product.description : (apiBatch && (apiBatch.product_description || apiBatch
-                    .inventory_description)) || 'N/A';
-                const productSku = product ? product.item_code : (apiBatch && (apiBatch.product_sku || apiBatch
-                    .inventory_item_code)) || 'N/A';
+                const locOptions = (allLocations || []).map(loc => {
+                    const selected = String(loc.id) === String(presetLocationId) ? 'selected' : '';
+                    return `<option value="${loc.id}" ${selected}>${escapeHtml(loc.name)}</option>`;
+                }).join('');
 
                 document.getElementById('batch-details-content').innerHTML = `
                     <div class="space-y-2 text-sm">
-                        <div class="flex justify-between border-b border-slate-700 pb-1"><span class="text-slate-400">Product:</span><span class="font-medium">${escapeHtml(productName)}</span></div>
-                        <div class="flex justify-between border-b border-slate-700 pb-1"><span class="text-slate-400">SKU:</span><span class="font-mono">${escapeHtml(productSku)}</span></div>
-                        <div class="flex justify-between border-b border-slate-700 pb-1"><span class="text-slate-400">Batch:</span><span class="font-mono">${escapeHtml(batchNumber)}</span></div>
-                        <div class="flex justify-between border-b border-slate-700 pb-1"><span class="text-slate-400">Quantity:</span><span>${quantity}</span></div>
-                        <div class="flex justify-between border-b border-slate-700 pb-1"><span class="text-slate-400">Expiry:</span><span>${expiryDate}</span></div>
-                        <div class="flex justify-between border-b border-slate-700 pb-1"><span class="text-slate-400">Cost:</span><span>₦${Number(cost).toLocaleString()}</span></div>
-                        <div class="flex justify-between"><span class="text-slate-400">Supplier:</span><span>${escapeHtml(supplier)}</span></div>
+                        <div class="flex justify-between border-b border-slate-700 pb-1">
+                            <span class="text-slate-400">Product:</span>
+                            <span class="font-medium">${escapeHtml(productName)}</span>
+                        </div>
+                        <div class="flex justify-between border-b border-slate-700 pb-1">
+                            <span class="text-slate-400">SKU:</span>
+                            <span class="font-mono">${escapeHtml(productSku)}</span>
+                        </div>
+                        <div class="flex justify-between border-b border-slate-700 pb-1">
+                            <span class="text-slate-400">Batch:</span>
+                            <span class="font-mono">${escapeHtml(batchNumber)}</span>
+                        </div>
+                        <div class="flex justify-between border-b border-slate-700 pb-1">
+                            <span class="text-slate-400">Expiry:</span>
+                            <span>${escapeHtml(expiryDate)}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-slate-400">Verification:</span>
+                            <span>${verifyLine}</span>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 pt-4 border-t border-amber-700">
+                        <label class="block text-sm mb-2 text-amber-400 font-medium">
+                            <i class="fa-solid fa-clipboard-check"></i> Physical Count at Location
+                        </label>
+                        <p class="text-xs text-slate-400 mb-2">
+                            Walk to the shelf and count what is actually there. This
+                            becomes the authoritative quantity for this (batch, location).
+                        </p>
+                        <div class="space-y-2">
+                            <select id="batch-verify-location"
+                                    class="w-full bg-slate-900 border border-amber-700/50 rounded-lg p-2 text-sm">
+                                <option value="">Select location…</option>
+                                ${locOptions}
+                            </select>
+                            <input type="number" id="batch-verify-qty" min="0" placeholder="Counted quantity"
+                                   class="w-full bg-slate-900 border border-amber-700 rounded-lg p-2 text-sm" />
+                            <input type="text" id="batch-verify-notes" placeholder="Notes (optional)"
+                                   class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs" />
+                            <button id="batch-verify-submit"
+                                    class="w-full bg-amber-600 hover:bg-amber-700 px-4 py-2 rounded-lg text-sm font-medium">
+                                Record Count
+                            </button>
+                            <div id="batch-verify-status" class="text-xs text-slate-400"></div>
+                        </div>
                     </div>
                 `;
+
                 window.currentBatchId = batchId;
+
+                const verifyBtn = document.getElementById('batch-verify-submit');
+                if (verifyBtn) {
+                    verifyBtn.addEventListener('click', async function() {
+                        const locEl = document.getElementById('batch-verify-location');
+                        const qtyEl = document.getElementById('batch-verify-qty');
+                        const notesEl = document.getElementById('batch-verify-notes');
+                        const statusEl = document.getElementById('batch-verify-status');
+
+                        const locationId = locEl.value;
+                        const counted = parseInt(qtyEl.value, 10);
+                        const notes = notesEl.value.trim();
+
+                        if (!locationId) {
+                            statusEl.className = 'text-xs text-red-400';
+                            statusEl.innerText = 'Select a location first.';
+                            return;
+                        }
+                        if (isNaN(counted) || counted < 0) {
+                            statusEl.className = 'text-xs text-red-400';
+                            statusEl.innerText = 'Enter a counted quantity (0 or more).';
+                            return;
+                        }
+
+                        verifyBtn.disabled = true;
+                        verifyBtn.innerText = 'Recording…';
+                        statusEl.className = 'text-xs text-slate-400';
+                        statusEl.innerText = '';
+
+                        try {
+                            const result = await apiCall(`/inventory/batches/${batchId}/verify`, {
+                                method: 'POST',
+                                body: JSON.stringify({
+                                    location_id: locationId,
+                                    counted_quantity: counted,
+                                    notes: notes || null,
+                                }),
+                            });
+                            statusEl.className = 'text-xs text-green-400';
+                            statusEl.innerText = result.message || 'Verified.';
+                            showToast('✓ Verification recorded', 'success');
+
+                            if (typeof loadExpiringProducts === 'function') await loadExpiringProducts();
+                            if (typeof loadInventory === 'function') await loadInventory();
+
+                            setTimeout(() => {
+                                document.getElementById('batch-details-modal').classList.add('hidden');
+                            }, 900);
+                        } catch (err) {
+                            statusEl.className = 'text-xs text-red-400';
+                            statusEl.innerText = err.message || 'Verification failed';
+                        } finally {
+                            verifyBtn.disabled = false;
+                            verifyBtn.innerText = 'Record Count';
+                        }
+                    });
+                }
+
                 document.getElementById('batch-details-modal').classList.remove('hidden');
             } catch (err) {
                 showToast(`Failed to load batch details: ${err.message}`, 'error');
@@ -3096,6 +3260,7 @@
         });
 
         document.getElementById('expiry-alert-filter')?.addEventListener('change', loadExpiringProducts);
+        document.getElementById('expiry-verification-filter')?.addEventListener('change', loadExpiringProducts);
         document.getElementById('refresh-expiry-btn')?.addEventListener('click', loadExpiringProducts);
 
         document.getElementById('risk-level-filter')?.addEventListener('change', loadRiskScores);
