@@ -10027,6 +10027,54 @@ async def admin_suspend_org(
     )
     return {"status": "suspended"}
 
+@app.post("/admin/orgs/{org_id}/build-app")
+async def trigger_mobile_build(
+    org_id: str,
+    request: Request,
+    x_admin_key: str = Header(..., alias="X-Admin-Key")
+):
+    _require_admin_key(x_admin_key)
+    
+    # 1. Verify the org exists and is published
+    client = get_admin_supabase()
+    org = await run_sync_db_call(
+        client.table("organisations").select("slug, storefront_published").eq("id", org_id).maybe_single().execute
+    )
+    if not org.data:
+        raise HTTPException(404, "Organisation not found")
+    if not org.data.get("storefront_published"):
+        raise HTTPException(400, "Organisation must have a published storefront before building an app.")
+
+    slug = org.data["slug"]
+    repo = os.environ.get("GITHUB_REPO")
+    token = os.environ.get("GITHUB_PAT")
+
+    if not repo or not token:
+        raise HTTPException(500, "GitHub integration is not configured.")
+
+    # 2. Trigger the GitHub Action
+    url = f"https://api.github.com/repos/{repo}/dispatches"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    payload = {
+        "event_type": "build-mobile-app",
+        "client_payload": {
+            "org_id": org_id,
+            "slug": slug
+        }
+    }
+    
+    async with httpx.AsyncClient() as http:
+        resp = await http.post(url, json=payload, headers=headers)
+        if resp.status_code != 204:
+            logger.error(f"GitHub Action trigger failed: {resp.text}")
+            raise HTTPException(500, f"Failed to trigger build: {resp.text}")
+
+    logger.info(f"Triggered mobile build for {slug}")
+    return {"message": f"Build for {slug} started. Check GitHub Actions."}
+
 
 @app.post("/admin/orgs/{org_id}/reactivate")
 async def admin_reactivate_org(
