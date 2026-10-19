@@ -1,0 +1,65 @@
+name: Build Tenant Mobile App
+
+on:
+  repository_dispatch:
+    types: [build-mobile-app]
+  workflow_dispatch:
+    inputs:
+      slug:
+        description: 'Org Slug (e.g. acme-pharmacy)'
+        required: true
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Resolve Slug
+        id: vars
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "SLUG=${{ github.event.client_payload.slug }}" >> $GITHUB_ENV
+          else
+            echo "SLUG=${{ github.event.inputs.slug }}" >> $GITHUB_ENV
+          fi
+
+      - name: Verify Storefront Exists
+        run: |
+          if [ ! -d "stores/${{ env.SLUG }}" ]; then
+            echo "Error: Physical storefront for ${{ env.SLUG }} not found in repo."
+            echo "Make sure it has been published from the Control Center first."
+            exit 1
+          fi
+
+      - name: Build Capacitor App
+        run: |
+          npm init -y
+          npm install @capacitor/core @capacitor/cli @capacitor/android
+          
+          # Initialize Capacitor, pointing ONLY at this specific store's folder
+          npx cap init "${{ env.SLUG }}" "com.kevsdigital.${{ env.SLUG }}" --web-dir="stores/${{ env.SLUG }}"
+          
+          npx cap add android
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.SLUG }}-app-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
