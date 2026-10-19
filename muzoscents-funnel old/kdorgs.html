@@ -340,6 +340,7 @@
     <button class="drawer-tab" data-dtab="features">Features</button>
     <button class="drawer-tab" data-dtab="usage">Usage</button>
     <button class="drawer-tab" data-dtab="audit">Audit</button>
+    <button class="drawer-tab" data-dtab="mobile">Mobile App</button>
     <button class="drawer-tab" data-dtab="danger">Danger</button>
   </div>
 
@@ -511,6 +512,30 @@
         </button>
       </div>
       <div id="d-audit-list" class="space-y-2"></div>
+    </div>
+
+    <!-- Mobile App panel -->
+    <div class="drawer-tab-panel" data-dpanel="mobile">
+      <div class="bg-slate-900/60 border border-slate-700 rounded-lg p-4 mb-4">
+        <div class="flex items-center gap-3 mb-2">
+          <i class="fa-solid fa-mobile-screen text-2xl text-blue-400"></i>
+          <div>
+            <div class="font-bold text-white">White-Label Mobile App</div>
+            <div class="text-xs text-slate-400">Build a standalone Android/iOS app for this tenant.</div>
+          </div>
+        </div>
+        <p class="text-xs text-slate-500 mb-4">
+          This will trigger a GitHub Action to compile the app using the physical storefront files in the <code>stores/</code> directory. 
+          <strong>Warning:</strong> This consumes CI/CD build minutes.
+        </p>
+        
+        <div class="space-y-3">
+          <button id="d-build-app-btn" class="w-full bg-blue-600 hover:bg-blue-700 py-2.5 rounded-lg text-sm font-medium transition">
+            <i class="fa-brands fa-android mr-1"></i> Trigger Android Build
+          </button>
+          <!-- You can add iOS button here later -->
+        </div>
+      </div>
     </div>
 
     <!-- Danger panel -->
@@ -1356,6 +1381,25 @@ document.getElementById('d-reactivate-btn').addEventListener('click', async () =
     await bootstrap();
   } catch (e) {
     toast(e.message, 'error');
+  }
+});
+
+// Add near the bottom of the script where other drawer buttons are wired
+document.getElementById('d-build-app-btn').addEventListener('click', async () => {
+  if (!CURRENT_ORG) return;
+  
+  const btn = document.getElementById('d-build-app-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Triggering Build...';
+
+  try {
+    const res = await adminFetch(`/admin/orgs/${CURRENT_ORG.id}/build-app`, { method: 'POST' });
+    toast(res.message || 'Build triggered successfully! Check GitHub Actions for progress.', 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-brands fa-android mr-1"></i> Trigger Android Build';
   }
 });
 
