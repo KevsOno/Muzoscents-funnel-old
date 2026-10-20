@@ -593,6 +593,98 @@ function wireUpload(kind) {
     };
 }
 
+/* ─── Products tab ─── */
+let PRODUCTS = [];
+
+async function loadProducts() {
+    const list = document.getElementById('product-list');
+    if (!list) return;
+    list.innerHTML = '<div class="text-slate-400 text-sm text-center py-8">Loading…</div>';
+    try {
+        const data = await api('/inventory');
+        PRODUCTS = Array.isArray(data) ? data : (data.items || []);
+        renderProductList(PRODUCTS);
+    } catch (e) {
+        list.innerHTML = '<div class="text-red-400 text-sm text-center py-8">' + esc(e.message) + '</div>';
+    }
+}
+
+function renderProductList(products) {
+    const list = document.getElementById('product-list');
+    if (!list) return;
+    if (!products.length) {
+        list.innerHTML = '<div class="text-slate-400 text-sm text-center py-8">No products yet. Add inventory first.</div>';
+        return;
+    }
+    list.innerHTML = products.map(p => `
+        <div class="bg-slate-900 border border-slate-700 rounded-xl p-3"
+             data-product-id="${p.id}">
+            <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                    <div class="text-sm font-medium text-white truncate">${esc(p.description)}</div>
+                    <div class="text-xs text-slate-500 font-mono">${esc(p.item_code || '')}</div>
+                    ${p.storefront_description
+                        ? '<div class="text-xs text-slate-400 mt-1 truncate">' + esc(p.storefront_description.slice(0, 80)) + (p.storefront_description.length > 80 ? '…' : '') + '</div>'
+                        : '<div class="text-xs text-slate-500 italic mt-1">No storefront copy yet</div>'}
+                </div>
+                <button class="text-blue-400 hover:text-blue-300 text-sm product-edit-btn flex-shrink-0">
+                    <i class="fa-regular fa-pen-to-square mr-1"></i>Edit
+                </button>
+            </div>
+            <div class="product-editor hidden mt-3 pt-3 border-t border-slate-700 space-y-2">
+                <label class="block text-xs text-slate-400">Storefront description</label>
+                <textarea class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm min-h-[120px]"
+                          maxlength="5000"
+                          placeholder="Long-form copy for the product page…">${esc(p.storefront_description || '')}</textarea>
+                <div class="flex justify-end gap-2">
+                    <button class="text-slate-400 hover:text-white text-xs product-cancel-btn">Cancel</button>
+                    <button class="bg-blue-600 hover:bg-blue-700 text-xs px-3 py-1.5 rounded-lg product-save-btn">
+                        Save
+                    </button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+
+    list.querySelectorAll('[data-product-id]').forEach(row => {
+        const id = Number(row.dataset.productId);
+        const editor = row.querySelector('.product-editor');
+        const textarea = row.querySelector('textarea');
+
+        row.querySelector('.product-edit-btn').addEventListener('click', () => {
+            editor.classList.toggle('hidden');
+        });
+
+        row.querySelector('.product-cancel-btn').addEventListener('click', () => {
+            editor.classList.add('hidden');
+            const p = PRODUCTS.find(x => x.id === id);
+            textarea.value = (p && p.storefront_description) || '';
+        });
+
+        row.querySelector('.product-save-btn').addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
+            btn.disabled = true;
+            btn.textContent = 'Saving…';
+            try {
+                const res = await api('/storefront/products/' + id, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ storefront_description: textarea.value })
+                });
+                const p = PRODUCTS.find(x => x.id === id);
+                if (p) p.storefront_description = res.product.storefront_description;
+                // re-render the row so the truncated preview updates
+                renderProductList(PRODUCTS);
+                toast('Saved', 'success');
+            } catch (err) {
+                toast(err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Save';
+            }
+        });
+    });
+}
+
 /* ─── Wiring ─── */
 function wireAll() {
     // Sidebar tabs
@@ -601,8 +693,24 @@ function wireAll() {
             $$('.nav-item').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             $$('[data-panel]').forEach(p => p.classList.toggle('hidden', p.dataset.panel !== btn.dataset.tab));
+            if (btn.dataset.tab === 'products') {
+                loadProducts();
+            }
         });
     });
+
+    const productSearch = document.getElementById('product-search');
+    if (productSearch) {
+        productSearch.addEventListener('input', (e) => {
+            const q = e.target.value.trim().toLowerCase();
+            const filtered = q
+                ? PRODUCTS.filter(p =>
+                    (p.description || '').toLowerCase().includes(q) ||
+                    (p.item_code || '').toLowerCase().includes(q))
+                : PRODUCTS;
+            renderProductList(filtered);
+        });
+    }
 
     // Dirty tracking — any input in the main area
     document.querySelectorAll('input, textarea, select').forEach(el => {
