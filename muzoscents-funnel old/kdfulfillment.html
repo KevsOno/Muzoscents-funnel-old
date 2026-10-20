@@ -231,7 +231,7 @@
         </div>
         
         <!-- Map Container -->
-        <div id="map-container" class="h-[500px] w-full z-0 mb-6"></div>
+        <div id="map-container" class="w-full z-0 mb-6 rounded-xl" style="height: 500px;"></div>
         
         <!-- Zones Table -->
         <div class="bg-slate-800 rounded-xl overflow-hidden border border-slate-700">
@@ -369,7 +369,7 @@
             
             <div>
                 <label class="text-sm text-slate-400 block mb-1">Draw Zone on Map</label>
-                <div id="area-draw-map" class="h-[300px] w-full rounded-lg z-0"></div>
+                <div id="area-draw-map" class="w-full rounded-lg z-0" style="height: 300px;"></div>
                 <p class="text-xs text-slate-500 mt-2"><i class="fa-solid fa-info-circle"></i> Use the polygon tool in the top left corner to draw the area.</p>
             </div>
             
@@ -404,8 +404,13 @@
         document.getElementById('panel-areas').classList.remove('hidden');
         document.getElementById('tab-btn-orders').className = "px-6 py-3 text-slate-400 hover:text-white font-medium transition";
         document.getElementById('tab-btn-areas').className = "px-6 py-3 text-white border-b-2 border-blue-500 font-medium transition";
-        initAreaMap();
-        loadAreas();
+        
+        // FIX: Wait for the browser to paint the tab before rendering the map
+        setTimeout(() => {
+            initAreaMap();
+            if (mainMap) mainMap.invalidateSize();
+            loadAreas();
+        }, 50);
     });
 
     // ==========================================
@@ -526,6 +531,9 @@
                     currentPolygonGeoJSON = layer.toGeoJSON().geometry;
                 });
             });
+
+            // FIX: Ensure map resizes if the screen changes
+            window.addEventListener('resize', () => drawMap.invalidateSize());
         }
         drawMap.invalidateSize();
     }
@@ -543,8 +551,17 @@
         drawnItems.clearLayers();
         document.getElementById('area-name').value = '';
         document.getElementById('area-fee').value = '';
+        
+        // Show the modal first
         document.getElementById('areaModal').classList.remove('hidden');
-        setTimeout(initDrawMap, 100);
+        
+        // FIX: Wait for the modal to be visible, then initialize the map and force a resize
+        setTimeout(() => {
+            initDrawMap();
+            if (drawMap) {
+                drawMap.invalidateSize();
+            }
+        }, 100);
     });
 
     document.getElementById('closeAreaModalBtn').addEventListener('click', () => {
