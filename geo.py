@@ -5,7 +5,6 @@ import httpx
 import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
-# Add after existing imports at the top of geo.py
 from deps import run_sync_db_call
 
 logger = logging.getLogger(__name__)
@@ -14,6 +13,7 @@ LOCAL_TZ = ZoneInfo("Africa/Lagos")
 AWS_LOCATION_API_KEY = os.environ.get("AWS_LOCATION_API_KEY")
 AWS_LOCATION_REGION = os.environ.get("AWS_LOCATION_REGION", "eu-west-1")
 
+
 def haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     R = 6371000.0
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
@@ -21,6 +21,7 @@ def haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     dlambda = math.radians(lng2 - lng1)
     a = math.sin(dphi / 2.0) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2.0) ** 2
     return 2.0 * R * math.asin(math.sqrt(a))
+
 
 def is_peak_hour(order_time: datetime, peak_settings: list) -> bool:
     if not order_time:
@@ -32,7 +33,7 @@ def is_peak_hour(order_time: datetime, peak_settings: list) -> bool:
 
     dow = order_time.weekday()
     hour_min = order_time.strftime("%H:%M")
-    
+
     for setting in peak_settings:
         if setting.get("day_of_week") is not None and setting["day_of_week"] != dow:
             continue
@@ -42,6 +43,7 @@ def is_peak_hour(order_time: datetime, peak_settings: list) -> bool:
             if str(start)[:5] <= hour_min <= str(end)[:5]:
                 return True
     return False
+
 
 async def proxy_aws_places(endpoint: str, body: dict) -> dict:
     if not AWS_LOCATION_API_KEY:
@@ -54,8 +56,9 @@ async def proxy_aws_places(endpoint: str, body: dict) -> dict:
         raise ValueError(f"Places API error: {resp.status_code}")
     return resp.json()
 
+
 async def calculate_intelligent_fee(
-    org_id: str, base_fee: int, order_value: int, items: list, 
+    org_id: str, base_fee: int, order_value: int, items: list,
     order_time: datetime, customer_email: str, db_client
 ) -> dict:
     """Ported from Hot Portion, adapted for bOS org-scoping"""
@@ -67,11 +70,20 @@ async def calculate_intelligent_fee(
     volume_surcharge = 0
     minimum_fee = 500
 
-    # 1. Fetch product details for weight/bulky logic
+    # 1. Fetch product details for weight/bulky logic.
+    # ORG FILTER IS MANDATORY — without it, an attacker can pass
+    # arbitrary inventory_ids and read another tenant's weight/category
+    # by observing the calculated fee.
     inv_ids = [i.get("inventory_id") for i in items if i.get("inventory_id")]
     prod_map = {}
     if inv_ids:
-        res = await db_client.table("inventory").select("id, weight_kg, handling_category").in_("id", inv_ids).execute()
+        res = await run_sync_db_call(
+            db_client.table("inventory")
+            .select("id, weight_kg, handling_category")
+            .eq("org_id", org_id)
+            .in_("id", inv_ids)
+            .execute
+        )
         prod_map = {p["id"]: p for p in (res.data or [])}
 
     main_count, total_weight, bulky_count = 0, 0.0, 0
@@ -84,18 +96,20 @@ async def calculate_intelligent_fee(
         if prod.get("handling_category") == "bulky":
             bulky_count += item.get("quantity", 1)
 
-    # 2. Volume/Weight Surcharges
+    # 2. Volume / Weight Surcharges
     if total_items >= 10: volume_surcharge += 500
     elif total_items >= 6: volume_surcharge += 300
     elif total_items >= 4: volume_surcharge += 150
-    
+
     if total_weight > 5.0:
         volume_surcharge += int((total_weight - 5.0) * 100)
     if bulky_count > 0:
         volume_surcharge += bulky_count * 200
 
     # 3. Item Surcharge Rules
-    rules_res = await db_client.table("delivery_item_surcharge_rules").select("*").eq("org_id", org_id).execute()
+    rules_res = await run_sync_db_call(
+        db_client.table("delivery_item_surcharge_rules").select("*").eq("org_id", org_id).execute
+    )
     for rule in (rules_res.data or []):
         min_i, max_i = rule.get("min_main_items"), rule.get("max_main_items")
         if (min_i is None or main_count >= min_i) and (max_i is None or main_count <= max_i):
@@ -103,16 +117,27 @@ async def calculate_intelligent_fee(
             break
 
     # 4. Peak Settings
-    peak_res = await db_client.table("delivery_peak_settings").select("*").eq("org_id", org_id).eq("is_active", True).execute()
+    peak_res = await run_sync_db_call(
+        db_client.table("delivery_peak_settings").select("*").eq("org_id", org_id).eq("is_active", True).execute
+    )
     if is_peak_hour(order_time, peak_res.data or []):
         peak_surcharge = 200
 
     # 5. Loyalty Discount
     if customer_email:
-        loy_res = await db_client.table("delivery_loyalty_settings").select("*").eq("org_id", org_id).eq("is_active", True).limit(1).execute()
+        loy_res = await run_sync_db_call(
+            db_client.table("delivery_loyalty_settings").select("*").eq("org_id", org_id).eq("is_active", True).limit(1).execute
+        )
         if loy_res.data:
             setting = loy_res.data[0]
-            orders_res = await db_client.table("sales").select("id", count="exact").eq("org_id", org_id).eq("customer_email", customer_email).in_("status", ["paid", "confirmed", "completed"]).execute()
+            orders_res = await run_sync_db_call(
+                db_client.table("sales")
+                .select("id", count="exact")
+                .eq("org_id", org_id)
+                .eq("customer_email", customer_email)
+                .in_("status", ["paid", "confirmed", "completed"])
+                .execute
+            )
             if (orders_res.count or 0) >= setting.get("min_orders", 5):
                 disc_pct = min(setting.get("discount_percentage", 20), 15)
                 loyalty_discount = int(fee * disc_pct / 100)
@@ -121,7 +146,9 @@ async def calculate_intelligent_fee(
     fee += volume_surcharge + item_surcharge + peak_surcharge
 
     # 6. Value Discounts
-    val_res = await db_client.table("delivery_fee_rules").select("*").eq("org_id", org_id).order("min_order_value").execute()
+    val_res = await run_sync_db_call(
+        db_client.table("delivery_fee_rules").select("*").eq("org_id", org_id).order("min_order_value").execute
+    )
     for rule in (val_res.data or []):
         min_v, max_v = rule.get("min_order_value", 0), rule.get("max_order_value")
         if order_value >= min_v and (max_v is None or order_value <= max_v):
