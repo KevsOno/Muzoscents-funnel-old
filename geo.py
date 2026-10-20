@@ -3,8 +3,9 @@ import os
 import math
 import httpx
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
+from typing import Optional, Tuple
 from deps import run_sync_db_call
 
 logger = logging.getLogger(__name__)
@@ -12,6 +13,7 @@ logger = logging.getLogger(__name__)
 LOCAL_TZ = ZoneInfo("Africa/Lagos")
 AWS_LOCATION_API_KEY = os.environ.get("AWS_LOCATION_API_KEY")
 AWS_LOCATION_REGION = os.environ.get("AWS_LOCATION_REGION", "eu-west-1")
+CLIENT_COORD_MAX_DISCREPANCY_M = float(os.environ.get("CLIENT_COORD_MAX_DISCREPANCY_M", "1000"))
 
 
 def haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -27,7 +29,8 @@ def is_peak_hour(order_time: datetime, peak_settings: list) -> bool:
     if not order_time:
         order_time = datetime.now(LOCAL_TZ)
     elif order_time.tzinfo is None:
-        order_time = order_time.replace(tzinfo=LOCAL_TZ)
+        # Naive input: assume UTC (matches datetime.now(timezone.utc) and Render/HF servers)
+        order_time = order_time.replace(tzinfo=timezone.utc).astimezone(LOCAL_TZ)
     else:
         order_time = order_time.astimezone(LOCAL_TZ)
 
@@ -55,6 +58,46 @@ async def proxy_aws_places(endpoint: str, body: dict) -> dict:
         logger.error(f"AWS Places error: {resp.text}")
         raise ValueError(f"Places API error: {resp.status_code}")
     return resp.json()
+
+
+async def resolve_delivery_coords(
+    address: Optional[str],
+    client_lat: Optional[float],
+    client_lng: Optional[float],
+    customer_email: Optional[str] = None,
+) -> Optional[Tuple[float, float]]:
+    """Verify client coordinates against server geocoding to prevent zone-fee spoofing."""
+    if not address or not address.strip():
+        return None
+
+    client_coords = None
+    if client_lat is not None and client_lng is not None:
+        try:
+            client_coords = (float(client_lat), float(client_lng))
+        except (TypeError, ValueError):
+            pass
+
+    server_coords = None
+    try:
+        geo_res = await proxy_aws_places("geocode", {"QueryText": address, "MaxResults": 1})
+        items = geo_res.get("ResultItems", [])
+        if items:
+            lng, lat = items[0]["Position"]
+            server_coords = (lat, lng)
+    except Exception as e:
+        logger.warning(f"AWS geocode failed for '{address}': {e}")
+
+    if server_coords and client_coords:
+        dist_m = haversine_m(server_coords[0], server_coords[1], client_coords[0], client_coords[1])
+        if dist_m <= CLIENT_COORD_MAX_DISCREPANCY_M:
+            return client_coords
+        logger.warning(
+            f"Coord mismatch for '{address}' (customer={customer_email}): "
+            f"client={client_coords} server={server_coords} dist={dist_m:.0f}m. Using server."
+        )
+        return server_coords
+
+    return server_coords or client_coords
 
 
 async def calculate_intelligent_fee(
