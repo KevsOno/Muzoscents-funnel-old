@@ -5,6 +5,8 @@ import httpx
 import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
+# Add after existing imports at the top of geo.py
+from deps import run_sync_db_call
 
 logger = logging.getLogger(__name__)
 
