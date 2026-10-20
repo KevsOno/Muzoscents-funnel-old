@@ -7,6 +7,11 @@
     <script src="/kdint.js"></script>
     <link rel="stylesheet" href="/tailwind.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Leaflet Map Libraries -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+    
     <style>
         body { background: #0F172A; font-family: 'Inter', sans-serif; }
         .status-badge { padding: 2px 8px; border-radius: 20px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; }
@@ -17,6 +22,11 @@
         .modal-overlay { background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); }
         .btn-demo { transition: all 0.2s ease; }
         .btn-demo:hover { transform: scale(1.02); box-shadow: 0 8px 20px rgba(0,0,0,0.3); }
+        
+        /* Leaflet Dark Mode Overrides */
+        .leaflet-container { background: #1E293B; border-radius: 0.75rem; border: 1px solid #334155; }
+        .leaflet-bar a { background-color: #1E293B !important; color: white !important; border-color: #334155 !important; }
+        .leaflet-bar a:hover { background-color: #334155 !important; }
     </style>
 </head>
 <body class="text-slate-200">
@@ -166,39 +176,82 @@
 <!-- ========== END GLOBAL NAVIGATION ========== -->
 
 <div class="container mx-auto px-4 py-6 max-w-7xl">
-    <div class="flex justify-between items-center mb-6 flex-wrap gap-3">
-        <div>
-            <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">📦 Fulfillment Dashboard</h1>
-            <p class="text-slate-400 text-sm">Manage order shipping and dispatch — <span class="text-emerald-400">demo access ready</span></p>
+    <!-- Tab Switcher -->
+    <div class="flex border-b border-slate-700 mb-6">
+        <button id="tab-btn-orders" class="px-6 py-3 text-white border-b-2 border-blue-500 font-medium transition"><i class="fa-solid fa-box mr-2"></i> Orders</button>
+        <button id="tab-btn-areas" class="px-6 py-3 text-slate-400 hover:text-white font-medium transition"><i class="fa-solid fa-map-location-dot mr-2"></i> Areas Covered</button>
+    </div>
+
+    <!-- ORDERS TAB (Existing Code) -->
+    <div id="panel-orders">
+        <div class="flex justify-between items-center mb-6 flex-wrap gap-3">
+            <div>
+                <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">📦 Fulfillment Dashboard</h1>
+                <p class="text-slate-400 text-sm">Manage order shipping and dispatch — <span class="text-emerald-400">demo access ready</span></p>
+            </div>
+            <div class="flex gap-3">
+                <button id="refresh-btn" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg transition"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
+                <a href="/kdconc" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-lg transition"><i class="fa-solid fa-store"></i> Customer Portal</a>
+            </div>
         </div>
-        <div class="flex gap-3">
-            <button id="refresh-btn" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg transition"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
-            <a href="/kdconc" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-lg transition"><i class="fa-solid fa-store"></i> Customer Portal</a>
+        
+        <div class="bg-slate-800/50 rounded-xl p-4 mb-6 border border-slate-700 flex flex-wrap gap-3 items-end">
+            <div class="flex-1 min-w-[150px]">
+                <label class="text-xs text-slate-400 block mb-1">Status filter</label>
+                <select id="status-filter" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white">
+                    <option value="">All orders</option>
+                    <option value="pending">Pending (unpaid)</option>
+                    <option value="processing">Processing</option>
+                    <option value="shipped">Shipped</option>
+                    <option value="delivered">Delivered</option>
+                </select>
+            </div>
+            <div class="flex items-center gap-2 pb-2">
+                <input type="checkbox" id="include-pending-checkbox" class="w-4 h-4 rounded border-slate-600 bg-slate-800">
+                <label for="include-pending-checkbox" class="text-xs text-slate-300">Show unpaid orders</label>
+            </div>
+            <button id="apply-filter" class="bg-blue-600 hover:bg-blue-700 px-5 py-2 rounded-lg transition">Apply</button>
+        </div>
+        
+        <div id="orders-container" class="space-y-4">
+            <div class="text-center py-12"><i class="fa-solid fa-spinner fa-pulse text-2xl"></i> Loading orders...</div>
         </div>
     </div>
-    
-    <div class="bg-slate-800/50 rounded-xl p-4 mb-6 border border-slate-700 flex flex-wrap gap-3 items-end">
-        <div class="flex-1 min-w-[150px]">
-            <label class="text-xs text-slate-400 block mb-1">Status filter</label>
-            <select id="status-filter" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm">
-                <option value="">All orders</option>
-                <option value="pending">Pending (unpaid)</option>
-                <option value="processing">Processing</option>
-                <option value="shipped">Shipped</option>
-                <option value="delivered">Delivered</option>
-            </select>
+
+    <!-- AREAS COVERED TAB (New) -->
+    <div id="panel-areas" class="hidden">
+        <div class="flex justify-between items-center mb-4">
+            <div>
+                <h2 class="text-xl font-bold text-white">Delivery Zones</h2>
+                <p class="text-sm text-slate-400">Draw polygons to define where you deliver and the base fee for each area.</p>
+            </div>
+            <button id="add-area-btn" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-medium transition">
+                <i class="fa-solid fa-plus mr-1"></i> Add Area
+            </button>
         </div>
-        <div class="flex items-center gap-2">
-            <input type="checkbox" id="include-pending-checkbox" class="w-4 h-4 rounded border-slate-600 bg-slate-800">
-            <label for="include-pending-checkbox" class="text-xs text-slate-300">Show unpaid orders (pending payment)</label>
+        
+        <!-- Map Container -->
+        <div id="map-container" class="h-[500px] w-full z-0 mb-6"></div>
+        
+        <!-- Zones Table -->
+        <div class="bg-slate-800 rounded-xl overflow-hidden border border-slate-700">
+            <table class="w-full text-left text-sm">
+                <thead class="bg-slate-900 border-b border-slate-700 text-slate-400">
+                    <tr>
+                        <th class="p-4 font-medium">Zone Name</th>
+                        <th class="p-4 font-medium">Base Fee (₦)</th>
+                        <th class="p-4 font-medium text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="areas-table-body" class="divide-y divide-slate-700/50">
+                    <tr><td colspan="3" class="p-6 text-center text-slate-500">Loading areas...</td></tr>
+                </tbody>
+            </table>
         </div>
-        <button id="apply-filter" class="bg-blue-600 hover:bg-blue-700 px-5 py-2 rounded-lg transition">Apply</button>
-    </div>
-    
-    <div id="orders-container" class="space-y-4">
-        <div class="text-center py-12"><i class="fa-solid fa-spinner fa-pulse text-2xl"></i> Loading orders...</div>
     </div>
 </div>
+
+<!-- ========== EXISTING MODALS ========== -->
 
 <div id="updateModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
     <div class="bg-slate-800 rounded-2xl max-w-md w-full p-5 border border-slate-700">
@@ -294,6 +347,250 @@
     </div>
 </div>
 
+<!-- ========== NEW: CREATE AREA MODAL ========== -->
+<div id="areaModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
+    <div class="bg-slate-800 rounded-2xl max-w-2xl w-full p-6 border border-slate-700 shadow-2xl">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-bold text-white" id="modal-area-title">Add Delivery Area</h3>
+            <button id="closeAreaModalBtn" class="text-slate-400 hover:text-white text-2xl">&times;</button>
+        </div>
+        
+        <div class="space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-sm text-slate-400 block mb-1">Area Name</label>
+                    <input type="text" id="area-name" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white" placeholder="e.g. Lagos Mainland">
+                </div>
+                <div>
+                    <label class="text-sm text-slate-400 block mb-1">Base Fee (₦)</label>
+                    <input type="number" id="area-fee" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white" placeholder="1500">
+                </div>
+            </div>
+            
+            <div>
+                <label class="text-sm text-slate-400 block mb-1">Draw Zone on Map</label>
+                <div id="area-draw-map" class="h-[300px] w-full rounded-lg z-0"></div>
+                <p class="text-xs text-slate-500 mt-2"><i class="fa-solid fa-info-circle"></i> Use the polygon tool in the top left corner to draw the area.</p>
+            </div>
+            
+            <button id="save-area-btn" class="w-full bg-blue-600 hover:bg-blue-700 py-3 rounded-lg font-semibold text-white transition mt-2">
+                Save Area
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ========== LEAFLET SCRIPTS ========== -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+
+<!-- ========== NEW: TAB + AREAS SCRIPT ========== -->
+<script>
+    const API_BASE_AREAS = "https://kevsono-kevs-digital-bos.hf.space";
+    let token_areas = localStorage.getItem('access_token');
+    
+    // ==========================================
+    // TAB SWITCHING LOGIC
+    // ==========================================
+    document.getElementById('tab-btn-orders').addEventListener('click', () => {
+        document.getElementById('panel-orders').classList.remove('hidden');
+        document.getElementById('panel-areas').classList.add('hidden');
+        document.getElementById('tab-btn-orders').className = "px-6 py-3 text-white border-b-2 border-blue-500 font-medium transition";
+        document.getElementById('tab-btn-areas').className = "px-6 py-3 text-slate-400 hover:text-white font-medium transition";
+    });
+
+    document.getElementById('tab-btn-areas').addEventListener('click', () => {
+        document.getElementById('panel-orders').classList.add('hidden');
+        document.getElementById('panel-areas').classList.remove('hidden');
+        document.getElementById('tab-btn-orders').className = "px-6 py-3 text-slate-400 hover:text-white font-medium transition";
+        document.getElementById('tab-btn-areas').className = "px-6 py-3 text-white border-b-2 border-blue-500 font-medium transition";
+        initAreaMap();
+        loadAreas();
+    });
+
+    // ==========================================
+    // MAPS & AREAS LOGIC
+    // ==========================================
+    let mainMap = null;
+    let drawMap = null;
+    let drawnItems = new L.FeatureGroup();
+    let currentPolygonGeoJSON = null;
+    let editingAreaId = null;
+
+    function initAreaMap() {
+        if (mainMap) return;
+        // Center on Lagos by default
+        mainMap = L.map('map-container').setView([6.5244, 3.3792], 11);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap &copy; CARTO'
+        }).addTo(mainMap);
+    }
+
+    // Remove only the polygon layers added by loadAreas, leaving the
+    // tile layer and any other overlays untouched. L.FeatureGroup and
+    // L.GeoJSON both extend L.LayerGroup; L.TileLayer extends L.GridLayer
+    // (not L.LayerGroup) but is excluded explicitly for clarity.
+    function clearAreaLayers() {
+        if (!mainMap) return;
+        mainMap.eachLayer((layer) => {
+            if (layer instanceof L.LayerGroup && !(layer instanceof L.TileLayer)) {
+                mainMap.removeLayer(layer);
+            }
+        });
+    }
+
+    async function loadAreas() {
+        // Re-read the token — the demo login fires from the main script
+        // AFTER this script runs, so the module-level token_areas would
+        // otherwise be stale and this function would return silently,
+        // leaving the table stuck on "Loading areas…".
+        token_areas = localStorage.getItem('access_token');
+        if (!token_areas) {
+            clearAreaLayers();
+            document.getElementById('areas-table-body').innerHTML =
+                `<tr><td colspan="3" class="p-6 text-center text-slate-500">
+                    <i class="fa-solid fa-lock mr-2"></i> Sign in to view and manage delivery areas.
+                 </td></tr>`;
+            return;
+        }
+        try {
+            const res = await apiCall('/api/delivery/areas');
+            const areas = res.areas || [];
+            
+            // Clear previous polygons before drawing the current set
+            clearAreaLayers();
+
+            const tbody = document.getElementById('areas-table-body');
+            if (areas.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="3" class="p-6 text-center text-slate-500">No areas defined. Draw one to get started.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = areas.map(a => `
+                <tr>
+                    <td class="p-4 font-medium text-white">${escapeHtml(a.name)}</td>
+                    <td class="p-4 text-emerald-400 font-mono">₦${Number(a.fee).toLocaleString()}</td>
+                    <td class="p-4 text-right">
+                        <button class="text-red-400 hover:text-red-300 transition" onclick="deleteArea(${a.id})"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+
+            // Draw polygons on map
+            const group = new L.FeatureGroup();
+            areas.forEach(area => {
+                if (area.polygon) {
+                    const layer = L.geoJSON(area.polygon, {
+                        style: { color: '#3b82f6', weight: 2, fillColor: '#3b82f6', fillOpacity: 0.2 }
+                    });
+                    layer.bindPopup(`<strong class="text-black">${escapeHtml(area.name)}</strong><br><span class="text-gray-600">Fee: ₦${Number(area.fee).toLocaleString()}</span>`);
+                    group.addLayer(layer);
+                }
+            });
+            mainMap.addLayer(group);
+            if (areas.length > 0) {
+                mainMap.fitBounds(group.getBounds().pad(0.1));
+            }
+        } catch(e) {
+            console.error(e);
+            alert("Failed to load areas: " + e.message);
+        }
+    }
+
+    function initDrawMap() {
+        if (!drawMap) {
+            drawMap = L.map('area-draw-map').setView([6.5244, 3.3792], 12);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(drawMap);
+            
+            drawnItems = new L.FeatureGroup();
+            drawMap.addLayer(drawnItems);
+
+            const drawControl = new L.Control.Draw({
+                edit: { featureGroup: drawnItems },
+                draw: {
+                    polygon: { allowIntersection: false, showArea: true, shapeOptions: { color: '#3b82f6' } },
+                    polyline: false, rectangle: false, circle: false, marker: false, circlemarker: false
+                }
+            });
+            drawMap.addControl(drawControl);
+
+            drawMap.on(L.Draw.Event.CREATED, function (e) {
+                drawnItems.clearLayers();
+                const layer = e.layer;
+                drawnItems.addLayer(layer);
+                currentPolygonGeoJSON = layer.toGeoJSON().geometry;
+            });
+
+            drawMap.on(L.Draw.Event.EDITED, function (e) {
+                e.layers.eachLayer(function (layer) {
+                    currentPolygonGeoJSON = layer.toGeoJSON().geometry;
+                });
+            });
+        }
+        drawMap.invalidateSize();
+    }
+
+    // Add Area Button
+    document.getElementById('add-area-btn').addEventListener('click', () => {
+        // Guard: if the user has not signed in, prompt instead of
+        // opening a modal that will 401 on save.
+        if (!localStorage.getItem('access_token')) {
+            alert("Please sign in first to add delivery areas.");
+            return;
+        }
+        editingAreaId = null;
+        currentPolygonGeoJSON = null;
+        drawnItems.clearLayers();
+        document.getElementById('area-name').value = '';
+        document.getElementById('area-fee').value = '';
+        document.getElementById('areaModal').classList.remove('hidden');
+        setTimeout(initDrawMap, 100);
+    });
+
+    document.getElementById('closeAreaModalBtn').addEventListener('click', () => {
+        document.getElementById('areaModal').classList.add('hidden');
+    });
+
+    // Save Area
+    document.getElementById('save-area-btn').addEventListener('click', async () => {
+        const name = document.getElementById('area-name').value;
+        const fee = parseInt(document.getElementById('area-fee').value);
+        
+        if (!name || isNaN(fee)) return alert("Please fill in both name and fee.");
+        if (!currentPolygonGeoJSON) return alert("Please draw a polygon on the map first.");
+
+        const btn = document.getElementById('save-area-btn');
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+        btn.disabled = true;
+
+        try {
+            await apiCall('/api/delivery/areas', {
+                method: 'POST',
+                body: JSON.stringify({ name, fee, polygon: currentPolygonGeoJSON })
+            });
+            document.getElementById('areaModal').classList.add('hidden');
+            loadAreas();
+        } catch(e) {
+            alert("Failed to save: " + e.message);
+        } finally {
+            btn.innerHTML = 'Save Area';
+            btn.disabled = false;
+        }
+    });
+
+    // Delete Area
+    async function deleteArea(id) {
+        if (!confirm("Are you sure you want to delete this area?")) return;
+        try {
+            await apiCall(`/api/delivery/areas/${id}`, { method: 'DELETE' });
+            loadAreas();
+        } catch(e) {
+            alert("Failed to delete: " + e.message);
+        }
+    }
+</script>
+
+<!-- ========== EXISTING MAIN SCRIPT ========== -->
 <script>
     const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
     let token = localStorage.getItem('access_token');
