@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:      # allows manual trigger from the Actions tab
 
 jobs:
   sync:
@@ -12,24 +13,104 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Push Backend Files to Hugging Face
+      # ─────────────────────────────────────────────────────────
+      # Verify every module main.py depends on is present at the
+      # repo root BEFORE we try to deploy. If any are missing, fail
+      # the job here — not three minutes later inside the HF Space
+      # boot log.
+      # ─────────────────────────────────────────────────────────
+      - name: Verify critical Python modules exist
+        run: |
+          missing=0
+          for f in \
+            main.py \
+            deps.py \
+            geo.py \
+            delivery_zones.py \
+            tracking.py \
+            migrations_geo.py \
+            requirements.txt \
+            Dockerfile
+          do
+            if [ ! -f "$f" ]; then
+              echo "::error::Required file missing from repo root: $f"
+              missing=1
+            else
+              echo "  ok  $f"
+            fi
+          done
+          if [ "$missing" -eq 1 ]; then
+            echo "Aborting deploy — one or more required modules are missing."
+            exit 1
+          fi
+
+      - name: Stage files for HF
+        run: |
+          mkdir hf_deploy
+
+          # ── ALL Python modules at repo root ──
+          # This is the fix. A glob, not a whitelist. Every .py that
+          # main.py imports — deps, geo, delivery_zones, tracking,
+          # migrations_geo, fix_204, and any future module — gets
+          # picked up automatically. No more silent staleness when a
+          # new satellite file is added to main.py.
+          cp *.py hf_deploy/
+
+          # ── Static frontend assets ──
+          # Kept separate so a missing *.html or missing *.js does not
+          # silently abort the whole copy (with 2>/dev/null || true
+          # doing the hiding). Missing files are simply not deployed,
+          # but the ones that do exist still go.
+          cp *.html hf_deploy/ 2>/dev/null || true
+          cp *.js   hf_deploy/ 2>/dev/null || true
+
+          # ── Optional config files ──
+          for f in Dockerfile requirements.txt README.md netlify.toml .gitattributes; do
+            if [ -f "$f" ]; then
+              cp "$f" hf_deploy/
+            fi
+          done
+
+          # ── Static image folder (optional) ──
+          # main.py mounts /images when the folder exists. If it is
+          # present locally, ship it. If not, /images/* returns 404 on
+          # HF, but everything else still works.
+          if [ -d "images" ]; then
+            cp -r images hf_deploy/
+          fi
+
+      # ─────────────────────────────────────────────────────────
+      # Verify the staging directory actually contains the modules
+      # that were present in the repo. Belt and braces — this catches
+      # the case where a glob silently missed a file due to a stray
+      # backup extension like migrations_geo.py.txt.
+      # ─────────────────────────────────────────────────────────
+      - name: Verify staged files
+        run: |
+          echo "Files staged for HF:"
+          ls -la hf_deploy/
+          missing=0
+          for f in main.py deps.py geo.py delivery_zones.py tracking.py migrations_geo.py; do
+            if [ ! -f "hf_deploy/$f" ]; then
+              echo "::error::Required file did not land in hf_deploy: $f"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 1 ]; then
+            exit 1
+          fi
+
+      - name: Push to Hugging Face
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           git config --global user.email "github-actions@github.com"
           git config --global user.name "GitHub Actions"
-          
-          # Initialize temporary git directory for HF
-          mkdir hf_deploy
-          cp main.py Dockerfile requirements.txt README.md fix_204.py netlify.toml .gitattributes hf_deploy/ 2>/dev/null || true
-          
-          # Copy template or HTML files at root if needed
-          cp *.html *.js hf_deploy/ 2>/dev/null || true
-          
+
           cd hf_deploy
           git init
           git checkout -b main
           git add .
-          git commit -m "Deploy backend updates"
+          git commit -m "Deploy backend ${GITHUB_SHA::8} from ${GITHUB_REPOSITORY}"
           git remote add hf https://user:$HF_TOKEN@huggingface.co/spaces/KevsOno/Kevs_Digital_bOS
           git push hf main --force
