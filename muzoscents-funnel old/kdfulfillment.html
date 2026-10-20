@@ -27,6 +27,11 @@
         .leaflet-container { background: #1E293B; border-radius: 0.75rem; border: 1px solid #334155; }
         .leaflet-bar a { background-color: #1E293B !important; color: white !important; border-color: #334155 !important; }
         .leaflet-bar a:hover { background-color: #334155 !important; }
+        
+        /* Free Dark Mode Map Filter (OpenStreetMap) */
+        .leaflet-layer {
+            filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
+        }
     </style>
 </head>
 <body class="text-slate-200">
@@ -182,7 +187,7 @@
         <button id="tab-btn-areas" class="px-6 py-3 text-slate-400 hover:text-white font-medium transition"><i class="fa-solid fa-map-location-dot mr-2"></i> Areas Covered</button>
     </div>
 
-    <!-- ORDERS TAB (Existing Code) -->
+    <!-- ORDERS TAB -->
     <div id="panel-orders">
         <div class="flex justify-between items-center mb-6 flex-wrap gap-3">
             <div>
@@ -218,7 +223,7 @@
         </div>
     </div>
 
-    <!-- AREAS COVERED TAB (New) -->
+    <!-- AREAS COVERED TAB -->
     <div id="panel-areas" class="hidden">
         <div class="flex justify-between items-center mb-4">
             <div>
@@ -251,7 +256,7 @@
     </div>
 </div>
 
-<!-- ========== EXISTING MODALS ========== -->
+<!-- ========== MODALS ========== -->
 
 <div id="updateModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
     <div class="bg-slate-800 rounded-2xl max-w-md w-full p-5 border border-slate-700">
@@ -306,10 +311,8 @@
             <div class="grid grid-cols-2 gap-2 text-xs bg-slate-900 p-3 rounded-lg border border-slate-700/50">
                 <div><span class="text-slate-500 block">Customer</span><strong id="view-customer-name" class="text-slate-300">-</strong></div>
                 <div><span class="text-slate-500 block">Shipping Status</span><span id="view-shipping-status" class="status-badge mt-1 inline-block">-</span></div>
-                <!-- NEW: Phone and Email -->
                 <div><span class="text-slate-500 block">📞 Phone</span><span id="view-customer-phone" class="text-slate-300">-</span></div>
                 <div><span class="text-slate-500 block">✉️ Email</span><span id="view-customer-email" class="text-slate-300">-</span></div>
-                <!-- END NEW -->
                 <div class="col-span-2 mt-1"><span class="text-slate-500 block">Delivery Address</span><p id="view-shipping-address" class="text-slate-300">-</p></div>
             </div>
             <div>
@@ -347,7 +350,7 @@
     </div>
 </div>
 
-<!-- ========== NEW: CREATE AREA MODAL ========== -->
+<!-- ========== CREATE AREA MODAL ========== -->
 <div id="areaModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
     <div class="bg-slate-800 rounded-2xl max-w-2xl w-full p-6 border border-slate-700 shadow-2xl">
         <div class="flex justify-between items-center mb-4">
@@ -384,7 +387,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 
-<!-- ========== NEW: TAB + AREAS SCRIPT ========== -->
+<!-- ========== TAB + AREAS SCRIPT ========== -->
 <script>
     const API_BASE_AREAS = "https://kevsono-kevs-digital-bos.hf.space";
     let token_areas = localStorage.getItem('access_token');
@@ -405,7 +408,6 @@
         document.getElementById('tab-btn-orders').className = "px-6 py-3 text-slate-400 hover:text-white font-medium transition";
         document.getElementById('tab-btn-areas').className = "px-6 py-3 text-white border-b-2 border-blue-500 font-medium transition";
         
-        // FIX: Wait for the browser to paint the tab before rendering the map
         setTimeout(() => {
             initAreaMap();
             if (mainMap) mainMap.invalidateSize();
@@ -424,17 +426,13 @@
 
     function initAreaMap() {
         if (mainMap) return;
-        // Center on Lagos by default
         mainMap = L.map('map-container').setView([6.5244, 3.3792], 11);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; OpenStreetMap &copy; CARTO'
+        // OpenStreetMap - CSS Dark Mode applied via styles
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
         }).addTo(mainMap);
     }
 
-    // Remove only the polygon layers added by loadAreas, leaving the
-    // tile layer and any other overlays untouched. L.FeatureGroup and
-    // L.GeoJSON both extend L.LayerGroup; L.TileLayer extends L.GridLayer
-    // (not L.LayerGroup) but is excluded explicitly for clarity.
     function clearAreaLayers() {
         if (!mainMap) return;
         mainMap.eachLayer((layer) => {
@@ -445,10 +443,6 @@
     }
 
     async function loadAreas() {
-        // Re-read the token — the demo login fires from the main script
-        // AFTER this script runs, so the module-level token_areas would
-        // otherwise be stale and this function would return silently,
-        // leaving the table stuck on "Loading areas…".
         token_areas = localStorage.getItem('access_token');
         if (!token_areas) {
             clearAreaLayers();
@@ -462,7 +456,6 @@
             const res = await apiCall('/api/delivery/areas');
             const areas = res.areas || [];
             
-            // Clear previous polygons before drawing the current set
             clearAreaLayers();
 
             const tbody = document.getElementById('areas-table-body');
@@ -481,7 +474,6 @@
                 </tr>
             `).join('');
 
-            // Draw polygons on map
             const group = new L.FeatureGroup();
             areas.forEach(area => {
                 if (area.polygon) {
@@ -505,7 +497,8 @@
     function initDrawMap() {
         if (!drawMap) {
             drawMap = L.map('area-draw-map').setView([6.5244, 3.3792], 12);
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(drawMap);
+            // OpenStreetMap - CSS Dark Mode applied via styles
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(drawMap);
             
             drawnItems = new L.FeatureGroup();
             drawMap.addLayer(drawnItems);
@@ -532,16 +525,12 @@
                 });
             });
 
-            // FIX: Ensure map resizes if the screen changes
             window.addEventListener('resize', () => drawMap.invalidateSize());
         }
         drawMap.invalidateSize();
     }
 
-    // Add Area Button
     document.getElementById('add-area-btn').addEventListener('click', () => {
-        // Guard: if the user has not signed in, prompt instead of
-        // opening a modal that will 401 on save.
         if (!localStorage.getItem('access_token')) {
             alert("Please sign in first to add delivery areas.");
             return;
@@ -552,10 +541,8 @@
         document.getElementById('area-name').value = '';
         document.getElementById('area-fee').value = '';
         
-        // Show the modal first
         document.getElementById('areaModal').classList.remove('hidden');
         
-        // FIX: Wait for the modal to be visible, then initialize the map and force a resize
         setTimeout(() => {
             initDrawMap();
             if (drawMap) {
@@ -568,7 +555,6 @@
         document.getElementById('areaModal').classList.add('hidden');
     });
 
-    // Save Area
     document.getElementById('save-area-btn').addEventListener('click', async () => {
         const name = document.getElementById('area-name').value;
         const fee = parseInt(document.getElementById('area-fee').value);
@@ -595,7 +581,6 @@
         }
     });
 
-    // Delete Area
     async function deleteArea(id) {
         if (!confirm("Are you sure you want to delete this area?")) return;
         try {
@@ -753,10 +738,8 @@
             const order = await apiCall(`/fulfillment/order/${orderId}`);
             document.getElementById('view-modal-title').innerText = `Order: ${order.receipt_number || 'N/A'}`;
             document.getElementById('view-customer-name').innerText = order.customer_name || 'Guest User';
-            // --- NEW: Populate phone and email ---
             document.getElementById('view-customer-phone').innerText = order.customer_phone || 'Not provided';
             document.getElementById('view-customer-email').innerText = order.customer_email || 'Not provided';
-            // --- END NEW ---
             document.getElementById('view-shipping-address').innerText = order.shipping_address || 'Pickup Arrangement';
             document.getElementById('view-total-amount').innerText = `₦${order.total_amount?.toLocaleString()}`;
             
