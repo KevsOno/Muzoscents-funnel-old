@@ -1310,13 +1310,28 @@ async function recalcDeliveryFee(showFeedback = true) {
     }
     try {
         const items = cart.map(i => ({ inventory_id: i.id, quantity: i.quantity }));
-        const res = await apiCall('/delivery/estimate', {
+        const subtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+
+        // NEW: Call bOS endpoint
+        const res = await apiCall('/api/delivery/estimate', {
             method: 'POST',
-            body: JSON.stringify({ address: deliveryAddress, items })
+            body: JSON.stringify({
+                org_id: window.__KD_ORG__,
+                address: deliveryAddress,
+                items,
+                order_total: subtotal,
+                customer_email: userProfile?.email
+            })
         });
-        deliveryFee = res.delivery_fee_naira || 0;
-        handlingFee = res.handling_fee_naira || 0;
+
+        if (!res.covered) {
+            throw new Error(res.message || "Address not covered");
+        }
+
+        deliveryFee = res.final_fee || 0;
+        handlingFee = res.breakdown?.item_surcharge || 0; // Map to new breakdown
         isDeliveryEstimated = true;
+
         localStorage.setItem('pf_delivery_address', deliveryAddress);
         const feeDiv = document.getElementById('delivery-fee-estimate');
         if (feeDiv && showFeedback) feeDiv.innerHTML =
@@ -1688,8 +1703,8 @@ async function checkout() {
                 customer_phone: payload.customer_phone || '0000000000',
                 fulfillment_mode: payload.fulfillment_mode,
                 shipping_address: deliveryOption === 'delivery' ? deliveryAddress : null,
-                delivery_fee: deliveryOption === 'delivery' ? deliveryFeeToUse : 0,
-                handling_fee: deliveryOption === 'delivery' ? handlingFeeToUse : 0,
+                delivery_fee: deliveryOption === 'delivery' ? deliveryFee : 0,
+                handling_fee: deliveryOption === 'delivery' ? handlingFee : 0,
             })
         });
 
