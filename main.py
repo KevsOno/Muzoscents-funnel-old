@@ -47,7 +47,36 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi import BackgroundTasks
 from migrations_geo import ensure_geo_schema
+from geo import proxy_aws_places, calculate_intelligent_fee
+from delivery_zones import router as delivery_router
+from tracking import router as tracking_router
 
+
+from deps import (
+    # Config
+    SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY,
+    PUBLIC_STORE_ORG_ID, PRODUCTION_HOST, ADMIN_SECRET_KEY,
+    RATE_LIMIT_ENABLED, RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW,
+    ENFORCE_FEATURES, ORG_SCOPE_CANARY,
+    # Logging
+    logger,
+    # Supabase clients
+    get_supabase, get_admin_supabase, get_user_supabase,
+    # DB helpers
+    run_sync_db_call, fetch_one,
+    # Identity / rate limit
+    get_client_ip, rate_limit,
+    # Plan / features
+    PLAN_TIERS, FEATURE_CATALOG, METRIC_CATALOG,
+    effective_features, effective_limit,
+    fetch_org_flags, check_org_feature,
+    # Auth pipeline
+    get_current_user, get_current_org, get_current_user_with_role,
+    _pick_default_org, _assert_org_not_suspended,
+    _admin_set_app_metadata,
+    # FastAPI dependencies
+    require_role, require_feature, require_feature_any,
+)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -80,6 +109,10 @@ FLUTTERWAVE_SECRET_KEY = os.environ.get("FLUTTERWAVE_SECRET_KEY", "")
 FLUTTERWAVE_PUBLIC_KEY = os.environ.get("FLUTTERWAVE_PUBLIC_KEY", "")
 FLUTTERWAVE_ENCRYPTION_KEY = os.environ.get("FLUTTERWAVE_ENCRYPTION_KEY", "")
 FLUTTERWAVE_SECRET_HASH = os.environ.get("FLUTTERWAVE_SECRET_HASH", "my_secret_hash")
+
+MONNIFY_API_KEY = os.environ.get("MONNIFY_API_KEY", "")
+MONNIFY_SECRET_KEY = os.environ.get("MONNIFY_SECRET_KEY", "")
+MONNIFY_CONTRACT_CODE = os.environ.get("MONNIFY_CONTRACT_CODE", "")
 
 PUBLIC_STORE_ORG_ID = os.environ.get("PUBLIC_STORE_ORG_ID")
 
@@ -726,6 +759,7 @@ _ORG_SCOPED_TABLES = frozenset({
     "admin_audit",
     "audit_events",
 })
+
 
 # ------------------------------------------------------------------
 # Supabase clients
@@ -10818,7 +10852,63 @@ async def public_storefront_checkout(
             "subtotal":     subtotal,
         })
 
-    total = product_total + float(req.delivery_fee or 0) + float(req.handling_fee or 0)
+    # ── Server-side delivery calculation ──
+    # The client-supplied delivery_fee / handling_fee are ignored.
+    # Every fee is computed by find_delivery_area + calculate_intelligent_fee.
+    delivery_lat = delivery_lng = None
+    server_delivery_fee = 0.0
+    breakdown = None
+
+    if req.fulfillment_mode == "delivery":
+        if not (req.shipping_address or "").strip():
+            raise HTTPException(status_code=400, detail="Delivery address is required")
+
+        # 1. Geocode the address
+        try:
+            geo_res = await proxy_aws_places(
+                "geocode", {"QueryText": req.shipping_address, "MaxResults": 1}
+            )
+        except ValueError as geo_err:
+            logger.error(f"Geocode failed for '{req.shipping_address}': {geo_err}")
+            raise HTTPException(status_code=400, detail="We couldn't locate that delivery address.")
+
+        geo_items = geo_res.get("ResultItems", [])
+        if not geo_items:
+            raise HTTPException(status_code=400, detail="We couldn't locate that delivery address.")
+
+        lng, lat = geo_items[0]["Position"]
+        delivery_lat, delivery_lng = float(lat), float(lng)
+
+        # 2. Find the delivery zone
+        zone_res = await run_sync_db_call(
+            client.rpc("find_delivery_area", {
+                "p_org_id": org["id"],
+                "p_lat":    delivery_lat,
+                "p_lng":    delivery_lng,
+            }).execute
+        )
+        if not zone_res.data:
+            raise HTTPException(status_code=400, detail="Address is outside our delivery area.")
+
+        # 3. Calculate the fee
+        fee_calc = await calculate_intelligent_fee(
+            org_id=org["id"],
+            base_fee=zone_res.data[0]["fee"],
+            order_value=int(product_total),
+            items=[
+                {"inventory_id": i.inventory_id, "quantity": i.quantity}
+                for i in req.items
+            ],
+            order_time=datetime.now(timezone.utc),
+            customer_email=req.customer_email,
+            db_client=client,
+        )
+        server_delivery_fee = float(fee_calc["final_fee"])
+        breakdown = fee_calc["breakdown"]
+
+    # The engine now produces everything that handling_fee used to represent
+    # (volume, bulky, peak, loyalty). Client input is discarded.
+    total = product_total + server_delivery_fee
 
     receipt_num  = f"WEB-{org['id'][:4]}-{uuid.uuid4().hex[:8].upper()}"
     payment_ref  = str(uuid.uuid4())
@@ -10840,8 +10930,11 @@ async def public_storefront_checkout(
         "customer_email":      req.customer_email,
         "receipt_number":      receipt_num,
         "shipping_address":    req.shipping_address,
-        "delivery_fee":        float(req.delivery_fee or 0),
-        "handling_fee":        float(req.handling_fee or 0),
+        "delivery_fee":        server_delivery_fee,
+        "handling_fee":        0.0,
+        "delivery_lat":        delivery_lat,
+        "delivery_lng":        delivery_lng,
+        "delivery_breakdown":  breakdown,
         "fulfillment_mode":    req.fulfillment_mode,
         "fulfillment_notes":   req.notes,
         "shipping_status":     "processing",
@@ -13489,7 +13582,7 @@ async def _write_location_stock(
             "quantity":          int(quantity_delta),
             "reserved_quantity": 0,
             "updated_at":        now_iso,
-        }).execute()
+        }).execute
     )
 
 @app.post("/inventory/batches/{batch_id}/verify")
@@ -14017,34 +14110,21 @@ async def add_inventory_batch(
         )
 
         if main_location and main_location.data:
-            stock_exists = await run_sync_db_call(
-                client.table("location_stocks")
-                .select("id")
-                .eq("location_id", main_location.data["id"])
-                .eq("inventory_id", inventory_id)
-                .eq("batch_id", result.data[0]["id"])
-                .maybe_single()
-                .execute
+            # Route through the shared helper so this writer honours the
+            # same invariants every other batch-aware writer does:
+            #   - no zero-qty ghost rows (row deleted when delta hits zero)
+            #   - negative delta raises instead of silently corrupting
+            #   - location_stocks.expiry_date cache is NOT written (it's
+            #     deprecated; readers join through inventory_batches)
+            await _write_location_stock(
+                client=client,
+                location_id=main_location.data["id"],
+                inventory_id=inventory_id,
+                batch_id=result.data[0]["id"],
+                quantity_delta=batch.quantity,
             )
-
-            if stock_exists.data:
-                await run_sync_db_call(
-                    client.table("location_stocks").update({
-                        "quantity": stock_exists.data["quantity"] + batch.quantity,
-                        "updated_at": datetime.now(timezone.utc).isoformat()
-                    }).eq("id", stock_exists.data["id"]).execute
-                )
-            else:
-                await run_sync_db_call(
-                    client.table("location_stocks").insert({
-                        "location_id": main_location.data["id"],
-                        "inventory_id": inventory_id,
-                        "batch_id": result.data[0]["id"],
-                        "quantity": batch.quantity,
-                        "reserved_quantity": 0,
-                        "updated_at": datetime.now(timezone.utc).isoformat()
-                    }).execute()
-                )
+    except HTTPException:
+        raise
     except Exception as loc_err:
         logger.warning(f"Failed to assign batch to location: {loc_err}")
 
@@ -14065,6 +14145,7 @@ async def add_inventory_batch(
         "batch": result.data[0],
         "new_total_quantity": new_total_qty
     }
+
 
 @app.put("/inventory/batches/{batch_id}/quantity")
 async def update_batch_quantity(
@@ -15250,6 +15331,87 @@ class PaystackGateway(PaymentGatewayAdapter):
             return data["data"]
 
 
+class MonnifyGateway(PaymentGatewayAdapter):
+    def __init__(self, api_key: str, secret_key: str, contract_code: str):
+        self.api_key = api_key
+        self.secret_key = secret_key
+        self.contract_code = contract_code
+        self.base_url = "https://sandbox.monnify.com" # Change to https://api.monnify.com in prod
+
+    async def _get_token(self):
+        auth = base64.b64encode(f"{self.api_key}:{self.secret_key}".encode()).decode()
+        headers = {"Authorization": f"Basic {auth}"}
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(f"{self.base_url}/api/v1/auth/login", headers=headers)
+            return resp.json()["responseBody"]["accessToken"]
+
+    async def initialize_transaction(self, email: str, amount_naira: float, reference: str, metadata: dict, subaccount_code: Optional[str] = None, callback_url: Optional[str] = None) -> Dict:
+        token = await self._get_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        # NOTE: Monnify does not use a `subaccount_code` field. Split
+        # settlements are configured via `incomeSplitConfig`, which is a
+        # different shape (list of {subAccountCode, feePercentage,
+        # splitAmount, splitType}). If per-org split settlement is ever
+        # needed here, map `subaccount_code` -> incomeSplitConfig rather
+        # than silently dropping it.
+        payload = {
+            "amount": amount_naira,
+            "customerName": metadata.get("customer_name", "Customer"),
+            "customerEmail": email,
+            "paymentReference": reference,
+            "paymentDescription": "Order Payment",
+            "currencyCode": "NGN",
+            "contractCode": self.contract_code,
+            "redirectUrl": callback_url or "https://yourdomain.com/callback",
+            "paymentMethods": ["CARD", "ACCOUNT_TRANSFER"]
+        }
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(f"{self.base_url}/api/v1/merchant/transactions/init-transaction", json=payload, headers=headers)
+            data = resp.json()
+            if not data.get("requestSuccessful"):
+                raise Exception(data.get("responseMessage"))
+            return {"payment_url": data["responseBody"]["checkoutUrl"], "reference": reference}
+
+    def verify_webhook_signature(self, raw_body: bytes, signature_header: str) -> bool:
+        expected = hmac.new(self.secret_key.encode(), raw_body, hashlib.sha512).hexdigest()
+        return hmac.compare_digest(expected, signature_header)
+
+    async def verify_transaction(self, reference: str) -> Dict:
+        """
+        Server-side verification of a transaction by merchant reference
+        (i.e. the `paymentReference` we generated at init time).
+
+        Monnify's v2 verify endpoint accepts either the merchant
+        reference or Monnify's own transactionReference. We use the
+        merchant reference because that is what retry-pending-orders
+        and the webhook both key on.
+
+        Normalises Monnify's `paymentStatus` value into the same
+        `{"status": "success" | ...}` shape the Paystack and
+        Flutterwave adapters return, so the retry loop's
+        `if gateway_status == "success"` check works for all three.
+        """
+        if not self.api_key or not self.secret_key:
+            raise HTTPException(status_code=500, detail="Monnify credentials not configured.")
+        token = await self._get_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        url = f"{self.base_url}/api/v2/merchant/transactions/{reference}"
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code != 200:
+                logger.error(f"Monnify verify error: {resp.text}")
+                raise HTTPException(status_code=400, detail="Failed to verify transaction.")
+            data = resp.json()
+            if not data.get("requestSuccessful"):
+                raise HTTPException(status_code=400, detail=data.get("responseMessage", "Verification failed"))
+            body = data.get("responseBody") or {}
+            payment_status = body.get("paymentStatus")
+            return {
+                "status": "success" if payment_status == "PAID" else (payment_status or "unknown"),
+                "amount": body.get("amountPaid"),
+                "raw": body,
+            }
+
 class FlutterwaveGateway(PaymentGatewayAdapter):
     def __init__(self, secret_key: str, secret_hash: str):
         self.secret_key = secret_key
@@ -15307,6 +15469,11 @@ def get_payment_gateway_from_config(gateway_config: dict) -> PaymentGatewayAdapt
         secret = creds.get("secret_key") or FLUTTERWAVE_SECRET_KEY
         secret_hash = creds.get("secret_hash") or FLUTTERWAVE_SECRET_HASH
         return FlutterwaveGateway(secret_key=secret, secret_hash=secret_hash)
+    elif provider == "monnify":
+        api_key = creds.get("api_key") or MONNIFY_API_KEY
+        secret_key = creds.get("secret_key") or MONNIFY_SECRET_KEY
+        contract_code = creds.get("contract_code") or MONNIFY_CONTRACT_CODE
+        return MonnifyGateway(api_key=api_key, secret_key=secret_key, contract_code=contract_code)
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported payment gateway: {provider}")
 
@@ -15930,6 +16097,148 @@ async def flutterwave_webhook(request: Request):
         await release_webhook_event_claim(claim_id)
         raise HTTPException(status_code=500, detail="Webhook processing failed")
 
+
+@app.post("/webhook/monnify")
+async def monnify_webhook(request: Request):
+    logger.info("🔔 Monnify webhook received!")
+    logger.info(f"Headers: {dict(request.headers)}")
+
+    raw_body = await request.body()
+    signature = request.headers.get("monnify-signature")
+    logger.info(f"🔔 Signature: {signature}")
+    logger.info(f"Raw body (first 200 chars): {raw_body[:200]}...")
+
+    try:
+        payload = json.loads(raw_body)
+    except json.JSONDecodeError:
+        logger.error("Invalid JSON payload")
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    event_type = payload.get("eventType")
+    logger.info(f"Event: {event_type}")
+    if event_type != "SUCCESSFUL_TRANSACTION":
+        logger.info(f"Ignoring event: {event_type}")
+        return {"status": "ignored"}
+
+    event_data = payload.get("eventData") or {}
+    reference = event_data.get("paymentReference")
+    payment_status = event_data.get("paymentStatus")
+    logger.info(f"Reference: {reference}, status: {payment_status}")
+
+    if not reference:
+        logger.error("Monnify webhook missing paymentReference")
+        return {"status": "ignored"}
+    if payment_status != "PAID":
+        logger.info(f"Monnify {reference}: payment not PAID ({payment_status})")
+        return {"status": "ignored"}
+
+    client = get_supabase()
+
+    # Resolve the sale first, then the org. Monnify's webhook body does
+    # not include arbitrary metadata (unlike Paystack/Flutterwave), so
+    # org_id must be looked up from the sale row via payment_reference.
+    sale = await run_sync_db_call(
+        client.table("sales")
+        .select("*")
+        .eq("payment_reference", reference)
+        .maybe_single()
+        .execute
+    )
+    if not sale or not sale.data:
+        logger.info(f"Monnify {reference}: no matching sale")
+        return {"status": "ok"}
+
+    org_id = sale.data.get("org_id")
+    if not org_id:
+        logger.error(f"Monnify {reference}: sale has no org_id")
+        return {"status": "ignored"}
+
+    org = await run_sync_db_call(
+        client.table("organisations")
+        .select("payment_gateway_config")
+        .eq("id", org_id)
+        .maybe_single()
+        .execute
+    )
+    if not org or not org.data:
+        logger.error(f"Org {org_id} not found")
+        return {"status": "ignored"}
+
+    gateway = get_payment_gateway_from_config(org.data.get("payment_gateway_config", {}))
+    if not gateway.verify_webhook_signature(raw_body, signature):
+        logger.error("Invalid Monnify signature")
+        raise HTTPException(status_code=401, detail="Invalid signature")
+
+    payload_hash = hashlib.sha256(raw_body).hexdigest()
+    claim_id = await claim_webhook_event(
+        provider="monnify",
+        event_key=reference,
+        event_type=event_type,
+        org_id=org_id,
+        payload_hash=payload_hash,
+    )
+    if claim_id is None:
+        logger.info(f"Monnify {reference}: already claimed or processed — skipping")
+        return {"status": "already_processed"}
+
+    try:
+        items = await run_sync_db_call(
+            client.table("sale_items")
+            .select("inventory_id, quantity")
+            .eq("sale_id", sale.data["id"])
+            .execute
+        )
+
+        result = await finalize_online_order(sale.data["id"], org_id)
+
+        if result.get("skipped"):
+            logger.info(
+                f"Monnify {reference}: sale {sale.data['id']} already processed "
+                f"({result.get('reason')})"
+            )
+            await mark_webhook_event_processed(claim_id)
+            return {"status": "ok"}
+
+        for s in (result.get("short") or []):
+            logger.warning(
+                f"Monnify {reference}: inventory {s['inventory_id']} short by "
+                f"{s['short_by']} units at finalize"
+            )
+
+        logger.info(
+            f"finalize_online_order: sale {sale.data['id']} completed, "
+            f"AR {result.get('ar_id')} marked paid"
+        )
+
+        if sale.data.get("user_id") and sale.data.get("total_amount"):
+            try:
+                await award_loyalty_points(
+                    sale.data["user_id"],
+                    sale.data["total_amount"],
+                    sale.data["id"],
+                    "purchase",
+                )
+            except Exception as pts_err:
+                logger.error(f"Monnify {reference}: loyalty points failed: {pts_err}")
+
+        if sale.data.get("customer_email"):
+            try:
+                await send_order_confirmation_email(sale.data, items.data)
+            except Exception as email_err:
+                logger.error(
+                    f"Monnify {reference}: email failed but sale is complete: {email_err}"
+                )
+
+        await mark_webhook_event_processed(claim_id)
+        logger.info(f"Monnify {reference}: sale {sale.data['id']} processed")
+        return {"status": "ok"}
+
+    except Exception as e:
+        logger.error(f"Monnify {reference} failed: {e}", exc_info=True)
+        await release_webhook_event_claim(claim_id)
+        raise HTTPException(status_code=500, detail="Webhook processing failed")
+
+
 # ------------------------------------------------------------------
 # BACKGROUND SYNC – Retry pending orders
 # ------------------------------------------------------------------
@@ -15984,10 +16293,7 @@ async def retry_pending_orders(
                 results.append({"id": order["id"], "status": "skipped", "reason": "No payment reference"})
                 continue
 
-            if isinstance(gateway, PaystackGateway):
-                verify_data = await gateway.verify_transaction(payment_ref)
-                gateway_status = verify_data.get("status")
-            elif isinstance(gateway, FlutterwaveGateway):
+            if isinstance(gateway, (PaystackGateway, FlutterwaveGateway, MonnifyGateway)):
                 verify_data = await gateway.verify_transaction(payment_ref)
                 gateway_status = verify_data.get("status")
             else:
@@ -19206,8 +19512,18 @@ async def admin_load_test(
 
 # ===================== TEMP DEBUG =====================
 @app.get("/debug/current-db-role")
-async def debug_current_db_role(request: Request):
+async def debug_current_db_role(
+    request: Request,
+    x_admin_key: Optional[str] = Header(None, alias="X-Admin-Key"),
+):
     await rate_limit(get_client_ip(request))
+    # Admin key required. This endpoint leaks the current PG role, whether
+    # the cached client carries a user session, and — if it does — the
+    # email of the logged-in user. That is a credential-adjacent
+    # information-disclosure surface. _require_admin_key raises 403 when
+    # the key is missing or wrong, so nothing below runs for unauth callers.
+    _require_admin_key(x_admin_key)
+
     client = get_supabase()
 
     # What does Postgres see as the current role?
@@ -19242,7 +19558,6 @@ async def debug_current_db_role(request: Request):
         "session_present": session_present,
         "session_user_email": session_user,
     }
-
 
 # ===================== HR ROUTER (Wave 3: feature-gated) =====================
 hr_router = APIRouter(
@@ -19797,8 +20112,10 @@ async def list_payroll(
     result = await run_sync_db_call(query.order("year", desc=True).order("month", desc=True).range(offset, offset + limit - 1).execute)
     return {"payroll": result.data, "total": len(result.data) if result.data else 0}
 
-# ===================== INCLUDE HR ROUTER =====================
+# ===================== INCLUDE ROUTERS =====================
 app.include_router(hr_router)
+app.include_router(delivery_router)
+app.include_router(tracking_router)
 
 
 # --- CENTRALIZED LOG SHIPPING (Optional) AXIOM ---
