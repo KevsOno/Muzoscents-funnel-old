@@ -185,6 +185,7 @@ def _compute_migration_suite_hash() -> str:
         "ensure_hr_tables",
         "ensure_accounting_tables",
         "ensure_is_cogs_column",
+        "ensure_inventory_storefront_description",
     ]
     h = hashlib.sha256()
     for name in names:
@@ -5668,6 +5669,46 @@ async def _record_migration_hash(suite_hash: str, applied_by: str) -> None:
     if resp.status_code not in (200, 204):
         logger.error(f"failed to record migration hash: {resp.text}")
 
+async def ensure_inventory_storefront_description():
+    """
+    Add inventory.storefront_description — the long-form product copy
+    shown on the public storefront.
+
+    Distinct from inventory.description, which is the short product
+    name used by POS, search, and receipts. storefront_description is
+    merchandising copy, edited from the Storefront Studio, and is only
+    meaningful when the org has the ecommerce feature enabled.
+
+    Nullable by design: NULL means "not written yet", not "empty".
+    Length is capped at the API layer, not in Postgres.
+
+    Idempotent. Safe on every boot. Raises on failure so a drifted
+    schema aborts the boot rather than serving silently.
+    """
+    sql = """
+    ALTER TABLE public.inventory
+        ADD COLUMN IF NOT EXISTS storefront_description TEXT;
+    """
+
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"inventory.storefront_description migration failed: {resp.text}")
+        raise RuntimeError(f"inventory.storefront_description migration failed: {resp.text}")
+    logger.info("inventory.storefront_description installed (or already present)")
+
+
+
+
 # ─────────────────────────────────────────────────────────────────────
 # Migration gate — multi-instance safe
 #
@@ -5821,6 +5862,7 @@ async def startup_event():
 
         await ensure_accounting_tables()
         await ensure_is_cogs_column()
+        await ensure_inventory_storefront_description()
 
         await _record_migration_hash(
             suite_hash=current_hash,
@@ -5926,7 +5968,7 @@ async def startup_event():
 
         await ensure_accounting_tables()
         await ensure_is_cogs_column()
-
+        await ensure_inventory_storefront_description()
         await _record_migration_hash(
             suite_hash=current_hash,
             applied_by=instance_id,
@@ -10485,6 +10527,62 @@ async def update_own_storefront_config(
     return {"config": merge_storefront_config(current)}
     
 
+
+
+class StorefrontProductUpdate(BaseModel):
+    storefront_description: Optional[str] = Field(None, max_length=5000)
+
+
+@app.patch("/storefront/products/{inventory_id}")
+async def update_storefront_product(
+    inventory_id: int,
+    update: StorefrontProductUpdate,
+    user_data: Tuple[str, str, str] = Depends(
+        require_feature("ecommerce", allowed_roles=["owner", "admin"])
+    ),
+):
+    _, org_id, _ = user_data
+    client = get_supabase()
+
+    # Ownership pre-flight. inventory_id is a small integer, so an
+    # unguarded PATCH lets any caller overwrite another tenant's product
+    # copy by guessing the id. Same pattern as PUT /products/{id}.
+    existing = await run_sync_db_call(
+        client.table("inventory")
+        .select("id")
+        .eq("id", inventory_id)
+        .eq("org_id", org_id)
+        .maybe_single()
+        .execute
+    )
+    if not existing or not existing.data:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    payload = update.dict(exclude_unset=True)
+    if not payload:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+
+    # Empty string means "clear this field" — normalise to NULL, matching
+    # the location email fields. Omitted field means "leave unchanged".
+    if "storefront_description" in payload:
+        val = payload["storefront_description"]
+        if isinstance(val, str):
+            val = val.strip()
+            payload["storefront_description"] = val or None
+
+    payload["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    result = await run_sync_db_call(
+        client.table("inventory")
+        .update(payload)
+        .eq("id", inventory_id)
+        .eq("org_id", org_id)
+        .execute
+    )
+    if not result.data:
+        raise HTTPException(status_code=500, detail="Update failed")
+
+    return {"product": result.data[0]}
 
 
 
