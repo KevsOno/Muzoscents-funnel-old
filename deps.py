@@ -20,15 +20,12 @@ Single source of truth for:
 
 import os
 import asyncio
-import time
 from datetime import datetime, timezone
 from typing import Optional, Tuple, List, Dict, Any
-from collections import defaultdict
 import logging
 
 import httpx
 import structlog
-from structlog.contextvars import bound_contextvars
 from fastapi import Header, HTTPException, Request, Depends
 from supabase import create_client, Client
 
@@ -316,17 +313,252 @@ async def rate_limit(client_id: str, org_id: Optional[str] = None, request: Opti
 
 
 # ============================================================
-# PLAN TIERS, FEATURE CATALOG, METRICS
+# PLAN TIERS
 # ============================================================
-# ⚠️  PASTE THE FOLLOWING BLOCKS VERBATIM FROM main.py:
-#   PLAN_TIERS: Dict[str, Dict] = { ... }
-#   FEATURE_CATALOG: Dict[str, Dict[str, str]] = { ... }
-#   METRIC_CATALOG: Dict[str, Dict[str, str]] = { ... }
-# These are pure data, no code changes. Same lines that are in main.py
-# between the "CONTROL CENTER" banner comment and the "FEATURE ENFORCEMENT"
-# banner comment. Do NOT retype them — copy-paste.
+PLAN_TIERS: Dict[str, Dict] = {
+    # ── Retail ───────────────────────────────────────────────────
+    "convenience": {
+        "label":         "Convenience Store",
+        "vertical":      "retail",
+        "monthly_naira": 150_000,
+        "setup_base":    200_000,
+        "max_skus":      1_500,
+        "max_locations": 1,
+        "features": {
+            "ecommerce":       True,
+            "offline_pos":     True,
+            "multi_location":  False,
+            "expiry_tracking": False,
+            "accounting":      True,
+            "hr_module":       False,
+            "procurement":     True,
+            "ai_assistant":    False,
+            "loyalty":         True,
+            "fulfillment":     False,
+            "mobile_apps":     False,
+            "kitchen_display": False,
+            "live_dispatch":   False,
+        },
+    },
+    "pharmacy_indie": {
+        "label":         "Independent Pharmacy",
+        "vertical":      "retail",
+        "monthly_naira": 250_000,
+        "setup_base":    200_000,
+        "max_skus":      3_000,
+        "max_locations": 1,
+        "features": {
+            "ecommerce":       True,
+            "offline_pos":     True,
+            "multi_location":  False,
+            "expiry_tracking": True,
+            "accounting":      True,
+            "hr_module":       False,
+            "procurement":     True,
+            "ai_assistant":    False,
+            "loyalty":         True,
+            "fulfillment":     False,
+            "mobile_apps":     False,
+            "kitchen_display": False,
+            "live_dispatch":   False,
+        },
+    },
+    "pharmacy_chain": {
+        "label":         "Pharmacy Chain",
+        "vertical":      "retail",
+        "monthly_naira": 350_000,
+        "setup_base":    200_000,
+        "max_skus":      5_000,
+        "max_locations": 10,
+        "features": {
+            "ecommerce":       True,
+            "offline_pos":     True,
+            "multi_location":  True,
+            "expiry_tracking": True,
+            "accounting":      True,
+            "hr_module":       True,
+            "procurement":     True,
+            "ai_assistant":    False,
+            "loyalty":         True,
+            "fulfillment":     False,
+            "mobile_apps":     False,
+            "kitchen_display": False,
+            "live_dispatch":   False,
+        },
+    },
+    "supermarket_med": {
+        "label":         "Supermarket (Medium)",
+        "vertical":      "retail",
+        "monthly_naira": 400_000,
+        "setup_base":    200_000,
+        "max_skus":      15_000,
+        "max_locations": 5,
+        "features": {
+            "ecommerce":       True,
+            "offline_pos":     True,
+            "multi_location":  True,
+            "expiry_tracking": True,
+            "accounting":      True,
+            "hr_module":       True,
+            "procurement":     True,
+            "ai_assistant":    True,
+            "loyalty":         True,
+            "fulfillment":     True,
+            "mobile_apps":     True,
+            "kitchen_display": False,
+            "live_dispatch":   False,
+        },
+    },
+    "supermarket_large": {
+        "label":         "Supermarket (Large)",
+        "vertical":      "retail",
+        "monthly_naira": 500_000,
+        "setup_base":    200_000,
+        "max_skus":      None,
+        "max_locations": None,
+        "features": {
+            "ecommerce":       True,
+            "offline_pos":     True,
+            "multi_location":  True,
+            "expiry_tracking": True,
+            "accounting":      True,
+            "hr_module":       True,
+            "procurement":     True,
+            "ai_assistant":    True,
+            "loyalty":         True,
+            "fulfillment":     True,
+            "mobile_apps":     True,
+            "kitchen_display": False,
+            "live_dispatch":   False,
+        },
+    },
 
-# After pasting, append the two functions below:
+    # ── Food & Beverage ─────────────────────────────────────────
+    "fb_express": {
+        "label":         "F&B Express",
+        "vertical":      "food",
+        "monthly_naira": 220_000,
+        "setup_base":    750_000,
+        "max_skus":      500,
+        "max_locations": 1,
+        "features": {
+            "ecommerce":       True,
+            "offline_pos":     True,
+            "multi_location":  False,
+            "expiry_tracking": True,
+            "accounting":      True,
+            "hr_module":       False,
+            "procurement":     True,
+            "ai_assistant":    False,
+            "loyalty":         True,
+            "fulfillment":     False,
+            "mobile_apps":     False,
+            "kitchen_display": True,
+            "live_dispatch":   False,
+        },
+    },
+    "fb_multi": {
+        "label":         "F&B Multi-Chain",
+        "vertical":      "food",
+        "monthly_naira": 350_000,
+        "setup_base":    1_200_000,
+        "max_skus":      2_000,
+        "max_locations": 20,
+        "features": {
+            "ecommerce":       True,
+            "offline_pos":     True,
+            "multi_location":  True,
+            "expiry_tracking": True,
+            "accounting":      True,
+            "hr_module":       True,
+            "procurement":     True,
+            "ai_assistant":    True,
+            "loyalty":         True,
+            "fulfillment":     True,
+            "mobile_apps":     True,
+            "kitchen_display": True,
+            "live_dispatch":   True,
+        },
+    },
+    "qsr_enterprise": {
+        "label":         "QSR Enterprise AI",
+        "vertical":      "food",
+        "monthly_naira": 500_000,
+        "setup_base":    1_800_000,
+        "max_skus":      None,
+        "max_locations": None,
+        "features": {
+            "ecommerce":       True,
+            "offline_pos":     True,
+            "multi_location":  True,
+            "expiry_tracking": True,
+            "accounting":      True,
+            "hr_module":       True,
+            "procurement":     True,
+            "ai_assistant":    True,
+            "loyalty":         True,
+            "fulfillment":     True,
+            "mobile_apps":     True,
+            "kitchen_display": True,
+            "live_dispatch":   True,
+        },
+    },
+
+    # ── Service ─────────────────────────────────────────────────
+    "service_basic": {
+        "label":         "Service Business",
+        "vertical":      "service",
+        "monthly_naira": 150_000,
+        "setup_base":    200_000,
+        "max_skus":      None,
+        "max_locations": None,
+        "features": {
+            "ecommerce":       True,
+            "offline_pos":     True,
+            "multi_location":  False,
+            "expiry_tracking": False,
+            "accounting":      True,
+            "hr_module":       True,
+            "procurement":     False,
+            "ai_assistant":    True,
+            "loyalty":         True,
+            "fulfillment":     False,
+            "mobile_apps":     False,
+            "kitchen_display": False,
+            "live_dispatch":   False,
+        },
+    },
+}
+
+
+FEATURE_CATALOG: Dict[str, Dict[str, str]] = {
+    "ecommerce":       {"label": "Public storefront",        "category": "commerce"},
+    "offline_pos":     {"label": "Offline POS",              "category": "sales"},
+    "multi_location":  {"label": "Multi-location stock",     "category": "inventory"},
+    "expiry_tracking": {"label": "Expiry & batch tracking",  "category": "inventory"},
+    "accounting":      {"label": "Accounting module",        "category": "finance"},
+    "hr_module":       {"label": "HR & payroll",             "category": "operations"},
+    "procurement":     {"label": "Purchase orders & GRN",    "category": "operations"},
+    "ai_assistant":    {"label": "AI customer assistant",    "category": "ai"},
+    "loyalty":         {"label": "Loyalty points",           "category": "commerce"},
+    "fulfillment":     {"label": "Fulfillment dashboard",    "category": "logistics"},
+    "mobile_apps":     {"label": "iOS + Android apps",       "category": "mobile"},
+    "kitchen_display": {"label": "KDS + tableside QR",       "category": "food"},
+    "live_dispatch":   {"label": "Live spatial dispatch",    "category": "food"},
+}
+
+
+METRIC_CATALOG: Dict[str, Dict[str, str]] = {
+    "skus":            {"label": "SKUs",             "unit": "count"},
+    "members":         {"label": "Team members",     "unit": "count"},
+    "locations":       {"label": "Locations",        "unit": "count"},
+    "orders_30d":      {"label": "Orders (30d)",     "unit": "count"},
+    "gmv_30d":         {"label": "GMV (30d)",        "unit": "naira"},
+    "ai_queries_30d":  {"label": "AI queries (30d)", "unit": "count"},
+    "storage_mb":      {"label": "Storage",          "unit": "MB"},
+    "active_users_7d": {"label": "Active users (7d)","unit": "count"},
+}
+
 
 def effective_features(org: Dict) -> Dict[str, bool]:
     status = (org or {}).get("status") or "active"
@@ -581,7 +813,7 @@ def require_feature_any(*feature_keys: str, allowed_roles: Optional[List[str]] =
 
 
 # ============================================================
-# JWT ENRICHMENT (used by /auth/register, /admin/orgs, etc.)
+# JWT ENRICHMENT
 # ============================================================
 async def _admin_set_app_metadata(user_id: str, metadata: dict) -> bool:
     if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
