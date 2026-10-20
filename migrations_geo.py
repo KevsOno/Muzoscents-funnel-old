@@ -1,17 +1,20 @@
 # migrations_geo.py
-import os
 import httpx
-import logging
 
-logger = logging.getLogger(__name__)
+from deps import (
+    SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY,
+    SUPABASE_ANON_KEY,
+    logger,
+)
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_ANON_KEY")
+_SRK = SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY
+
 
 async def _exec_sql(sql: str):
     headers = {
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+        "apikey": _SRK,
+        "Authorization": f"Bearer {_SRK}",
         "Content-Type": "application/json",
     }
     async with httpx.AsyncClient(timeout=60.0) as client:
@@ -23,6 +26,7 @@ async def _exec_sql(sql: str):
     if resp.status_code not in (200, 204):
         logger.error(f"Geo migration failed: {resp.text}")
         raise RuntimeError(f"Geo migration failed: {resp.text}")
+
 
 async def ensure_geo_schema():
     """
@@ -152,6 +156,7 @@ async def ensure_geo_schema():
     ALTER TABLE public.sales 
         ADD COLUMN IF NOT EXISTS delivery_lat DOUBLE PRECISION,
         ADD COLUMN IF NOT EXISTS delivery_lng DOUBLE PRECISION,
+        ADD COLUMN IF NOT EXISTS delivery_breakdown JSONB,
         ADD COLUMN IF NOT EXISTS assigned_driver_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
         ADD COLUMN IF NOT EXISTS picked_at TIMESTAMPTZ,
         ADD COLUMN IF NOT EXISTS dispatched_at TIMESTAMPTZ,
