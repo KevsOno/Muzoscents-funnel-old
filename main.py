@@ -10740,7 +10740,6 @@ class PublicCheckoutRequest(BaseModel):
     callback_url: Optional[str] = None
 
 @app.post("/public/checkout")
-@app.post("/public/checkout")
 async def public_storefront_checkout(
     request: Request,
     req: PublicCheckoutRequest,
@@ -12160,6 +12159,7 @@ async def public_inventory(
     # endpoints are dark regardless of ENFORCE_FEATURES. 404, not 402,
     # so a visitor cannot probe billing status.
     await _assert_storefront_live(resolved_org_id)
+    await check_org_feature(resolved_org_id, "ecommerce")
 
     online_location_id = await get_location_for_channel(resolved_org_id, "online")
 
@@ -12255,6 +12255,7 @@ async def public_categories(
 
     # Suspension is unconditional — see _assert_storefront_live.
     await _assert_storefront_live(resolved_org_id)
+    await check_org_feature(resolved_org_id, "ecommerce")
 
     online_location_id = await get_location_for_channel(resolved_org_id, "online")
     client = get_supabase()
@@ -12357,6 +12358,7 @@ async def get_top_products(
 
     # Suspension is unconditional — see _assert_storefront_live.
     await _assert_storefront_live(resolved_org_id)
+    await check_org_feature(resolved_org_id, "ecommerce")
 
     client = get_supabase()
     try:
@@ -18758,6 +18760,19 @@ async def serve_admin():
     with open("kdadmin.html", "r") as f:
         return f.read()
 
+@app.get("/kdstorefront", response_class=HTMLResponse)
+async def serve_storefront_studio():
+    with open("kdstorefront.html", "r", encoding="utf-8") as f:
+        return f.read()
+
+
+@app.get("/kdstorefront.js")
+async def serve_kdstorefront_js():
+    path = os.path.join(BASE_DIR, "kdstorefront.js")
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail=f"kdstorefront.js not found at {path}")
+    return FileResponse(path, media_type="application/javascript")
+
 @app.get("/kddashboard", response_class=HTMLResponse)
 async def serve_dashboard():
     with open("kddashboard.html", "r") as f:
@@ -18822,7 +18837,7 @@ async def serve_knowledge():
         return f.read()
 
 @app.get("/kdprocurement", response_class=HTMLResponse)
-async def serve_accounts():
+async def serve_procurement():
     with open("kdprocurement.html", "r") as f:
         return f.read()
 
