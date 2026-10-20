@@ -1,11 +1,25 @@
 # tracking.py
 import os
-import httpx
+import json
+import asyncio
+from datetime import datetime, timezone
+
 import boto3
+import httpx
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 from fastapi import APIRouter, Depends, HTTPException, Request
-from datetime import datetime, timezone
+
+from deps import (
+    logger,
+    get_supabase,
+    run_sync_db_call,
+    fetch_one,
+    require_role,
+    rate_limit,
+    get_client_ip,
+)
+
 
 router = APIRouter(prefix="/delivery/track", tags=["Live Tracking"])
 
@@ -14,129 +28,245 @@ AWS_TRACKER_NAME = os.environ.get("AWS_TRACKER_NAME")
 AWS_GEOFENCE_COLLECTION_NAME = os.environ.get("AWS_GEOFENCE_COLLECTION_NAME")
 AWS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")
 AWS_SECRET = os.environ.get("AWS_SECRET_ACCESS_KEY")
+GEOFENCE_WEBHOOK_SECRET = os.environ.get("GEOFENCE_WEBHOOK_SECRET")
+
+
+# ─────────────────────────────────────────────────────────────────
+# Dispatch state machine — only these transitions are legal for
+# driver role. owner / admin / logistics retain override authority
+# (they still hit the general status whitelist in advance_status).
+# ─────────────────────────────────────────────────────────────────
+VALID_DRIVER_TRANSITIONS = {
+    "confirmed":  ["picked", "cancelled"],
+    "dispatched": ["picked", "cancelled"],
+    "picked":     ["in_transit", "cancelled"],
+    "in_transit": ["delivered", "failed"],
+}
+
 
 async def fire_aws_geofence_event(driver_id: str, lat: float, lng: float, accuracy: float, timestamp: str):
-    """Asynchronously sync position to AWS Tracker so geofences evaluate instantly."""
-    if not AWS_TRACKER_NAME: return
-    
+    """Push a driver position to AWS Tracker so geofences evaluate instantly."""
+    if not AWS_TRACKER_NAME:
+        return
     url = f"https://tracking.geo.{AWS_REGION}.amazonaws.com/tracking/v0/trackers/{AWS_TRACKER_NAME}/positions"
     payload = {
         "Updates": [{
             "DeviceId": driver_id,
-            "Position": [lng, lat], # AWS requires [lng, lat]
+            "Position": [lng, lat],
             "SampleTime": timestamp,
-            "Accuracy": {"Horizontal": accuracy} if accuracy else {}
+            "Accuracy": {"Horizontal": accuracy} if accuracy else {},
         }]
     }
-    
-    req = AWSRequest(method="POST", url=url, data=json.dumps(payload), headers={"Content-Type": "application/json"})
-    SigV4Auth(boto3.Session().get_credentials(), "geo", AWS_REGION).add_auth(req)
-    
-    async with httpx.AsyncClient() as client:
-        try:
+    try:
+        req = AWSRequest(
+            method="POST", url=url, data=json.dumps(payload),
+            headers={"Content-Type": "application/json"},
+        )
+        SigV4Auth(boto3.Session().get_credentials(), "geo", AWS_REGION).add_auth(req)
+        async with httpx.AsyncClient(timeout=10.0) as client:
             await client.post(url, data=req.body, headers=dict(req.headers))
-        except Exception as e:
-            logger.error(f"AWS Tracker sync failed for {driver_id}: {e}")
+    except Exception as e:
+        logger.error(f"AWS Tracker sync failed for {driver_id}: {e}")
+
 
 @router.post("/location")
-async def push_location(payload: dict, user_data = Depends(require_role(["driver", "logistics"]))):
-    """Replaces LogiFlow's upsert_driver_location RPC"""
+async def push_location(
+    payload: dict,
+    user_data = Depends(require_role(["driver", "logistics"])),
+):
     user_id, org_id, role = user_data
     client = get_supabase()
-    
-    # In bOS, the user_id is the auth ID, we need the profile ID for driver_id
-    # Depending on your schema, you might use user_id directly or query profiles.
-    # Assuming user_id maps directly to driver_id for Dispatch profiles.
-    driver_id = user_id
-    
-    lat, lng = payload["lat"], payload["lng"]
+
+    try:
+        lat = float(payload["lat"])
+        lng = float(payload["lng"])
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(400, "lat and lng are required numeric fields")
+
     acc = payload.get("accuracy")
     bat = payload.get("battery")
     chg = payload.get("is_charging")
     now = datetime.now(timezone.utc).isoformat()
+    driver_id = user_id
 
-    # 1. Upsert to Postgres
     await run_sync_db_call(
         client.table("driver_locations").upsert({
-            "org_id": org_id, "driver_id": driver_id, "lat": lat, "lng": lng,
-            "accuracy": acc, "battery": bat, "is_charging": chg, "updated_at": now
-        }, on_conflict="org_id, driver_id").execute
+            "org_id": org_id,
+            "driver_id": driver_id,
+            "lat": lat,
+            "lng": lng,
+            "accuracy": acc,
+            "battery": bat,
+            "is_charging": chg,
+            "updated_at": now,
+        }, on_conflict="org_id,driver_id").execute
     )
 
-    # 2. Fire-and-forget to AWS (non-blocking)
-    import asyncio
     asyncio.create_task(fire_aws_geofence_event(driver_id, lat, lng, acc, now))
-    
+
     return {"status": "ok"}
+
 
 @router.get("/public/{tracking_code}")
 async def public_track(tracking_code: str, request: Request):
-    """Replaces LogiFlow's track_order RPC"""
-    await rate_limit(get_client_ip(request))
+    await rate_limit(get_client_ip(request), request=request)
     client = get_supabase()
 
-    # Fetch Order
-    res = await run_sync_db_call(
+    # NOTE: driver_locations has no FK path from sales, so we do it in
+    # two queries rather than rely on PostgREST embed inference (which
+    # cannot resolve sales -> driver_locations).
+    sale_res = await run_sync_db_call(
         client.table("sales").select(
-            "status, delivery_address, created_at, dispatched_at, delivered_at, assigned_driver_id, branches(name), profiles(full_name, phone), driver_locations(lat, lng, updated_at)"
-        ).eq("receipt_number", tracking_code).execute()
+            "id, status, shipping_address, created_at, assigned_driver_id, "
+            "profiles!assigned_driver_id(first_name, last_name, phone)"
+        ).eq("receipt_number", tracking_code).maybe_single().execute
     )
-    if not res.data:
+    if not sale_res or not sale_res.data:
         raise HTTPException(404, "Order not found")
-        
-    order = res.data[0]
-    driver_loc = order.get("driver_locations")
-    
+
+    order = sale_res.data
+    driver = order.get("profiles") or {}
+    driver_loc = None
+
+    if order.get("assigned_driver_id"):
+        loc_res = await run_sync_db_call(
+            client.table("driver_locations")
+            .select("lat, lng, updated_at")
+            .eq("driver_id", order["assigned_driver_id"])
+            .maybe_single()
+            .execute
+        )
+        if loc_res and loc_res.data:
+            driver_loc = loc_res.data
+
+    driver_name = None
+    if driver:
+        first = driver.get("first_name") or ""
+        last = driver.get("last_name") or ""
+        driver_name = f"{first} {last}".strip() or None
+
     return {
         "tracking_code": tracking_code,
         "status": order["status"],
-        "delivery_address": order["delivery_address"],
-        "created_at": order["created_at"],
-        "driver": {
-            "name": order.get("profiles", {}).get("full_name"),
-            "phone": order.get("profiles", {}).get("phone"),
-        } if order.get("profiles") else None,
-        "position": {
-            "lat": driver_loc["lat"],
-            "lng": driver_loc["lng"],
-            "updated_at": driver_loc["updated_at"]
-        } if driver_loc else None
+        "delivery_address": order.get("shipping_address"),
+        "created_at": order.get("created_at"),
+        "driver": {"name": driver_name, "phone": driver.get("phone")} if driver else None,
+        "position": driver_loc,
     }
 
+
 @router.patch("/status/{sale_id}")
-async def advance_status(sale_id: str, payload: dict, user_data = Depends(require_role(["driver", "owner", "admin", "logistics"]))):
-    """Replaces LogiFlow's advance_order_status RPC"""
+async def advance_status(
+    sale_id: str,
+    payload: dict,
+    user_data = Depends(require_role(["driver", "owner", "admin", "logistics"])),
+):
     user_id, org_id, role = user_data
     next_status = payload.get("status")
-    
+
     if next_status not in ["picked", "in_transit", "delivered", "cancelled", "failed"]:
         raise HTTPException(400, "Invalid status")
 
     client = get_supabase()
-    
-    # Verify driver ownership
-    sale = await fetch_one(client.table("sales").select("status, assigned_driver_id").eq("id", sale_id).eq("org_id", org_id).maybe_single())
-    if not sale: raise HTTPException(404, "Sale not found")
-    
+
+    sale = await fetch_one(
+        client.table("sales")
+        .select("status, assigned_driver_id")
+        .eq("id", sale_id)
+        .eq("org_id", org_id)
+        .maybe_single()
+    )
+    if not sale:
+        raise HTTPException(404, "Sale not found")
+
     if role == "driver" and sale["assigned_driver_id"] != user_id:
         raise HTTPException(403, "Not your order")
 
-    # Map timestamps
-    upd = {"status": next_status, "updated_at": datetime.now(timezone.utc).isoformat()}
-    if next_status == "picked": upd["picked_at"] = upd["updated_at"]
-    if next_status == "in_transit": upd["dispatched_at"] = upd["updated_at"]
-    if next_status == "delivered": upd["delivered_at"] = upd["updated_at"]
+    current = sale["status"]
+    if role == "driver":
+        allowed = VALID_DRIVER_TRANSITIONS.get(current, [])
+        if next_status not in allowed:
+            raise HTTPException(400, f"Invalid transition from {current} to {next_status}")
+
+    now = datetime.now(timezone.utc).isoformat()
+    upd = {"status": next_status, "updated_at": now}
+    if next_status == "picked":    upd["picked_at"] = now
+    if next_status == "in_transit": upd["dispatched_at"] = now
+    if next_status == "delivered": upd["delivered_at"] = now
 
     await run_sync_db_call(
-        client.table("sales").update(upd).eq("id", sale_id).execute()
+        client.table("sales").update(upd).eq("id", sale_id).execute
     )
-    
-    # Audit log
+
     await run_sync_db_call(
         client.table("sale_events").insert({
-            "org_id": org_id, "sale_id": sale_id, 
-            "from_status": sale["status"], "to_status": next_status, "changed_by": user_id
-        }).execute()
+            "org_id": org_id,
+            "sale_id": sale_id,
+            "from_status": current,
+            "to_status": next_status,
+            "changed_by": user_id,
+        }).execute
     )
-    
+
     return {"status": next_status}
+
+
+@router.post("/webhook/aws")
+async def aws_geofence_webhook(request: Request):
+    if not GEOFENCE_WEBHOOK_SECRET:
+        logger.error("aws_geofence_webhook: GEOFENCE_WEBHOOK_SECRET not set — refusing all calls")
+        raise HTTPException(503, "Geofence webhook not configured")
+    if request.headers.get("x-webhook-secret") != GEOFENCE_WEBHOOK_SECRET:
+        raise HTTPException(401, "Unauthorized")
+
+    event = await request.json()
+    detail = event.get("detail", {})
+
+    aws_geofence_id = detail.get("GeofenceId")
+    driver_id = detail.get("DeviceId")
+    event_type_raw = detail.get("EventType", "")
+    position = detail.get("Position")
+
+    if not aws_geofence_id or not driver_id or not event_type_raw or not position:
+        raise HTTPException(400, "Missing fields")
+
+    event_type = event_type_raw.lower()
+    if event_type not in ("enter", "exit"):
+        return {"status": "ignored", "reason": f"unknown event type: {event_type_raw}"}
+
+    try:
+        lng, lat = position
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Invalid position payload")
+
+    client = get_supabase()
+
+    fence = await fetch_one(
+        client.table("geofences")
+        .select("id, org_id")
+        .eq("aws_geofence_id", aws_geofence_id)
+        .maybe_single()
+    )
+    if not fence:
+        return {"status": "ignored", "reason": "unknown geofence"}
+
+    try:
+        await run_sync_db_call(
+            client.table("geofence_events").insert({
+                "org_id": fence["org_id"],
+                "geofence_id": fence["id"],
+                "driver_id": driver_id,
+                "event_type": event_type,
+                "lat": lat,
+                "lng": lng,
+                "aws_event_id": detail.get("EventId"),
+                "occurred_at": detail.get("SampleTime") or datetime.now(timezone.utc).isoformat(),
+            }).execute
+        )
+    except Exception as e:
+        if "23505" in str(e) or "duplicate" in str(e).lower():
+            return {"status": "duplicate"}
+        logger.error(f"AWS geofence webhook insert failed: {e}")
+        raise HTTPException(500, "Insert failed")
+
+    return {"status": "ok"}
