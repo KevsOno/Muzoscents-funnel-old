@@ -1,7 +1,6 @@
 # ====================================================================
 # FULL MONOLITHIC main.py (with HR module integrated)
 # ====================================================================
-
 from fastapi import FastAPI, Header, HTTPException, Request, Response, Depends, File, UploadFile, Query, BackgroundTasks, APIRouter
 from fastapi.responses import PlainTextResponse, JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
