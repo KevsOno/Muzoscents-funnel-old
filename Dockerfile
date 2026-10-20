@@ -18,11 +18,10 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the main application and all HTML files
-COPY main.py .
-COPY *.html .
+# Copy the entire application (Python files, HTML, JS, config, etc.)
+COPY . .
 
-# Expose the port used by FastAPI (7860 is common for HF Spaces)
+# Expose the port used by FastAPI
 EXPOSE 7860
 
 # Command to start the server
