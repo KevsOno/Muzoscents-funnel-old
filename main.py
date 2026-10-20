@@ -16,6 +16,7 @@ import os
 import logging
 import httpx
 import uuid
+import base64
 from uuid import UUID
 import time
 import structlog
@@ -44,6 +45,8 @@ import statistics
 from dataclasses import dataclass, field
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi import BackgroundTasks
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -85,6 +88,9 @@ LOGISTICS_EMAIL = os.environ.get("LOGISTICS_EMAIL", "")
 
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
 BREVO_FROM_EMAIL = os.environ.get("BREVO_FROM_EMAIL", FROM_EMAIL)
+
+GITHUB_REPO = os.environ.get("GITHUB_REPO")
+GITHUB_PAT = os.environ.get("GITHUB_PAT")
 
 RATE_LIMIT_ENABLED = os.environ.get("RATE_LIMIT_ENABLED", "true").lower() == "true"
 RATE_LIMIT_REQUESTS = int(os.environ.get("RATE_LIMIT_REQUESTS", "100"))
@@ -3766,6 +3772,70 @@ async def ensure_org_registry_schema():
         logger.error(f"org_registry_schema migration failed: {resp.text}")
         raise RuntimeError(f"org_registry_schema migration failed: {resp.text}")
     logger.info("organisations registry schema installed (slug, vertical, storefront_config, storefront_published)")
+
+
+
+
+
+
+async def create_physical_storefront_in_github(slug: str, org_name: str, config: dict):
+    """
+    Takes the org's config, generates a standalone index.html, 
+    and commits it to the stores/{slug}/ folder in GitHub.
+    """
+    if not GITHUB_PAT or not GITHUB_REPO:
+        logger.warning("GitHub sync skipped: credentials missing")
+        return
+
+    # 1. Generate the standalone HTML
+    # We inject the config directly so Capacitor can read it offline
+    config_json = json.dumps(config)
+    
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{org_name}</title>
+        <script>window.__ORG_CONFIG__ = {config_json};</script>
+    </head>
+    <body>
+        <div id="app">Loading {org_name}...</div>
+        <!-- This script will read window.__ORG_CONFIG__ instead of fetching from API -->
+        <script src="/kdstore.js"></script>
+    </body>
+    </html>
+    """
+    
+    content_b64 = base64.b64encode(html_content.encode('utf-8')).decode('utf-8')
+    file_path = f"stores/{slug}/index.html"
+    api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{file_path}"
+    
+    headers = {
+        "Authorization": f"Bearer {GITHUB_PAT}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+
+    async with httpx.AsyncClient() as client:
+        # Check if file already exists (we need the SHA to update it)
+        sha = None
+        res = await client.get(api_url, headers=headers)
+        if res.status_code == 200:
+            sha = res.json().get("sha")
+        
+        # Commit the file
+        payload = {
+            "message": f"Auto-build physical storefront for {slug}",
+            "content": content_b64,
+            "branch": "main"
+        }
+        if sha:
+            payload["sha"] = sha
+            
+        put_res = await client.put(api_url, json=payload, headers=headers)
+        if put_res.status_code not in (200, 201):
+            logger.error(f"Failed to commit store to GitHub: {put_res.text}")
 
 
 
@@ -10414,8 +10484,13 @@ async def update_own_storefront_config(
 
     return {"config": merge_storefront_config(current)}
     
+
+
+
+
 @app.post("/storefront/publish")
 async def publish_own_storefront(
+    background_tasks: BackgroundTasks,  # <-- Add this
     user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin"])),
 ):
     _, org_id, _ = user_data
@@ -10423,7 +10498,7 @@ async def publish_own_storefront(
 
     res = await run_sync_db_call(
         client.table("organisations")
-        .select("slug, storefront_config")
+        .select("slug, org_name, storefront_config")
         .eq("id", org_id)
         .maybe_single()
         .execute
@@ -10455,6 +10530,14 @@ async def publish_own_storefront(
     )
     if not pub_res.data:
         raise HTTPException(status_code=500, detail="Failed to publish")
+
+    # Trigger the GitHub commit in the background so the API responds instantly
+    background_tasks.add_task(
+        create_physical_storefront_in_github,
+        slug=org["slug"],
+        org_name=org.get("org_name"),
+        config=cfg,
+    )
 
     return {
         "published": True,
@@ -15304,7 +15387,7 @@ async def checkout(request: Request, req: CheckoutRequest, user_data: Tuple[str,
 # ------------------------------------------------------------------
 # POS TERMINAL CHECKOUT (with points awarding)
 # ------------------------------------------------------------------
-from fastapi import BackgroundTasks
+
 
 @app.post("/pos/terminal/checkout")
 async def pos_terminal_checkout(
