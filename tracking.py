@@ -31,11 +31,9 @@ AWS_SECRET = os.environ.get("AWS_SECRET_ACCESS_KEY")
 GEOFENCE_WEBHOOK_SECRET = os.environ.get("GEOFENCE_WEBHOOK_SECRET")
 
 
-# ─────────────────────────────────────────────────────────────────
-# Dispatch state machine — only these transitions are legal for
-# driver role. owner / admin / logistics retain override authority
-# (they still hit the general status whitelist in advance_status).
-# ─────────────────────────────────────────────────────────────────
+# Dispatch state machine — driver role is constrained to these
+# transitions. owner / admin / logistics retain override authority
+# (they still hit the status whitelist in advance_status).
 VALID_DRIVER_TRANSITIONS = {
     "confirmed":  ["picked", "cancelled"],
     "dispatched": ["picked", "cancelled"],
@@ -112,9 +110,8 @@ async def public_track(tracking_code: str, request: Request):
     await rate_limit(get_client_ip(request), request=request)
     client = get_supabase()
 
-    # NOTE: driver_locations has no FK path from sales, so we do it in
-    # two queries rather than rely on PostgREST embed inference (which
-    # cannot resolve sales -> driver_locations).
+    # driver_locations has no FK path from sales, so we do it in two
+    # queries rather than rely on PostgREST embed inference.
     sale_res = await run_sync_db_call(
         client.table("sales").select(
             "id, status, shipping_address, created_at, assigned_driver_id, "
