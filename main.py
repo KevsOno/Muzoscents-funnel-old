@@ -16127,6 +16127,12 @@ async def chat_stream(
 
         user_id = f"guest_{get_client_ip(request)}"
         role = "guest"
+         # Feature gate: ecommerce. The customer AI widget is embedded on the
+         # storefront shell, which is itself ecommerce-gated. An org without
+         # ecommerce has no storefront, so the customer AI has no legitimate
+         # place to run. The 402 here closes the "hit the endpoint directly
+         # from /kdstore or a cached widget" hole.
+    await check_org_feature(org_id, "ecommerce")
 
     # Feature gate: ai_assistant. Applies to both authenticated and guest
     # callers — an org without the AI feature answers 402 regardless of
@@ -16190,6 +16196,27 @@ async def handle_whatsapp(request: Request):
                     org_id = membership.data["org_id"]
                     user_id = profile.data["id"]
                     await rate_limit(from_phone, org_id)
+
+                    # Feature gate: ai_assistant. WhatsApp is a customer-
+                    # facing AI channel but not an ecommerce surface —
+                    # an org can use WhatsApp support without a
+                    # storefront. So only the AI gate applies here.
+                    #
+                    # Wrap in try/except: check_org_feature raises 402,
+                    # and we do NOT want that to bubble out as a 402 to
+                    # Meta. Meta will retry webhooks that 4xx/5xx, and
+                    # a repeated "upgrade your plan" loop is worse than
+                    # a polite reply telling the customer the service
+                    # is unavailable. Return 200 after messaging them.
+                    try:
+                        await check_org_feature(org_id, "ai_assistant")
+                    except HTTPException:
+                        await send_whatsapp_message(
+                            from_phone,
+                            "This service is not currently available. Please contact us directly.",
+                        )
+                        return {"status": "ok"}
+
                     reply, _ = await get_strategic_reply(text_body, user_id, org_id, session_id, "whatsapp")
                     await save_conversation(user_id, org_id, session_id, text_body, reply, "whatsapp")
                     await send_whatsapp_message(from_phone, reply)
