@@ -46,6 +46,7 @@ from dataclasses import dataclass, field
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi import BackgroundTasks
+from migrations_geo import ensure_geo_schema
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -186,6 +187,7 @@ def _compute_migration_suite_hash() -> str:
         "ensure_accounting_tables",
         "ensure_is_cogs_column",
         "ensure_inventory_storefront_description",
+        "ensure_geo_schema",
     ]
     h = hashlib.sha256()
     for name in names:
@@ -5863,6 +5865,7 @@ async def startup_event():
         await ensure_accounting_tables()
         await ensure_is_cogs_column()
         await ensure_inventory_storefront_description()
+        await ensure_geo_schema()
 
         await _record_migration_hash(
             suite_hash=current_hash,
