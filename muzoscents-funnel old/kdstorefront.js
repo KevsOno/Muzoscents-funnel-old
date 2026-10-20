@@ -4,6 +4,14 @@ let CONFIG = null;         // Full merged config from server
 let ORG_META = null;       // { org_name, slug, vertical, published }
 let DIRTY = false;
 
+// Check URL for org_id, or fallback to local storage
+const urlParams = new URLSearchParams(window.location.search);
+const urlOrgId = urlParams.get('org_id');
+if (urlOrgId) {
+    localStorage.setItem('selected_org_id', urlOrgId);
+}
+const SELECTED_ORG_ID = localStorage.getItem('selected_org_id');
+
 /* ─── helpers ─── */
 function $(s) { return document.querySelector(s); }
 function $$(s) { return Array.from(document.querySelectorAll(s)); }
@@ -35,6 +43,10 @@ async function api(path, opts) {
     opts = opts || {};
     opts.headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
     if (TOKEN) opts.headers['Authorization'] = 'Bearer ' + TOKEN;
+
+    // ADD THIS LINE:
+    if (SELECTED_ORG_ID) opts.headers['X-Selected-Org-Id'] = SELECTED_ORG_ID;
+
     const res = await fetch(API_BASE + path, opts);
     if (res.status === 401) {
         localStorage.removeItem('access_token');
@@ -325,8 +337,8 @@ function renderSectionsUI() {
                 </button>
             </div>
             <div class="flex-1">
-                <div class="font-medium text-white">${escapeHtml(SECTION_LABELS[sec.type] || sec.type)}</div>
-                <div class="text-xs text-slate-500 font-mono">${escapeHtml(sec.type)}</div>
+                <div class="font-medium text-white">${esc(SECTION_LABELS[sec.type] || sec.type)}</div>
+                <div class="text-xs text-slate-500 font-mono">${esc(sec.type)}</div>
             </div>
             <button class="text-slate-500 hover:text-red-400 p-2" data-remove-section="${i}" aria-label="Remove section">
                 <i class="fa-regular fa-trash-can"></i>
