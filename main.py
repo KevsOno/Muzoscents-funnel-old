@@ -186,6 +186,8 @@ def _compute_migration_suite_hash() -> str:
         "ensure_location_stocks_constraints",
         "ensure_location_stocks_batch_backfill",
         "ensure_batch_verification_columns",
+        "ensure_distribute_batch_trigger",
+        "ensure_inventory_creation_tracking",
         "ensure_cost_price_column",
         "ensure_delivery_fee_columns",
         "ensure_org_delivery_columns",
@@ -2563,6 +2565,145 @@ async def ensure_batch_verification_columns():
         raise RuntimeError(f"batch verification columns migration failed: {resp.text}")
     logger.info("verification columns installed on inventory_batches and location_stocks")
 
+
+async def ensure_distribute_batch_trigger():
+    """
+    Replace the legacy inventory trigger with a batch-aware one.
+
+    The old trigger fired AFTER INSERT ON inventory and tried to seed
+    location_stocks rows with ON CONFLICT (location_id, inventory_id).
+    That conflict target no longer exists — the only unique key on
+    location_stocks is (location_id, inventory_id, batch_id) — so
+    every INSERT INTO inventory failed with SQLSTATE 42P10.
+
+    The new trigger fires AFTER INSERT ON inventory_batches, which is
+    the first moment a batch_id exists. Every batch, including
+    second-and-later batches from later deliveries, gets a
+    zero-quantity location_stocks row at every active location. The
+    original trigger only covered the first batch of a product, so
+    the new one is strictly more correct.
+    """
+    sql = """
+    -- Remove the legacy trigger and its function.
+    DROP TRIGGER IF EXISTS trigger_distribute_inventory ON public.inventory;
+    DROP FUNCTION IF EXISTS public.distribute_inventory_to_locations();
+
+    -- Install the batch-aware replacement.
+    CREATE OR REPLACE FUNCTION public.distribute_batch_to_locations()
+    RETURNS trigger
+    LANGUAGE plpgsql
+    AS $function$
+    BEGIN
+        INSERT INTO public.location_stocks (
+            location_id, inventory_id, batch_id,
+            quantity, reserved_quantity, updated_at
+        )
+        SELECT
+            l.id,
+            NEW.inventory_id,
+            NEW.id,
+            0,
+            0,
+            NOW()
+          FROM public.locations l
+          JOIN public.inventory inv ON inv.id = NEW.inventory_id
+         WHERE l.org_id = inv.org_id
+           AND l.is_active = TRUE
+        ON CONFLICT (location_id, inventory_id, batch_id) DO NOTHING;
+
+        RETURN NEW;
+    END;
+    $function$;
+
+    DROP TRIGGER IF EXISTS trigger_distribute_batch ON public.inventory_batches;
+    CREATE TRIGGER trigger_distribute_batch
+    AFTER INSERT ON public.inventory_batches
+    FOR EACH ROW
+    EXECUTE FUNCTION public.distribute_batch_to_locations();
+    """
+
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"distribute_batch trigger migration failed: {resp.text}")
+        raise RuntimeError(f"distribute_batch trigger migration failed: {resp.text}")
+    logger.info("distribute_batch trigger installed on inventory_batches")
+
+
+
+async def ensure_inventory_creation_tracking():
+    """
+    Add creation-tracking columns to inventory.
+
+    Purpose: distinguish inventory personnel creating a product manually
+    (from the inventory page) from procurement personnel creating one
+    via a PO/GRN. Answers the "who added this and via what path?"
+    question during audits without disabling any creation capability.
+
+    Columns added:
+      - created_by   UUID  → references profiles(id), set to caller at
+                     insert time; NULL for pre-migration rows
+      - created_via  TEXT  → 'inventory_manual', 'inventory_bulk_csv',
+                     'procurement_po', 'procurement_grn', 'admin',
+                     or 'unknown' for pre-migration rows
+      - created_at   TIMESTAMPTZ → insert timestamp; for pre-migration
+                     rows, defaults to the migration run time
+
+    Idempotent. Safe on every boot.
+    """
+    sql = """
+    ALTER TABLE public.inventory
+        ADD COLUMN IF NOT EXISTS created_by  UUID,
+        ADD COLUMN IF NOT EXISTS created_via TEXT DEFAULT 'unknown',
+        ADD COLUMN IF NOT EXISTS created_at  TIMESTAMPTZ DEFAULT now();
+
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+              FROM pg_constraint c
+              JOIN pg_attribute  a
+                ON a.attrelid = c.conrelid
+               AND a.attnum   = ANY (c.conkey)
+             WHERE c.conrelid = 'public.inventory'::regclass
+               AND c.contype  = 'f'
+               AND a.attname  = 'created_by'
+        ) THEN
+            ALTER TABLE public.inventory
+                ADD CONSTRAINT inventory_created_by_fkey
+                FOREIGN KEY (created_by)
+                REFERENCES public.profiles(id)
+                ON DELETE SET NULL;
+        END IF;
+    END $$;
+
+    CREATE INDEX IF NOT EXISTS idx_inventory_created_via
+        ON public.inventory(created_via);
+    """
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"inventory creation tracking migration failed: {resp.text}")
+        raise RuntimeError(f"inventory creation tracking migration failed: {resp.text}")
+    logger.info("inventory created_by/created_via/created_at columns installed")
 
 
 
@@ -5863,6 +6004,8 @@ async def startup_event():
         await ensure_location_stocks_constraints()
         await ensure_location_stocks_batch_backfill()
         await ensure_batch_verification_columns()
+        await ensure_distribute_batch_trigger()
+        await ensure_inventory_creation_tracking()
         await ensure_cost_price_column()
         await ensure_delivery_fee_columns()
         await ensure_org_delivery_columns()
@@ -5970,6 +6113,8 @@ async def startup_event():
         await ensure_location_stocks_constraints()
         await ensure_location_stocks_batch_backfill()
         await ensure_batch_verification_columns()
+        await ensure_distribute_batch_trigger()
+        await ensure_inventory_creation_tracking()
         await ensure_cost_price_column()
         await ensure_delivery_fee_columns()
         await ensure_org_delivery_columns()
@@ -12036,11 +12181,13 @@ async def create_inventory_item(
     user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, _ = user_data
     client = get_supabase()
 
     data = item.dict()
     data["org_id"] = org_id
+    data["created_by"]  = user_id
+    data["created_via"] = "inventory_manual"
     data["created_at"] = datetime.now(timezone.utc).isoformat()
     data["updated_at"] = datetime.now(timezone.utc).isoformat()
 
@@ -12532,7 +12679,7 @@ async def bulk_upload_inventory(
     user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, _ = user_data
 
     if not file.filename.endswith('.csv'):
         raise HTTPException(status_code=400, detail="Only CSV files are supported.")
@@ -12701,6 +12848,8 @@ async def bulk_upload_inventory(
                     "weight_kg": weight_kg,
                     "handling_category": handling_category,
                     "size_factor": size_factor,
+                    "created_by": user_id,
+                    "created_via": "inventory_bulk_csv",
                     "created_at": datetime.now(timezone.utc).isoformat(),
                     "updated_at": datetime.now(timezone.utc).isoformat()
                 }
