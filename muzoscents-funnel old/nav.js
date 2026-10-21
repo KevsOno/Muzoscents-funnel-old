@@ -8,7 +8,7 @@
     const API_BASE   = 'https://kevsono-kevs-digital-bos.hf.space';
 
     const navItems = [
-        { path: '/kdbi',          name: 'Dashboard',   icon: 'fa-chart-line',    title: 'Marketing metrics, leads & AI strategy',                 roles: ['owner','admin','sales_rep','finance'] },
+        { path: '/kdbi',          name: 'Strategy',   icon: 'fa-chart-line',    title: 'Marketing metrics, leads & AI strategy',                 roles: ['owner','admin','sales_rep','finance'] },
         { path: '/kdpos',         name: 'POS',         icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & online payments',         roles: ['owner','admin','sales_rep'] },
         { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast',    title: 'Order shipping, tracking & dispatch',                    roles: ['owner','admin','logistics'] },
         { path: '/kdsupport',     name: 'Support',     icon: 'fa-headset',       title: 'Ticket management & customer context',                   roles: ['owner','admin','support'] },
