@@ -6668,6 +6668,39 @@ async def send_status_update_email(sale_id: str, old_status: str, new_status: st
     else:
         logger.warning(f"No logistics email configured for org {sale_data['org_id']}")
 
+
+
+async def _resolve_branch_scope_for_request(request: Request) -> Optional[str]:
+    """
+    Read `branch_scope` from the caller's JWT app_metadata.
+
+    Returns None when the caller's JWT does not carry a branch scope
+    (the default for every user in this codebase — see
+    _admin_set_app_metadata's call sites). Returns the UUID string
+    otherwise, which should then be applied as .eq("branch_id", ...)
+    on any org-scoped query.
+
+    Failures are non-fatal. A transient auth lookup problem must not
+    block the request; org_id scoping on the underlying query is still
+    the primary tenant boundary.
+    """
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+    try:
+        token = auth_header.split(" ", 1)[1]
+        auth_client = get_user_supabase()
+        user_resp = await run_sync_db_call(auth_client.auth.get_user, token)
+        if user_resp and user_resp.user:
+            app_meta = getattr(user_resp.user, "app_metadata", None) or {}
+            return app_meta.get("branch_scope") or None
+    except Exception as e:
+        logger.warning(f"_resolve_branch_scope_for_request failed: {e}")
+    return None
+
+
+
+
 # ------------------------------------------------------------------
 # Helper functions
 # ------------------------------------------------------------------
@@ -13733,6 +13766,12 @@ async def _write_location_stock(
         }).execute
     )
 
+
+
+
+
+
+
 @app.post("/inventory/batches/{batch_id}/verify")
 async def verify_batch(
     request: Request,
@@ -16868,6 +16907,17 @@ class FulfillmentUpdate(BaseModel):
     notes: Optional[str] = None
     confirm_payment: bool = False
 
+# E-commerce payment gateways. Every online order goes through one of
+# these; no POS transaction ever does. POS uses cash/card/transfer/pos,
+# so requiring payment_method to be in this list is a reliable
+# discriminator between "fulfillment-eligible" and "cashier transaction".
+#
+# If a new gateway is added to get_payment_gateway_from_config, add its
+# payment_method value here too, or its online orders will stop
+# appearing on the fulfillment dashboard.
+ECOMMERCE_PAYMENT_METHODS = ("paystack", "flutterwave", "monnify")
+
+
 @app.get("/fulfillment/orders")
 async def list_fulfillment_orders(
     request: Request,
@@ -16875,25 +16925,62 @@ async def list_fulfillment_orders(
     limit: int = 50,
     offset: int = 0,
     include_pending: bool = False,
-    user_data: Tuple[str, str, str] = Depends(require_feature("fulfillment", allowed_roles=["owner", "admin", "logistics"]))
+    user_data: Tuple[str, str, str] = Depends(
+        require_feature("fulfillment", allowed_roles=["owner", "admin", "logistics"])
+    ),
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, role = user_data
+
+    # Defensive: if the identity pipeline somehow resolved an empty
+    # org_id, refuse the request rather than run an unscoped query
+    # against the service-role client. With .eq("org_id", "") PostgREST
+    # returns nothing, but failing loud is safer than silent empty.
+    if not org_id:
+        raise HTTPException(status_code=403, detail="Organisation context missing")
+
+    branch_scope = await _resolve_branch_scope_for_request(request)
+
     client = get_supabase()
-    query = client.table("sales").select("*, sale_items(id, product_name, quantity, unit_price)") \
+    query = (
+        client.table("sales")
+        .select("*, sale_items(id, product_name, quantity, unit_price, subtotal)")
         .eq("org_id", org_id)
+        # E-commerce only. See ECOMMERCE_PAYMENT_METHODS comment above.
+        .in_("payment_method", list(ECOMMERCE_PAYMENT_METHODS))
+    )
+
+    if branch_scope:
+        query = query.eq("branch_id", branch_scope)
+
     if not include_pending:
         query = query.neq("status", "pending")
+
     if status:
         query = query.eq("shipping_status", status)
-    result = await run_sync_db_call(query.order("created_at", desc=True).range(offset, offset + limit - 1).execute)
+
+    result = await run_sync_db_call(
+        query.order("created_at", desc=True).range(offset, offset + limit - 1).execute
+    )
     orders = result.data or []
 
-    user_ids = []
-    for order in orders:
-        if not order.get("customer_phone") and order.get("user_id"):
-            user_ids.append(order["user_id"])
+    logger.info(
+        "fulfillment_orders_listed",
+        user_id=user_id,
+        org_id=org_id,
+        role=role,
+        branch_scope=branch_scope,
+        count=len(orders),
+        status_filter=status,
+        include_pending=include_pending,
+    )
 
+    # Enrich orders where a phone is missing on the sale but present on
+    # the profile — unchanged from the original handler.
+    user_ids = [
+        o["user_id"] for o in orders
+        if not o.get("customer_phone") and o.get("user_id")
+    ]
     if user_ids:
         profile_res = await run_sync_db_call(
             client.table("profiles")
@@ -16909,23 +16996,39 @@ async def list_fulfillment_orders(
     return {"orders": orders}
 
 @app.get("/fulfillment/order/{order_id}")
-async def get_fulfillment_order(request: Request, order_id: str, user_data: Tuple[str, str, str] = Depends(require_feature("fulfillment", allowed_roles=["owner", "admin", "logistics"]))):
+async def get_fulfillment_order(
+    request: Request,
+    order_id: str,
+    user_data: Tuple[str, str, str] = Depends(
+        require_feature("fulfillment", allowed_roles=["owner", "admin", "logistics"])
+    ),
+):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
+    if not org_id:
+        raise HTTPException(status_code=403, detail="Organisation context missing")
+
+    branch_scope = await _resolve_branch_scope_for_request(request)
     client = get_supabase()
-    order = await run_sync_db_call(
+
+    order_query = (
         client.table("sales")
         .select("*, sale_items(*)")
         .eq("id", order_id)
         .eq("org_id", org_id)
-        .maybe_single()
-        .execute
+        .in_("payment_method", list(ECOMMERCE_PAYMENT_METHODS))
     )
-    if not order.data:
+    if branch_scope:
+        order_query = order_query.eq("branch_id", branch_scope)
+
+    order = await run_sync_db_call(order_query.maybe_single().execute)
+    if not order or not order.data:
+        # Same 404 for "not found", "wrong org", "wrong branch", and
+        # "this was a POS transaction". A cross-tenant caller cannot
+        # tell those apart, which is the point.
         raise HTTPException(status_code=404, detail="Order not found")
 
     order_data = order.data
-
     if not order_data.get("customer_phone") and order_data.get("user_id"):
         profile_res = await run_sync_db_call(
             client.table("profiles")
@@ -16934,12 +17037,14 @@ async def get_fulfillment_order(request: Request, order_id: str, user_data: Tupl
             .maybe_single()
             .execute
         )
-        if profile_res and profile_res.data:
-            order_data["customer_phone"] = profile_res.data.get("phone")
-        else:
-            order_data["customer_phone"] = "Not provided"
+        order_data["customer_phone"] = (
+            profile_res.data.get("phone")
+            if profile_res and profile_res.data
+            else "Not provided"
+        )
 
     return order_data
+
 
 @app.put("/fulfillment/order/{order_id}/status")
 async def update_fulfillment_status(
@@ -16947,21 +17052,41 @@ async def update_fulfillment_status(
     order_id: str,
     update: FulfillmentUpdate,
     background_tasks: BackgroundTasks,
-    user_data: Tuple[str, str, str] = Depends(require_feature("fulfillment", allowed_roles=["owner", "admin", "logistics"]))
+    user_data: Tuple[str, str, str] = Depends(
+        require_feature("fulfillment", allowed_roles=["owner", "admin", "logistics"])
+    ),
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
+    if not org_id:
+        raise HTTPException(status_code=403, detail="Organisation context missing")
+
+    branch_scope = await _resolve_branch_scope_for_request(request)
     client = get_supabase()
 
-    order = await run_sync_db_call(client.table("sales").select("shipping_status, customer_email, status").eq("id", order_id).eq("org_id", org_id).maybe_single().execute)
-    if not order.data:
+    # Ownership + eligibility pre-flight. Same filters as the read
+    # endpoint: correct org, correct branch (if scoped), and this row
+    # must be an e-commerce order rather than a POS transaction.
+    order_query = (
+        client.table("sales")
+        .select("shipping_status, customer_email, status")
+        .eq("id", order_id)
+        .eq("org_id", org_id)
+        .in_("payment_method", list(ECOMMERCE_PAYMENT_METHODS))
+    )
+    if branch_scope:
+        order_query = order_query.eq("branch_id", branch_scope)
+
+    order = await run_sync_db_call(order_query.maybe_single().execute)
+    if not order or not order.data:
         raise HTTPException(status_code=404, detail="Order not found")
+
     old_status = order.data.get("shipping_status") or "pending"
     new_status = update.shipping_status
 
     data = {
         "shipping_status": new_status,
-        "updated_at": datetime.now(timezone.utc).isoformat()
+        "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     if update.tracking_number is not None:
         data["tracking_number"] = update.tracking_number
@@ -16974,19 +17099,32 @@ async def update_fulfillment_status(
 
     if update.confirm_payment:
         data["status"] = "completed"
-        logger.info(f"Payment confirmed for order {order_id}")
 
-    result = await run_sync_db_call(client.table("sales").update(data).eq("id", order_id).eq("org_id", org_id).execute)
+    # The update is scoped too, not just the read. A race that moves the
+    # row's org or branch between the SELECT and the UPDATE closes here.
+    update_query = (
+        client.table("sales")
+        .update(data)
+        .eq("id", order_id)
+        .eq("org_id", org_id)
+        .in_("payment_method", list(ECOMMERCE_PAYMENT_METHODS))
+    )
+    if branch_scope:
+        update_query = update_query.eq("branch_id", branch_scope)
+
+    result = await run_sync_db_call(update_query.execute)
     if not result.data:
-        raise HTTPException(status_code=500, detail="Update failed")
+        raise HTTPException(status_code=404, detail="Order not found")
 
-    if new_status in ["shipped", "delivered"] and new_status != old_status:
+    if new_status in ("shipped", "delivered") and new_status != old_status:
         tracking_info = {
             "carrier": update.shipping_carrier,
             "tracking_number": update.tracking_number,
-            "estimated_delivery": update.estimated_delivery
+            "estimated_delivery": update.estimated_delivery,
         }
-        background_tasks.add_task(send_status_update_email, order_id, old_status, new_status, tracking_info)
+        background_tasks.add_task(
+            send_status_update_email, order_id, old_status, new_status, tracking_info
+        )
 
     return {"message": f"Order status updated to {new_status}", "order": result.data[0]}
 
