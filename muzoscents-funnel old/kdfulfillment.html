@@ -64,11 +64,10 @@
         <div class="flex justify-between items-center mb-6 flex-wrap gap-3">
             <div>
                 <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">📦 Fulfillment Dashboard</h1>
-                <p class="text-slate-400 text-sm">Manage order shipping and dispatch — <span class="text-emerald-400">demo access ready</span></p>
+                <p class="text-slate-400 text-sm">Manage order shipping and dispatch</p>
             </div>
             <div class="flex gap-3">
                 <button id="refresh-btn" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg transition"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
-                <a href="/kdconc" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-lg transition"><i class="fa-solid fa-store"></i> Customer Portal</a>
             </div>
         </div>
         
@@ -210,13 +209,6 @@
             <button id="modalDemoLoginBtn" class="w-full bg-emerald-600 hover:bg-emerald-700 py-2.5 rounded-xl font-semibold flex items-center justify-center gap-2 transition btn-demo">
                 <i class="fa-solid fa-flask"></i> Launch Demo (Auto Login)
             </button>
-            <div class="relative my-2">
-                <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-slate-700"></div></div>
-                <div class="relative flex justify-center text-xs"><span class="bg-slate-800 px-2 text-slate-500">or</span></div>
-            </div>
-            <a href="/kdconc" class="w-full block text-center bg-slate-700 hover:bg-slate-600 py-2.5 rounded-xl transition">
-                <i class="fa-regular fa-building"></i> Go to Customer Portal (Sign in)
-            </a>
             <p class="text-xs text-center text-slate-500 mt-2">Demo uses secure test account: <span class="font-mono">demo@kevsdigital.com</span></p>
         </div>
     </div>
@@ -470,6 +462,37 @@
     let token = localStorage.getItem('access_token');
     let currentOrderId = null;
     let currentOrderStatus = null;
+
+    // ==========================================
+    // ORGANISATION SELECTION
+    // ==========================================
+    async function ensureOrgSelected() {
+        const existing = localStorage.getItem('selected_org_id');
+        if (existing) return existing;
+
+        const res = await fetch(`${API_BASE}/auth/my-orgs`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        const { orgs } = await res.json();
+
+        if (!orgs || orgs.length === 0) {
+            throw new Error("No organisations found for this user");
+        }
+        if (orgs.length === 1) {
+            localStorage.setItem('selected_org_id', orgs[0].id);
+            return orgs[0].id;
+        }
+        // Multi-org: let the user pick (or use a persisted preference)
+        const chosen = prompt(
+            `You belong to multiple organisations:\n` +
+            orgs.map((o, i) => `${i + 1}. ${o.org_name} (${o.role})`).join('\n') +
+            `\n\nEnter number:`
+        );
+        const idx = Math.max(0, parseInt(chosen || "1", 10) - 1);
+        const orgId = orgs[idx]?.id || orgs[0].id;
+        localStorage.setItem('selected_org_id', orgId);
+        return orgId;
+    }
     
     async function refreshAccessToken() {
         const refresh = localStorage.getItem('refresh_token');
@@ -495,6 +518,14 @@
         if (!options.headers) options.headers = {};
         options.headers['Content-Type'] = 'application/json';
         if (token) options.headers['Authorization'] = `Bearer ${token}`;
+
+        // NEW — send the user's selected org on every call.
+        // Without this, the backend resolves the user's default org,
+        // which may not match what the UI is showing.
+        const selectedOrgId = localStorage.getItem('selected_org_id');
+        if (selectedOrgId) {
+            options.headers['X-Selected-Org-Id'] = selectedOrgId;
+        }
         
         let res = await fetch(`${API_BASE}${endpoint}`, options);
         if (res.status === 401) {
@@ -529,6 +560,14 @@
             const me = await apiCall('/auth/me');
             const role = me.role || 'customer';
             localStorage.setItem('user_role', role);
+
+            // NEW — ensure an org is selected after successful login
+            try {
+                await ensureOrgSelected();
+            } catch (orgErr) {
+                console.warn("Org selection failed:", orgErr);
+            }
+
             return true;
         } catch (err) {
             console.error("Demo login error:", err);
@@ -758,12 +797,20 @@
     async function initDashboard() {
         if (token) {
             try {
+                // NEW — ensure org is selected before any dashboard render
+                try {
+                    await ensureOrgSelected();
+                } catch (orgErr) {
+                    console.warn("Org selection failed:", orgErr);
+                }
                 await apiCall('/fulfillment/orders?limit=1');
                 await loadOrders();
             } catch (err) {
                 console.warn("Token invalid, clearing");
                 localStorage.removeItem('access_token');
                 localStorage.removeItem('refresh_token');
+                // NEW — clear stale org selection so the next user doesn't inherit it
+                localStorage.removeItem('selected_org_id');
                 token = null;
                 showDemoModal();
                 document.getElementById('orders-container').innerHTML = `<div class="text-center py-12"><i class="fa-regular fa-clock"></i> Session expired — click Demo Login</div>`;
