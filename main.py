@@ -20403,6 +20403,17 @@ app.include_router(hr_router)
 app.include_router(delivery_router)
 app.include_router(tracking_router)
 
+# At the very BOTTOM of main.py, after all helper definitions
+from expenses import router as expenses_router
+from exec_profitability import router as exec_profitability_router
+app.include_router(expenses_router)
+app.include_router(exec_profitability_router)
+
+
+
+from exec_profitability import router as exec_profitability_router
+app.include_router(exec_profitability_router)
+
 
 # --- CENTRALIZED LOG SHIPPING (Optional) AXIOM ---
 import requests
