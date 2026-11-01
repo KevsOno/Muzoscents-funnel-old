@@ -531,6 +531,64 @@
         };
 
         // ================================================================
+        // EXPENSES TAB
+        // ================================================================
+        const ExpensesTab = () => {
+            const [expenses, setExpenses] = useState([]);
+            const [form, setForm] = useState({ expense_date: new Date().toISOString().slice(0,10), category: '', amount: '', payment_method: 'cash', vendor: '', description: '' });
+
+            const fetchExpenses = async () => {
+                const res = await apiCall('/expenses');
+                setExpenses(res.expenses || []);
+            };
+
+            useEffect(() => { fetchExpenses(); }, []);
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                try {
+                    await apiCall('/expenses', { method: 'POST', body: JSON.stringify({ ...form, amount: parseFloat(form.amount) }) });
+                    fetchExpenses();
+                    alert('Expense recorded!');
+                } catch (err) { alert(err.message); }
+            };
+
+            return (
+                <div className="bg-white p-4 rounded shadow">
+                    <h2 className="text-xl font-semibold mb-4">Record Expense</h2>
+                    <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4 mb-6">
+                        <input type="date" className="border p-2 rounded" value={form.expense_date} onChange={e => setForm({...form, expense_date: e.target.value})} required />
+                        <input type="text" placeholder="Category (e.g. Utilities, Rent)" className="border p-2 rounded" value={form.category} onChange={e => setForm({...form, category: e.target.value})} required />
+                        <input type="number" placeholder="Amount (₦)" className="border p-2 rounded" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} required />
+                        <select className="border p-2 rounded" value={form.payment_method} onChange={e => setForm({...form, payment_method: e.target.value})}>
+                            <option value="cash">Cash</option>
+                            <option value="bank_transfer">Bank Transfer</option>
+                            <option value="card">Card</option>
+                            <option value="credit">Credit (A/P)</option>
+                        </select>
+                        <input type="text" placeholder="Vendor" className="border p-2 rounded col-span-2" value={form.vendor} onChange={e => setForm({...form, vendor: e.target.value})} />
+                        <button type="submit" className="bg-blue-600 text-white p-2 rounded col-span-2 hover:bg-blue-700">Save Expense</button>
+                    </form>
+
+                    <h3 className="text-lg font-semibold mb-2">Recent Expenses</h3>
+                    <table className="min-w-full">
+                        <thead className="bg-gray-100"><tr><th className="p-2">Date</th><th className="p-2">Category</th><th className="p-2">Amount</th><th className="p-2">Method</th></tr></thead>
+                        <tbody>
+                            {expenses.map(ex => (
+                                <tr key={ex.id} className="border-b">
+                                    <td className="p-2">{ex.expense_date}</td>
+                                    <td className="p-2">{ex.category}</td>
+                                    <td className="p-2">₦{ex.amount.toLocaleString()}</td>
+                                    <td className="p-2 capitalize">{ex.payment_method.replace('_', ' ')}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            );
+        };
+
+        // ================================================================
         // MAIN APP
         // ================================================================
         const App = () => {
@@ -1040,6 +1098,7 @@
                     case 'journal': return renderJournalTab();
                     case 'ar': return renderARTab();
                     case 'ap': return renderAPTab();
+                    case 'expenses': return <ExpensesTab />;
                     case 'export': return renderExportTab();
                     default: return <p>Select a tab</p>;
                 }
@@ -1077,7 +1136,7 @@
                         {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>}
 
                         <div className="flex flex-wrap gap-2 border-b border-gray-300 mb-4">
-                            {['pl','coa','journal','ar','ap','export'].map(tab => (
+                            {['pl','coa','journal','ar','ap','expenses','export'].map(tab => (
                                 <button
                                     key={tab}
                                     className={`px-4 py-2 rounded-t-lg font-medium transition ${activeTab === tab ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
@@ -1088,6 +1147,7 @@
                                     {tab === 'journal' && 'Journal Entries'}
                                     {tab === 'ar' && 'A/R'}
                                     {tab === 'ap' && 'A/P'}
+                                    {tab === 'expenses' && 'Expenses'}
                                     {tab === 'export' && 'Export & Sync'}
                                 </button>
                             ))}
