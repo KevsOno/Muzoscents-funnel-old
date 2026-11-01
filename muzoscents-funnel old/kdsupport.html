@@ -480,19 +480,17 @@
         // ---------- LOYALTY & CRM ----------
         async function loadCustomers() {
             try {
-                const data = await req('/organisations/me/users');
-                const users = data.users || [];
-                console.log('Loaded customers:', users.length);
+                const data = await req('/customers'); // <--- Changed from /organisations/me/users
+                const users = data.customers || [];
                 customers = users.map(u => ({
-                    id: u.id,
-                    first_name: u.first_name || '',
-                    last_name: u.last_name || '',
+                    id: u.profile_id,
+                    first_name: u.name.split(' ')[0] || '', // Split name back for the UI
+                    last_name: u.name.split(' ').slice(1).join(' ') || '',
                     email: u.email || '',
                     phone: u.phone || '',
-                    current_points: u.loyalty_points || 0,
-                    tier: u.loyalty_tier || 'bronze',
-                    date_of_birth: u.date_of_birth || null,
-                    address: u.address || '',
+                    current_points: u.current_points || 0,
+                    tier: u.tier || 'bronze',
+                    address: '', // View doesn't have address, add if needed
                     created_at: u.created_at || new Date().toISOString()
                 }));
                 window.allCustomers = [...customers];
