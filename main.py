@@ -6256,7 +6256,7 @@ async def startup_event():
         await ensure_accounting_tables()
         await ensure_is_cogs_column()
         await ensure_inventory_storefront_description()
-         await ensure_crm_customers_view()
+        await ensure_crm_customers_view()
         await ensure_expenses_table()
         await _record_migration_hash(
             suite_hash=current_hash,
