@@ -115,6 +115,44 @@
             </div>
         </div>
 
+        <!-- Profitability Intelligence -->
+        <div class="bg-white rounded shadow p-4 mb-6 border-l-4 border-indigo-600">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold"><i class="fa-solid fa-brain text-indigo-600 mr-2"></i> Business Profitability & Cost Intelligence</h2>
+                <button id="refresh-profitability" class="bg-indigo-600 text-white px-3 py-1 rounded text-sm hover:bg-indigo-700">Refresh</button>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                <div class="bg-gray-50 p-3 rounded border">
+                    <div class="text-xs text-gray-500 font-bold uppercase">Net Income</div>
+                    <div id="prof-net-income" class="text-xl font-bold text-gray-800">₦0</div>
+                </div>
+                <div class="bg-gray-50 p-3 rounded border">
+                    <div class="text-xs text-gray-500 font-bold uppercase">Total Expenses</div>
+                    <div id="prof-expenses" class="text-xl font-bold text-red-600">₦0</div>
+                </div>
+                <div class="bg-gray-50 p-3 rounded border">
+                    <div class="text-xs text-gray-500 font-bold uppercase">Waste / Expired Stock</div>
+                    <div id="prof-waste" class="text-xl font-bold text-amber-600">₦0</div>
+                </div>
+                <div class="bg-gray-50 p-3 rounded border">
+                    <div class="text-xs text-gray-500 font-bold uppercase">Uncollected A/R</div>
+                    <div id="prof-ar" class="text-xl font-bold text-blue-600">₦0</div>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <h3 class="text-sm font-bold text-gray-700 mb-2">Top Cost Drivers (COGS)</h3>
+                    <div id="prof-top-cogs" class="text-sm">Loading...</div>
+                </div>
+                <div>
+                    <h3 class="text-sm font-bold text-gray-700 mb-2">Top Expense Categories</h3>
+                    <div id="prof-top-expenses" class="text-sm">Loading...</div>
+                </div>
+            </div>
+        </div>
+
         <!-- Charts -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             <div class="bg-white p-4 rounded shadow"><canvas id="revenueChart" height="250"></canvas></div>
@@ -405,6 +443,44 @@
             }
         }
 
+        // ── Profitability Intelligence ──
+        async function loadProfitability() {
+            const start = document.getElementById('start-date').value;
+            const end = document.getElementById('end-date').value;
+            if (!start || !end) return;
+            const startISO = new Date(start).toISOString().slice(0,10);
+            const endISO = new Date(end).toISOString().slice(0,10);
+
+            try {
+                const data = await apiCall(`/dashboard/profitability?from_date=${startISO}&to_date=${endISO}`);
+                
+                document.getElementById('prof-net-income').innerText = `₦${(data.net_income || 0).toLocaleString()}`;
+                document.getElementById('prof-expenses').innerText = `₦${(data.operating_expenses || 0).toLocaleString()}`;
+                document.getElementById('prof-waste').innerText = `₦${(data.waste_value || 0).toLocaleString()}`;
+                document.getElementById('prof-ar').innerText = `₦${(data.uncollected_ar || 0).toLocaleString()}`;
+
+                // Top COGS
+                let cogsHtml = '<ul class="divide-y divide-gray-200">';
+                (data.top_cogs_products || []).forEach(item => {
+                    cogsHtml += `<li class="py-2 flex justify-between"><span>${escapeHtml(item.product)}</span><span class="font-mono font-bold">₦${item.cogs.toLocaleString()}</span></li>`;
+                });
+                cogsHtml += '</ul>';
+                document.getElementById('prof-top-cogs').innerHTML = cogsHtml || '<p class="text-gray-400">No COGS data</p>';
+
+                // Top Expenses
+                let expHtml = '<ul class="divide-y divide-gray-200">';
+                (data.top_expense_categories || []).forEach(item => {
+                    expHtml += `<li class="py-2 flex justify-between"><span>${escapeHtml(item.category)}</span><span class="font-mono font-bold">₦${item.amount.toLocaleString()}</span></li>`;
+                });
+                expHtml += '</ul>';
+                document.getElementById('prof-top-expenses').innerHTML = expHtml || '<p class="text-gray-400">No expense data</p>';
+
+            } catch (err) {
+                console.error("Profitability error:", err);
+                showToast("Failed to load profitability data", "error");
+            }
+        }
+
         // ── Charts ──
         async function loadCharts() {
             try {
@@ -521,6 +597,7 @@
 
             await loadKPIs(start, end);
             await loadInventoryValue();
+            await loadProfitability();
             await loadCharts();
             await loadProductStats();
         }
@@ -620,6 +697,7 @@
 
         document.getElementById('update-dates')?.addEventListener('click', loadDashboard);
         document.getElementById('refresh-product-stats')?.addEventListener('click', loadProductStats);
+        document.getElementById('refresh-profitability')?.addEventListener('click', loadProfitability);
 
         // ================================================================
         // START
