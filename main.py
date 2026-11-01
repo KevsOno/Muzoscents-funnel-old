@@ -221,6 +221,7 @@ def _compute_migration_suite_hash() -> str:
         "ensure_accounting_tables",
         "ensure_is_cogs_column",
         "ensure_inventory_storefront_description",
+        "ensure_crm_customers_view",
         "ensure_expenses_table",
         "ensure_geo_schema",
     ]
@@ -5883,6 +5884,56 @@ async def ensure_inventory_storefront_description():
         raise RuntimeError(f"inventory.storefront_description migration failed: {resp.text}")
     logger.info("inventory.storefront_description installed (or already present)")
 
+
+async def ensure_crm_customers_view():
+    """
+    Create the crm_customers view, which exposes org_leads as the 
+    single source of truth for customer data (separate from staff in org_members).
+    """
+    sql = """
+    -- Add the profile_id link to org_leads if it doesn't exist
+    ALTER TABLE public.org_leads
+        ADD COLUMN IF NOT EXISTS profile_id    UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS lifetime_value NUMERIC DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS total_orders   INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS last_order_at  TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS tier           TEXT DEFAULT 'bronze',
+        ADD COLUMN IF NOT EXISTS current_points INTEGER DEFAULT 0;
+
+    -- Create the view
+    CREATE OR REPLACE VIEW public.crm_customers AS
+    SELECT 
+        ol.id,
+        ol.org_id,
+        ol.profile_id,
+        ol.name,
+        ol.email,
+        ol.phone,
+        ol.status,
+        COALESCE(ol.lifetime_value, 0) AS lifetime_value,
+        COALESCE(ol.total_orders, 0)   AS total_orders,
+        COALESCE(ol.current_points, 0) AS current_points,
+        COALESCE(ol.tier, 'bronze')    AS tier,
+        ol.created_at
+    FROM public.org_leads ol;
+    """
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"crm_customers view migration failed: {resp.text}")
+        raise RuntimeError(f"crm_customers view migration failed: {resp.text}")
+    logger.info("crm_customers view installed (or already present)")
+
+
 async def ensure_expenses_table():
     """
     Create the expenses table and its indexes.
@@ -6205,6 +6256,7 @@ async def startup_event():
         await ensure_accounting_tables()
         await ensure_is_cogs_column()
         await ensure_inventory_storefront_description()
+         await ensure_crm_customers_view()
         await ensure_expenses_table()
         await _record_migration_hash(
             suite_hash=current_hash,
@@ -20460,19 +20512,18 @@ app.include_router(delivery_router)
 app.include_router(tracking_router)
 
 # At the very BOTTOM of main.py, after all helper definitions
+
+# 1. Import all the new routers
 from expenses import router as expenses_router
 from exec_profitability import router as exec_profitability_router
+from customers import router as customers_router
+from support_chat import router as support_chat_router  
+
+# 2. Register them with the FastAPI app
 app.include_router(expenses_router)
 app.include_router(exec_profitability_router)
-
-
-
-from exec_profitability import router as exec_profitability_router
-app.include_router(exec_profitability_router)
-
-
-from customers import router as customers_router
 app.include_router(customers_router)
+app.include_router(support_chat_router) 
 
 
 # --- CENTRALIZED LOG SHIPPING (Optional) AXIOM ---
