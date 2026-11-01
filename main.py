@@ -221,6 +221,7 @@ def _compute_migration_suite_hash() -> str:
         "ensure_accounting_tables",
         "ensure_is_cogs_column",
         "ensure_inventory_storefront_description",
+        "ensure_expenses_table",
         "ensure_geo_schema",
     ]
     h = hashlib.sha256()
@@ -5882,7 +5883,60 @@ async def ensure_inventory_storefront_description():
         raise RuntimeError(f"inventory.storefront_description migration failed: {resp.text}")
     logger.info("inventory.storefront_description installed (or already present)")
 
+async def ensure_expenses_table():
+    """
+    Create the expenses table and its indexes.
 
+    Mirrors ensure_accounting_tables: full SQL on every boot, every
+    statement idempotent, failure raises so the boot aborts rather than
+    serving a router that cannot write. Without this, a fresh deployment
+    registers /expenses and /dashboard/profitability but 500s the first
+    time anyone calls them, because the table was a manual step in the
+    module author's instructions rather than part of the suite.
+    """
+    sql = """
+    CREATE TABLE IF NOT EXISTS public.expenses (
+        id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        org_id            UUID NOT NULL REFERENCES public.organisations(id) ON DELETE CASCADE,
+        branch_id         UUID REFERENCES public.branches(id),
+        expense_date      DATE NOT NULL,
+        category          TEXT NOT NULL,
+        account_id        UUID REFERENCES public.chart_of_accounts(id),
+        vendor            TEXT,
+        description       TEXT,
+        amount            NUMERIC(15,2) NOT NULL CHECK (amount > 0),
+        payment_method    TEXT NOT NULL DEFAULT 'cash'
+                          CHECK (payment_method IN ('cash','bank_transfer','card','cheque','credit')),
+        reference         TEXT,
+        receipt_url       TEXT,
+        journal_entry_id  UUID REFERENCES public.journal_entries(id) ON DELETE SET NULL,
+        status            TEXT NOT NULL DEFAULT 'posted'
+                          CHECK (status IN ('draft','posted','void')),
+        created_by        UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+        created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_expenses_org_date
+        ON public.expenses(org_id, expense_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_expenses_org_cat
+        ON public.expenses(org_id, category);
+    """
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"expenses table migration failed: {resp.text}")
+        raise RuntimeError(f"expenses table migration failed: {resp.text}")
+    logger.info("expenses table installed (or already present)")
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -6041,6 +6095,7 @@ async def startup_event():
         await ensure_accounting_tables()
         await ensure_is_cogs_column()
         await ensure_inventory_storefront_description()
+        await ensure_expenses_table()
         await ensure_geo_schema()
 
         await _record_migration_hash(
@@ -6150,6 +6205,7 @@ async def startup_event():
         await ensure_accounting_tables()
         await ensure_is_cogs_column()
         await ensure_inventory_storefront_description()
+        await ensure_expenses_table()
         await _record_migration_hash(
             suite_hash=current_hash,
             applied_by=instance_id,
@@ -20413,6 +20469,10 @@ app.include_router(exec_profitability_router)
 
 from exec_profitability import router as exec_profitability_router
 app.include_router(exec_profitability_router)
+
+
+from customers import router as customers_router
+app.include_router(customers_router)
 
 
 # --- CENTRALIZED LOG SHIPPING (Optional) AXIOM ---
