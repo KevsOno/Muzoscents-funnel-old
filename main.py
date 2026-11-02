@@ -5892,36 +5892,99 @@ async def ensure_inventory_storefront_description():
 
 async def ensure_crm_customers_view():
     """
-    Create the crm_customers view, which exposes org_leads as the 
-    single source of truth for customer data (separate from staff in org_members).
-    """
-    sql = """
-    -- Add the profile_id link to org_leads if it doesn't exist
-    ALTER TABLE public.org_leads
-        ADD COLUMN IF NOT EXISTS profile_id    UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
-        ADD COLUMN IF NOT EXISTS lifetime_value NUMERIC DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS total_orders   INTEGER DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS last_order_at  TIMESTAMPTZ,
-        ADD COLUMN IF NOT EXISTS tier           TEXT DEFAULT 'bronze',
-        ADD COLUMN IF NOT EXISTS current_points INTEGER DEFAULT 0;
+    Ensure the crm_customers view exists and its base-table columns exist.
 
-    -- Create the view
-    CREATE OR REPLACE VIEW public.crm_customers AS
-    SELECT 
+    Two operating modes, selected by the CRM_CUSTOMERS_FORCE_REBUILD env var:
+
+      * DEFAULT (guard mode) — the DATABASE is the source of truth for the
+        view's shape. On boot we only ensure the base table has every column
+        the view depends on, and CREATE the view only if it is missing.
+        An existing view — including out-of-band upgrades made directly in
+        Supabase — is left untouched. This is the normal production posture.
+
+      * FORCE REBUILD — the BACKEND is the source of truth. Drop the view
+        (cascading to dependents) and recreate it from the definition below.
+        Enable by setting any of:
+
+            CRM_CUSTOMERS_FORCE_REBUILD=1
+            CRM_CUSTOMERS_FORCE_REBUILD=true
+            CRM_CUSTOMERS_FORCE_REBUILD=yes
+
+        Remove the env var (or set it to 0) once the deploy is done, so
+        subsequent boots return to guard mode and stop clobbering any future
+        out-of-band view changes.
+    """
+    force_rebuild = os.getenv("CRM_CUSTOMERS_FORCE_REBUILD", "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+    # --- Column guarantees on the base table (idempotent in both modes) ---
+    ensure_columns_sql = """
+    ALTER TABLE public.org_leads
+        ADD COLUMN IF NOT EXISTS profile_id         UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS lifetime_value     NUMERIC DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS total_orders       INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS last_order_at      TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS tier               TEXT DEFAULT 'bronze',
+        ADD COLUMN IF NOT EXISTS current_points     INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS membership_id      TEXT,
+        ADD COLUMN IF NOT EXISTS is_physical_member BOOLEAN DEFAULT false;
+    """
+
+    # --- Single source of truth for the view body (used by BOTH modes) ---
+    view_body_sql = """
+    SELECT
         ol.id,
         ol.org_id,
         ol.profile_id,
-        ol.name,
-        ol.email,
-        ol.phone,
+        COALESCE(
+            NULLIF(
+                TRIM(BOTH FROM (
+                    COALESCE(p.first_name, '') || ' ' || COALESCE(p.last_name, '')
+                )),
+                ''
+            ),
+            ol.name
+        )                                      AS name,
+        COALESCE(p.email, ol.email)            AS email,
+        COALESCE(p.phone, ol.phone)            AS phone,
         ol.status,
-        COALESCE(ol.lifetime_value, 0) AS lifetime_value,
-        COALESCE(ol.total_orders, 0)   AS total_orders,
-        COALESCE(ol.current_points, 0) AS current_points,
-        COALESCE(ol.tier, 'bronze')    AS tier,
-        ol.created_at
-    FROM public.org_leads ol;
+        COALESCE(ol.lifetime_value, 0)         AS lifetime_value,
+        COALESCE(ol.total_orders, 0)           AS total_orders,
+        COALESCE(ol.current_points, 0)         AS current_points,
+        COALESCE(ol.tier, 'bronze')            AS tier,
+        ol.created_at,
+        ol.membership_id,
+        COALESCE(ol.is_physical_member, false) AS is_physical_member
+    FROM  public.org_leads ol
+    LEFT  JOIN public.profiles p ON p.id = ol.profile_id
     """
+
+    if force_rebuild:
+        view_sql = f"""
+        DROP VIEW IF EXISTS public.crm_customers CASCADE;
+        CREATE VIEW public.crm_customers AS {view_body_sql};
+        """
+        mode_msg = "crm_customers view REBUILT from backend definition"
+    else:
+        view_sql = f"""
+        DO $ensure_crm_customers$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM   information_schema.views
+                WHERE  table_schema = 'public'
+                AND    table_name   = 'crm_customers'
+            ) THEN
+                CREATE VIEW public.crm_customers AS {view_body_sql};
+            END IF;
+        END
+        $ensure_crm_customers$;
+        """
+        mode_msg = "crm_customers view verified (guard mode)"
+
+    sql = ensure_columns_sql + "\n" + view_sql
+
     headers = {
         "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
         "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
@@ -5936,7 +5999,7 @@ async def ensure_crm_customers_view():
     if resp.status_code not in (200, 204):
         logger.error(f"crm_customers view migration failed: {resp.text}")
         raise RuntimeError(f"crm_customers view migration failed: {resp.text}")
-    logger.info("crm_customers view installed (or already present)")
+    logger.info(mode_msg)
 
 
 async def ensure_chat_sessions_columns():
