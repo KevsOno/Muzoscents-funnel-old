@@ -222,6 +222,7 @@ def _compute_migration_suite_hash() -> str:
         "ensure_is_cogs_column",
         "ensure_inventory_storefront_description",
         "ensure_chat_sessions_columns",
+        "ensure_chat_messages_columns",
         "ensure_crm_customers_view",
         "ensure_expenses_table",
         "ensure_geo_schema",
@@ -5962,6 +5963,38 @@ async def ensure_chat_sessions_columns():
     logger.info("chat_sessions status/channel columns installed")
 
 
+
+async def ensure_chat_messages_columns():
+    """
+    Ensure chat_messages has the sender_type and sender_id columns
+    required by the live chat module.
+
+    The AI chat via save_conversation() only writes message/response.
+    The live chat writes sender_type ('customer' | 'agent') and the
+    sender's user_id separately so the UI can align bubbles correctly.
+    """
+    sql = """
+    ALTER TABLE public.chat_messages
+        ADD COLUMN IF NOT EXISTS sender_type TEXT DEFAULT 'customer',
+        ADD COLUMN IF NOT EXISTS sender_id   UUID;
+    """
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"chat_messages columns migration failed: {resp.text}")
+        raise RuntimeError(f"chat_messages columns migration failed: {resp.text}")
+    logger.info("chat_messages sender_type/sender_id columns installed")
+
+
 async def ensure_expenses_table():
     """
     Create the expenses table and its indexes.
@@ -6175,6 +6208,7 @@ async def startup_event():
         await ensure_is_cogs_column()
         await ensure_inventory_storefront_description()
         await ensure_chat_sessions_columns()
+        await ensure_chat_messages_columns()
         await ensure_crm_customers_view()
         await ensure_expenses_table()
         await ensure_geo_schema()
@@ -6287,6 +6321,7 @@ async def startup_event():
         await ensure_is_cogs_column()
         await ensure_inventory_storefront_description()
         await ensure_chat_sessions_columns()
+        await ensure_chat_messages_columns()
         await ensure_crm_customers_view()
         await ensure_expenses_table()
         await ensure_geo_schema()
