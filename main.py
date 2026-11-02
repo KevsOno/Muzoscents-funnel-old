@@ -1243,9 +1243,12 @@ async def resolve_branch_for_write(
     
 # ===================== ASYNC DB HELPER =====================
 async def run_sync_db_call(sync_func, *args, **kwargs):
-    """Run a sync supabase-py call in a thread to avoid blocking the event loop."""
+    if not callable(sync_func):
+        raise TypeError(
+            f"run_sync_db_call expected a callable, got {type(sync_func).__name__}. "
+            "Did you write .execute() instead of .execute?"
+        )
     return await asyncio.to_thread(sync_func, *args, **kwargs)
-
 
 async def fetch_one(query) -> Optional[Dict]:
     """
