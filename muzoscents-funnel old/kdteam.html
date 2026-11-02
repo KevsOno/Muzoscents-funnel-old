@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kevs Digital – Team Management</title>
+    <title>Kevs Digital – Team &amp; Access</title>
     <script src="/kdint.js"></script>
     <script src="/nav.js" defer></script>
     <link rel="stylesheet" href="/tailwind.css">
@@ -19,52 +19,43 @@
             display: inline-block;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .toast-slide {
-            transition: all 0.2s ease;
-        }
-        tr.border-b:hover {
-            background-color: #f9fafb;
-        }
+        tr.border-b:hover { background-color: #f9fafb; }
+        .role-badge { text-transform: capitalize; }
+        .warn-badge { background: #fef3c7; color: #92400e; }
     </style>
 </head>
 <body class="bg-gray-50 font-sans">
 
-<!-- ========== GLOBAL NAVIGATION (Kevs bOS) – UNIFIED ========== -->
 <div id="kevs-nav-container"></div>
-<!-- ========== END GLOBAL NAVIGATION ========== -->
 
 <div class="max-w-6xl mx-auto p-6">
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold text-gray-800"><i class="fas fa-users mr-2 text-orange-500"></i>Team Management</h1>
-        <button id="refresh-team-btn" class="text-sm bg-white px-4 py-2 rounded-lg shadow hover:bg-gray-50 transition"><i class="fas fa-sync-alt mr-1"></i> Refresh</button>
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-gray-800">
+            <i class="fas fa-user-shield mr-2 text-orange-500"></i>Team &amp; Access
+        </h1>
+        <p class="text-sm text-gray-600 mt-1">
+            Manage who can sign in to your dashboard and what they can do.
+            Only staff recorded in the
+            <a href="/hr/employees" class="text-orange-600 hover:underline">HR module</a>
+            can be granted access.
+        </p>
     </div>
 
-    <!-- Add staff form -->
-    <div class="bg-white rounded-xl shadow-md p-6 mb-8">
-        <h2 class="text-lg font-semibold mb-4"><i class="fas fa-user-plus mr-2 text-green-600"></i>Invite new staff member</h2>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <input type="text" id="new-firstname" placeholder="First name *" class="border rounded-lg p-2 focus:ring-2 focus:ring-orange-300 outline-none">
-            <input type="text" id="new-lastname" placeholder="Last name *" class="border rounded-lg p-2 focus:ring-2 focus:ring-orange-300 outline-none">
-            <input type="email" id="new-email" placeholder="Email *" class="border rounded-lg p-2 focus:ring-2 focus:ring-orange-300 outline-none" required>
-            <select id="new-role" class="border rounded-lg p-2 focus:ring-2 focus:ring-orange-300 outline-none">
-                <option value="admin">Admin</option>
-                <option value="inventory_manager">Inventory Manager</option>
-                <option value="sales_rep">Sales Representative</option>
-                <option value="finance">Finance</option>
-                <option value="logistics">Logistics</option>
-                <option value="support">Support</option>
-                <option value="customer">Customer (no dashboard)</option>
-            </select>
-            <input type="tel" id="new-phone" placeholder="Phone (optional)" class="border rounded-lg p-2 focus:ring-2 focus:ring-orange-300 outline-none">
-            <button id="create-user-btn" class="bg-orange-500 text-white rounded-lg px-4 py-2 hover:bg-orange-600 transition flex items-center justify-center gap-2"><i class="fas fa-paper-plane"></i> Send Invite</button>
-        </div>
-        <div id="form-message" class="mt-3 text-sm hidden transition-all"></div>
-    </div>
-
-    <!-- Existing team members table -->
-    <div class="bg-white rounded-xl shadow-md overflow-hidden">
-        <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
-            <h2 class="font-semibold"><i class="fas fa-users mr-2"></i>Current team</h2>
+    <!-- ========== CURRENT DASHBOARD USERS ========== -->
+    <div class="bg-white rounded-xl shadow-md overflow-hidden mb-8">
+        <div class="px-6 py-4 border-b border-gray-200 bg-gray-50 flex flex-wrap justify-between items-center gap-3">
+            <div>
+                <h2 class="font-semibold"><i class="fas fa-users mr-2"></i>Current dashboard users</h2>
+                <p class="text-xs text-gray-500 mt-0.5" id="team-count-label">Loading…</p>
+            </div>
+            <div class="flex gap-2">
+                <input type="text" id="team-search" placeholder="Search by name or email…"
+                       class="border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-300 outline-none w-64">
+                <button id="refresh-team-btn"
+                        class="text-sm bg-white px-4 py-2 rounded-lg shadow hover:bg-gray-50 transition border">
+                    <i class="fas fa-sync-alt mr-1"></i> Refresh
+                </button>
+            </div>
         </div>
         <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200">
@@ -73,20 +64,94 @@
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">HR Status</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Department</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Joined</th>
                         <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="team-table-body" class="divide-y divide-gray-200">
-                    <tr><td colspan="5" class="text-center py-6 text-gray-400"><div class="loading-spinner-sm inline-block mr-2"></div> Loading team...</td></tr>
+                    <tr><td colspan="7" class="text-center py-6 text-gray-400">
+                        <div class="loading-spinner-sm inline-block mr-2"></div> Loading team…
+                    </td></tr>
                 </tbody>
             </table>
         </div>
+    </div>
+
+    <!-- ========== GRANT ACCESS ========== -->
+    <div class="bg-white rounded-xl shadow-md p-6 mb-8">
+        <h2 class="text-lg font-semibold mb-2">
+            <i class="fas fa-user-plus mr-2 text-green-600"></i>Grant dashboard access
+        </h2>
+        <p class="text-sm text-gray-600 mb-4">
+            Pick an existing staff member from HR. If the person isn't listed, add them to the
+            <a href="/hr/employees" class="text-orange-600 hover:underline">HR module</a> first —
+            contractors and vendors are not granted dashboard access.
+        </p>
+
+        <div id="grant-empty-state"
+             class="hidden bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 text-sm text-blue-800">
+            <i class="fas fa-info-circle mr-2"></i>
+            All current HR staff already have dashboard access. Add new staff in the
+            <a href="/hr/employees" class="underline font-semibold">HR module</a>
+            and return here to grant them access.
+        </div>
+
+        <div id="grant-form" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="md:col-span-2">
+                <label class="block text-xs font-medium text-gray-600 mb-1">Staff member</label>
+                <select id="staff-select"
+                        class="w-full border rounded-lg p-2 focus:ring-2 focus:ring-orange-300 outline-none">
+                    <option value="">Loading staff…</option>
+                </select>
+                <p class="text-xs text-gray-500 mt-1">
+                    Only HR staff without current dashboard access are shown.
+                </p>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Role</label>
+                <select id="new-role"
+                        class="w-full border rounded-lg p-2 focus:ring-2 focus:ring-orange-300 outline-none">
+                    <option value="admin">Admin</option>
+                    <option value="inventory_manager">Inventory Manager</option>
+                    <option value="sales_rep">Sales Representative</option>
+                    <option value="finance">Finance</option>
+                    <option value="logistics">Logistics</option>
+                    <option value="support">Support</option>
+                </select>
+            </div>
+            <div class="md:col-span-3">
+                <button id="grant-access-btn"
+                        class="bg-orange-500 text-white rounded-lg px-4 py-2 hover:bg-orange-600 transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <i class="fas fa-paper-plane"></i> Grant Access &amp; Send Invite
+                </button>
+            </div>
+        </div>
+
+        <div id="form-message" class="mt-3 text-sm hidden transition-all"></div>
+    </div>
+
+    <!-- ========== ROLES LEGEND ========== -->
+    <div class="bg-white rounded-xl shadow-md p-6 text-sm text-gray-600">
+        <h3 class="font-semibold text-gray-800 mb-3"><i class="fas fa-key mr-2"></i>What each role can do</h3>
+        <ul class="space-y-1 list-disc list-inside">
+            <li><strong>Admin</strong> — full access, can manage team members and settings.</li>
+            <li><strong>Inventory Manager</strong> — products, stock, suppliers.</li>
+            <li><strong>Sales Representative</strong> — customers, leads, POS, orders.</li>
+            <li><strong>Finance</strong> — payments, reports, reconciliation.</li>
+            <li><strong>Logistics</strong> — deliveries, riders, shipments.</li>
+            <li><strong>Support</strong> — chat, tickets, customer queries.</li>
+        </ul>
     </div>
 </div>
 
 <script>
     const BACKEND_URL = "https://kevsono-kevs-digital-bos.hf.space";
+    const LOGIN_REDIRECT = '/kdsiginin';
+
+    let teamCache  = [];
+    let staffCache = [];
 
     function getToken() { return localStorage.getItem('access_token'); }
 
@@ -99,213 +164,345 @@
             document.body.appendChild(container);
         }
         const toast = document.createElement('div');
-        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} mb-2 text-sm animate-pulse transition-all`;
+        toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} mb-2 text-sm`;
         toast.innerText = msg;
         container.appendChild(toast);
         setTimeout(() => toast.remove(), 3500);
     }
 
+    function escapeHtml(str) {
+        if (str === null || str === undefined) return '';
+        return String(str).replace(/[&<>"']/g, m => ({
+            '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+        }[m]));
+    }
+
+    function formatRole(role) {
+        if (!role) return 'Member';
+        return role.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    }
+
+    function formatDate(iso) {
+        if (!iso) return '—';
+        try {
+            return new Date(iso).toLocaleDateString(undefined, {
+                year: 'numeric', month: 'short', day: 'numeric'
+            });
+        } catch { return '—'; }
+    }
+
     async function apiFetch(endpoint, options = {}) {
         const token = getToken();
-        if (!token) { window.location.href = '/kdsiginin'; throw new Error('No token'); }
-        const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, ...options.headers };
+        if (!token) { window.location.href = LOGIN_REDIRECT; throw new Error('No token'); }
+        const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            ...options.headers
+        };
         const res = await fetch(`${BACKEND_URL}${endpoint}`, { ...options, headers });
         if (res.status === 401) {
             localStorage.clear();
-            window.location.href = '/kdsiginin';
+            window.location.href = LOGIN_REDIRECT;
             throw new Error('Session expired');
         }
         if (!res.ok) {
-            const err = await res.json().catch(() => ({ detail: 'Request failed' }));
-            throw new Error(err.detail || `HTTP ${res.status}`);
+            const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
+            throw new Error(err.detail || err.message || `HTTP ${res.status}`);
         }
         return res.json();
     }
 
-    // Ensure demo user is treated as owner
-    async function ensureOwnerRole() {
-        try {
-            const me = await apiFetch('/auth/me');
-            let role = me.role;
-            if (me.email === 'demo@kevsdigital.com' && role !== 'owner') {
-                console.warn("Demo user role was", role, "- forcing to 'owner'");
-                role = 'owner';
-            }
-            localStorage.setItem('user_role', role);
-            if (!['owner', 'admin'].includes(role)) {
-                document.body.innerHTML = `<div class="p-8 text-center text-red-600"><i class="fas fa-lock text-4xl mb-2"></i><p>Access denied. Only owners and admins can manage team members.</p></div>`;
-                throw new Error('Unauthorized');
-            }
-            return role;
-        } catch (e) {
-            if(!document.body.innerHTML.includes('Access denied')) {
-                document.body.innerHTML = `<div class="p-8 text-center text-red-600">Access denied or not logged in.</div>`;
-            }
-            throw e;
+    async function ensureAuthorized() {
+        const me = await apiFetch('/auth/me');
+        const role = (me.role || '').toLowerCase();
+        if (!['owner', 'admin'].includes(role)) {
+            document.body.innerHTML = `
+                <div class="p-8 text-center text-red-600">
+                    <i class="fas fa-lock text-4xl mb-2"></i>
+                    <p class="font-semibold">Access denied</p>
+                    <p class="text-sm mt-1">Only owners and admins can manage team access.</p>
+                </div>`;
+            throw new Error('Unauthorized');
         }
+        return me;
     }
 
-    // ========== FIXED loadTeam function with proper error handling and status normalization ==========
+    // ========== CURRENT USERS ==========
     async function loadTeam() {
         const tbody = document.getElementById('team-table-body');
+        const countLabel = document.getElementById('team-count-label');
         if (!tbody) return;
-        tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6"><div class="loading-spinner-sm inline-block mr-2"></div> Loading...</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center py-6 text-gray-400">
+            <div class="loading-spinner-sm inline-block mr-2"></div> Loading…
+        </td></tr>`;
+        countLabel.textContent = 'Loading…';
+
         try {
             const data = await apiFetch('/organisations/me/users');
-            const users = data.users || [];
-            console.log('Team members loaded:', users.length);
-            
-            if (users.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-gray-400">No team members yet. Invite your first staff member above.</td></tr>`;
-                return;
-            }
-            
-            tbody.innerHTML = users.map(user => {
-                // Normalize status: handle 'Active' / 'active' or any casing
-                let userStatus = (user.status || 'active').toLowerCase();
-                const isActive = userStatus === 'active';
-                const statusText = user.status === 'Active' ? 'Active' : (user.status || 'active');
-                return `
-                <tr class="border-b hover:bg-gray-50 transition">
-                    <td class="px-6 py-3 font-medium text-gray-800">${escapeHtml(user.first_name || '')} ${escapeHtml(user.last_name || '')}</td>
-                    <td class="px-6 py-3 text-gray-600">${escapeHtml(user.email)}</td>
-                    <td class="px-6 py-3"><span class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800 capitalize">${escapeHtml(user.role || 'customer')}</span></td>
-                    <td class="px-6 py-3"><span class="px-2 py-1 text-xs rounded-full ${isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}">${escapeHtml(statusText)}</span></td>
-                    <td class="px-6 py-3 text-right">
-                        <button class="reset-pwd-btn text-blue-600 hover:text-blue-800 mr-2 transition" data-email="${escapeHtml(user.email)}" title="Reset password"><i class="fas fa-key"></i></button>
-                        <button class="remove-user-btn text-red-600 hover:text-red-800 transition" data-user-id="${user.id}" data-user-role="${escapeHtml(user.role || 'customer')}" title="Remove user"><i class="fas fa-trash-alt"></i></button>
-                    </td>
-                </tr>
-            `}).join('');
-            
-            // Re-attach event listeners after DOM update
-            document.querySelectorAll('.reset-pwd-btn').forEach(btn => btn.addEventListener('click', (e) => {
-                e.preventDefault();
-                resetUserPassword(btn.dataset.email);
-            }));
-            document.querySelectorAll('.remove-user-btn').forEach(btn => btn.addEventListener('click', (e) => {
-                e.preventDefault();
-                removeUser(btn.dataset.userId, btn.dataset.userRole);
-            }));
+            teamCache = Array.isArray(data.users) ? data.users : [];
+            countLabel.textContent = `${teamCache.length} user${teamCache.length === 1 ? '' : 's'} with dashboard access`;
+            renderTeam();
         } catch (err) {
             console.error('Load team error:', err);
-            tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-red-500">Error: ${escapeHtml(err.message)}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center py-6 text-red-500">
+                <i class="fas fa-exclamation-triangle mr-2"></i>${escapeHtml(err.message)}
+            </td></tr>`;
+            countLabel.textContent = 'Failed to load';
             showToast(`Failed to load team: ${err.message}`, 'error');
         }
     }
 
+    function renderTeam() {
+        const tbody = document.getElementById('team-table-body');
+        if (!tbody) return;
+
+        const query = (document.getElementById('team-search')?.value || '').toLowerCase().trim();
+        const filtered = query
+            ? teamCache.filter(u =>
+                `${u.first_name || ''} ${u.last_name || ''}`.toLowerCase().includes(query) ||
+                (u.email || '').toLowerCase().includes(query))
+            : teamCache;
+
+        if (filtered.length === 0) {
+            tbody.innerHTML = teamCache.length === 0
+                ? `<tr><td colspan="7" class="text-center py-6 text-gray-400">
+                       No users have dashboard access yet. Grant access below.
+                   </td></tr>`
+                : `<tr><td colspan="7" class="text-center py-6 text-gray-400">
+                       No users match "${escapeHtml(query)}".
+                   </td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = filtered.map(user => {
+            const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || '(no name)';
+            const hasHr    = !!user.employee_id;
+            const hrStatus = (user.employee_status || '').toLowerCase();
+
+            let hrStatusLabel, hrStatusClass;
+            if (!hasHr) {
+                hrStatusLabel = 'No HR record';
+                hrStatusClass = 'warn-badge';
+            } else if (hrStatus) {
+                hrStatusLabel = hrStatus.charAt(0).toUpperCase() + hrStatus.slice(1);
+                hrStatusClass = ['active','employed','probation','on_leave'].includes(hrStatus)
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-gray-100 text-gray-600';
+            } else {
+                hrStatusLabel = '—';
+                hrStatusClass = 'bg-gray-100 text-gray-600';
+            }
+
+            const department = user.department_name || user.position || '—';
+            const roleDisplay = formatRole(user.role || '');
+            const joined = formatDate(user.joined_at);
+
+            return `
+                <tr class="border-b hover:bg-gray-50 transition">
+                    <td class="px-6 py-3 font-medium text-gray-800">
+                        ${escapeHtml(fullName)}
+                        ${!hasHr ? `<span class="ml-2 px-1.5 py-0.5 text-[10px] rounded warn-badge"
+                            title="No HR record — add to HR or revoke access">no HR</span>` : ''}
+                    </td>
+                    <td class="px-6 py-3 text-gray-600">${escapeHtml(user.email || '')}</td>
+                    <td class="px-6 py-3">
+                        <span class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800 role-badge">
+                            ${escapeHtml(roleDisplay)}
+                        </span>
+                    </td>
+                    <td class="px-6 py-3">
+                        <span class="px-2 py-1 text-xs rounded-full ${hrStatusClass}">
+                            ${escapeHtml(hrStatusLabel)}
+                        </span>
+                    </td>
+                    <td class="px-6 py-3 text-gray-600 text-sm">${escapeHtml(department)}</td>
+                    <td class="px-6 py-3 text-gray-500 text-sm">${escapeHtml(joined)}</td>
+                    <td class="px-6 py-3 text-right whitespace-nowrap">
+                        ${hasHr ? `<a href="/hr/employees/${user.employee_id}"
+                            class="text-gray-500 hover:text-gray-800 mr-2 transition"
+                            title="View HR record"><i class="fas fa-id-card"></i></a>` : ''}
+                        <button class="reset-pwd-btn text-blue-600 hover:text-blue-800 mr-2 transition"
+                                data-email="${escapeHtml(user.email || '')}"
+                                title="Send password reset"><i class="fas fa-key"></i></button>
+                        <button class="remove-user-btn text-red-600 hover:text-red-800 transition"
+                                data-user-id="${escapeHtml(user.id || '')}"
+                                data-user-role="${escapeHtml((user.role || '').toLowerCase())}"
+                                data-user-name="${escapeHtml(fullName)}"
+                                title="Revoke dashboard access"><i class="fas fa-user-slash"></i></button>
+                    </td>
+                </tr>`;
+        }).join('');
+
+        tbody.querySelectorAll('.reset-pwd-btn').forEach(btn => {
+            btn.addEventListener('click', e => { e.preventDefault(); resetUserPassword(btn.dataset.email); });
+        });
+        tbody.querySelectorAll('.remove-user-btn').forEach(btn => {
+            btn.addEventListener('click', e => {
+                e.preventDefault();
+                removeUser(btn.dataset.userId, btn.dataset.userRole, btn.dataset.userName);
+            });
+        });
+    }
+
     async function resetUserPassword(email) {
-        if (!confirm(`Send password reset email to ${email}?`)) return;
+        if (!email) return;
+        if (!confirm(`Send a password reset email to ${email}?`)) return;
         try {
             await apiFetch(`/auth/admin-reset-password?email=${encodeURIComponent(email)}`, { method: 'POST' });
             showToast(`Password reset email sent to ${email}`, 'success');
-        } catch (err) { showToast(err.message, 'error'); }
+        } catch (err) {
+            showToast(err.message, 'error');
+        }
     }
 
-    // Admin key required for owner removal
-    async function removeUser(userId, role) {
-        if (!confirm(`Remove this user${role === 'owner' ? ' (OWNER)' : ''} from the organisation? They will lose access.`)) return;
-        let headers = {};
-        if (role === 'owner') {
-            const adminKey = prompt("⚠️ You are about to remove an OWNER. This action is irreversible.\nPlease enter the Admin Secret Key to proceed:");
-            if (!adminKey) {
-                showToast("Owner removal cancelled (no key provided).", "error");
+    async function removeUser(userId, role, name) {
+        if (!userId) return;
+        const isOwner = role === 'owner';
+
+        if (isOwner) {
+            const adminKey = prompt(
+                `⚠️ You are about to remove an OWNER (${name}).\n` +
+                `This action is irreversible.\n\n` +
+                `Enter the Admin Secret Key to proceed:`
+            );
+            if (!adminKey) { showToast('Owner removal cancelled.', 'error'); return; }
+            try {
+                await apiFetch(`/organisations/me/users/${userId}`, {
+                    method: 'DELETE',
+                    headers: { 'X-Admin-Key': adminKey }
+                });
+                showToast('Owner removed.', 'success');
+                await Promise.all([loadTeam(), loadAvailableStaff()]);
+            } catch (err) { showToast(err.message, 'error'); }
+        } else {
+            if (!confirm(`Revoke dashboard access for ${name}?\nThey will no longer be able to sign in. Their HR record is not affected.`)) return;
+            try {
+                await apiFetch(`/organisations/me/users/${userId}`, { method: 'DELETE' });
+                showToast('Access revoked.', 'success');
+                await Promise.all([loadTeam(), loadAvailableStaff()]);
+            } catch (err) { showToast(err.message, 'error'); }
+        }
+    }
+
+    // ========== GRANT ACCESS ==========
+    async function loadAvailableStaff() {
+        const select     = document.getElementById('staff-select');
+        const emptyState = document.getElementById('grant-empty-state');
+        const form       = document.getElementById('grant-form');
+        if (!select) return;
+
+        select.innerHTML = '<option value="">Loading staff…</option>';
+        select.disabled = true;
+        emptyState.classList.add('hidden');
+        form.classList.remove('hidden');
+
+        try {
+            const data = await apiFetch('/organisations/me/available-staff');
+            staffCache = Array.isArray(data.employees) ? data.employees : [];
+
+            if (staffCache.length === 0) {
+                emptyState.classList.remove('hidden');
+                form.classList.add('hidden');
                 return;
             }
-            headers['X-Admin-Key'] = adminKey;
+
+            select.innerHTML = `<option value="">— Select a staff member —</option>` +
+                staffCache.map(e => {
+                    const name = `${e.first_name || ''} ${e.last_name || ''}`.trim();
+                    const dept = e.department_name ? ` · ${e.department_name}` : '';
+                    const pos  = e.position ? ` (${e.position})` : '';
+                    return `<option value="${escapeHtml(String(e.employee_id))}">
+                        ${escapeHtml(name)} — ${escapeHtml(e.email || '')}${escapeHtml(dept + pos)}
+                    </option>`;
+                }).join('');
+            select.disabled = false;
+        } catch (err) {
+            console.error('Load available staff error:', err);
+            select.innerHTML = '<option value="">Failed to load staff</option>';
+            select.disabled = true;
+            showToast(`Failed to load available staff: ${err.message}`, 'error');
         }
-        try {
-            await apiFetch(`/organisations/me/users/${userId}`, { method: 'DELETE', headers });
-            showToast('User removed successfully', 'success');
-            loadTeam();
-        } catch (err) { showToast(err.message, 'error'); }
     }
 
-    function escapeHtml(str) { 
-        if (!str) return '';
-        return String(str).replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
-    }
+    async function grantAccess() {
+        const select     = document.getElementById('staff-select');
+        const roleSelect = document.getElementById('new-role');
+        const btn        = document.getElementById('grant-access-btn');
+        const msgDiv     = document.getElementById('form-message');
 
-    // Create user / invite logic
-    document.getElementById('create-user-btn')?.addEventListener('click', async () => {
-        const firstName = document.getElementById('new-firstname').value.trim();
-        const lastName = document.getElementById('new-lastname').value.trim();
-        const email = document.getElementById('new-email').value.trim();
-        const role = document.getElementById('new-role').value;
-        const phone = document.getElementById('new-phone').value.trim();
-        const msgDiv = document.getElementById('form-message');
-        if (!firstName || !lastName || !email) {
+        const employeeIdRaw = select.value;
+        const role          = roleSelect.value;
+
+        msgDiv.classList.add('hidden');
+
+        if (!employeeIdRaw) {
             msgDiv.className = 'mt-3 text-sm text-red-600 block';
-            msgDiv.innerText = 'First name, last name and email are required.';
+            msgDiv.innerText = 'Please select a staff member.';
             msgDiv.classList.remove('hidden');
             return;
         }
-        msgDiv.classList.add('hidden');
-        const btn = document.getElementById('create-user-btn');
-        const originalText = btn.innerHTML;
-        btn.innerHTML = '<div class="loading-spinner-sm inline-block mr-1"></div> Creating...';
+
+        const employeeId = Number(employeeIdRaw);
+        const picked = staffCache.find(e => Number(e.employee_id) === employeeId);
+        const displayName = picked
+            ? `${picked.first_name || ''} ${picked.last_name || ''}`.trim()
+            : 'this staff member';
+
+        if (!confirm(`Grant ${formatRole(role)} access to ${displayName}?\nAn invite email will be sent.`)) return;
+
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<div class="loading-spinner-sm inline-block mr-1"></div> Granting…';
         btn.disabled = true;
+
         try {
             await apiFetch('/organisations/me/users', {
                 method: 'POST',
-                body: JSON.stringify({ first_name: firstName, last_name: lastName, email, role, phone: phone || null, send_invite_email: true })
+                body: JSON.stringify({
+                    employee_id: employeeId,
+                    role,
+                    send_invite_email: true
+                })
             });
             msgDiv.className = 'mt-3 text-sm text-green-600 block';
-            msgDiv.innerText = `✓ Invitation sent to ${email}. They will receive an email with a temporary password.`;
+            msgDiv.innerText = `✓ Access granted to ${displayName}. They will receive an email with a temporary password.`;
             msgDiv.classList.remove('hidden');
-            document.getElementById('new-firstname').value = '';
-            document.getElementById('new-lastname').value = '';
-            document.getElementById('new-email').value = '';
-            document.getElementById('new-phone').value = '';
-            // Refresh table to show newly added user
-            await loadTeam();
-            setTimeout(() => {
-                msgDiv.classList.add('hidden');
-            }, 5000);
+            select.value = '';
+            await Promise.all([loadTeam(), loadAvailableStaff()]);
+            setTimeout(() => msgDiv.classList.add('hidden'), 6000);
         } catch (err) {
             msgDiv.className = 'mt-3 text-sm text-red-600 block';
             msgDiv.innerText = err.message;
             msgDiv.classList.remove('hidden');
         } finally {
-            btn.innerHTML = originalText;
+            btn.innerHTML = originalHtml;
             btn.disabled = false;
         }
+    }
+
+    // ========== WIRING ==========
+    document.getElementById('refresh-team-btn')?.addEventListener('click', async () => {
+        await Promise.all([loadTeam(), loadAvailableStaff()]);
+        showToast('Team data refreshed', 'success');
     });
 
-    document.getElementById('refresh-team-btn')?.addEventListener('click', () => loadTeam());
+    document.getElementById('team-search')?.addEventListener('input', renderTeam);
 
-    // Add a refresh function that clears cache and reloads
-async function forceRefresh() {
-    // Clear any cached data
-    if (window.allCustomers) window.allCustomers = null;
-    
-    // Reload from server
-    if (typeof loadCustomers === 'function') {
-        await loadCustomers();
-    }
-    if (typeof loadTeam === 'function') {
-        await loadTeam();
-    }
-    if (typeof loadTickets === 'function') {
-        await loadTickets();
-    }
-    
-    showToast('Data refreshed from server', 'success');
-}
+    document.getElementById('grant-access-btn')?.addEventListener('click', grantAccess);
 
-// Add refresh button handlers
-document.getElementById('refresh-customers-btn')?.addEventListener('click', forceRefresh);
-document.getElementById('refresh-team-btn')?.addEventListener('click', forceRefresh);
-    // Initialization: check auth and load team
+    // ========== INIT ==========
     (async () => {
         try {
-            await ensureOwnerRole();
-            await loadTeam();
+            await ensureAuthorized();
+            await Promise.all([loadTeam(), loadAvailableStaff()]);
         } catch (err) {
-            console.error("Init error:", err);
-            if(!document.body.innerHTML.includes('Access denied')) {
+            console.error('Init error:', err);
+            if (!document.body.innerHTML.includes('Access denied')) {
                 const tbody = document.getElementById('team-table-body');
-                if(tbody) tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-red-500">Authentication error: ${escapeHtml(err.message)}</td></tr>`;
+                if (tbody) {
+                    tbody.innerHTML = `<tr><td colspan="7" class="text-center py-6 text-red-500">
+                        Authentication error: ${escapeHtml(err.message)}
+                    </td></tr>`;
+                }
             }
         }
     })();
