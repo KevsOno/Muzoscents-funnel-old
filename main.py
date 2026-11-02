@@ -1457,7 +1457,13 @@ async def fetch_inventory_scoped_to_location(
             f"item_code.ilike.%{q}%,"
             f"product_group.ilike.%{q}%"
         )
-        query = query.or_(or_condition)
+        # supabase-py's SyncSelectRequestBuilder has no .or_() method, so
+        # set the raw PostgREST "or" parameter directly — same pattern as
+        # the /inventory/search endpoint. When ORG_SCOPE_CANARY is on,
+        # `query` is wrapped in _CanaryBuilder, whose __slots__ blocks
+        # attribute assignment, so unwrap via _inner before writing .params.
+        target = getattr(query, "_inner", query)
+        target.params = target.params.set("or", f"({or_condition})")
 
     if category:
         query = query.eq("product_group", category)
@@ -7549,14 +7555,22 @@ async def search_inventory(org_id: str, query: str, limit: int = 5) -> List[Dict
     if not client:
         return []
     try:
-        result = await run_sync_db_call(
+        builder = (
             client.table("inventory")
             .select("id, description, item_code, price_naira, current_qty, product_group")
             .eq("org_id", org_id)
-            .or_(f"description.ilike.%{query}%,item_code.ilike.%{query}%")
-            .limit(limit)
-            .execute
         )
+        # supabase-py's SyncSelectRequestBuilder has no .or_() method. Set
+        # the raw PostgREST "or" parameter directly. When ORG_SCOPE_CANARY
+        # is on, `builder` is wrapped in _CanaryBuilder, whose __slots__
+        # blocks attribute assignment — unwrap via _inner first.
+        or_condition = (
+            f"description.ilike.%{query}%,"
+            f"item_code.ilike.%{query}%"
+        )
+        inner = getattr(builder, "_inner", builder)
+        inner.params = inner.params.set("or", f"({or_condition})")
+        result = await run_sync_db_call(builder.limit(limit).execute)
         return result.data or []
     except Exception as e:
         logger.error(f"Inventory search error: {e}", exc_info=True)
@@ -8495,7 +8509,13 @@ async def search_inventory_endpoint(
         .eq("org_id", org_id)
     )
 
-    query.params = query.params.set("or", f"({or_condition})")
+    # supabase-py's SyncSelectRequestBuilder has no .or_() method, so set
+    # the raw PostgREST "or" parameter directly. When ORG_SCOPE_CANARY is
+    # on, `query` is wrapped in _CanaryBuilder, whose __slots__ blocks
+    # attribute assignment — writing `query.params = ...` raises
+    # "AttributeError: 'params' is read-only". Unwrap via _inner first.
+    inner = getattr(query, "_inner", query)
+    inner.params = inner.params.set("or", f"({or_condition})")
 
     if location_id is not None:
         query = query.eq("location_stocks.location_id", location_id)
@@ -19640,7 +19660,13 @@ async def get_products(
     )
 
     if search:
-        query = query.or_(f"sku.ilike.%{search}%,name.ilike.%{search}%")
+        # supabase-py's SyncSelectRequestBuilder has no .or_() method. Set
+        # the raw PostgREST "or" parameter directly. When ORG_SCOPE_CANARY
+        # is on, `query` is wrapped in _CanaryBuilder, whose __slots__
+        # blocks attribute assignment — unwrap via _inner first.
+        or_condition = f"sku.ilike.%{search}%,name.ilike.%{search}%"
+        inner = getattr(query, "_inner", query)
+        inner.params = inner.params.set("or", f"({or_condition})")
 
     if category:
         query = query.eq("category", category)
