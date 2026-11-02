@@ -88,6 +88,17 @@
                     </button>
                 </div>
             </div>
+            <div class="border-b border-slate-200">
+                <div class="px-4 py-2 bg-emerald-50 flex items-center justify-between">
+                    <h3 class="text-xs font-bold uppercase text-emerald-800">
+                        <i class="fa-solid fa-comments mr-1"></i> Live Chats
+                    </h3>
+                    <button id="refresh-livechats-btn" class="text-[10px] text-emerald-700 hover:underline">Refresh</button>
+                </div>
+                <div id="livechat-feed" class="divide-y divide-slate-100 max-h-64 overflow-y-auto">
+                    <div class="p-4 text-center text-xs text-slate-400">Loading…</div>
+                </div>
+            </div>
             <div id="ticket-feed" class="flex-1 overflow-y-auto divide-y divide-slate-100"><div class="p-8 text-center text-xs">Loading tickets...</div></div>
         </section>
 
@@ -254,6 +265,9 @@
         const BACKEND_URL = 'https://kevsono-kevs-digital-bos.hf.space';
         let token = localStorage.getItem('access_token');
         let activeTicketId = null;
+        let activeConversationType = null;   // 'ticket' | 'livechat'
+        let activeChatSessionId = null;
+        let liveChatPollInterval = null;
         let customers = [];
         let filteredCustomers = [];
 
@@ -329,8 +343,104 @@
                     `<div class="p-8 text-center text-red-500">Error: ${err.message}</div>`; }
         }
 
+        async function loadLiveChats() {
+            const feed = document.getElementById('livechat-feed');
+            if (!feed) return;
+            try {
+                const data = await req('/chat/sessions?status=open');
+                const sessions = data.sessions || [];
+                if (sessions.length === 0) {
+                    feed.innerHTML = '<div class="p-4 text-center text-xs text-slate-400">No open live chats</div>';
+                    return;
+                }
+                feed.innerHTML = sessions.map(s => `
+                    <div class="p-3 cursor-pointer hover:bg-slate-50 ${activeChatSessionId === s.id ? 'ticket-active' : ''}"
+                         onclick="selectLiveChat('${s.id}')">
+                        <div class="font-semibold text-sm">${escapeHtml(s.customer_name || 'Guest')}</div>
+                        <div class="text-[10px] text-slate-500 truncate">
+                            ${escapeHtml(s.customer_email || '')} · ${new Date(s.started_at).toLocaleTimeString()}
+                        </div>
+                    </div>
+                `).join('');
+            } catch (err) {
+                feed.innerHTML = `<div class="p-4 text-center text-xs text-red-500">Error: ${escapeHtml(err.message)}</div>`;
+            }
+        }
+
+        async function selectLiveChat(sessionId) {
+            activeConversationType = 'livechat';
+            activeChatSessionId = sessionId;
+            activeTicketId = null;
+
+            document.getElementById('no-ticket-selected').classList.add('hidden');
+            document.getElementById('active-ticket-subject').innerText = '💬 Live Chat';
+            document.getElementById('active-ticket-meta').innerText = `Session: ${sessionId.slice(0, 8)}`;
+
+            // Ticket-only buttons don't apply to live chats
+            document.getElementById('resolve-ticket-btn').style.display = 'none';
+            document.getElementById('escalate-ticket-btn').style.display = 'none';
+            document.getElementById('ticket-resolution-notes').style.display = 'none';
+
+            await fetchAndRenderLiveChat(sessionId);
+            startLiveChatPolling(sessionId);
+            loadLiveChats();   // refresh highlight
+        }
+
+        async function fetchAndRenderLiveChat(sessionId) {
+            try {
+                const data = await req(`/chat/session/${sessionId}/messages`);
+                renderLiveChatMessages(data.messages || []);
+            } catch (err) {
+                showToast('Failed to load live chat', 'error');
+            }
+        }
+
+        function renderLiveChatMessages(messages) {
+            const container = document.getElementById('message-flow-area');
+            container.innerHTML = '';
+            if (!messages.length) {
+                container.innerHTML = '<div class="text-center text-xs text-slate-400 py-8">No messages yet</div>';
+                return;
+            }
+            messages.forEach(m => {
+                const isAgent = m.sender_type === 'agent';
+                const div = document.createElement('div');
+                div.className = `p-2 rounded-lg text-sm ${isAgent ? 'bg-blue-100 ml-auto text-right' : 'bg-gray-100'}`;
+                div.style.maxWidth = '80%';
+                div.innerText = `${isAgent ? 'You' : 'Customer'}: ${m.message}`;
+                container.appendChild(div);
+            });
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function startLiveChatPolling(sessionId) {
+            stopLiveChatPolling();
+            liveChatPollInterval = setInterval(async () => {
+                if (activeChatSessionId !== sessionId) { stopLiveChatPolling(); return; }
+                try {
+                    const data = await req(`/chat/session/${sessionId}/messages`);
+                    renderLiveChatMessages(data.messages || []);
+                } catch (_) { /* ignore transient polling failures */ }
+            }, 4000);
+        }
+
+        function stopLiveChatPolling() {
+            if (liveChatPollInterval) {
+                clearInterval(liveChatPollInterval);
+                liveChatPollInterval = null;
+            }
+        }
+
         async function selectTicket(ticketId) {
+            activeConversationType = 'ticket';
             activeTicketId = ticketId;
+            activeChatSessionId = null;
+            stopLiveChatPolling();
+
+            document.getElementById('resolve-ticket-btn').style.display = '';
+            document.getElementById('escalate-ticket-btn').style.display = '';
+            document.getElementById('ticket-resolution-notes').style.display = '';
+
             document.getElementById('no-ticket-selected').classList.add('hidden');
             try {
                 const data = await req(`/support/tickets/${ticketId}`);
@@ -434,13 +544,23 @@
         });
         document.getElementById('agent-reply-form')?.addEventListener('submit', async (e) => {
             e.preventDefault();
-            if (!activeTicketId) return;
             const msg = document.getElementById('agent-response-input').value.trim();
             if (!msg) return;
-            try { await req(`/support/tickets/${activeTicketId}/message`, 'POST', { message: msg });
-                await selectTicket(activeTicketId);
-                document.getElementById('agent-response-input').value = ''; } catch (err) { showToast(
-                    'Failed to send', 'error'); }
+
+            try {
+                if (activeConversationType === 'livechat' && activeChatSessionId) {
+                    await req(`/chat/session/${activeChatSessionId}/message`, 'POST', { message: msg });
+                    await fetchAndRenderLiveChat(activeChatSessionId);
+                } else if (activeConversationType === 'ticket' && activeTicketId) {
+                    await req(`/support/tickets/${activeTicketId}/message`, 'POST', { message: msg });
+                    await selectTicket(activeTicketId);
+                } else {
+                    return;
+                }
+                document.getElementById('agent-response-input').value = '';
+            } catch (err) {
+                showToast('Failed to send: ' + err.message, 'error');
+            }
         });
         document.getElementById('resolve-ticket-btn')?.addEventListener('click', async () => {
             if (!activeTicketId) return;
@@ -638,6 +758,7 @@
             showToast('Data refreshed from server', 'success');
         }
         document.getElementById('refresh-customers-btn')?.addEventListener('click', forceRefresh);
+        document.getElementById('refresh-livechats-btn')?.addEventListener('click', loadLiveChats);
 
         // TAB SWITCHING
         const userRole = localStorage.getItem('user_role') || 'customer';
@@ -670,9 +791,25 @@
         if (canAccessSupport) showSupportTab();
         else if (canAccessLoyalty) showLoyaltyTab();
 
+        if (canAccessSupport) {
+            setInterval(() => {
+                if (!document.getElementById('support-tab').classList.contains('hidden')) {
+                    loadLiveChats();
+                }
+            }, 15000);
+        }
+
         function escapeHtml(str) { return String(str).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;',
                     '>': '&gt;' } [m])); }
-        (async () => { if (token) { if (canAccessSupport) await loadTickets(); if (canAccessLoyalty) await loadCustomers(); } })();
+        (async () => {
+            if (token) {
+                if (canAccessSupport) {
+                    await loadTickets();
+                    await loadLiveChats();
+                }
+                if (canAccessLoyalty) await loadCustomers();
+            }
+        })();
     </script>
 </body>
 </html>
