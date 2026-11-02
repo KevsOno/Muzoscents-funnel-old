@@ -9347,12 +9347,21 @@ async def my_orgs(
 # TEAM MANAGEMENT
 # ------------------------------------------------------------------
 class CreateStaffRequest(BaseModel):
-    email: str
-    first_name: str
-    last_name: str
-    phone: str = Field(..., min_length=1, description="Phone number is required")
-    role: str = "customer"
+    employee_id: int = Field(..., description="hr_employees.id of the staff member to grant access to")
+    role: str = Field(..., description="One of: admin, inventory_manager, sales_rep, finance, logistics, support")
     send_invite_email: bool = True
+
+
+ALLOWED_STAFF_ROLES = {
+    "owner",
+    "admin",
+    "inventory_manager",
+    "sales_rep",
+    "finance",
+    "logistics",
+    "support",
+}
+
 
 @app.get("/organisations/me/users")
 async def list_org_members(
@@ -9362,31 +9371,59 @@ async def list_org_members(
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
 
-    members = await supabase_rest_get(
+    # 1. org_members — staff only. Customers live in org_leads now, so any
+    #    org_members row with role='customer' is a legacy artifact and is
+    #    excluded from the Team & Access page.
+    members_raw = await supabase_rest_get(
         "org_members",
         select="user_id, role, joined_at",
-        filters={"org_id": org_id}
+        filter_string=f"org_id=eq.{org_id}"
     )
-    logger.info(f"🔍 Found {len(members)} members in org {org_id}")
-
+    members = [m for m in members_raw if (m.get("role") or "").lower() != "customer"]
+    logger.info(
+        f"🔍 Found {len(members)} staff in org {org_id} "
+        f"(excluded {len(members_raw) - len(members)} customer rows)"
+    )
     if not members:
         return {"users": []}
 
+    # 2. Profiles — identity-only columns now. Do NOT select
+    #    current_points/tier/membership_id: those were renamed to legacy_*
+    #    during the migration and no longer exist.
     user_ids = [m["user_id"] for m in members]
-
     ids_str = ",".join(user_ids)
-    filter_string = f"id=in.({ids_str})"
-
     profiles = await supabase_rest_get(
         "profiles",
-        select="id,first_name,last_name,email,phone,status,current_points,tier,created_at,address,date_of_birth",
-        filter_string=filter_string
+        select="id,first_name,last_name,email,phone,status,created_at",
+        filter_string=f"id=in.({ids_str})"
     )
     profile_map = {p["id"]: p for p in profiles}
 
+    # 3. HR records for this org, keyed by profile id
+    hr_records = await supabase_rest_get(
+        "hr_employees",
+        select="id,user_id,status,position,department_id",
+        filter_string=f"org_id=eq.{org_id}"
+    )
+    hr_map = {h["user_id"]: h for h in hr_records if h.get("user_id")}
+
+    # 4. Department names (single batch lookup)
+    dept_ids = list({h["department_id"] for h in hr_records if h.get("department_id")})
+    dept_map = {}
+    if dept_ids:
+        depts = await supabase_rest_get(
+            "hr_departments",
+            select="id,name",
+            filter_string=f"id=in.({','.join(str(d) for d in dept_ids)})"
+        )
+        dept_map = {d["id"]: d["name"] for d in depts}
+
+    # 5. Assemble
     users = []
     for m in members:
         profile = profile_map.get(m["user_id"], {})
+        hr = hr_map.get(m["user_id"], {})
+        dept_id = hr.get("department_id")
         users.append({
             "id": m["user_id"],
             "first_name": profile.get("first_name"),
@@ -9396,15 +9433,71 @@ async def list_org_members(
             "role": m["role"],
             "status": profile.get("status", "active"),
             "joined_at": m["joined_at"],
-            "loyalty_points": profile.get("current_points", 0),
-            "loyalty_tier": profile.get("tier", "bronze"),
+            "employee_id": hr.get("id"),
+            "employee_status": hr.get("status"),
+            "position": hr.get("position"),
+            "department_name": dept_map.get(dept_id) if dept_id else None,
             "created_at": profile.get("created_at"),
-            "address": profile.get("address"),
-            "date_of_birth": profile.get("date_of_birth")
         })
 
-    logger.info(f"✅ Returning {len(users)} users (REST API)")
+    users.sort(key=lambda u: ((u["first_name"] or "").lower(), (u["last_name"] or "").lower()))
+    logger.info(f"✅ Returning {len(users)} staff users (REST API)")
     return {"users": users}
+
+
+@app.get("/organisations/me/available-staff")
+async def list_available_staff(
+    request: Request,
+    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin"]))
+):
+    """HR staff in this org who do not yet have dashboard access."""
+    await rate_limit(get_client_ip(request), user_data[1], request=request)
+    _, org_id, _ = user_data
+
+    hr_records = await supabase_rest_get(
+        "hr_employees",
+        select="id,user_id,first_name,last_name,email,position,status,department_id",
+        filter_string=f"org_id=eq.{org_id}"
+    )
+    members = await supabase_rest_get(
+        "org_members",
+        select="user_id",
+        filter_string=f"org_id=eq.{org_id}"
+    )
+    member_user_ids = {m["user_id"] for m in members if m.get("user_id")}
+
+    dept_ids = list({h["department_id"] for h in hr_records if h.get("department_id")})
+    dept_map = {}
+    if dept_ids:
+        depts = await supabase_rest_get(
+            "hr_departments",
+            select="id,name",
+            filter_string=f"id=in.({','.join(str(d) for d in dept_ids)})"
+        )
+        dept_map = {d["id"]: d["name"] for d in depts}
+
+    available = []
+    for h in hr_records:
+        if (h.get("status") or "").lower() in ("terminated", "resigned"):
+            continue
+        uid = h.get("user_id")
+        if uid and uid in member_user_ids:
+            continue
+        dept_id = h.get("department_id")
+        available.append({
+            "employee_id": h["id"],
+            "first_name": h.get("first_name"),
+            "last_name": h.get("last_name"),
+            "email": h.get("email"),
+            "position": h.get("position"),
+            "status": h.get("status"),
+            "department_name": dept_map.get(dept_id) if dept_id else None,
+        })
+
+    available.sort(key=lambda e: ((e["first_name"] or "").lower(), (e["last_name"] or "").lower()))
+    logger.info(f"✅ {len(available)} available staff in org {org_id}")
+    return {"employees": available}
+
 
 @app.post("/organisations/me/users")
 async def create_staff_member(
@@ -9415,8 +9508,35 @@ async def create_staff_member(
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
 
-    if not staff.phone or not staff.phone.strip():
-        raise HTTPException(status_code=400, detail="Phone number is required for staff members")
+    if staff.role.lower() not in ALLOWED_STAFF_ROLES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid role '{staff.role}'. Customers are managed via the CRM module."
+        )
+
+    # 1. Look up the HR employee, scoped to this org.
+    hr_lookup = await supabase_rest_get(
+        "hr_employees",
+        select="id,user_id,first_name,last_name,email,phone",
+        filter_string=f"org_id=eq.{org_id}&id=eq.{staff.employee_id}"
+    )
+    if not hr_lookup:
+        raise HTTPException(status_code=404, detail="Employee not found in this organisation")
+    employee = hr_lookup[0]
+    if not employee.get("email"):
+        raise HTTPException(status_code=400, detail="Employee record has no email address")
+
+    # 2. If the HR record already links to a profile, reject only if that
+    #    profile is *already* a member of this org. Being a member of a
+    #    different org is fine — this endpoint is per-org.
+    if employee.get("user_id"):
+        existing = await supabase_rest_get(
+            "org_members",
+            select="user_id",
+            filter_string=f"org_id=eq.{org_id}&user_id=eq.{employee['user_id']}"
+        )
+        if existing:
+            raise HTTPException(status_code=409, detail="This employee already has dashboard access")
 
     if not SUPABASE_SERVICE_ROLE_KEY:
         raise HTTPException(status_code=500, detail="Service role key not configured. Cannot create users.")
@@ -9427,82 +9547,104 @@ async def create_staff_member(
         "Content-Type": "application/json"
     }
 
+    user_id = employee.get("user_id")
+    temp_password = None
+    created_new_user = False
+
     async with httpx.AsyncClient() as http_client:
-        check_url = f"{SUPABASE_URL}/rest/v1/profiles?select=id&email=eq.{staff.email}"
-        check_resp = await http_client.get(check_url, headers=headers)
-
-        if check_resp.status_code == 200 and check_resp.json():
-            raise HTTPException(status_code=400, detail="Email already registered")
-
-        temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
-
-        admin_url = f"{SUPABASE_URL}/auth/v1/admin/users"
-        admin_payload = {
-            "email": staff.email,
-            "password": temp_password,
-            "email_confirm": True,
-            "user_metadata": {
-                "first_name": staff.first_name,
-                "last_name": staff.last_name,
-                "phone": staff.phone or ""
-            }
-        }
-
-        admin_resp = await http_client.post(admin_url, json=admin_payload, headers=headers)
-
-        if admin_resp.status_code != 200:
-            logger.error(f"Admin user creation failed: {admin_resp.text}")
-            raise HTTPException(status_code=500, detail=f"Failed to create user: {admin_resp.text}")
-
-        user_data_resp = admin_resp.json()
-        user_id = user_data_resp.get("id")
-
         if not user_id:
-            raise HTTPException(status_code=500, detail="Failed to get user ID from creation response")
+            from urllib.parse import quote
 
-        profile_data = {
-            "id": user_id,
-            "email": staff.email,
-            "first_name": staff.first_name,
-            "last_name": staff.last_name,
-            "phone": staff.phone,
-            "membership_id": f"MEM-{user_id[:8]}",
-            "status": "active",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-            "current_points": 0,
-            "tier": "bronze"
-        }
+            # Reuse an existing profile if the email already has one
+            # (common when a customer is promoted to staff). This preserves
+            # any customer-side history linked to that profile.
+            check_url = f"{SUPABASE_URL}/rest/v1/profiles?select=id&email=eq.{quote(employee['email'])}"
+            check_resp = await http_client.get(check_url, headers=headers)
+            existing_profiles = check_resp.json() if check_resp.status_code == 200 else []
+            if not isinstance(existing_profiles, list):
+                existing_profiles = []
 
-        profile_resp = await http_client.post(
-            f"{SUPABASE_URL}/rest/v1/profiles",
-            json=profile_data,
-            headers=headers
-        )
+            if existing_profiles:
+                user_id = existing_profiles[0]["id"]
+                logger.info(f"Reusing existing profile {user_id} for {employee['email']}")
+                # Reactivate if a prior removal set it to inactive.
+                await http_client.patch(
+                    f"{SUPABASE_URL}/rest/v1/profiles?id=eq.{user_id}",
+                    json={"status": "active", "updated_at": datetime.now(timezone.utc).isoformat()},
+                    headers=headers
+                )
+            else:
+                temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
 
-        if profile_resp.status_code not in [200, 201]:
-            logger.error(f"Profile creation failed: {profile_resp.text}")
-            await http_client.delete(f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}", headers=headers)
-            raise HTTPException(status_code=500, detail="Failed to create user profile")
+                admin_url = f"{SUPABASE_URL}/auth/v1/admin/users"
+                admin_payload = {
+                    "email": employee["email"],
+                    "password": temp_password,
+                    "email_confirm": True,
+                    "user_metadata": {
+                        "first_name": employee.get("first_name") or "",
+                        "last_name": employee.get("last_name") or "",
+                        "phone": employee.get("phone") or ""
+                    }
+                }
+                admin_resp = await http_client.post(admin_url, json=admin_payload, headers=headers)
+                if admin_resp.status_code != 200:
+                    logger.error(f"Admin user creation failed: {admin_resp.text}")
+                    raise HTTPException(status_code=500, detail=f"Failed to create user: {admin_resp.text}")
 
+                user_id = admin_resp.json().get("id")
+                if not user_id:
+                    raise HTTPException(status_code=500, detail="Failed to get user ID from creation response")
+
+                profile_data = {
+                    "id": user_id,
+                    "email": employee["email"],
+                    "first_name": employee.get("first_name") or "",
+                    "last_name": employee.get("last_name") or "",
+                    "phone": employee.get("phone") or "",
+                    "status": "active",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+                profile_resp = await http_client.post(
+                    f"{SUPABASE_URL}/rest/v1/profiles",
+                    json=profile_data,
+                    headers=headers
+                )
+                if profile_resp.status_code not in [200, 201]:
+                    logger.error(f"Profile creation failed: {profile_resp.text}")
+                    await http_client.delete(f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}", headers=headers)
+                    raise HTTPException(status_code=500, detail="Failed to create user profile")
+                created_new_user = True
+
+            # Link the new profile back to the HR employee record.
+            link_resp = await http_client.patch(
+                f"{SUPABASE_URL}/rest/v1/hr_employees?id=eq.{staff.employee_id}",
+                json={"user_id": user_id},
+                headers=headers
+            )
+            if link_resp.status_code not in (200, 201, 204):
+                logger.error(f"Failed to link HR employee to profile: {link_resp.text}")
+
+        # Create the org_members row that grants dashboard access.
         member_data = {
             "user_id": user_id,
             "org_id": org_id,
             "role": staff.role,
             "joined_at": datetime.now(timezone.utc).isoformat()
         }
-
         member_resp = await http_client.post(
             f"{SUPABASE_URL}/rest/v1/org_members",
             json=member_data,
             headers=headers
         )
-
         if member_resp.status_code not in [200, 201]:
             logger.error(f"Org member creation failed: {member_resp.text}")
-            await http_client.delete(f"{SUPABASE_URL}/rest/v1/profiles?id=eq.{user_id}", headers=headers)
-            await http_client.delete(f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}", headers=headers)
-            raise HTTPException(status_code=500, detail="Failed to add user to organisation")
+            # Roll back newly-created auth/profile on failure to keep state consistent.
+            if created_new_user:
+                await http_client.delete(f"{SUPABASE_URL}/rest/v1/profiles?id=eq.{user_id}", headers=headers)
+                await http_client.delete(f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}", headers=headers)
+            raise HTTPException(status_code=500, detail="Failed to add staff to organisation")
 
     await _admin_set_app_metadata(user_id, {
         "org_id": org_id,
@@ -9512,23 +9654,33 @@ async def create_staff_member(
 
     if staff.send_invite_email:
         login_link = f"{PRODUCTION_HOST}/kdsiginin"
-        html = f"""
-        <h2>Welcome to your organisation</h2>
-        <p>You have been added as a <strong>{staff.role}</strong>.</p>
-        <p>Your temporary password: <code>{temp_password}</code></p>
-        <p>Please login here: <a href="{login_link}">{login_link}</a> and change your password immediately.</p>
-        """
-        await send_sendgrid_email(staff.email, "Your staff account has been created", html)
+        if created_new_user and temp_password:
+            html = f"""
+            <h2>Welcome to your organisation</h2>
+            <p>You have been added as a <strong>{staff.role}</strong>.</p>
+            <p>Your temporary password: <code>{temp_password}</code></p>
+            <p>Please login here: <a href="{login_link}">{login_link}</a> and change your password immediately.</p>
+            """
+            await send_sendgrid_email(employee["email"], "Your staff account has been created", html)
+        else:
+            html = f"""
+            <h2>Dashboard access granted</h2>
+            <p>You now have <strong>{staff.role}</strong> access to the dashboard.</p>
+            <p>Please login here: <a href="{login_link}">{login_link}</a></p>
+            """
+            await send_sendgrid_email(employee["email"], "Your dashboard access is ready", html)
 
     return {
         "user_id": user_id,
-        "message": f"Staff invited. Temporary password sent to {staff.email}."
+        "message": f"Access granted to {employee['email']}."
     }
+
 
 @app.delete("/organisations/me/users/{target_user_id}")
 async def remove_staff_member(
     request: Request,
     target_user_id: str,
+    deactivate_profile: bool = False,
     user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin"])),
     x_admin_key: Optional[str] = Header(None)
 ):
@@ -9553,9 +9705,17 @@ async def remove_staff_member(
             raise HTTPException(status_code=403, detail="Admin secret key required to delete an owner")
 
     await run_sync_db_call(client.table("org_members").delete().eq("user_id", target_user_id).eq("org_id", org_id).execute)
-    await run_sync_db_call(client.table("profiles").update({"status": "inactive"}).eq("id", target_user_id).execute)
 
-    return {"message": "Staff member removed"}
+    # profiles.status is now global identity, not per-org access. Flipping it
+    # to 'inactive' here would also lock the person out of every OTHER org they
+    # belong to, and out of any customer portal in future. Only do so when the
+    # caller explicitly asks for full deactivation (e.g. offboarding, not just
+    # revoking dashboard access to this one org).
+    if deactivate_profile:
+        await run_sync_db_call(client.table("profiles").update({"status": "inactive"}).eq("id", target_user_id).execute)
+
+    return {"message": "Staff member access revoked"}
+
 
 @app.post("/auth/admin-reset-password")
 async def admin_reset_password(
@@ -9585,6 +9745,7 @@ async def admin_reset_password(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/auth/reset-password")
 async def reset_password(request: Request, req: ResetPasswordRequest):
     await rate_limit(get_client_ip(request))
@@ -9607,7 +9768,7 @@ async def reset_password(request: Request, req: ResetPasswordRequest):
     }
     payload = {
         "email": req.email,
-        "redirect_to": f"{PRODUCTION_HOST}/kdsiginin"
+        "redirect_to": f"{PRODUCTION_HOST}/kdsiginl"
     }
 
     try:
