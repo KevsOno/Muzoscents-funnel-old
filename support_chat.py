@@ -16,10 +16,27 @@ async def start_chat_session(
     request: Request,
     user_data: Tuple[str, str, str] = Depends(require_role(["customer", "owner", "admin"]))
 ):
-    """Start a new live chat session for a customer."""
+    """Start or resume an open live chat session for a customer."""
     user_id, org_id, _ = user_data
     client = get_supabase()
     
+    # 1. Check for an existing open session
+    existing = await run_sync_db_call(
+        client.table("chat_sessions")
+        .select("id")
+        .eq("user_id", user_id)
+        .eq("org_id", org_id)
+        .eq("status", "open")
+        .eq("channel", "live_chat")
+        .order("started_at", desc=True)
+        .limit(1)
+        .execute
+    )
+
+    if existing.data:
+        return {"session_id": existing.data[0]["id"], "status": "open"}
+
+    # 2. Create a new session if none exists
     session_id = str(uuid4())
     await run_sync_db_call(
         client.table("chat_sessions").insert({
@@ -44,7 +61,6 @@ async def send_chat_message(
     user_id, org_id, role = user_data
     client = get_supabase()
     
-    # Verify session belongs to this org
     session = await run_sync_db_call(
         client.table("chat_sessions")
         .select("id")
@@ -82,7 +98,7 @@ async def get_chat_messages(
     
     res = await run_sync_db_call(
         client.table("chat_messages")
-        .select("*")
+        .select("id, sender_type, message, created_at")
         .eq("session_id", session_id)
         .eq("org_id", org_id)
         .order("created_at", desc=False)
