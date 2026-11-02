@@ -11,16 +11,78 @@ router = APIRouter(prefix="/chat", tags=["Live Chat"])
 class ChatMessageCreate(BaseModel):
     message: str = Field(..., max_length=2000)
 
+class ComplaintCreate(BaseModel):
+    subject: str = Field(..., max_length=200)
+    message: str = Field(..., max_length=2000)
+
+@router.get("/availability")
+async def check_agent_availability(
+    request: Request,
+    user_data: Tuple[str, str, str] = Depends(require_role(["customer", "owner", "admin"]))
+):
+    """Check if there are support agents available for this org."""
+    _, org_id, _ = user_data
+    client = get_supabase()
+    
+    # Simple check: are there any users with support/owner/admin roles?
+    res = await run_sync_db_call(
+        client.table("org_members")
+        .select("user_id")
+        .eq("org_id", org_id)
+        .in_("role", ["owner", "admin", "support"])
+        .limit(1)
+        .execute
+    )
+    return {"available": len(res.data) > 0}
+
+@router.post("/complaint")
+async def submit_complaint(
+    request: Request,
+    payload: ComplaintCreate,
+    user_data: Tuple[str, str, str] = Depends(require_role(["customer", "owner", "admin"]))
+):
+    """Submit a complaint if no agents are available. Requires login."""
+    user_id, org_id, _ = user_data
+    client = get_supabase()
+    
+    ticket_id = str(uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    
+    # 1. Create the support ticket
+    await run_sync_db_call(
+        client.table("support_tickets").insert({
+            "id": ticket_id,
+            "user_id": user_id,
+            "org_id": org_id,
+            "subject": payload.subject,
+            "priority": "high",
+            "status": "open",
+            "created_at": now
+        }).execute()
+    )
+    
+    # 2. Add the complaint message
+    await run_sync_db_call(
+        client.table("ticket_messages").insert({
+            "ticket_id": ticket_id,
+            "sender_type": "customer",
+            "sender_id": user_id,
+            "message": payload.message,
+            "created_at": now
+        }).execute()
+    )
+    
+    return {"message": "Complaint submitted successfully", "ticket_id": ticket_id}
+
 @router.post("/session")
 async def start_chat_session(
     request: Request,
     user_data: Tuple[str, str, str] = Depends(require_role(["customer", "owner", "admin"]))
 ):
-    """Start or resume an open live chat session for a customer."""
+    """Start or resume an open live chat session."""
     user_id, org_id, _ = user_data
     client = get_supabase()
     
-    # 1. Check for an existing open session
     existing = await run_sync_db_call(
         client.table("chat_sessions")
         .select("id")
@@ -36,7 +98,6 @@ async def start_chat_session(
     if existing.data:
         return {"session_id": existing.data[0]["id"], "status": "open"}
 
-    # 2. Create a new session if none exists
     session_id = str(uuid4())
     await run_sync_db_call(
         client.table("chat_sessions").insert({
@@ -46,7 +107,7 @@ async def start_chat_session(
             "channel": "live_chat",
             "status": "open",
             "started_at": datetime.now(timezone.utc).isoformat()
-        }).execute
+        }).execute()
     )
     return {"session_id": session_id, "status": "open"}
 
@@ -62,12 +123,7 @@ async def send_chat_message(
     client = get_supabase()
     
     session = await run_sync_db_call(
-        client.table("chat_sessions")
-        .select("id")
-        .eq("id", session_id)
-        .eq("org_id", org_id)
-        .maybe_single()
-        .execute
+        client.table("chat_sessions").select("id").eq("id", session_id).eq("org_id", org_id).maybe_single().execute
     )
     if not session or not session.data:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -82,7 +138,7 @@ async def send_chat_message(
             "sender_type": sender_type,
             "message": payload.message,
             "created_at": datetime.now(timezone.utc).isoformat()
-        }).execute
+        }).execute()
     )
     return {"status": "sent"}
 
