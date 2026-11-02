@@ -58,7 +58,7 @@ async def submit_complaint(
             "priority": "high",
             "status": "open",
             "created_at": now
-        }).execute()
+        }).execute
     )
     
     # 2. Add the complaint message
@@ -69,7 +69,7 @@ async def submit_complaint(
             "sender_id": user_id,
             "message": payload.message,
             "created_at": now
-        }).execute()
+        }).execute
     )
     
     return {"message": "Complaint submitted successfully", "ticket_id": ticket_id}
@@ -107,7 +107,7 @@ async def start_chat_session(
             "channel": "live_chat",
             "status": "open",
             "started_at": datetime.now(timezone.utc).isoformat()
-        }).execute()
+        }).execute
     )
     return {"session_id": session_id, "status": "open"}
 
@@ -138,7 +138,7 @@ async def send_chat_message(
             "sender_type": sender_type,
             "message": payload.message,
             "created_at": datetime.now(timezone.utc).isoformat()
-        }).execute()
+        }).execute
     )
     return {"status": "sent"}
 
