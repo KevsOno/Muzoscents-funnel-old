@@ -221,6 +221,7 @@ def _compute_migration_suite_hash() -> str:
         "ensure_accounting_tables",
         "ensure_is_cogs_column",
         "ensure_inventory_storefront_description",
+        "ensure_chat_sessions_columns",
         "ensure_crm_customers_view",
         "ensure_expenses_table",
         "ensure_geo_schema",
@@ -5934,6 +5935,33 @@ async def ensure_crm_customers_view():
     logger.info("crm_customers view installed (or already present)")
 
 
+async def ensure_chat_sessions_columns():
+    """
+    Ensure chat_sessions has the status and channel columns required
+    by the live chat and support chat logic.
+    """
+    sql = """
+    ALTER TABLE public.chat_sessions
+        ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'open',
+        ADD COLUMN IF NOT EXISTS channel TEXT DEFAULT 'website';
+    """
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"chat_sessions columns migration failed: {resp.text}")
+        raise RuntimeError(f"chat_sessions columns migration failed: {resp.text}")
+    logger.info("chat_sessions status/channel columns installed")
+
+
 async def ensure_expenses_table():
     """
     Create the expenses table and its indexes.
@@ -6146,6 +6174,8 @@ async def startup_event():
         await ensure_accounting_tables()
         await ensure_is_cogs_column()
         await ensure_inventory_storefront_description()
+        await ensure_chat_sessions_columns()
+        await ensure_crm_customers_view()
         await ensure_expenses_table()
         await ensure_geo_schema()
 
@@ -6256,8 +6286,10 @@ async def startup_event():
         await ensure_accounting_tables()
         await ensure_is_cogs_column()
         await ensure_inventory_storefront_description()
+        await ensure_chat_sessions_columns()
         await ensure_crm_customers_view()
         await ensure_expenses_table()
+        await ensure_geo_schema()
         await _record_migration_hash(
             suite_hash=current_hash,
             applied_by=instance_id,
