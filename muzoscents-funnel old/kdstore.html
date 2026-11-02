@@ -2028,32 +2028,64 @@
     <button id="chat-bubble" aria-label="Open chat assistant" class="floating-chat fixed bottom-6 right-6 bg-green-700 text-white w-14 h-14 rounded-full shadow-xl z-40 flex items-center justify-center">
         <i class="fa-solid fa-comment-dots text-xl" aria-hidden="true"></i>
     </button>
+
     <div id="chat-modal" class="chat-modal" role="dialog" aria-label="Chat assistant">
         <div class="chat-header">
             <div class="flex items-center justify-between gap-3">
                 <div class="flex items-center gap-3 min-w-0">
                     <div class="chat-avatar"><i class="fa-solid fa-comment-dots text-lg" aria-hidden="true"></i></div>
                     <div class="min-w-0">
-                        <div class="font-extrabold text-sm truncate">Ask us</div>
+                        <div class="font-extrabold text-sm truncate" id="chat-header-title">Ask us</div>
                         <div class="text-xs text-green-100 mt-0.5"><span class="chat-online-dot" aria-hidden="true"></span>AI shopping assistant</div>
                     </div>
                 </div>
                 <button id="close-chat-modal" aria-label="Close chat" class="w-8 h-8 rounded-full hover:bg-white/10 text-white/80 hover:text-white text-xl">&times;</button>
             </div>
-            <p class="text-xs text-green-50/90 mt-3">Find products, get shopping help, or ask about your order.</p>
-        </div>
-        <div id="chat-messages" class="chat-messages" aria-live="polite"></div>
-        <div class="chat-quick-prompts" id="chat-quick-prompts">
-            <button class="chat-quick-prompt" data-chat-prompt="Help me find a product">Find a product</button>
-            <button class="chat-quick-prompt" data-chat-prompt="What are the best deals available?">Best deals</button>
-            <button class="chat-quick-prompt" data-chat-prompt="Help me with my order">Order help</button>
-        </div>
-        <div class="chat-compose">
-            <div class="chat-input-wrap">
-                <input id="chat-input" type="text" placeholder="Ask about products, orders..." autocomplete="off" aria-label="Message chat assistant">
-                <button id="chat-send" aria-label="Send message" class="chat-send-btn"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i></button>
+            <!-- NEW: Toggle buttons -->
+            <div class="mt-3 flex gap-2">
+                <button id="btn-request-agent" class="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-1.5 rounded-lg transition">👤 Speak to Agent</button>
             </div>
-            <div class="chat-disclaimer">AI can make mistakes. Check important order details.</div>
+        </div>
+
+        <!-- 1. AI CHAT CONTAINER -->
+        <div id="ai-chat-container" class="flex flex-col flex-1 min-h-0">
+            <div id="chat-messages" class="chat-messages flex-1" aria-live="polite"></div>
+            <div class="chat-quick-prompts" id="chat-quick-prompts">
+                <button class="chat-quick-prompt" data-chat-prompt="Help me find a product">Find a product</button>
+                <button class="chat-quick-prompt" data-chat-prompt="What are the best deals available?">Best deals</button>
+                <button class="chat-quick-prompt" data-chat-prompt="Help me with my order">Order help</button>
+            </div>
+            <div class="chat-compose">
+                <div class="chat-input-wrap">
+                    <input id="chat-input" type="text" placeholder="Ask about products..." autocomplete="off" aria-label="Message chat assistant">
+                    <button id="chat-send" aria-label="Send message" class="chat-send-btn"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i></button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. LIVE CHAT CONTAINER (Hidden by default) -->
+        <div id="live-chat-container" class="flex flex-col flex-1 min-h-0 hidden">
+            <div id="live-chat-messages" class="chat-messages flex-1 bg-gray-50" aria-live="polite"></div>
+            <div class="chat-compose">
+                <div class="chat-input-wrap">
+                    <input id="live-chat-input" type="text" placeholder="Type your message to the agent..." autocomplete="off">
+                    <button id="live-chat-send" class="chat-send-btn bg-blue-600"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i></button>
+                </div>
+                <div class="chat-disclaimer text-blue-600 font-semibold">You are now connected to a human agent.</div>
+            </div>
+        </div>
+
+        <!-- 3. COMPLAINT FORM CONTAINER (Hidden by default) -->
+        <div id="complaint-form-container" class="hidden flex-col flex-1 p-5 overflow-y-auto bg-white">
+            <div class="text-center mb-4">
+                <i class="fa-solid fa-headset text-3xl text-gray-400 mb-2"></i>
+                <h3 class="font-bold text-gray-800">No agents available</h3>
+                <p class="text-xs text-gray-500 mt-1">Leave a message and our team will get back to you.</p>
+            </div>
+            <input type="text" id="complaint-subject" placeholder="Subject (e.g., Damaged Item)" class="w-full border border-gray-300 rounded-lg p-2 text-sm mb-3">
+            <textarea id="complaint-message" placeholder="Describe your issue in detail..." rows="4" class="w-full border border-gray-300 rounded-lg p-2 text-sm mb-3"></textarea>
+            <button id="submit-complaint-btn" class="w-full bg-green-700 hover:bg-green-800 text-white py-2 rounded-lg font-semibold transition">Submit Complaint</button>
+            <button id="cancel-complaint-btn" class="w-full mt-2 text-xs text-gray-500 hover:text-gray-800">Back to AI Chat</button>
         </div>
     </div>
 
