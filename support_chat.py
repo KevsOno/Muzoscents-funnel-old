@@ -15,6 +15,46 @@ class ComplaintCreate(BaseModel):
     subject: str = Field(..., max_length=200)
     message: str = Field(..., max_length=2000)
 
+@router.get("/sessions")
+async def list_chat_sessions(
+    request: Request,
+    status: str = "open",
+    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "support"]))
+):
+    """List live chat sessions for the org — used by the support dashboard."""
+    _, org_id, _ = user_data
+    client = get_supabase()
+
+    res = await run_sync_db_call(
+        client.table("chat_sessions")
+        .select("id, user_id, channel, status, started_at")
+        .eq("org_id", org_id)
+        .eq("status", status)
+        .eq("channel", "live_chat")
+        .order("started_at", desc=True)
+        .execute                       # ← no parens, deferred to worker thread
+    )
+
+    sessions = res.data or []
+    if sessions:
+        user_ids = list({s["user_id"] for s in sessions if s.get("user_id")})
+        if user_ids:
+            profiles = await run_sync_db_call(
+                client.table("profiles")
+                .select("id, first_name, last_name, email")
+                .in_("id", user_ids)
+                .execute
+            )
+            pmap = {p["id"]: p for p in (profiles.data or [])}
+            for s in sessions:
+                p = pmap.get(s.get("user_id"), {})
+                s["customer_name"] = (
+                    f"{p.get('first_name', '')} {p.get('last_name', '')}".strip() or "Guest"
+                )
+                s["customer_email"] = p.get("email", "")
+
+    return {"sessions": sessions}
+
 @router.get("/availability")
 async def check_agent_availability(
     request: Request,
@@ -130,6 +170,7 @@ async def send_chat_message(
 
     sender_type = "agent" if role in ["owner", "admin", "support"] else "customer"
     
+    # inside send_chat_message — change .execute() → .execute
     await run_sync_db_call(
         client.table("chat_messages").insert({
             "session_id": session_id,
@@ -138,7 +179,7 @@ async def send_chat_message(
             "sender_type": sender_type,
             "message": payload.message,
             "created_at": datetime.now(timezone.utc).isoformat()
-        }).execute
+        }).execute                       # ← no parens
     )
     return {"status": "sent"}
 
