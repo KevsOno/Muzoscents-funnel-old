@@ -2166,6 +2166,143 @@ function initStickyHeader() {
 }
 
 // ============================================================
+//  LIVE AGENT & COMPLAINT LOGIC
+// ============================================================
+let liveChatSessionId = null;
+let liveChatPolling = null;
+
+function showChatView(view) {
+    document.getElementById('ai-chat-container').classList.add('hidden');
+    document.getElementById('live-chat-container').classList.add('hidden');
+    document.getElementById('complaint-form-container').classList.add('hidden');
+    document.getElementById('complaint-form-container').style.display = 'none';
+
+    if (view === 'ai') {
+        document.getElementById('ai-chat-container').classList.remove('hidden');
+        document.getElementById('chat-header-title').innerText = 'Ask us (AI)';
+        document.getElementById('btn-request-agent').classList.remove('hidden');
+    } else if (view === 'live') {
+        document.getElementById('live-chat-container').classList.remove('hidden');
+        document.getElementById('chat-header-title').innerText = 'Live Support';
+        document.getElementById('btn-request-agent').classList.add('hidden');
+    } else if (view === 'complaint') {
+        document.getElementById('complaint-form-container').classList.remove('hidden');
+        document.getElementById('complaint-form-container').style.display = 'flex';
+        document.getElementById('chat-header-title').innerText = 'Leave a Message';
+        document.getElementById('btn-request-agent').classList.add('hidden');
+    }
+}
+
+async function handleRequestAgent() {
+    if (!token) {
+        showToast("Please sign in to speak to an agent.", "error");
+        showAuthModal();
+        return;
+    }
+
+    const btn = document.getElementById('btn-request-agent');
+    setButtonLoading(btn, true);
+
+    try {
+        const res = await apiCall('/chat/availability');
+        if (res.available) {
+            // Connect to live chat
+            const sessionRes = await apiCall('/chat/session', { method: 'POST' });
+            liveChatSessionId = sessionRes.session_id;
+            
+            showChatView('live');
+            fetchLiveChatMessages();
+            if (liveChatPolling) clearInterval(liveChatPolling);
+            liveChatPolling = setInterval(fetchLiveChatMessages, 3000);
+        } else {
+            // No agents available
+            showChatView('complaint');
+        }
+    } catch (e) {
+        showToast("Failed to check agent availability.", "error");
+        console.error(e);
+    } finally {
+        setButtonLoading(btn, false);
+    }
+}
+
+async function fetchLiveChatMessages() {
+    if (!liveChatSessionId) return;
+    try {
+        const res = await apiCall(`/chat/session/${liveChatSessionId}/messages`);
+        const container = document.getElementById('live-chat-messages');
+        
+        if (container.dataset.count == res.messages.length) return;
+        container.dataset.count = res.messages.length;
+        
+        container.innerHTML = res.messages.map(msg => {
+            const isAgent = msg.sender_type === 'agent';
+            return `
+                <div class="chat-msg ${isAgent ? 'assistant' : 'user'}">
+                    ${isAgent ? '<div class="chat-msg-avatar" style="background:#dbeafe;color:#1e40af;"><i class="fa-solid fa-user-tie"></i></div>' : ''}
+                    <div class="chat-msg-bubble" style="${isAgent ? 'background:#eff6ff; border-color:#bfdbfe;' : ''}">${escapeHtml(msg.message)}</div>
+                </div>
+            `;
+        }).join('');
+        container.scrollTop = container.scrollHeight;
+    } catch (e) {
+        console.warn("Polling error", e);
+    }
+}
+
+async function sendLiveChatMessage() {
+    const input = document.getElementById('live-chat-input');
+    const msg = input.value.trim();
+    if (!msg || !liveChatSessionId) return;
+    input.value = '';
+
+    try {
+        await apiCall(`/chat/session/${liveChatSessionId}/message`, {
+            method: 'POST',
+            body: JSON.stringify({ message: msg })
+        });
+        fetchLiveChatMessages(); // Instant refresh
+    } catch (e) {
+        showToast("Failed to send message", "error");
+    }
+}
+
+async function submitComplaint() {
+    if (!token) {
+        showToast("Please sign in to complain.", "error");
+        showAuthModal();
+        return;
+    }
+
+    const subject = document.getElementById('complaint-subject').value.trim();
+    const message = document.getElementById('complaint-message').value.trim();
+    
+    if (!subject || !message) {
+        showToast("Please fill out both fields.", "error");
+        return;
+    }
+
+    const btn = document.getElementById('submit-complaint-btn');
+    setButtonLoading(btn, true);
+
+    try {
+        await apiCall('/chat/complaint', {
+            method: 'POST',
+            body: JSON.stringify({ subject, message })
+        });
+        showToast("Complaint submitted successfully!", "success");
+        document.getElementById('complaint-subject').value = '';
+        document.getElementById('complaint-message').value = '';
+        showChatView('ai');
+        addChatMsg('assistant', 'Your complaint has been logged. Is there anything else I can help you with?');
+    } catch (e) {
+        showToast(e.message, "error");
+    } finally {
+        setButtonLoading(btn, false);
+    }
+}
+
+// ============================================================
 //  DOM CONTENT LOADED - INITIALIZATION
 // ============================================================
 document.addEventListener('DOMContentLoaded', async function() {
@@ -2791,6 +2928,16 @@ document.addEventListener('DOMContentLoaded', async function() {
     document.querySelectorAll('[data-chat-prompt]').forEach(btn => {
         btn.addEventListener('click', () => sendQuickChatPrompt(btn.dataset.chatPrompt));
     });
+
+    // Live agent & complaint bindings
+    document.getElementById('btn-request-agent')?.addEventListener('click', handleRequestAgent);
+    document.getElementById('live-chat-send')?.addEventListener('click', sendLiveChatMessage);
+    document.getElementById('live-chat-input')?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); sendLiveChatMessage(); }
+    });
+
+    document.getElementById('submit-complaint-btn')?.addEventListener('click', submitComplaint);
+    document.getElementById('cancel-complaint-btn')?.addEventListener('click', () => showChatView('ai'));
 
     document.addEventListener('click', function(e) {
         // Hero CTA buttons (may be re-rendered)
