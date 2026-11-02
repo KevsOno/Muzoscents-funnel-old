@@ -1593,94 +1593,164 @@ async def supabase_rest_get(
     return resp.json()
 
 # ===================== LOYALTY POINTS ENGINE =====================
-async def award_loyalty_points(user_id: str, amount_naira: float, sale_id: str, reason: str = "purchase") -> int:
-    if amount_naira <= 0 or not user_id:
+async def award_loyalty_points(
+    user_id: str,
+    amount_naira: float,
+    sale_id: str,
+    org_id: str,
+    reason: str = "purchase"
+) -> int:
+    """
+    Award loyalty points to a CUSTOMER in a specific org.
+    Writes to org_leads.current_points, not profiles.
+    Returns the points earned (0 if the person is not a customer of this org).
+    """
+    if amount_naira <= 0 or not user_id or not org_id:
         return 0
     points_earned = int((amount_naira / 1000) * 10)
     if points_earned == 0:
         return 0
 
     client = get_supabase()
-    profile = await run_sync_db_call(
-        client.table("profiles").select("current_points").eq("id", user_id).maybe_single().execute
+
+    # 1. Confirm the person is a customer of this org.
+    #    No org_leads row → no points. This is the enforcement that was missing.
+    lead = await run_sync_db_call(
+        client.table("org_leads")
+        .select("id, current_points")
+        .eq("org_id", org_id)
+        .eq("profile_id", user_id)
+        .maybe_single()
+        .execute
     )
-    if not profile.data:
-        logger.error(f"User {user_id} not found in profiles")
+    if not lead.data:
+        logger.info(
+            f"⏭️  No org_leads row for user {user_id} in org {org_id} "
+            f"— skipping points for sale {sale_id}"
+        )
         return 0
-    current_points = profile.data.get("current_points", 0)
-    new_points = current_points + points_earned
 
+    current_points = lead.data.get("current_points") or 0
+    new_points = current_points + points_earned
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    # 2. Write to org_leads — the single source of truth for loyalty now.
     await run_sync_db_call(
-        client.table("profiles").update({"current_points": new_points}).eq("id", user_id).execute
+        client.table("org_leads")
+        .update({
+            "current_points": new_points,
+            "last_points_update": now_iso,
+            "updated_at": now_iso,
+        })
+        .eq("id", lead.data["id"])
+        .execute
     )
 
+    # 3. Append to the per-org ledger.
     await run_sync_db_call(
         client.table("loyalty_transactions").insert({
             "user_id": user_id,
+            "org_id": org_id,
             "sale_id": sale_id,
             "points_delta": points_earned,
             "reason": reason,
-            "created_at": datetime.now(timezone.utc).isoformat()
+            "created_at": now_iso,
         }).execute
     )
 
-    logger.info(f"Awarded {points_earned} points to user {user_id} for sale {sale_id} (₦{amount_naira})")
+    logger.info(
+        f"✅ Awarded {points_earned} pts to {user_id} in org {org_id} "
+        f"for sale {sale_id} (₦{amount_naira}) — new balance: {new_points}"
+    )
     return points_earned
 
-async def redeem_points_to_credit(user_id: str, points_to_redeem: int) -> float:
+async def redeem_points_to_credit(user_id: str, points_to_redeem: int, org_id: str) -> float:
     if points_to_redeem <= 0:
         raise HTTPException(status_code=400, detail="Points to redeem must be positive")
+    if not org_id:
+        raise HTTPException(status_code=400, detail="Organisation context required")
+
     client = get_supabase()
-    profile = await run_sync_db_call(
-        client.table("profiles").select("current_points, credit_balance").eq("id", user_id).maybe_single().execute
+
+    lead = await run_sync_db_call(
+        client.table("org_leads")
+        .select("id, current_points, credit_balance")
+        .eq("org_id", org_id)
+        .eq("profile_id", user_id)
+        .maybe_single()
+        .execute
     )
-    if not profile.data:
-        raise HTTPException(status_code=404, detail="User not found")
-    current_points = profile.data.get("current_points", 0)
+    if not lead.data:
+        raise HTTPException(status_code=400, detail="Not a customer of this organisation")
+
+    current_points = lead.data.get("current_points") or 0
     if current_points < points_to_redeem:
         raise HTTPException(status_code=400, detail="Insufficient points")
 
     new_points = current_points - points_to_redeem
-    credit_added = float(points_to_redeem)
-    new_credit = (profile.data.get("credit_balance", 0.0) or 0.0) + credit_added
+    credit_added = float(points_to_redeem)  # 1 point = ₦1 credit
+    new_credit = float(lead.data.get("credit_balance") or 0.0) + credit_added
+    now_iso = datetime.now(timezone.utc).isoformat()
 
     await run_sync_db_call(
-        client.table("profiles").update({
+        client.table("org_leads")
+        .update({
             "current_points": new_points,
-            "credit_balance": new_credit
-        }).eq("id", user_id).execute
+            "credit_balance": new_credit,
+            "last_points_update": now_iso,
+            "updated_at": now_iso,
+        })
+        .eq("id", lead.data["id"])
+        .execute
     )
 
     await run_sync_db_call(
         client.table("loyalty_transactions").insert({
             "user_id": user_id,
+            "org_id": org_id,
             "points_delta": -points_to_redeem,
             "reason": "redeem_to_credit",
             "metadata": {"credit_added": credit_added},
-            "created_at": datetime.now(timezone.utc).isoformat()
+            "created_at": now_iso,
         }).execute
     )
 
+    logger.info(
+        f"✅ Redeemed {points_to_redeem} pts for {user_id} in org {org_id} "
+        f"— credit +₦{credit_added}, new balance: {new_points} pts / ₦{new_credit}"
+    )
     return credit_added
 
-async def get_loyalty_balance(user_id: str) -> Dict:
+async def get_loyalty_balance(user_id: str, org_id: str) -> Dict:
+    """
+    Per-org loyalty balance. Returns zeros if the person is not a customer
+    of this org (rather than 404 — callers can check `is_customer`).
+    """
     client = get_supabase()
-    profile = await run_sync_db_call(
-        client.table("profiles").select("current_points, credit_balance").eq("id", user_id).maybe_single().execute
+    lead = await run_sync_db_call(
+        client.table("org_leads")
+        .select("current_points, credit_balance, tier")
+        .eq("org_id", org_id)
+        .eq("profile_id", user_id)
+        .maybe_single()
+        .execute
     )
-    if not profile.data:
-        return {"points": 0, "credit": 0.0}
+    if not lead.data:
+        return {"points": 0, "credit": 0.0, "tier": None, "is_customer": False}
     return {
-        "points": profile.data.get("current_points", 0),
-        "credit": float(profile.data.get("credit_balance", 0.0) or 0.0)
+        "points": lead.data.get("current_points") or 0,
+        "credit": float(lead.data.get("credit_balance") or 0.0),
+        "tier": lead.data.get("tier"),
+        "is_customer": True,
     }
 
-async def get_loyalty_transactions(user_id: str, limit: int = 50, offset: int = 0) -> List[Dict]:
+async def get_loyalty_transactions(user_id: str, org_id: str, limit: int = 50, offset: int = 0) -> List[Dict]:
     client = get_supabase()
     result = await run_sync_db_call(
         client.table("loyalty_transactions")
         .select("*")
         .eq("user_id", user_id)
+        .eq("org_id", org_id)
         .order("created_at", desc=True)
         .range(offset, offset + limit - 1)
         .execute
@@ -1691,96 +1761,130 @@ async def get_loyalty_transactions(user_id: str, limit: int = 50, offset: int = 
 # Database migrations
 # ------------------------------------------------------------------
 async def ensure_loyalty_tables():
+    """
+    Idempotent schema setup for the loyalty engine, run at startup.
+    Post-migration: loyalty state lives on org_leads, NOT profiles.
+    This function must NEVER touch profiles.current_points or profiles.credit_balance,
+    or it will silently re-create columns that were intentionally retired.
+    """
     supabase = get_supabase()
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+    }
+
+    async def _exec(sql: str, label: str):
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+                json={"query": sql},
+                headers=headers,
+            )
+            if resp.status_code not in (200, 204):
+                logger.error(f"Failed to {label}: {resp.text}")
+            else:
+                logger.info(f"{label} OK")
+
+    # 1. org_leads must have credit_balance (used by redeem flow).
     try:
-        test = await run_sync_db_call(supabase.table("profiles").select("credit_balance").limit(1).execute)
-        logger.info("credit_balance column already exists in profiles.")
+        await run_sync_db_call(
+            supabase.table("org_leads").select("credit_balance").limit(1).execute
+        )
+        logger.info("org_leads.credit_balance exists.")
     except Exception as e:
         if 'column "credit_balance" does not exist' in str(e):
-            logger.warning("Adding credit_balance column to profiles...")
-            sql = "ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS credit_balance NUMERIC DEFAULT 0;"
-            headers = {
-                "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
-                "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}"
-            }
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(f"{SUPABASE_URL}/rest/v1/rpc/exec_sql", json={"query": sql}, headers=headers)
-                if resp.status_code not in (200, 204):
-                    logger.error(f"Failed to add credit_balance: {resp.text}")
-                else:
-                    logger.info("credit_balance column added.")
+            await _exec(
+                "ALTER TABLE public.org_leads ADD COLUMN IF NOT EXISTS credit_balance NUMERIC DEFAULT 0;",
+                "add org_leads.credit_balance",
+            )
+
+    # 2. org_leads should also have last_points_update (used by award flow).
     try:
-        test = await run_sync_db_call(supabase.table("loyalty_transactions").select("id").limit(1).execute)
+        await run_sync_db_call(
+            supabase.table("org_leads").select("last_points_update").limit(1).execute
+        )
+        logger.info("org_leads.last_points_update exists.")
+    except Exception as e:
+        if 'column "last_points_update" does not exist' in str(e):
+            await _exec(
+                "ALTER TABLE public.org_leads ADD COLUMN IF NOT EXISTS last_points_update TIMESTAMPTZ;",
+                "add org_leads.last_points_update",
+            )
+
+    # 3. loyalty_transactions table (ledger).
+    try:
+        await run_sync_db_call(
+            supabase.table("loyalty_transactions").select("id").limit(1).execute
+        )
         logger.info("loyalty_transactions table exists.")
     except Exception as e:
         if 'relation "loyalty_transactions" does not exist' in str(e):
-            logger.warning("Creating loyalty_transactions table...")
-            sql = """
-            CREATE TABLE IF NOT EXISTS public.loyalty_transactions (
-                id SERIAL PRIMARY KEY,
-                user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-                sale_id UUID REFERENCES public.sales(id) ON DELETE SET NULL,
-                points_delta INTEGER NOT NULL,
-                reason TEXT NOT NULL,
-                metadata JSONB,
-                created_at TIMESTAMPTZ DEFAULT now()
-            );
-            CREATE INDEX IF NOT EXISTS idx_loyalty_user ON public.loyalty_transactions(user_id);
-            """
-            headers = {
-                "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
-                "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}"
-            }
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(f"{SUPABASE_URL}/rest/v1/rpc/exec_sql", json={"query": sql}, headers=headers)
-                if resp.status_code not in (200, 204):
-                    logger.error(f"Failed to create loyalty_transactions: {resp.text}")
-                else:
-                    logger.info("loyalty_transactions table created.")
+            await _exec(
+                """
+                CREATE TABLE IF NOT EXISTS public.loyalty_transactions (
+                    id SERIAL PRIMARY KEY,
+                    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+                    org_id UUID REFERENCES public.organisations(id) ON DELETE CASCADE,
+                    sale_id UUID REFERENCES public.sales(id) ON DELETE SET NULL,
+                    points_delta INTEGER NOT NULL,
+                    reason TEXT NOT NULL,
+                    metadata JSONB,
+                    created_at TIMESTAMPTZ DEFAULT now()
+                );
+                CREATE INDEX IF NOT EXISTS idx_loyalty_user ON public.loyalty_transactions(user_id);
+                CREATE INDEX IF NOT EXISTS idx_loyalty_org  ON public.loyalty_transactions(org_id);
+                """,
+                "create loyalty_transactions",
+            )
+
+    # 4. loyalty_transactions.org_id (multi-org correctness).
     try:
-        test = await run_sync_db_call(supabase.table("customer_points_summary").select("id").limit(1).execute)
-        logger.info("customer_points_summary view already exists.")
+        await run_sync_db_call(
+            supabase.table("loyalty_transactions").select("org_id").limit(1).execute
+        )
+        logger.info("loyalty_transactions.org_id exists.")
     except Exception as e:
-        if 'relation "customer_points_summary" does not exist' in str(e):
-            logger.warning("Creating customer_points_summary view...")
-            sql = """
-            CREATE OR REPLACE VIEW public.customer_points_summary AS
-            SELECT 
-                id,
-                membership_id,
-                current_points,
-                tier,
-                credit_balance,
-                status
-            FROM public.profiles;
-            """
-            headers = {
-                "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
-                "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}"
-            }
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(f"{SUPABASE_URL}/rest/v1/rpc/exec_sql", json={"query": sql}, headers=headers)
-                if resp.status_code not in (200, 204):
-                    logger.error(f"Failed to create customer_points_summary view: {resp.text}")
-                else:
-                    logger.info("customer_points_summary view created.")
-    try:
-        test = await run_sync_db_call(supabase.table("profiles").select("current_points").limit(1).execute)
-        logger.info("current_points column exists.")
-    except Exception as e:
-        if 'column "current_points" does not exist' in str(e):
-            logger.warning("Adding current_points column to profiles...")
-            sql = "ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS current_points INTEGER DEFAULT 0;"
-            headers = {
-                "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
-                "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}"
-            }
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(f"{SUPABASE_URL}/rest/v1/rpc/exec_sql", json={"query": sql}, headers=headers)
-                if resp.status_code not in (200, 204):
-                    logger.error(f"Failed to add current_points: {resp.text}")
-                else:
-                    logger.info("current_points column added.")
+        if 'column "org_id" does not exist' in str(e):
+            await _exec(
+                """
+                ALTER TABLE public.loyalty_transactions
+                  ADD COLUMN IF NOT EXISTS org_id UUID REFERENCES public.organisations(id) ON DELETE CASCADE;
+                CREATE INDEX IF NOT EXISTS idx_loyalty_org ON public.loyalty_transactions(org_id);
+                UPDATE public.loyalty_transactions lt
+                SET org_id = s.org_id
+                FROM public.sales s
+                WHERE lt.sale_id = s.id AND lt.org_id IS NULL;
+                """,
+                "add + backfill loyalty_transactions.org_id",
+            )
+
+    # 5. customer_points_summary view — MUST read from org_leads, not profiles.
+    #    DROP + CREATE (not CREATE OR REPLACE) because the column set and order
+    #    changed materially. CREATE OR REPLACE cannot reorder/rename columns and
+    #    would fail with 42P16, leaving the stale profiles-based view in place.
+    await _exec(
+        """
+        DROP VIEW IF EXISTS public.customer_points_summary;
+        CREATE VIEW public.customer_points_summary AS
+        SELECT
+            ol.profile_id                                            AS id,
+            ol.org_id                                                AS org_id,
+            p.email                                                  AS email,
+            p.first_name                                             AS first_name,
+            p.last_name                                              AS last_name,
+            ol.membership_id                                         AS membership_id,
+            COALESCE(ol.current_points, 0)                           AS current_points,
+            COALESCE(ol.tier, 'bronze')                              AS tier,
+            COALESCE(ol.credit_balance, 0)                           AS credit_balance,
+            COALESCE(ol.status, 'active')                            AS status,
+            COALESCE(ol.lifetime_value, 0)                           AS lifetime_value,
+            COALESCE(ol.total_orders, 0)                             AS total_orders,
+            ol.last_points_update                                    AS last_points_update
+        FROM public.org_leads ol
+        LEFT JOIN public.profiles p ON p.id = ol.profile_id;
+        """,
+        "rebuild customer_points_summary view",
+    )
 
 async def ensure_transfer_suggestions_last_updated_column():
     sql = """
@@ -7459,20 +7563,44 @@ async def search_inventory(org_id: str, query: str, limit: int = 5) -> List[Dict
         return []
 
 
-async def get_loyalty_info_by_user_id(user_id: str) -> Optional[Dict]:
+async def get_loyalty_info_by_user_id(user_id: str, org_id: str) -> Optional[Dict]:
+    """
+    Loyalty + identity for a customer of a specific org.
+    Returns None if the person is not a customer of this org.
+    """
     client = get_supabase()
     if not client:
         return None
     try:
-        result = await run_sync_db_call(
+        lead = await run_sync_db_call(
+            client.table("org_leads")
+            .select("current_points, tier, membership_id, is_physical_member")
+            .eq("org_id", org_id)
+            .eq("profile_id", user_id)
+            .maybe_single()
+            .execute
+        )
+        if not lead or not lead.data:
+            return None
+
+        profile = await run_sync_db_call(
             client.table("profiles")
-            .select("first_name, current_points, tier, membership_id, phone")
+            .select("first_name, last_name, phone")
             .eq("id", user_id)
             .maybe_single()
             .execute
         )
-        if result and result.data:
-            return result.data
+        p = profile.data if profile and profile.data else {}
+
+        return {
+            "first_name": p.get("first_name"),
+            "last_name": p.get("last_name"),
+            "phone": p.get("phone"),
+            "current_points": lead.data.get("current_points") or 0,
+            "tier": lead.data.get("tier"),
+            "membership_id": lead.data.get("membership_id"),
+            "is_physical_member": lead.data.get("is_physical_member") or False,
+        }
     except Exception as e:
         logger.error(f"Loyalty fetch error: {e}", exc_info=True)
     return None
@@ -10368,10 +10496,10 @@ async def _create_or_attach_owner(
                     "first_name": first_name,
                     "last_name": last_name,
                     "phone": phone,
-                    "membership_id": f"MEM-{user_id[:8]}",
+                    
                     "status": "active",
-                    "current_points": 0,
-                    "tier": "bronze",
+                    
+                    
                     "created_at": datetime.now(timezone.utc).isoformat(),
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                 },
@@ -18136,20 +18264,19 @@ async def register_customer(
         if not user_id:
             raise HTTPException(status_code=500, detail="Failed to get user ID from creation response")
 
+        # Identity-only profile — loyalty state lives on org_leads now.
+        now_iso = datetime.now(timezone.utc).isoformat()
         profile_data = {
             "id": user_id,
             "email": customer.email,
             "first_name": customer.first_name,
             "last_name": customer.last_name,
             "phone": customer.phone,
-            "membership_id": f"MEM-{user_id[:8]}",
             "status": "active",
-            "current_points": customer.loyalty_points,
-            "tier": customer.tier,
             "date_of_birth": customer.date_of_birth,
             "address": customer.address,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat()
+            "created_at": now_iso,
+            "updated_at": now_iso,
         }
 
         profile_resp = await http_client.post(
@@ -18163,11 +18290,44 @@ async def register_customer(
             await http_client.delete(f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}", headers=headers)
             raise HTTPException(status_code=500, detail="Failed to create profile")
 
+        # Customer record — this is where loyalty state lives, scoped per-org.
+        lead_data = {
+            "org_id": org_id,
+            "profile_id": user_id,
+            "name": f"{customer.first_name} {customer.last_name}".strip(),
+            "email": customer.email,
+            "phone": customer.phone,
+            "status": "active",
+            "source": "admin_registration",
+            "membership_id": f"MEM-{user_id[:8]}",
+            "current_points": customer.loyalty_points or 0,
+            "tier": customer.tier or "bronze",
+            "is_physical_member": False,
+            "last_points_update": now_iso,
+            "acquired_date": datetime.now(timezone.utc).date().isoformat(),
+            "created_at": now_iso,
+            "updated_at": now_iso,
+        }
+
+        lead_resp = await http_client.post(
+            f"{SUPABASE_URL}/rest/v1/org_leads",
+            json=lead_data,
+            headers=headers
+        )
+
+        if lead_resp.status_code not in [200, 201]:
+            logger.error(f"Org lead creation failed: {lead_resp.text}")
+            await http_client.delete(f"{SUPABASE_URL}/rest/v1/profiles?id=eq.{user_id}", headers=headers)
+            await http_client.delete(f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}", headers=headers)
+            raise HTTPException(status_code=500, detail="Failed to create customer record")
+
+        # Legacy: keep org_members row for backwards compatibility with existing
+        # lookup paths. The Team & Access page filters role='customer' out.
         member_data = {
             "user_id": user_id,
             "org_id": org_id,
             "role": "customer",
-            "joined_at": datetime.now(timezone.utc).isoformat()
+            "joined_at": now_iso
         }
 
         member_resp = await http_client.post(
@@ -18178,6 +18338,7 @@ async def register_customer(
 
         if member_resp.status_code not in [200, 201]:
             logger.error(f"Org member creation failed: {member_resp.text}")
+            await http_client.delete(f"{SUPABASE_URL}/rest/v1/org_leads?profile_id=eq.{user_id}&org_id=eq.{org_id}", headers=headers)
             await http_client.delete(f"{SUPABASE_URL}/rest/v1/profiles?id=eq.{user_id}", headers=headers)
             await http_client.delete(f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}", headers=headers)
             raise HTTPException(status_code=500, detail="Failed to assign user to organisation")
