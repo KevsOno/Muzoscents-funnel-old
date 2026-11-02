@@ -16444,7 +16444,7 @@ async def pos_terminal_checkout(
         is_duplicate = bool(result.get("duplicate"))
 
         if is_duplicate:
-            logger.info(f"↩️ POS sale {sale_id} already exists (offline ref replay) – skipping side effects")
+            logger.info(f"↩ POS sale {sale_id} already exists (offline ref replay) – skipping side effects")
 
         # The RPC inserts status='completed' already, but branch_id and
         # shipping_status still need setting. Idempotent to re-apply.
@@ -16473,6 +16473,7 @@ async def pos_terminal_checkout(
                     user_id,
                     result["total_amount"],
                     result["sale_id"],
+                    org_id,
                     "pos_purchase"
                 )
 
@@ -16656,6 +16657,7 @@ async def paystack_webhook(request: Request):
                     sale.data["user_id"],
                     sale.data["total_amount"],
                     sale.data["id"],
+                    org_id,
                     "purchase",
                 )
             except Exception as pts_err:
@@ -16792,6 +16794,7 @@ async def flutterwave_webhook(request: Request):
                     sale.data["user_id"],
                     sale.data["total_amount"],
                     sale.data["id"],
+                    org_id,
                     "purchase",
                 )
             except Exception as pts_err:
@@ -16933,6 +16936,7 @@ async def monnify_webhook(request: Request):
                     sale.data["user_id"],
                     sale.data["total_amount"],
                     sale.data["id"],
+                    org_id,
                     "purchase",
                 )
             except Exception as pts_err:
@@ -17044,7 +17048,7 @@ async def retry_pending_orders(
 
                 if order.get("total_amount"):
                     try:
-                        await award_loyalty_points(user_id, order["total_amount"], order["id"], "sync_purchase")
+                        await award_loyalty_points(user_id, order["total_amount"], order["id"], org_id, "sync_purchase")
                     except Exception as pts_err:
                         logger.error(f"retry_pending_orders: loyalty points failed for {order['id']}: {pts_err}")
 
