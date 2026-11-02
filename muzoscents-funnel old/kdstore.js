@@ -2241,7 +2241,7 @@ async function handleRequestAgent() {
             showChatView('live');
             fetchLiveChatMessages();
             if (liveChatPolling) clearInterval(liveChatPolling);
-            liveChatPolling = setInterval(fetchLiveChatMessages, 3000);
+            liveChatPolling = setInterval(fetchLiveChatMessages, 8000);
         } else {
             // No agents available
             showChatView('complaint');
