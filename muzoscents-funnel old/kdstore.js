@@ -1869,6 +1869,7 @@ async function demoLogin() {
         hideAuthModal();
         showToast("Demo login success", 'success');
         showView('shop');
+        updateAgentButtonState();   // ← add this line
     } catch (e) {
         alert(e.message);
     } finally {
@@ -2193,10 +2194,37 @@ function showChatView(view) {
     }
 }
 
+function updateAgentButtonState() {
+    const btn = document.getElementById('btn-request-agent');
+    if (!btn) return;
+
+    if (!token) {
+        btn.innerHTML = '<i class="fa-solid fa-lock mr-1" aria-hidden="true"></i> Sign in to speak to agent';
+        btn.classList.add('requires-login');
+        btn.title = 'You must be signed in to speak to a live agent';
+        btn.setAttribute('aria-label', 'Sign in required to speak to a live agent');
+    } else {
+        btn.innerHTML = '<i class="fa-solid fa-user mr-1" aria-hidden="true"></i> Speak to Agent';
+        btn.classList.remove('requires-login');
+        btn.title = 'Connect with a live human agent';
+        btn.setAttribute('aria-label', 'Speak to a live agent');
+    }
+}
+
 async function handleRequestAgent() {
     if (!token) {
-        showToast("Please sign in to speak to an agent.", "error");
-        showAuthModal();
+        // Make it crystal clear WHY they can't talk to an agent yet
+        showToast("🔒 Please sign in first to speak to a live agent.", "error");
+        // Give the toast a beat to register, then open auth modal
+        setTimeout(() => {
+            showAuthModal();
+            // Focus the email field inside the auth modal
+            const emailInput = document.getElementById('auth-email');
+            if (emailInput) {
+                emailInput.focus();
+                emailInput.placeholder = "Sign in to chat with an agent…";
+            }
+        }, 450);
         return;
     }
 
@@ -2680,6 +2708,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             hideAuthModal();
             showToast("Logged in", 'success');
             showView('shop');
+            updateAgentButtonState();   // ← add this line
         } catch (e) {
             alert(e.message);
         } finally {
@@ -3011,6 +3040,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         try { await loadUser(); } catch (e) { token = null; }
     }
     await loadCategories();
+    updateAgentButtonState();
     await loadProducts();           // fetches products, sets allProducts
     renderSections();               // renders the whole page from config
     handlePaymentReturn();
