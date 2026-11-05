@@ -3,8 +3,8 @@ name: Build Tauri App
 on:
   push:
     tags:
-      - 'v*'
-  workflow_dispatch:
+      - 'v*' # Triggers when you push a tag like v1.0.0
+  workflow_dispatch: # Allows you to click "Run workflow" manually in GitHub
 
 jobs:
   build:
@@ -12,8 +12,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Windows Build
           - platform: 'windows-latest'
             args: ''
+          # macOS Build (Universal binary for Intel + Apple Silicon)
           - platform: 'macos-latest'
             args: '--target universal-apple-darwin'
 
@@ -41,6 +43,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          # The correct path to your Tauri project folder relative to the repo root
           projectPath: './muzoscents-funnel old/desktop'
           args: ${{ matrix.args }}
 
@@ -48,9 +51,12 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist-artifacts
-          # Copy Windows and macOS bundles safely, checking both standard and target-specific release paths
-          find "muzoscents-funnel old/desktop/src-tauri/target" -type f \( -name "*.msi" -o -name "*.exe" -o -name "*.dmg" \) -exec cp {} dist-artifacts/ \;
-          echo "=== Collected Artifacts ==="
+          # Copy only from official Tauri bundle subdirectories to avoid compiler caches
+          cp -v "muzoscents-funnel old/desktop/src-tauri/target/release/bundle/msi/"*.msi dist-artifacts/ 2>/dev/null || true
+          cp -v "muzoscents-funnel old/desktop/src-tauri/target/release/bundle/nsis/"*.exe dist-artifacts/ 2>/dev/null || true
+          cp -v "muzoscents-funnel old/desktop/src-tauri/target/release/bundle/dmg/"*.dmg dist-artifacts/ 2>/dev/null || true
+          cp -v "muzoscents-funnel old/desktop/src-tauri/target/release/bundle/macos/"*.dmg dist-artifacts/ 2>/dev/null || true
+          echo "=== Collected Final Installers ==="
           ls -la dist-artifacts/
 
       - name: Upload Artifacts
