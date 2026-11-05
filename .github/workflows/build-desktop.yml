@@ -34,44 +34,24 @@ jobs:
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
-      - name: Install dependencies (macOS)
-        if: matrix.platform == 'macos-latest'
-        run: |
-          # Add any macOS specific dependencies here if needed in the future
-
       - name: Install frontend dependencies
         run: |
-          # If you have a package.json, use npm ci or npm install
-          # If not, you can remove this step
           npm ci || true
-
-      - name: Debug structure
-        shell: bash
-        run: |
-          echo "=== root ==="
-          ls -la
-          echo "=== muzoscents-funnel old ==="
-          ls -la "muzoscents-funnel old"
-          echo "=== desktop ==="
-          ls -la "muzoscents-funnel old/desktop"
 
       - name: Build Tauri App
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # The correct path to your Tauri project folder relative to the repo root
           projectPath: './muzoscents-funnel old/desktop'
-          # The command used to build the frontend (if you have one)
-          # Since you use a stub, this is just a placeholder
           args: ${{ matrix.args }}
 
       - name: Organize Artifacts
         shell: bash
         run: |
           mkdir -p dist-artifacts
-          # Safely copy only compiled installer binaries from release directories
-          find "muzoscents-funnel old/desktop/src-tauri/target/release" -maxdepth 3 \( -name "*.msi" -o -name "*.exe" -o -name "*.dmg" \) -exec cp -v {} dist-artifacts/ \;
+          # Search recursively from target/ to catch standard and universal build outputs (.exe, .msi, .dmg)
+          find "muzoscents-funnel old/desktop/src-tauri/target" -type f \( -name "*.msi" -o -name "*.exe" -o -name "*.dmg" \) -exec cp -v {} dist-artifacts/ \;
           echo "=== Collected Final Installers ==="
           ls -la dist-artifacts/
 
