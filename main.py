@@ -2601,35 +2601,43 @@ async def ensure_location_stocks_batch_backfill() -> None:
 
 async def ensure_batch_expiry_reconciliation():
     """
-    Correct sentinel-dated inventory_batches using the authoritative
-    inventory.expiry_date.
+    Correct inventory_batches.expiry_date using inventory.expiry_date when
+    the batch date is materially later than the inventory date.
 
     WHY THIS EXISTS:
 
-        The batch-first refactor moved expiry identity to inventory_batches.
-        But two code paths — bulk upload and the distribute_batch_to_locations
-        trigger — can create batches without a real expiry, defaulting to
-        the sentinel 2099-12-31. If the inventory row later gets a real
-        expiry_date (manual edit, supplier delivery, CSV import), the batch
-        is not updated. Result: inventory.expiry_date says 2026-10-02 but
-        the batch says 2099-12-31.
+        Legacy backfills produced batches whose expiry_date does not match
+        the inventory row. Two such placeholders exist in practice:
 
-        Daily-advise reads from the batch, so those items never appear in
-        the advisory email. The dashboard reads inventory.expiry_date and
-        shows them. Symptom: 1000+ alerts on the dashboard, 2 items in
-        the email.
+            - 2099-12-31  — created by _resolve_or_create_batch when no
+                            expiry is supplied. Safe to leave alone on
+                            sentinel batches that hold no stock.
+            - 2027-10-09  — created by an older bulk-backfill pass; every
+                            LEGACY-* batch carries this. This is the one
+                            that silently breaks daily-advise.
 
-    LOGIC:
+        The symptom is a split-brain: inventory.expiry_date says 2026-10-02
+        (correct, shown on the dashboard), inventory_batches.expiry_date
+        says 2027-10-09 (wrong, used by daily-advise). Every item with
+        this pattern is invisible to the expiry email.
 
-        Only fix batches where:
-          - batch.expiry_date is a placeholder (outside 2020..2050)
-          - inventory.expiry_date is a real date (inside 2020..2050)
-          - the batch actually holds stock at some location
-            (otherwise we would rewrite sentinel batches that are
-             legitimately empty and should stay empty)
+    FIX LOGIC:
 
-    IDEMPOTENT. Second run updates zero rows because the WHERE clause
-    filters on the placeholder range, which no fixed batch matches.
+        Only fix batches where ALL of:
+
+          1. inventory.expiry_date is a real date (2020..2050)
+          2. inventory.expiry_date is within 150 days (item is expiring)
+          3. batch.expiry_date is more than 30 days LATER than inventory's
+             date (the drift signature — a batch cannot legitimately
+             expire long after the item's declared expiry)
+          4. the batch actually holds stock somewhere
+
+    The 30-day grace window means a batch that is merely stale by a few
+    days (e.g. a refreshed supplier date) is left alone. Only the
+    systematic placeholder drift is corrected.
+
+    IDEMPOTENT. Second run updates zero rows because clause 3 matches
+    nothing after the first pass.
     """
     sql = """
     UPDATE public.inventory_batches ib
@@ -2639,7 +2647,8 @@ async def ensure_batch_expiry_reconciliation():
     WHERE ib.inventory_id = i.id
       AND i.expiry_date IS NOT NULL
       AND i.expiry_date BETWEEN '2020-01-01' AND '2050-01-01'
-      AND (ib.expiry_date < '2020-01-01' OR ib.expiry_date > '2050-01-01')
+      AND i.expiry_date < CURRENT_DATE + INTERVAL '150 days'
+      AND ib.expiry_date > i.expiry_date + INTERVAL '30 days'
       AND EXISTS (
           SELECT 1 FROM public.location_stocks ls
           WHERE ls.batch_id = ib.id AND ls.quantity > 0
@@ -2650,7 +2659,7 @@ async def ensure_batch_expiry_reconciliation():
         "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
         "Content-Type": "application/json",
     }
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(
             f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
             json={"query": sql},
@@ -2659,7 +2668,7 @@ async def ensure_batch_expiry_reconciliation():
     if resp.status_code not in (200, 204):
         logger.error(f"batch expiry reconciliation failed: {resp.text}")
         raise RuntimeError(f"batch expiry reconciliation failed: {resp.text}")
-    logger.info("batch expiry reconciliation complete (sentinel -> real dates)")
+    logger.info("batch expiry reconciliation complete (batch date aligned to inventory date)")
 
 
 
