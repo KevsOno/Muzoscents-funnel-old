@@ -185,6 +185,7 @@ def _compute_migration_suite_hash() -> str:
         "ensure_branches_table",
         "ensure_location_stocks_constraints",
         "ensure_location_stocks_batch_backfill",
+        "ensure_batch_expiry_reconciliation"
         "ensure_batch_verification_columns",
         "ensure_distribute_batch_trigger",
         "ensure_inventory_creation_tracking",
@@ -2596,6 +2597,71 @@ async def ensure_location_stocks_batch_backfill() -> None:
         logger.error(f"location_stocks batch backfill failed: {resp.text}")
         raise RuntimeError(f"location_stocks batch backfill failed: {resp.text}")
     logger.info("location_stocks batch_id backfill complete and NOT NULL enforced")
+
+
+async def ensure_batch_expiry_reconciliation():
+    """
+    Correct sentinel-dated inventory_batches using the authoritative
+    inventory.expiry_date.
+
+    WHY THIS EXISTS:
+
+        The batch-first refactor moved expiry identity to inventory_batches.
+        But two code paths — bulk upload and the distribute_batch_to_locations
+        trigger — can create batches without a real expiry, defaulting to
+        the sentinel 2099-12-31. If the inventory row later gets a real
+        expiry_date (manual edit, supplier delivery, CSV import), the batch
+        is not updated. Result: inventory.expiry_date says 2026-10-02 but
+        the batch says 2099-12-31.
+
+        Daily-advise reads from the batch, so those items never appear in
+        the advisory email. The dashboard reads inventory.expiry_date and
+        shows them. Symptom: 1000+ alerts on the dashboard, 2 items in
+        the email.
+
+    LOGIC:
+
+        Only fix batches where:
+          - batch.expiry_date is a placeholder (outside 2020..2050)
+          - inventory.expiry_date is a real date (inside 2020..2050)
+          - the batch actually holds stock at some location
+            (otherwise we would rewrite sentinel batches that are
+             legitimately empty and should stay empty)
+
+    IDEMPOTENT. Second run updates zero rows because the WHERE clause
+    filters on the placeholder range, which no fixed batch matches.
+    """
+    sql = """
+    UPDATE public.inventory_batches ib
+    SET expiry_date = i.expiry_date,
+        updated_at  = NOW()
+    FROM public.inventory i
+    WHERE ib.inventory_id = i.id
+      AND i.expiry_date IS NOT NULL
+      AND i.expiry_date BETWEEN '2020-01-01' AND '2050-01-01'
+      AND (ib.expiry_date < '2020-01-01' OR ib.expiry_date > '2050-01-01')
+      AND EXISTS (
+          SELECT 1 FROM public.location_stocks ls
+          WHERE ls.batch_id = ib.id AND ls.quantity > 0
+      );
+    """
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"batch expiry reconciliation failed: {resp.text}")
+        raise RuntimeError(f"batch expiry reconciliation failed: {resp.text}")
+    logger.info("batch expiry reconciliation complete (sentinel -> real dates)")
+
+
 
 
 async def ensure_batch_verification_columns():
@@ -6345,6 +6411,7 @@ async def startup_event():
         await ensure_branches_table()
         await ensure_location_stocks_constraints()
         await ensure_location_stocks_batch_backfill()
+        await ensure_batch_expiry_reconciliation()
         await ensure_batch_verification_columns()
         await ensure_distribute_batch_trigger()
         await ensure_inventory_creation_tracking()
@@ -6458,6 +6525,7 @@ async def startup_event():
         await ensure_branches_table()
         await ensure_location_stocks_constraints()
         await ensure_location_stocks_batch_backfill()
+        await ensure_batch_expiry_reconciliation()
         await ensure_batch_verification_columns()
         await ensure_distribute_batch_trigger()
         await ensure_inventory_creation_tracking()
@@ -13292,8 +13360,8 @@ async def bulk_upload_inventory(
             if item.get("item_code"):
                 existing_map[item["item_code"]] = item
 
-        new_items = []
-        updates = []
+        new_items = []       # list of (new_item_dict, csv_expiry_date)
+        updates = []         # list of (item_code, update_data, existing_id, csv_expiry_date)
         errors = []
 
         main_location = await run_sync_db_call(client.table("locations").select("id").eq("org_id", org_id).eq("is_warehouse", True).maybe_single().execute)
@@ -13381,6 +13449,30 @@ async def bulk_upload_inventory(
                 errors.append(f"Row {row_num}: 'current_qty' must be an integer")
                 continue
 
+            # ── Parse expiry_date from the CSV ──
+            # Accept YYYY-MM-DD. Treat any date before 2020 as a
+            # placeholder (2000-01-01 is the common one). Reject
+            # dates that fall between 2020 and yesterday, since
+            # importing already-expired stock via bulk upload is
+            # almost always a data-entry mistake rather than intent.
+            csv_expiry_date = (row.get("expiry_date") or "").strip()
+            if csv_expiry_date:
+                try:
+                    parsed = datetime.strptime(csv_expiry_date, "%Y-%m-%d").date()
+                    if parsed.year < 2020:
+                        # Placeholder → treat as "no expiry"
+                        csv_expiry_date = None
+                    elif parsed <= datetime.now(timezone.utc).date():
+                        errors.append(f"Row {row_num}: expiry_date {csv_expiry_date} is in the past")
+                        continue
+                    else:
+                        csv_expiry_date = parsed.isoformat()
+                except ValueError:
+                    errors.append(f"Row {row_num}: expiry_date must be YYYY-MM-DD")
+                    continue
+            else:
+                csv_expiry_date = None
+
             image_url = row.get("image_url", "").strip()
 
             if item_code in existing_map:
@@ -13403,6 +13495,10 @@ async def bulk_upload_inventory(
                     "updated_at": datetime.now(timezone.utc).isoformat()
                 }
 
+                # Keep inventory.expiry_date in sync with the CSV.
+                if csv_expiry_date:
+                    update_data["expiry_date"] = csv_expiry_date
+
                 if update_data["cost_price_naira"] != existing.get("cost_price_naira", 0):
                     try:
                         await run_sync_db_call(
@@ -13417,7 +13513,7 @@ async def bulk_upload_inventory(
                     except Exception as log_err:
                         logger.warning(f"Failed to log cost history for {item_code}: {log_err}")
 
-                updates.append((item_code, update_data))
+                updates.append((item_code, update_data, existing["id"], csv_expiry_date))
             else:
                 new_item = {
                     "org_id": org_id,
@@ -13436,13 +13532,18 @@ async def bulk_upload_inventory(
                     "created_at": datetime.now(timezone.utc).isoformat(),
                     "updated_at": datetime.now(timezone.utc).isoformat()
                 }
-                new_items.append(new_item)
+                # Write expiry_date to the inventory row too so the
+                # dashboard, the daily-advise fallback, and the batch
+                # record all agree.
+                if csv_expiry_date:
+                    new_item["expiry_date"] = csv_expiry_date
+                new_items.append((new_item, csv_expiry_date))
 
         if errors:
             raise HTTPException(status_code=400, detail="; ".join(errors[:10]))
 
         updated_count = 0
-        for item_code, update_data in updates:
+        for item_code, update_data, existing_id, csv_expiry in updates:
             result = await run_sync_db_call(
                 client.table("inventory")
                 .update(update_data)
@@ -13452,9 +13553,39 @@ async def bulk_upload_inventory(
             )
             if result.data:
                 updated_count += 1
+                # Propagate the CSV expiry onto the earliest-expiring
+                # batch of this inventory. Prevents the sentinel-drift
+                # from regenerating on re-upload.
+                if csv_expiry:
+                    try:
+                        existing_batches = await run_sync_db_call(
+                            client.table("inventory_batches")
+                            .select("id, expiry_date")
+                            .eq("inventory_id", existing_id)
+                            .order("expiry_date", desc=False)
+                            .limit(1)
+                            .execute
+                        )
+                        if existing_batches and existing_batches.data:
+                            target = existing_batches.data[0]
+                            if str(target["expiry_date"]) != csv_expiry:
+                                await run_sync_db_call(
+                                    client.table("inventory_batches")
+                                    .update({
+                                        "expiry_date": csv_expiry,
+                                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                                    })
+                                    .eq("id", target["id"])
+                                    .execute
+                                )
+                    except Exception as batch_err:
+                        logger.warning(
+                            f"Bulk upload: failed to sync batch expiry "
+                            f"for inventory {existing_id} ({item_code}): {batch_err}"
+                        )
 
         inserted_count = 0
-        for new_item in new_items:
+        for new_item, csv_expiry in new_items:
             result = await run_sync_db_call(
                 client.table("inventory").insert(new_item).execute
             )
@@ -13467,17 +13598,15 @@ async def bulk_upload_inventory(
                 continue
 
             try:
-                # Bulk upload carries no batch metadata per row. Route
-                # through the shared helper so the product gets a sentinel
-                # batch (UNBATCHED / 2099-12-31). If the inventory team
-                # later discovers the product actually has a shelf life,
-                # they add a real batch through the batch modal and the
-                # sentinel batch's stock is transferred to it.
+                # Bulk upload carries per-row expiry (or None). Route
+                # through the shared helper so the product gets the
+                # correct batch — sentinel only if the CSV genuinely
+                # had no expiry, real date otherwise.
                 batch_row = await _resolve_or_create_batch(
                     client=client,
                     inventory_id=new_inv["id"],
                     batch_number=None,
-                    expiry_date=None,
+                    expiry_date=csv_expiry,
                     cost_price_naira=new_item.get("cost_price_naira"),
                     received_quantity=int(new_item.get("current_qty") or 0),
                 )
@@ -14178,12 +14307,39 @@ async def _resolve_or_create_batch(
            is provided and batch_number is not
         3. the sentinel 'UNBATCHED' otherwise
 
+    Fallback for expiry_date: if the caller passes None, we read the
+    parent inventory row's expiry_date. If that is a real date (year
+    between 2020 and 2050), we use it instead of the sentinel. This
+    closes the drift window where a product already had a real expiry
+    on its inventory row but a caller created a batch without one.
+
     The (inventory_id, batch_number) pair is the uniqueness key, matching
     the check add_inventory_batch performs. A batch number means the same
     thing regardless of which code path created it.
     """
     provided_batch = (batch_number or "").strip()
     provided_expiry = (expiry_date or "").strip()
+
+    # ── Step 4 fallback: read the parent inventory's expiry_date ──
+    # Only fires when the caller did not supply one. Filters out
+    # placeholder dates (2000-01-01, 2099-12-31) so we don't
+    # propagate a bad date into a new batch.
+    if not provided_expiry:
+        parent_inv = await run_sync_db_call(
+            client.table("inventory")
+            .select("expiry_date")
+            .eq("id", inventory_id)
+            .maybe_single()
+            .execute
+        )
+        if parent_inv and parent_inv.data and parent_inv.data.get("expiry_date"):
+            candidate = parent_inv.data["expiry_date"]
+            try:
+                year = int(str(candidate)[:4])
+            except (TypeError, ValueError):
+                year = 0
+            if 2020 <= year <= 2050:
+                provided_expiry = candidate
 
     if provided_batch:
         resolved_batch_number = provided_batch
