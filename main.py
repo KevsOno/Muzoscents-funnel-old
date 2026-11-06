@@ -186,6 +186,7 @@ def _compute_migration_suite_hash() -> str:
         "ensure_location_stocks_constraints",
         "ensure_location_stocks_batch_backfill",
         "ensure_batch_expiry_reconciliation"
+        "ensure_effective_expiry_view"
         "ensure_batch_verification_columns",
         "ensure_distribute_batch_trigger",
         "ensure_inventory_creation_tracking",
@@ -2670,6 +2671,94 @@ async def ensure_batch_expiry_reconciliation():
         raise RuntimeError(f"batch expiry reconciliation failed: {resp.text}")
     logger.info("batch expiry reconciliation complete (batch date aligned to inventory date)")
 
+
+
+async def ensure_effective_expiry_view():
+    """
+    Install v_inventory_effective_expiry — a read-only view that resolves
+    the "true" expiry for each (inventory, batch) pair from the two
+    competing sources:
+
+        raw_batch_expiry      → inventory_batches.expiry_date
+        raw_inventory_expiry  → inventory.expiry_date
+
+    Rule: prefer batch, then inventory, and only when the year is in
+    [2020, 2050] so that placeholder sentinels (2000-01-01, 2099-12-31,
+    2027-10-09) are treated as "no expiry" rather than "expires soon".
+
+    WHY THIS EXISTS:
+
+        inventory.expiry_date and inventory_batches.expiry_date diverged
+        during the batch-first refactor. The dashboard reads one, the
+        daily-advise email reads the other, and they can disagree. The
+        reconciliation migration (ensure_batch_expiry_reconciliation)
+        closes the gap by copying real inventory dates onto placeholder
+        batch dates at boot. This view formalises the resolution logic
+        so future readers have a single place to consult instead of
+        each re-implementing the "which date wins?" rule.
+
+    SAFETY:
+
+        This function is additive. It creates a view nobody currently
+        queries. Existing endpoints, edge functions, and RPCs are
+        untouched. Migrating readers to this view is a separate, per-
+        caller change that should happen gradually after deploy.
+
+    IDEMPOTENT. DROP + CREATE each boot, matching the pattern used by
+    ensure_product_risk_view and ensure_transfer_suggestions_view.
+    """
+    sql = """
+    DROP VIEW IF EXISTS public.v_inventory_effective_expiry;
+
+    CREATE VIEW public.v_inventory_effective_expiry AS
+    SELECT
+        ib.id              AS batch_id,
+        i.id               AS inventory_id,
+        i.org_id,
+        i.item_code,
+        i.description,
+        i.product_group,
+        ib.batch_number,
+        ib.quantity        AS batch_quantity,
+        ib.expiry_date     AS raw_batch_expiry,
+        i.expiry_date      AS raw_inventory_expiry,
+        CASE
+            WHEN ib.expiry_date IS NOT NULL
+                 AND ib.expiry_date BETWEEN DATE '2020-01-01' AND DATE '2050-01-01'
+            THEN ib.expiry_date
+            WHEN i.expiry_date IS NOT NULL
+                 AND i.expiry_date BETWEEN DATE '2020-01-01' AND DATE '2050-01-01'
+            THEN i.expiry_date
+            ELSE NULL
+        END AS effective_expiry_date,
+        (CASE
+            WHEN ib.expiry_date IS NOT NULL
+                 AND ib.expiry_date BETWEEN DATE '2020-01-01' AND DATE '2050-01-01'
+            THEN (ib.expiry_date - CURRENT_DATE)
+            WHEN i.expiry_date IS NOT NULL
+                 AND i.expiry_date BETWEEN DATE '2020-01-01' AND DATE '2050-01-01'
+            THEN (i.expiry_date - CURRENT_DATE)
+            ELSE NULL
+        END) AS days_until_expiry
+    FROM public.inventory i
+    LEFT JOIN public.inventory_batches ib ON ib.inventory_id = i.id
+    WHERE i.org_id IS NOT NULL;
+    """
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"v_inventory_effective_expiry migration failed: {resp.text}")
+        raise RuntimeError(f"v_inventory_effective_expiry migration failed: {resp.text}")
+    logger.info("v_inventory_effective_expiry view installed")
 
 
 
@@ -6421,6 +6510,7 @@ async def startup_event():
         await ensure_location_stocks_constraints()
         await ensure_location_stocks_batch_backfill()
         await ensure_batch_expiry_reconciliation()
+        await ensure_effective_expiry_view()
         await ensure_batch_verification_columns()
         await ensure_distribute_batch_trigger()
         await ensure_inventory_creation_tracking()
@@ -6535,6 +6625,7 @@ async def startup_event():
         await ensure_location_stocks_constraints()
         await ensure_location_stocks_batch_backfill()
         await ensure_batch_expiry_reconciliation()
+        await ensure_effective_expiry_view()
         await ensure_batch_verification_columns()
         await ensure_distribute_batch_trigger()
         await ensure_inventory_creation_tracking()
