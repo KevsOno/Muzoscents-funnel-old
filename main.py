@@ -19379,21 +19379,27 @@ async def resolve_alert(
     notes       = action_data.get("notes") or ""
     dest_loc_id = action_data.get("dest_location_id")
 
-    # CONSUME / DISPOSE must carry a positive quantity, because they
-    # physically decrement stock.
     if action_type in ("CONSUME", "DISPOSE") and quantity <= 0:
         raise HTTPException(
             status_code=400,
             detail=f"{action_type} requires a positive quantity",
         )
 
-    # TRANSFER must carry a destination location.
     if action_type == "TRANSFER" and not dest_loc_id:
         raise HTTPException(
             status_code=400,
             detail="TRANSFER requires dest_location_id",
         )
 
+    # ── Call the RPC. ──
+    #
+    # postgrest-py treats any RPC response body containing a `message`
+    # key as an API error, regardless of other fields. Our resolve_alert
+    # RPC returns `{success: true, alert_id, action, message: "Alert
+    # resolved successfully", ...}`, so postgrest-py raises APIError on
+    # every successful resolve. We catch it, inspect the payload, and
+    # treat `success: true` as success.
+    result: dict = {}
     try:
         rpc_resp = await run_sync_db_call(
             client.rpc("resolve_alert", {
@@ -19405,11 +19411,30 @@ async def resolve_alert(
                 "p_dest_location_id": dest_loc_id,
             }).execute
         )
+        result = rpc_resp.data or {}
     except Exception as e:
-        logger.error(f"resolve_alert RPC failed for alert {alert_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to resolve alert: {e}")
+        # postgrest-py wraps the RPC body in APIError. e.args[0] is the
+        # original JSON payload. If that payload has `success: true`,
+        # the RPC actually succeeded — we only landed here because of
+        # the `message` key.
+        payload = getattr(e, "args", [None])[0]
+        if isinstance(payload, dict) and payload.get("success") is True:
+            result = payload
+            logger.info(
+                f"resolve_alert RPC succeeded despite postgrest-py error "
+                f"(alert={alert_id}, action={action_type}, "
+                f"quantity={quantity})"
+            )
+        else:
+            logger.error(
+                f"resolve_alert RPC genuinely failed for alert {alert_id}: {e}",
+                exc_info=True,
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to resolve alert: {e}",
+            )
 
-    result = rpc_resp.data or {}
     if not result.get("success", False):
         raise HTTPException(
             status_code=400,
