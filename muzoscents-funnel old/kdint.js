@@ -8,7 +8,7 @@
   // Configuration
   // ────────────────────────────────────────────────────────────
   var API_BASE = 'https://kevsono-kevs-digital-bos.hf.space';
-  var SUPPORT_EMAIL = 'support@kevsdigital.com';
+  var SUPPORT_EMAIL = 'mickevsono@gmail.com';
   var STORAGE_KEYS_ORG_NAME = ['kd_current_org_name', 'selected_org_name'];
   var STORAGE_KEYS_ORG_ID   = ['kd_current_org', 'selected_org_id'];
   var DISMISSED_KEY = 'kd402_dismissed_features';
