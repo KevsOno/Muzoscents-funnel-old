@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Kevs bOS · Accounts</title>
     <script src="/kdint.js"></script>
+    <script src="/kdsession.js"></script>
     <script src="/nav.js" defer></script>
     <link rel="stylesheet" href="/tailwind.css">
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -76,16 +77,10 @@
         const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
         const TOKEN_KEY = 'access_token';
         const REFRESH_KEY = 'refresh_token';
-        const ORG_ID_KEY = 'selected_org_id';
-        const ORG_NAME_KEY = 'selected_org_name';
 
         function getToken() { return localStorage.getItem(TOKEN_KEY); }
         function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
         function getRefresh() { return localStorage.getItem(REFRESH_KEY); }
-        function getSelectedOrgId() { return localStorage.getItem(ORG_ID_KEY); }
-        function setSelectedOrgId(id) { localStorage.setItem(ORG_ID_KEY, id); }
-        function getSelectedOrgName() { return localStorage.getItem(ORG_NAME_KEY); }
-        function setSelectedOrgName(n) { localStorage.setItem(ORG_NAME_KEY, n); }
 
         function escapeHtml(str) {
             if (!str) return '';
@@ -110,6 +105,8 @@
 
         // ================================================================
         // API CLIENT
+        // Org + branch headers are injected by kdint.js on every fetch.
+        // This helper only handles auth refresh + error normalisation.
         // ================================================================
         async function refreshToken() {
             const refresh = getRefresh();
@@ -137,9 +134,6 @@
                 ...options.headers,
             };
             if (token) headers['Authorization'] = `Bearer ${token}`;
-
-            const orgId = getSelectedOrgId();
-            if (orgId) headers['X-Selected-Org-Id'] = orgId;
 
             const url = `${API_BASE}${endpoint}`;
             const res = await fetch(url, { ...options, headers });
@@ -219,66 +213,6 @@
                                 </a>
                             ))}
                         </div>
-                    </div>
-                </div>
-            );
-        };
-
-        // ================================================================
-        // ORGANISATION SELECTION MODAL
-        // ================================================================
-        const OrgSelectionModal = ({ organisations, onSelect }) => {
-            const [selected, setSelected] = useState(null);
-
-            return (
-                <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
-                    <div className="bg-slate-800 rounded-2xl max-w-2xl w-full p-6 border border-slate-700 shadow-2xl">
-                        <div className="text-center mb-6">
-                            <i className="fa-solid fa-building text-4xl text-blue-400 mb-2"></i>
-                            <h2 className="text-2xl font-bold text-white">Select Organisation</h2>
-                            <p className="text-slate-400 text-sm mt-1">Choose which organisation you want to view accounting data for</p>
-                        </div>
-                        <div className="mb-6 max-h-96 overflow-y-auto">
-                            {organisations.length === 0 && (
-                                <div className="text-center py-8">
-                                    <i className="fa-solid fa-store-slash text-4xl text-red-400 mb-2"></i>
-                                    <p className="text-slate-400">You are not a member of any organisation.</p>
-                                    <a href="/kdsiginin" className="mt-4 inline-block bg-blue-600 px-4 py-2 rounded-lg text-white">Register</a>
-                                </div>
-                            )}
-                            {organisations.length > 0 && (
-                                <div className="space-y-3">
-                                    {organisations.map(org => {
-                                        const targetId = org.id || org.org_id;
-                                        const targetName = org.org_name || `Org: ${targetId}`;
-                                        const isSelected = selected && (selected.id === targetId);
-                                        return (
-                                            <div key={targetId}
-                                                 className={`org-card p-4 rounded-xl border border-slate-600 hover:bg-slate-700 transition text-white ${isSelected ? 'selected bg-blue-900/50 border-blue-500' : ''}`}
-                                                 onClick={() => setSelected({ id: targetId, name: targetName, role: org.role || 'member' })}>
-                                                <div className="flex items-center justify-between">
-                                                    <div className="flex items-center gap-3">
-                                                        <i className={`fa-solid fa-building text-2xl ${org.role === 'owner' ? 'text-amber-400' : 'text-blue-400'}`}></i>
-                                                        <div>
-                                                            <h3 className="font-semibold text-white">{escapeHtml(targetName)}</h3>
-                                                            <span className={`text-xs px-2 py-0.5 rounded-full ${org.role === 'owner' ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-600 text-slate-300'}`}>{org.role || 'member'}</span>
-                                                        </div>
-                                                    </div>
-                                                    <i className={`fa-regular ${isSelected ? 'fa-circle-check text-blue-400' : 'fa-circle text-slate-500'} text-xl`}></i>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </div>
-                        <button
-                            onClick={() => { if (selected) onSelect(selected); }}
-                            disabled={!selected}
-                            className={`w-full bg-blue-600 text-white py-3 rounded-lg font-medium transition ${!selected ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-700'}`}
-                        >
-                            Continue to Accounts
-                        </button>
                     </div>
                 </div>
             );
@@ -411,7 +345,6 @@
             const updateLine = (idx, field, value) => {
                 const newLines = [...lines];
                 newLines[idx][field] = value;
-                // If debit is set, clear credit; if credit is set, clear debit
                 if (field === 'debit' && value) newLines[idx].credit = '';
                 if (field === 'credit' && value) newLines[idx].debit = '';
                 setLines(newLines);
@@ -427,7 +360,6 @@
                     alert('At least one valid line is required');
                     return;
                 }
-                // Check if totals balance
                 const totalDebit = validLines.reduce((sum, l) => sum + (parseFloat(l.debit) || 0), 0);
                 const totalCredit = validLines.reduce((sum, l) => sum + (parseFloat(l.credit) || 0), 0);
                 if (Math.abs(totalDebit - totalCredit) > 0.01) {
@@ -592,9 +524,9 @@
         // MAIN APP
         // ================================================================
         const App = () => {
-            const [organisations, setOrganisations] = useState([]);
-            const [selectedOrg, setSelectedOrg] = useState(null);
-            const [showOrgModal, setShowOrgModal] = useState(false);
+            // Session is the single source of truth for org + branch.
+            // Set once by KD.session.ensure() during bootstrap.
+            const [session, setSession] = useState(null);
             const [loading, setLoading] = useState(true);
             const [userName, setUserName] = useState('User');
 
@@ -620,68 +552,46 @@
             const [showViewJournal, setShowViewJournal] = useState(false);
             const [viewingEntry, setViewingEntry] = useState(null);
 
-            useEffect(() => { loadOrganisations(); }, []);
-            useEffect(() => { if (selectedOrg) fetchAllData(); }, [selectedOrg]);
-
-            const loadOrganisations = async () => {
-                setLoading(true);
-                try {
-                    const me = await apiCall('/auth/me');
-                    const orgId = me.org_id;
-                    const role = me.role || 'admin';
-                    let orgName = null;
+            // ── Bootstrap session (org + branch) ──
+            // kdsession.js renders its own pickers when needed. If the user
+            // cancels the picker, ensure() resolves null and we redirect.
+            useEffect(() => {
+                (async () => {
                     try {
-                        const orgInfo = await apiCall('/auth/org');
-                        orgName = orgInfo.org_name || null;
-                    } catch (e) {}
-                    if (!orgName) orgName = `Org: ${orgId}`;
-                    const orgs = [{ id: orgId, org_id: orgId, org_name: orgName, role }];
-                    setOrganisations(orgs);
-
-                    const savedId = getSelectedOrgId();
-                    const savedName = getSelectedOrgName();
-                    if (savedId && orgs.some(o => o.id === savedId)) {
-                        setSelectedOrg({ id: savedId, name: savedName || orgName, role });
-                        setShowOrgModal(false);
-                    } else {
-                        setShowOrgModal(true);
-                    }
-                } catch (err) {
-                    console.error(err);
-                    // Fallback to /auth/user-organisations
-                    try {
-                        const response = await fetch(`${API_BASE}/auth/user-organisations`, {
-                            headers: { 'Authorization': `Bearer ${getToken()}` }
-                        });
-                        if (response.ok) {
-                            const data = await response.json();
-                            const orgs = (data.organisations || data || []).map(o => ({
-                                id: o.id || o.org_id,
-                                org_id: o.id || o.org_id,
-                                org_name: o.org_name || `Org: ${o.id}`,
-                                role: o.role || 'member'
-                            }));
-                            setOrganisations(orgs);
-                            const savedId = getSelectedOrgId();
-                            if (savedId && orgs.some(o => o.id === savedId)) {
-                                setSelectedOrg(orgs.find(o => o.id === savedId));
-                                setShowOrgModal(false);
-                            } else {
-                                setShowOrgModal(true);
-                            }
-                        } else {
-                            setShowOrgModal(true);
+                        const s = await KD.session.ensure({ requireBranch: true });
+                        if (!s) {
+                            window.location.href = '/kdsiginin';
+                            return;
                         }
-                    } catch (e2) { setShowOrgModal(true); }
-                } finally { setLoading(false); }
-            };
+                        setSession(s);
+                        setUserName(
+                            s.user?.display_name ||
+                            s.user?.first_name ||
+                            s.user?.email ||
+                            'User'
+                        );
+                        localStorage.setItem('user_role', s.role || 'customer');
+                    } catch (err) {
+                        console.error('[kdaccount] session bootstrap failed', err);
+                        window.location.href = '/kdsiginin';
+                    } finally {
+                        setLoading(false);
+                    }
+                })();
+            }, []);
 
-            const handleOrgSelect = (org) => {
-                setSelectedOrg(org);
-                setSelectedOrgId(org.id);
-                setSelectedOrgName(org.name);
-                setShowOrgModal(false);
-                localStorage.setItem('user_role', org.role || 'customer');
+            // Data load runs whenever the session changes (including the
+            // very first resolve from null → session).
+            useEffect(() => {
+                if (session) fetchAllData();
+            }, [session]);
+
+            const handleSwitch = async () => {
+                // Clears org+branch, re-opens pickers. If the user cancels,
+                // switch() restores the previous selection (see kdsession.js)
+                // and resolves null — we stay put.
+                const next = await KD.session.switch({ requireBranch: true });
+                if (next) window.location.reload();
             };
 
             const handleLogout = async () => {
@@ -696,7 +606,7 @@
             };
 
             const fetchAllData = async () => {
-                if (!selectedOrg) return;
+                if (!session) return;
                 setFetching(true);
                 setError('');
                 try {
@@ -771,6 +681,8 @@
             };
 
             // ----- Export -----
+            // Org + branch headers are injected by kdint.js. Only auth
+            // and content-type are set here.
             const exportData = async (entity, format) => {
                 try {
                     const body = { entity, format, period_start: plPeriod.start || undefined, period_end: plPeriod.end || undefined };
@@ -779,7 +691,6 @@
                         headers: {
                             'Content-Type': 'application/json',
                             'Authorization': `Bearer ${getToken()}`,
-                            'X-Selected-Org-Id': getSelectedOrgId()
                         },
                         body: JSON.stringify(body)
                     });
@@ -1111,24 +1022,33 @@
                 return <div className="flex justify-center items-center h-screen"><div className="loading-spinner"></div></div>;
             }
 
+            // The session object carries orgName + branchName for display.
+            // branchName is 'All branches' for owners on 'all', or the
+            // concrete branch name otherwise.
+            const bannerOrgLabel = session
+                ? (session.orgName || `Org ${(session.orgId || '').slice(0, 8)}`)
+                : '';
+
             return (
                 <div>
-                    {showOrgModal && (
-                        <OrgSelectionModal organisations={organisations} onSelect={handleOrgSelect} />
-                    )}
                     <NavBar onLogout={handleLogout} userName={userName} />
                     <div className="max-w-7xl mx-auto p-4 mt-4">
-                        {selectedOrg && (
+                        {session && (
                             <div className="mb-4 p-3 bg-blue-900/30 rounded-lg border border-blue-700 flex items-center justify-between" style={{background:'#1e293b', borderColor:'#334155'}}>
                                 <div className="flex items-center gap-3">
                                     <i className="fa-solid fa-building text-blue-400"></i>
                                     <div>
                                         <p className="text-xs text-slate-400">Currently viewing accounting data for</p>
-                                        <p className="font-semibold text-white">{selectedOrg.name}</p>
+                                        <p className="font-semibold text-white">
+                                            {bannerOrgLabel}
+                                            {session.branchName && (
+                                                <span className="text-slate-400 font-normal"> · {session.branchName}</span>
+                                            )}
+                                        </p>
                                     </div>
                                 </div>
-                                <button onClick={() => setShowOrgModal(true)} className="text-sm bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg transition text-white">
-                                    <i className="fa-solid fa-arrow-right-arrow-left mr-1"></i> Switch Organisation
+                                <button onClick={handleSwitch} className="text-sm bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg transition text-white">
+                                    <i className="fa-solid fa-arrow-right-arrow-left mr-1"></i> Switch
                                 </button>
                             </div>
                         )}
