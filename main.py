@@ -678,6 +678,24 @@ def require_feature_any(*feature_keys: str, allowed_roles: Optional[List[str]] =
     return check
 
 
+
+
+# ── Feature: accounting sync is not available yet ──
+#
+# /accounts/sync-webhook was designed as an outbound webhook trigger:
+# the platform POSTs {"event": "sync_requested"} to a URL the org
+# configures, and that URL is expected to be a Zapier / Make / n8n
+# bridge into their accounting software. That design is not what most
+# customers want, and native adapters for QuickBooks / Xero / Sage are
+# not built. Rather than ship a half-feature that 500s on every call,
+# the endpoint returns 503 with a "coming soon" message.
+#
+# Flip this to true when native adapters or a proper bridge ship.
+# Set as an env var so a deploy can enable it without a code change.
+ACCOUNTING_SYNC_ENABLED = (
+    os.environ.get("ACCOUNTING_SYNC_ENABLED", "false").lower() == "true"
+)
+
 # ------------------------------------------------------------------
 # FastAPI app – MUST BE DEFINED BEFORE ANY DECORATOR
 # ------------------------------------------------------------------
@@ -19585,6 +19603,22 @@ async def trigger_sync_webhook(
         require_feature("accounting", allowed_roles=["owner", "admin", "finance"])
     )
 ):
+    # ── Coming-soon gate. ──
+    # No DB read, no outbound call. The endpoint exists so a client
+    # that calls it gets a clean, honest 503 rather than a 404, and
+    # so the UI can show "coming soon" without needing a separate
+    # status endpoint (though one is provided below).
+    if not ACCOUNTING_SYNC_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Accounting sync is coming soon. We're building native "
+                "integrations with QuickBooks, Xero, and Sage Business "
+                "Cloud. In the meantime, A/R, A/P, journals, and P&L "
+                "can be exported from the Accounting module."
+            ),
+        )
+
     org_id = user_data[1]
     client = get_supabase()
 
@@ -19618,9 +19652,6 @@ async def trigger_sync_webhook(
             detail="No webhook URL configured for this organisation",
         )
 
-    # ── Reject non-HTTP schemes before handing the value to httpx. ──
-    # A misconfigured value like "ftp://..." or "file://..." would
-    # otherwise fail deep inside the client with an opaque error.
     if not webhook_url.startswith(("https://", "http://")):
         raise HTTPException(
             status_code=400,
@@ -19633,16 +19664,6 @@ async def trigger_sync_webhook(
         "event":     "sync_requested",
     }
 
-    # ── Outbound POST. ──
-    # Transport errors and HTTP errors are handled separately so the
-    # caller can tell "the URL didn't resolve / timed out" from
-    # "the URL resolved but returned 500".
-    #
-    # The previous version wrapped a raised HTTPException in a bare
-    # `except Exception`, so the "External service error" detail was
-    # always replaced with "Failed to reach external service". That is
-    # misleading: a 500 from a healthy endpoint was reported as
-    # unreachable. Split here.
     try:
         async with httpx.AsyncClient(timeout=10.0) as http:
             resp = await http.post(webhook_url, json=payload)
@@ -19667,11 +19688,29 @@ async def trigger_sync_webhook(
             detail=f"External service returned {resp.status_code}",
         )
 
-    logger.info(
-        "trigger_sync_webhook: dispatched",
-        org_id=org_id, url=webhook_url, status=resp.status_code,
-    )
     return {"message": "Webhook triggered successfully"}
+
+
+
+@app.get("/accounts/sync-webhook/status")
+async def get_sync_webhook_status(
+    user_data: Tuple[str, str, str] = Depends(
+        require_feature("accounting", allowed_roles=["owner", "admin", "finance"])
+    )
+):
+    """
+    Pre-flight for the frontend. Returns whether the accounting sync
+    feature is available. Cheap: no DB read, no external call.
+    """
+    return {
+        "enabled": ACCOUNTING_SYNC_ENABLED,
+        "message": (
+            "Accounting sync is coming soon. Native integrations with "
+            "QuickBooks, Xero, and Sage Business Cloud are in development."
+        ) if not ACCOUNTING_SYNC_ENABLED else None,
+    }
+
+
 
 # ------------------------------------------------------------------
 # CUSTOMER REGISTRATION (Admin endpoint)
