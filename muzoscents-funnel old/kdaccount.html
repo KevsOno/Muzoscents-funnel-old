@@ -63,6 +63,7 @@
         .line-row select { flex: 2; }
         .line-row input { flex: 1; }
         .line-row button { background: #ef4444; color: white; padding: 0.25rem 0.75rem; border-radius: 4px; }
+        .filter-active { border-color: #f59e0b !important; box-shadow: 0 0 0 2px rgba(245,158,11,0.15); }
     </style>
 </head>
 <body>
@@ -101,6 +102,46 @@
             if (!dateStr) return '-';
             const d = new Date(dateStr);
             return d.toISOString().slice(0,10);
+        }
+
+        // Normalise any date-ish value to a YYYY-MM-DD string so it can be
+        // compared lexicographically against an <input type="date"> value.
+        // Handles: "2024-01-15", "2024-01-15T10:30:00Z", Date objects.
+        function toISODateOnly(value) {
+            if (!value) return '';
+            try {
+                if (value instanceof Date) {
+                    return value.toISOString().slice(0, 10);
+                }
+                const s = String(value);
+                // Fast path: already ISO-ish
+                if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+                // Fallback: parse
+                const d = new Date(s);
+                if (isNaN(d.getTime())) return '';
+                return d.toISOString().slice(0, 10);
+            } catch (e) {
+                return '';
+            }
+        }
+
+        // Generic client-side date filter.
+        //   items      : the array to filter
+        //   dateField  : property name on each item holding the date
+        //   filter     : { from: 'YYYY-MM-DD' | '', to: 'YYYY-MM-DD' | '' }
+        //
+        // Returns `items` unchanged when neither bound is set.
+        function filterByDateRange(items, dateField, filter) {
+            if (!filter || (!filter.from && !filter.to)) return items;
+            return items.filter(item => {
+                const raw = item[dateField];
+                if (!raw) return false;
+                const day = toISODateOnly(raw);
+                if (!day) return false;
+                if (filter.from && day < filter.from) return false;
+                if (filter.to && day > filter.to) return false;
+                return true;
+            });
         }
 
         // ================================================================
@@ -214,6 +255,58 @@
                             ))}
                         </div>
                     </div>
+                </div>
+            );
+        };
+
+        // ================================================================
+        // SHARED DATE FILTER BAR
+        //
+        // One component, used by Journal, A/R, A/P. Handles both bounds
+        // and a Clear button. Highlights its border orange when any
+        // bound is active so a cashier can't accidentally act on a
+        // filtered list thinking it's the full list.
+        // ================================================================
+        const DateFilterBar = ({ filter, onChange, count, totalCount }) => {
+            const active = Boolean((filter && filter.from) || (filter && filter.to));
+            return (
+                <div className={`flex flex-wrap gap-3 items-end mb-4 p-3 rounded-lg border ${active ? 'bg-amber-50 border-amber-400 filter-active' : 'bg-gray-50 border-gray-200'}`}>
+                    <div>
+                        <label className="block text-xs text-gray-600 mb-1">
+                            <i className="fa-regular fa-calendar mr-1"></i>From Date
+                        </label>
+                        <input
+                            type="date"
+                            className="border border-gray-300 rounded p-1.5 text-sm"
+                            value={filter.from || ''}
+                            onChange={e => onChange({ ...filter, from: e.target.value })}
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs text-gray-600 mb-1">
+                            <i className="fa-regular fa-calendar mr-1"></i>To Date
+                        </label>
+                        <input
+                            type="date"
+                            className="border border-gray-300 rounded p-1.5 text-sm"
+                            value={filter.to || ''}
+                            onChange={e => onChange({ ...filter, to: e.target.value })}
+                        />
+                    </div>
+                    <button
+                        onClick={() => onChange({ from: '', to: '' })}
+                        className="bg-gray-300 hover:bg-gray-400 text-gray-800 px-3 py-1.5 rounded text-sm transition"
+                        disabled={!active}
+                    >
+                        <i className="fa-solid fa-times mr-1"></i> Clear
+                    </button>
+                    {typeof count === 'number' && typeof totalCount === 'number' && (
+                        <span className={`text-xs ml-auto px-2 py-1 rounded ${active ? 'bg-amber-200 text-amber-900' : 'bg-gray-200 text-gray-600'}`}>
+                            {active
+                                ? `Showing ${count} of ${totalCount} record${totalCount === 1 ? '' : 's'}`
+                                : `${totalCount} record${totalCount === 1 ? '' : 's'}`}
+                        </span>
+                    )}
                 </div>
             );
         };
@@ -464,9 +557,13 @@
 
         // ================================================================
         // EXPENSES TAB
+        //
+        // Fetches its own data. Includes a client-side date filter over
+        // expense_date, plus a small summary total for the filtered set.
         // ================================================================
         const ExpensesTab = () => {
             const [expenses, setExpenses] = useState([]);
+            const [dateFilter, setDateFilter] = useState({ from: '', to: '' });
             const [form, setForm] = useState({ expense_date: new Date().toISOString().slice(0,10), category: '', amount: '', payment_method: 'cash', vendor: '', description: '' });
 
             const fetchExpenses = async () => {
@@ -475,6 +572,16 @@
             };
 
             useEffect(() => { fetchExpenses(); }, []);
+
+            const filteredExpenses = useMemo(
+                () => filterByDateRange(expenses, 'expense_date', dateFilter),
+                [expenses, dateFilter]
+            );
+
+            const filteredTotal = useMemo(
+                () => filteredExpenses.reduce((sum, ex) => sum + (Number(ex.amount) || 0), 0),
+                [filteredExpenses]
+            );
 
             const handleSubmit = async (e) => {
                 e.preventDefault();
@@ -502,20 +609,55 @@
                         <button type="submit" className="bg-blue-600 text-white p-2 rounded col-span-2 hover:bg-blue-700">Save Expense</button>
                     </form>
 
-                    <h3 className="text-lg font-semibold mb-2">Recent Expenses</h3>
-                    <table className="min-w-full">
-                        <thead className="bg-gray-100"><tr><th className="p-2">Date</th><th className="p-2">Category</th><th className="p-2">Amount</th><th className="p-2">Method</th></tr></thead>
-                        <tbody>
-                            {expenses.map(ex => (
-                                <tr key={ex.id} className="border-b">
-                                    <td className="p-2">{ex.expense_date}</td>
-                                    <td className="p-2">{ex.category}</td>
-                                    <td className="p-2">₦{ex.amount.toLocaleString()}</td>
-                                    <td className="p-2 capitalize">{ex.payment_method.replace('_', ' ')}</td>
+                    <div className="flex justify-between items-center mb-2">
+                        <h3 className="text-lg font-semibold">Recent Expenses</h3>
+                    </div>
+
+                    <DateFilterBar
+                        filter={dateFilter}
+                        onChange={setDateFilter}
+                        count={filteredExpenses.length}
+                        totalCount={expenses.length}
+                    />
+
+                    <div className="table-scroll">
+                        <table className="min-w-full">
+                            <thead className="sticky top-0 bg-gray-100">
+                                <tr>
+                                    <th className="p-2 text-left">Date</th>
+                                    <th className="p-2 text-left">Category</th>
+                                    <th className="p-2 text-left">Amount</th>
+                                    <th className="p-2 text-left">Method</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {filteredExpenses.map(ex => (
+                                    <tr key={ex.id} className="border-b">
+                                        <td className="p-2">{ex.expense_date}</td>
+                                        <td className="p-2">{ex.category}</td>
+                                        <td className="p-2">{formatCurrency(ex.amount)}</td>
+                                        <td className="p-2 capitalize">{ex.payment_method ? ex.payment_method.replace('_', ' ') : '-'}</td>
+                                    </tr>
+                                ))}
+                                {filteredExpenses.length === 0 && (
+                                    <tr>
+                                        <td colSpan="4" className="text-center p-4 text-gray-400">
+                                            {expenses.length === 0 ? 'No expenses yet' : 'No expenses in this date range'}
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                            {filteredExpenses.length > 0 && (
+                                <tfoot>
+                                    <tr className="bg-gray-50 font-semibold">
+                                        <td className="p-2" colSpan="2">Total</td>
+                                        <td className="p-2">{formatCurrency(filteredTotal)}</td>
+                                        <td className="p-2"></td>
+                                    </tr>
+                                </tfoot>
+                            )}
+                        </table>
+                    </div>
                 </div>
             );
         };
@@ -538,6 +680,14 @@
             const [apList, setApList] = useState([]);
             const [plSummary, setPlSummary] = useState(null);
             const [plPeriod, setPlPeriod] = useState({ start: '', end: '' });
+
+            // ── Per-tab date filters ──
+            // Each tab keeps its own filter state so switching tabs does
+            // not silently change what another tab is showing. No filter
+            // is applied until the user types a date.
+            const [journalDateFilter, setJournalDateFilter] = useState({ from: '', to: '' });
+            const [arDateFilter, setArDateFilter] = useState({ from: '', to: '' });
+            const [apDateFilter, setApDateFilter] = useState({ from: '', to: '' });
 
             const [fetching, setFetching] = useState(false);
             const [error, setError] = useState('');
@@ -636,6 +786,24 @@
                     setFetching(false);
                 }
             };
+
+            // ── Filtered views ──
+            // useMemo keeps these stable across re-renders that don't
+            // touch the underlying data or filter.
+            const filteredJournalEntries = useMemo(
+                () => filterByDateRange(journalEntries, 'entry_date', journalDateFilter),
+                [journalEntries, journalDateFilter]
+            );
+
+            const filteredAR = useMemo(
+                () => filterByDateRange(arList, 'due_date', arDateFilter),
+                [arList, arDateFilter]
+            );
+
+            const filteredAP = useMemo(
+                () => filterByDateRange(apList, 'due_date', apDateFilter),
+                [apList, apDateFilter]
+            );
 
             // ----- Chart of Accounts Actions -----
             const createAccount = async (data) => {
@@ -828,6 +996,14 @@
                             <i className="fa-solid fa-plus mr-1"></i> New Entry
                         </button>
                     </div>
+
+                    <DateFilterBar
+                        filter={journalDateFilter}
+                        onChange={setJournalDateFilter}
+                        count={filteredJournalEntries.length}
+                        totalCount={journalEntries.length}
+                    />
+
                     <div className="table-scroll">
                         <table className="min-w-full">
                             <thead className="sticky top-0 bg-gray-200">
@@ -840,7 +1016,7 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                {journalEntries.map(je => (
+                                {filteredJournalEntries.map(je => (
                                     <tr key={je.id} className="border-b">
                                         <td className="p-2">{formatDate(je.entry_date)}</td>
                                         <td className="p-2">{je.description}</td>
@@ -859,7 +1035,13 @@
                                         </td>
                                     </tr>
                                 ))}
-                                {journalEntries.length === 0 && <tr><td colSpan="5" className="text-center p-4 text-gray-400">No entries</td></tr>}
+                                {filteredJournalEntries.length === 0 && (
+                                    <tr>
+                                        <td colSpan="5" className="text-center p-4 text-gray-400">
+                                            {journalEntries.length === 0 ? 'No entries' : 'No entries in this date range'}
+                                        </td>
+                                    </tr>
+                                )}
                             </tbody>
                         </table>
                     </div>
@@ -880,6 +1062,14 @@
             const renderARTab = () => (
                 <div className="bg-white p-4 rounded shadow">
                     <h2 className="text-xl font-semibold mb-4">Accounts Receivable</h2>
+
+                    <DateFilterBar
+                        filter={arDateFilter}
+                        onChange={setArDateFilter}
+                        count={filteredAR.length}
+                        totalCount={arList.length}
+                    />
+
                     <div className="table-scroll">
                         <table className="min-w-full">
                             <thead className="sticky top-0 bg-gray-200">
@@ -893,7 +1083,7 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                {arList.map(ar => (
+                                {filteredAR.map(ar => (
                                     <tr key={ar.id} className="border-b">
                                         <td className="p-2">{ar.sale_id?.slice(0,8) || '-'}</td>
                                         <td className="p-2">{formatCurrency(ar.amount)}</td>
@@ -913,7 +1103,13 @@
                                         </td>
                                     </tr>
                                 ))}
-                                {arList.length === 0 && <tr><td colSpan="6" className="text-center p-4 text-gray-400">No A/R records</td></tr>}
+                                {filteredAR.length === 0 && (
+                                    <tr>
+                                        <td colSpan="6" className="text-center p-4 text-gray-400">
+                                            {arList.length === 0 ? 'No A/R records' : 'No A/R records with due dates in this range'}
+                                        </td>
+                                    </tr>
+                                )}
                             </tbody>
                         </table>
                     </div>
@@ -930,6 +1126,14 @@
             const renderAPTab = () => (
                 <div className="bg-white p-4 rounded shadow">
                     <h2 className="text-xl font-semibold mb-4">Accounts Payable</h2>
+
+                    <DateFilterBar
+                        filter={apDateFilter}
+                        onChange={setApDateFilter}
+                        count={filteredAP.length}
+                        totalCount={apList.length}
+                    />
+
                     <div className="table-scroll">
                         <table className="min-w-full">
                             <thead className="sticky top-0 bg-gray-200">
@@ -943,7 +1147,7 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                {apList.map(ap => (
+                                {filteredAP.map(ap => (
                                     <tr key={ap.id} className="border-b">
                                         <td className="p-2">{ap.supplier_id?.slice(0,8) || '-'}</td>
                                         <td className="p-2">{formatCurrency(ap.amount)}</td>
@@ -963,7 +1167,13 @@
                                         </td>
                                     </tr>
                                 ))}
-                                {apList.length === 0 && <tr><td colSpan="6" className="text-center p-4 text-gray-400">No A/P records</td></tr>}
+                                {filteredAP.length === 0 && (
+                                    <tr>
+                                        <td colSpan="6" className="text-center p-4 text-gray-400">
+                                            {apList.length === 0 ? 'No A/P records' : 'No A/P records with due dates in this range'}
+                                        </td>
+                                    </tr>
+                                )}
                             </tbody>
                         </table>
                     </div>
