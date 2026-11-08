@@ -79,6 +79,13 @@
         const TOKEN_KEY = 'access_token';
         const REFRESH_KEY = 'refresh_token';
 
+        // The page size for every accounting fetch. 500 is enough that
+        // the vast majority of shops see everything in one call. When
+        // they don't, the "Showing N of M" indicator makes it explicit
+        // and the date filter narrows the set. Must stay <= the backend
+        // Query(le=...) cap, which is 2000 on the three entities.
+        const PAGE_SIZE = 500;
+
         function getToken() { return localStorage.getItem(TOKEN_KEY); }
         function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
         function getRefresh() { return localStorage.getItem(REFRESH_KEY); }
@@ -104,50 +111,8 @@
             return d.toISOString().slice(0,10);
         }
 
-        // Normalise any date-ish value to a YYYY-MM-DD string so it can be
-        // compared lexicographically against an <input type="date"> value.
-        // Handles: "2024-01-15", "2024-01-15T10:30:00Z", Date objects.
-        function toISODateOnly(value) {
-            if (!value) return '';
-            try {
-                if (value instanceof Date) {
-                    return value.toISOString().slice(0, 10);
-                }
-                const s = String(value);
-                // Fast path: already ISO-ish
-                if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-                // Fallback: parse
-                const d = new Date(s);
-                if (isNaN(d.getTime())) return '';
-                return d.toISOString().slice(0, 10);
-            } catch (e) {
-                return '';
-            }
-        }
-
-        // Generic client-side date filter.
-        //   items      : the array to filter
-        //   dateField  : property name on each item holding the date
-        //   filter     : { from: 'YYYY-MM-DD' | '', to: 'YYYY-MM-DD' | '' }
-        //
-        // Returns `items` unchanged when neither bound is set.
-        function filterByDateRange(items, dateField, filter) {
-            if (!filter || (!filter.from && !filter.to)) return items;
-            return items.filter(item => {
-                const raw = item[dateField];
-                if (!raw) return false;
-                const day = toISODateOnly(raw);
-                if (!day) return false;
-                if (filter.from && day < filter.from) return false;
-                if (filter.to && day > filter.to) return false;
-                return true;
-            });
-        }
-
         // ================================================================
         // API CLIENT
-        // Org + branch headers are injected by kdint.js on every fetch.
-        // This helper only handles auth refresh + error normalisation.
         // ================================================================
         async function refreshToken() {
             const refresh = getRefresh();
@@ -260,14 +225,18 @@
         };
 
         // ================================================================
-        // SHARED DATE FILTER BAR
+        // DATE FILTER BAR
         //
-        // One component, used by Journal, A/R, A/P. Handles both bounds
-        // and a Clear button. Highlights its border orange when any
-        // bound is active so a cashier can't accidentally act on a
-        // filtered list thinking it's the full list.
+        // Because filtering is now server-side, this bar is purely
+        // presentational + an onChange callback. It does not filter
+        // anything itself. The parent handles the refetch.
+        //
+        // `count`   = rows the server returned for the current filter
+        // `total`   = rows the server says match the filter (from count=exact)
+        // `allTotal`= rows the server would return with no filter applied
+        //             (only known after the first unfiltered fetch)
         // ================================================================
-        const DateFilterBar = ({ filter, onChange, count, totalCount }) => {
+        const DateFilterBar = ({ filter, onChange, count, total, allTotal, loading }) => {
             const active = Boolean((filter && filter.from) || (filter && filter.to));
             return (
                 <div className={`flex flex-wrap gap-3 items-end mb-4 p-3 rounded-lg border ${active ? 'bg-amber-50 border-amber-400 filter-active' : 'bg-gray-50 border-gray-200'}`}>
@@ -296,15 +265,24 @@
                     <button
                         onClick={() => onChange({ from: '', to: '' })}
                         className="bg-gray-300 hover:bg-gray-400 text-gray-800 px-3 py-1.5 rounded text-sm transition"
-                        disabled={!active}
+                        disabled={!active || loading}
                     >
                         <i className="fa-solid fa-times mr-1"></i> Clear
                     </button>
-                    {typeof count === 'number' && typeof totalCount === 'number' && (
+                    {typeof count === 'number' && (
                         <span className={`text-xs ml-auto px-2 py-1 rounded ${active ? 'bg-amber-200 text-amber-900' : 'bg-gray-200 text-gray-600'}`}>
-                            {active
-                                ? `Showing ${count} of ${totalCount} record${totalCount === 1 ? '' : 's'}`
-                                : `${totalCount} record${totalCount === 1 ? '' : 's'}`}
+                            {loading ? (
+                                <><i className="fa-solid fa-spinner fa-spin mr-1"></i> Loading…</>
+                            ) : (
+                                <>
+                                    {count < (total || 0)
+                                        ? `Showing ${count.toLocaleString()} of ${(total || 0).toLocaleString()} matching record${total === 1 ? '' : 's'}`
+                                        : `${(total || 0).toLocaleString()} matching record${total === 1 ? '' : 's'}`}
+                                    {active && typeof allTotal === 'number' && (
+                                        <span className="ml-2 text-amber-800/70">(of {allTotal.toLocaleString()} total)</span>
+                                    )}
+                                </>
+                            )}
                         </span>
                     )}
                 </div>
@@ -315,7 +293,6 @@
         // MODAL COMPONENTS
         // ================================================================
 
-        // Payment Modal (for A/R and A/P)
         const PaymentModal = ({ isOpen, onClose, onConfirm, title, arId }) => {
             const [amount, setAmount] = useState('');
             const [reference, setReference] = useState('');
@@ -361,7 +338,6 @@
             );
         };
 
-        // Chart of Accounts Create Modal
         const CreateAccountModal = ({ isOpen, onClose, onConfirm }) => {
             const [code, setCode] = useState('');
             const [name, setName] = useState('');
@@ -416,7 +392,6 @@
             );
         };
 
-        // Journal Entry Create Modal
         const CreateJournalModal = ({ isOpen, onClose, onConfirm, accounts }) => {
             const [entryDate, setEntryDate] = useState(new Date().toISOString().slice(0,10));
             const [description, setDescription] = useState('');
@@ -518,7 +493,6 @@
             );
         };
 
-        // View Journal Entry Modal
         const ViewJournalModal = ({ isOpen, onClose, entry }) => {
             if (!isOpen || !entry) return null;
 
@@ -558,36 +532,60 @@
         // ================================================================
         // EXPENSES TAB
         //
-        // Fetches its own data. Includes a client-side date filter over
-        // expense_date, plus a small summary total for the filtered set.
+        // Filters server-side. /expenses is served by expenses.py — see
+        // the note in the response body for the backend patch.
         // ================================================================
         const ExpensesTab = () => {
             const [expenses, setExpenses] = useState([]);
+            const [total, setTotal] = useState(0);
+            const [allTotal, setAllTotal] = useState(0);
+            const [loading, setLoading] = useState(false);
             const [dateFilter, setDateFilter] = useState({ from: '', to: '' });
             const [form, setForm] = useState({ expense_date: new Date().toISOString().slice(0,10), category: '', amount: '', payment_method: 'cash', vendor: '', description: '' });
 
-            const fetchExpenses = async () => {
-                const res = await apiCall('/expenses');
-                setExpenses(res.expenses || []);
+            const buildUrl = (filter) => {
+                const params = new URLSearchParams();
+                if (filter.from) params.set('from_date', filter.from);
+                if (filter.to) params.set('to_date', filter.to);
+                params.set('limit', String(PAGE_SIZE));
+                return `/expenses?${params.toString()}`;
             };
 
-            useEffect(() => { fetchExpenses(); }, []);
+            const fetchExpenses = async (filter) => {
+                setLoading(true);
+                try {
+                    const res = await apiCall(buildUrl(filter));
+                    setExpenses(res.expenses || []);
+                    setTotal(typeof res.total === 'number' ? res.total : (res.expenses || []).length);
+                    // If we got a filter-less fetch, this is the true
+                    // unfiltered total. Persist it for the "N of M" hint.
+                    if (!filter.from && !filter.to) {
+                        setAllTotal(res.total || 0);
+                    }
+                } catch (err) {
+                    console.warn('expenses fetch failed', err);
+                } finally {
+                    setLoading(false);
+                }
+            };
 
-            const filteredExpenses = useMemo(
-                () => filterByDateRange(expenses, 'expense_date', dateFilter),
-                [expenses, dateFilter]
-            );
+            useEffect(() => { fetchExpenses(dateFilter); }, []);
 
-            const filteredTotal = useMemo(
-                () => filteredExpenses.reduce((sum, ex) => sum + (Number(ex.amount) || 0), 0),
-                [filteredExpenses]
+            const handleFilterChange = (newFilter) => {
+                setDateFilter(newFilter);
+                fetchExpenses(newFilter);
+            };
+
+            const filteredTotalSum = useMemo(
+                () => expenses.reduce((sum, ex) => sum + (Number(ex.amount) || 0), 0),
+                [expenses]
             );
 
             const handleSubmit = async (e) => {
                 e.preventDefault();
                 try {
                     await apiCall('/expenses', { method: 'POST', body: JSON.stringify({ ...form, amount: parseFloat(form.amount) }) });
-                    fetchExpenses();
+                    fetchExpenses(dateFilter);
                     alert('Expense recorded!');
                 } catch (err) { alert(err.message); }
             };
@@ -609,15 +607,15 @@
                         <button type="submit" className="bg-blue-600 text-white p-2 rounded col-span-2 hover:bg-blue-700">Save Expense</button>
                     </form>
 
-                    <div className="flex justify-between items-center mb-2">
-                        <h3 className="text-lg font-semibold">Recent Expenses</h3>
-                    </div>
+                    <h3 className="text-lg font-semibold mb-2">Recent Expenses</h3>
 
                     <DateFilterBar
                         filter={dateFilter}
-                        onChange={setDateFilter}
-                        count={filteredExpenses.length}
-                        totalCount={expenses.length}
+                        onChange={handleFilterChange}
+                        count={expenses.length}
+                        total={total}
+                        allTotal={allTotal}
+                        loading={loading}
                     />
 
                     <div className="table-scroll">
@@ -631,7 +629,7 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredExpenses.map(ex => (
+                                {expenses.map(ex => (
                                     <tr key={ex.id} className="border-b">
                                         <td className="p-2">{ex.expense_date}</td>
                                         <td className="p-2">{ex.category}</td>
@@ -639,19 +637,21 @@
                                         <td className="p-2 capitalize">{ex.payment_method ? ex.payment_method.replace('_', ' ') : '-'}</td>
                                     </tr>
                                 ))}
-                                {filteredExpenses.length === 0 && (
+                                {expenses.length === 0 && !loading && (
                                     <tr>
                                         <td colSpan="4" className="text-center p-4 text-gray-400">
-                                            {expenses.length === 0 ? 'No expenses yet' : 'No expenses in this date range'}
+                                            {(dateFilter.from || dateFilter.to)
+                                                ? 'No expenses in this date range'
+                                                : 'No expenses yet'}
                                         </td>
                                     </tr>
                                 )}
                             </tbody>
-                            {filteredExpenses.length > 0 && (
+                            {expenses.length > 0 && (
                                 <tfoot>
                                     <tr className="bg-gray-50 font-semibold">
-                                        <td className="p-2" colSpan="2">Total</td>
-                                        <td className="p-2">{formatCurrency(filteredTotal)}</td>
+                                        <td className="p-2" colSpan="2">Total (filtered)</td>
+                                        <td className="p-2">{formatCurrency(filteredTotalSum)}</td>
                                         <td className="p-2"></td>
                                     </tr>
                                 </tfoot>
@@ -666,8 +666,6 @@
         // MAIN APP
         // ================================================================
         const App = () => {
-            // Session is the single source of truth for org + branch.
-            // Set once by KD.session.ensure() during bootstrap.
             const [session, setSession] = useState(null);
             const [loading, setLoading] = useState(true);
             const [userName, setUserName] = useState('User');
@@ -675,36 +673,49 @@
             const [activeTab, setActiveTab] = useState('pl');
 
             const [chartAccounts, setChartAccounts] = useState([]);
+
+            // ── Journal Entries ──
+            // `journalEntries` is always exactly what the server returned
+            // for the current `journalDateFilter`. `journalTotal` is the
+            // total matching that filter (from count=exact).
+            // `journalAllTotal` is the unfiltered total — set once on
+            // mount and left alone so the "N of M" hint stays correct.
             const [journalEntries, setJournalEntries] = useState([]);
+            const [journalTotal, setJournalTotal] = useState(0);
+            const [journalAllTotal, setJournalAllTotal] = useState(0);
+            const [journalDateFilter, setJournalDateFilter] = useState({ from: '', to: '' });
+            const [journalLoading, setJournalLoading] = useState(false);
+
+            // ── A/R ──
             const [arList, setArList] = useState([]);
+            const [arTotal, setArTotal] = useState(0);
+            const [arAllTotal, setArAllTotal] = useState(0);
+            const [arDateFilter, setArDateFilter] = useState({ from: '', to: '' });
+            const [arLoading, setArLoading] = useState(false);
+
+            // ── A/P ──
             const [apList, setApList] = useState([]);
+            const [apTotal, setApTotal] = useState(0);
+            const [apAllTotal, setApAllTotal] = useState(0);
+            const [apDateFilter, setApDateFilter] = useState({ from: '', to: '' });
+            const [apLoading, setApLoading] = useState(false);
+
             const [plSummary, setPlSummary] = useState(null);
             const [plPeriod, setPlPeriod] = useState({ start: '', end: '' });
-
-            // ── Per-tab date filters ──
-            // Each tab keeps its own filter state so switching tabs does
-            // not silently change what another tab is showing. No filter
-            // is applied until the user types a date.
-            const [journalDateFilter, setJournalDateFilter] = useState({ from: '', to: '' });
-            const [arDateFilter, setArDateFilter] = useState({ from: '', to: '' });
-            const [apDateFilter, setApDateFilter] = useState({ from: '', to: '' });
 
             const [fetching, setFetching] = useState(false);
             const [error, setError] = useState('');
 
-            // Modals
             const [showPaymentModal, setShowPaymentModal] = useState(false);
             const [paymentTarget, setPaymentTarget] = useState(null);
-            const [paymentType, setPaymentType] = useState('ar'); // 'ar' or 'ap'
+            const [paymentType, setPaymentType] = useState('ar');
 
             const [showAccountModal, setShowAccountModal] = useState(false);
             const [showJournalModal, setShowJournalModal] = useState(false);
             const [showViewJournal, setShowViewJournal] = useState(false);
             const [viewingEntry, setViewingEntry] = useState(null);
 
-            // ── Bootstrap session (org + branch) ──
-            // kdsession.js renders its own pickers when needed. If the user
-            // cancels the picker, ensure() resolves null and we redirect.
+            // ── Bootstrap session ──
             useEffect(() => {
                 (async () => {
                     try {
@@ -730,16 +741,11 @@
                 })();
             }, []);
 
-            // Data load runs whenever the session changes (including the
-            // very first resolve from null → session).
             useEffect(() => {
                 if (session) fetchAllData();
             }, [session]);
 
             const handleSwitch = async () => {
-                // Clears org+branch, re-opens pickers. If the user cancels,
-                // switch() restores the previous selection (see kdsession.js)
-                // and resolves null — we stay put.
                 const next = await KD.session.switch({ requireBranch: true });
                 if (next) window.location.reload();
             };
@@ -755,6 +761,80 @@
                 window.location.href = '/kdsiginin';
             };
 
+            // ── URL builders (server-side filtering) ──
+            const buildJournalUrl = (filter) => {
+                const p = new URLSearchParams();
+                if (filter.from) p.set('from_date', filter.from);
+                if (filter.to) p.set('to_date', filter.to);
+                p.set('limit', String(PAGE_SIZE));
+                return `/accounts/journal-entries?${p.toString()}`;
+            };
+
+            const buildArUrl = (filter) => {
+                const p = new URLSearchParams();
+                if (filter.from) p.set('from_date', filter.from);
+                if (filter.to) p.set('to_date', filter.to);
+                p.set('limit', String(PAGE_SIZE));
+                return `/accounts/ar?${p.toString()}`;
+            };
+
+            const buildApUrl = (filter) => {
+                const p = new URLSearchParams();
+                if (filter.from) p.set('from_date', filter.from);
+                if (filter.to) p.set('to_date', filter.to);
+                p.set('limit', String(PAGE_SIZE));
+                return `/accounts/ap?${p.toString()}`;
+            };
+
+            // ── Per-entity fetch functions ──
+            const fetchJournal = async (filter) => {
+                setJournalLoading(true);
+                try {
+                    const res = await apiCall(buildJournalUrl(filter));
+                    setJournalEntries(res.entries || []);
+                    setJournalTotal(typeof res.total === 'number' ? res.total : (res.entries || []).length);
+                    if (!filter.from && !filter.to) {
+                        setJournalAllTotal(res.total || 0);
+                    }
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setJournalLoading(false);
+                }
+            };
+
+            const fetchAR = async (filter) => {
+                setArLoading(true);
+                try {
+                    const res = await apiCall(buildArUrl(filter));
+                    setArList(res.ar || []);
+                    setArTotal(typeof res.total === 'number' ? res.total : (res.ar || []).length);
+                    if (!filter.from && !filter.to) {
+                        setArAllTotal(res.total || 0);
+                    }
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setArLoading(false);
+                }
+            };
+
+            const fetchAP = async (filter) => {
+                setApLoading(true);
+                try {
+                    const res = await apiCall(buildApUrl(filter));
+                    setApList(res.ap || []);
+                    setApTotal(typeof res.total === 'number' ? res.total : (res.ap || []).length);
+                    if (!filter.from && !filter.to) {
+                        setApAllTotal(res.total || 0);
+                    }
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setApLoading(false);
+                }
+            };
+
             const fetchAllData = async () => {
                 if (!session) return;
                 setFetching(true);
@@ -763,14 +843,11 @@
                     const coa = await apiCall('/accounts/chart');
                     setChartAccounts(coa.accounts || []);
 
-                    const je = await apiCall('/accounts/journal-entries');
-                    setJournalEntries(je.entries || []);
-
-                    const ar = await apiCall('/accounts/ar');
-                    setArList(ar.ar || []);
-
-                    const ap = await apiCall('/accounts/ap');
-                    setApList(ap.ap || []);
+                    await Promise.all([
+                        fetchJournal(journalDateFilter),
+                        fetchAR(arDateFilter),
+                        fetchAP(apDateFilter),
+                    ]);
 
                     const today = new Date();
                     const end = today.toISOString().slice(0,10);
@@ -787,25 +864,23 @@
                 }
             };
 
-            // ── Filtered views ──
-            // useMemo keeps these stable across re-renders that don't
-            // touch the underlying data or filter.
-            const filteredJournalEntries = useMemo(
-                () => filterByDateRange(journalEntries, 'entry_date', journalDateFilter),
-                [journalEntries, journalDateFilter]
-            );
+            // ── Filter change handlers ──
+            const handleJournalFilterChange = (newFilter) => {
+                setJournalDateFilter(newFilter);
+                fetchJournal(newFilter);
+            };
 
-            const filteredAR = useMemo(
-                () => filterByDateRange(arList, 'due_date', arDateFilter),
-                [arList, arDateFilter]
-            );
+            const handleArFilterChange = (newFilter) => {
+                setArDateFilter(newFilter);
+                fetchAR(newFilter);
+            };
 
-            const filteredAP = useMemo(
-                () => filterByDateRange(apList, 'due_date', apDateFilter),
-                [apList, apDateFilter]
-            );
+            const handleApFilterChange = (newFilter) => {
+                setApDateFilter(newFilter);
+                fetchAP(newFilter);
+            };
 
-            // ----- Chart of Accounts Actions -----
+            // ── Actions ──
             const createAccount = async (data) => {
                 await apiCall('/accounts/chart', { method: 'POST', body: JSON.stringify(data) });
                 await fetchAllData();
@@ -817,29 +892,28 @@
                 await fetchAllData();
             };
 
-            // ----- Journal Entry Actions -----
             const createJournal = async (data) => {
                 await apiCall('/accounts/journal-entries', { method: 'POST', body: JSON.stringify(data) });
-                await fetchAllData();
+                await fetchJournal(journalDateFilter);
             };
 
             const postJournal = async (id) => {
                 if (!confirm('Post this journal entry?')) return;
                 await apiCall(`/accounts/journal-entries/${id}/post`, { method: 'POST' });
-                await fetchAllData();
+                await fetchJournal(journalDateFilter);
             };
 
             const deleteJournal = async (id) => {
                 if (!confirm('Delete this journal entry?')) return;
                 await apiCall(`/accounts/journal-entries/${id}`, { method: 'DELETE' });
-                await fetchAllData();
+                await fetchJournal(journalDateFilter);
             };
 
-            // ----- Payment Actions -----
             const registerPayment = async (id, data) => {
                 const endpoint = paymentType === 'ar' ? `/accounts/ar/${id}/payment` : `/accounts/ap/${id}/payment`;
                 await apiCall(endpoint, { method: 'POST', body: JSON.stringify(data) });
-                await fetchAllData();
+                if (paymentType === 'ar') await fetchAR(arDateFilter);
+                else await fetchAP(apDateFilter);
             };
 
             const openPaymentModal = (id, type) => {
@@ -848,9 +922,6 @@
                 setShowPaymentModal(true);
             };
 
-            // ----- Export -----
-            // Org + branch headers are injected by kdint.js. Only auth
-            // and content-type are set here.
             const exportData = async (entity, format) => {
                 try {
                     const body = { entity, format, period_start: plPeriod.start || undefined, period_end: plPeriod.end || undefined };
@@ -889,7 +960,6 @@
                 }
             };
 
-            // ----- Generate P&L -----
             const generatePL = async () => {
                 if (!plPeriod.start || !plPeriod.end) {
                     alert('Please set start and end dates');
@@ -911,7 +981,7 @@
             };
 
             // ================================================================
-            // RENDER FUNCTIONS
+            // RENDER
             // ================================================================
 
             const renderPLTab = () => (
@@ -999,9 +1069,11 @@
 
                     <DateFilterBar
                         filter={journalDateFilter}
-                        onChange={setJournalDateFilter}
-                        count={filteredJournalEntries.length}
-                        totalCount={journalEntries.length}
+                        onChange={handleJournalFilterChange}
+                        count={journalEntries.length}
+                        total={journalTotal}
+                        allTotal={journalAllTotal}
+                        loading={journalLoading}
                     />
 
                     <div className="table-scroll">
@@ -1016,7 +1088,7 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredJournalEntries.map(je => (
+                                {journalEntries.map(je => (
                                     <tr key={je.id} className="border-b">
                                         <td className="p-2">{formatDate(je.entry_date)}</td>
                                         <td className="p-2">{je.description}</td>
@@ -1035,10 +1107,12 @@
                                         </td>
                                     </tr>
                                 ))}
-                                {filteredJournalEntries.length === 0 && (
+                                {journalEntries.length === 0 && !journalLoading && (
                                     <tr>
                                         <td colSpan="5" className="text-center p-4 text-gray-400">
-                                            {journalEntries.length === 0 ? 'No entries' : 'No entries in this date range'}
+                                            {journalAllTotal === 0
+                                                ? 'No entries'
+                                                : 'No entries match this date range'}
                                         </td>
                                     </tr>
                                 )}
@@ -1065,9 +1139,11 @@
 
                     <DateFilterBar
                         filter={arDateFilter}
-                        onChange={setArDateFilter}
-                        count={filteredAR.length}
-                        totalCount={arList.length}
+                        onChange={handleArFilterChange}
+                        count={arList.length}
+                        total={arTotal}
+                        allTotal={arAllTotal}
+                        loading={arLoading}
                     />
 
                     <div className="table-scroll">
@@ -1083,7 +1159,7 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredAR.map(ar => (
+                                {arList.map(ar => (
                                     <tr key={ar.id} className="border-b">
                                         <td className="p-2">{ar.sale_id?.slice(0,8) || '-'}</td>
                                         <td className="p-2">{formatCurrency(ar.amount)}</td>
@@ -1103,10 +1179,12 @@
                                         </td>
                                     </tr>
                                 ))}
-                                {filteredAR.length === 0 && (
+                                {arList.length === 0 && !arLoading && (
                                     <tr>
                                         <td colSpan="6" className="text-center p-4 text-gray-400">
-                                            {arList.length === 0 ? 'No A/R records' : 'No A/R records with due dates in this range'}
+                                            {arAllTotal === 0
+                                                ? 'No A/R records'
+                                                : 'No A/R records with due dates in this range'}
                                         </td>
                                     </tr>
                                 )}
@@ -1129,9 +1207,11 @@
 
                     <DateFilterBar
                         filter={apDateFilter}
-                        onChange={setApDateFilter}
-                        count={filteredAP.length}
-                        totalCount={apList.length}
+                        onChange={handleApFilterChange}
+                        count={apList.length}
+                        total={apTotal}
+                        allTotal={apAllTotal}
+                        loading={apLoading}
                     />
 
                     <div className="table-scroll">
@@ -1147,7 +1227,7 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredAP.map(ap => (
+                                {apList.map(ap => (
                                     <tr key={ap.id} className="border-b">
                                         <td className="p-2">{ap.supplier_id?.slice(0,8) || '-'}</td>
                                         <td className="p-2">{formatCurrency(ap.amount)}</td>
@@ -1167,10 +1247,12 @@
                                         </td>
                                     </tr>
                                 ))}
-                                {filteredAP.length === 0 && (
+                                {apList.length === 0 && !apLoading && (
                                     <tr>
                                         <td colSpan="6" className="text-center p-4 text-gray-400">
-                                            {apList.length === 0 ? 'No A/P records' : 'No A/P records with due dates in this range'}
+                                            {apAllTotal === 0
+                                                ? 'No A/P records'
+                                                : 'No A/P records with due dates in this range'}
                                         </td>
                                     </tr>
                                 )}
@@ -1193,6 +1275,11 @@
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="border p-4 rounded">
                             <h3 className="font-medium mb-2">Export Data</h3>
+                            <p className="text-xs text-gray-500 mb-2">
+                                Uses the P&L period dates above as the export window.
+                                Each entity filters on its own natural date
+                                (A/R & A/P by due_date, journal by entry_date).
+                            </p>
                             <div className="flex flex-wrap gap-2">
                                 <button onClick={() => exportData('accounts_receivable', 'csv')} className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">A/R CSV</button>
                                 <button onClick={() => exportData('accounts_payable', 'csv')} className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">A/P CSV</button>
@@ -1225,16 +1312,10 @@
                 }
             };
 
-            // ================================================================
-            // MAIN RENDER
-            // ================================================================
             if (loading) {
                 return <div className="flex justify-center items-center h-screen"><div className="loading-spinner"></div></div>;
             }
 
-            // The session object carries orgName + branchName for display.
-            // branchName is 'All branches' for owners on 'all', or the
-            // concrete branch name otherwise.
             const bannerOrgLabel = session
                 ? (session.orgName || `Org ${(session.orgId || '').slice(0, 8)}`)
                 : '';
@@ -1293,9 +1374,6 @@
             );
         };
 
-        // ================================================================
-        // RENDER
-        // ================================================================
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
