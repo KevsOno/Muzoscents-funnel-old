@@ -183,10 +183,11 @@ def _compute_migration_suite_hash() -> str:
     import inspect
     names = [
         "ensure_branches_table",
+        "ensure_branch_members_table",
         "ensure_location_stocks_constraints",
         "ensure_location_stocks_batch_backfill",
-        "ensure_batch_expiry_reconciliation"
-        "ensure_effective_expiry_view"
+        "ensure_batch_expiry_reconciliation",
+        "ensure_effective_expiry_view",
         "ensure_batch_verification_columns",
         "ensure_distribute_batch_trigger",
         "ensure_inventory_creation_tracking",
@@ -1225,6 +1226,72 @@ async def ensure_default_branch(org_id: str) -> Optional[str]:
     return await resolve_default_branch(org_id)
 
 
+async def ensure_branch_members_table():
+    """
+    Create the branch_members table (user ↔ branch membership) and
+    backfill it so every existing org_members row has at least one
+    branch membership.
+
+    Backfill rules:
+      - org_members.role = 'owner'  → one row per existing branch of the org
+      - all other roles             → one row for the org's default branch
+
+    Idempotent: CREATE TABLE IF NOT EXISTS + ON CONFLICT DO NOTHING.
+    """
+    sql = """
+    CREATE TABLE IF NOT EXISTS public.branch_members (
+        id         SERIAL PRIMARY KEY,
+        org_id     UUID NOT NULL REFERENCES public.organisations(id) ON DELETE CASCADE,
+        branch_id  UUID NOT NULL REFERENCES public.branches(id) ON DELETE CASCADE,
+        user_id    UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+        joined_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (branch_id, user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_branch_members_org
+        ON public.branch_members (org_id);
+    CREATE INDEX IF NOT EXISTS idx_branch_members_user
+        ON public.branch_members (user_id);
+    CREATE INDEX IF NOT EXISTS idx_branch_members_branch
+        ON public.branch_members (branch_id);
+
+    -- Backfill: owners get every existing branch of their orgs.
+    INSERT INTO public.branch_members (org_id, branch_id, user_id, joined_at)
+    SELECT om.org_id, b.id, om.user_id, NOW()
+      FROM public.org_members om
+      JOIN public.branches b ON b.org_id = om.org_id
+     WHERE om.role = 'owner'
+       AND om.user_id IS NOT NULL
+    ON CONFLICT (branch_id, user_id) DO NOTHING;
+
+    -- Backfill: non-owners get the default branch only.
+    INSERT INTO public.branch_members (org_id, branch_id, user_id, joined_at)
+    SELECT om.org_id, b.id, om.user_id, NOW()
+      FROM public.org_members om
+      JOIN public.branches b ON b.org_id = om.org_id AND b.is_default = TRUE
+     WHERE om.role != 'owner'
+       AND om.user_id IS NOT NULL
+    ON CONFLICT (branch_id, user_id) DO NOTHING;
+    """
+
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"branch_members table migration failed: {resp.text}")
+        raise RuntimeError(f"branch_members table migration failed: {resp.text}")
+    logger.info("branch_members table installed (or already present)")
+
+
+
 async def resolve_branch_for_write(
     org_id: str,
     requested: Optional[str] = None,
@@ -1307,6 +1374,15 @@ async def get_default_location(org_id: str) -> Optional[int]:
     return result.data[0]["id"] if result.data else None
 
 
+# Per-(org_id, channel) cache for get_location_for_channel. The result
+# changes only when a location is created, updated, or deleted — every
+# such write path clears this cache explicitly (create_location,
+# update_location, delete_location). The 5-minute TTL is a safety net
+# for out-of-band changes, not the primary invalidation mechanism.
+_LOC_CHANNEL_CACHE: Dict[Tuple[str, str], Tuple[Optional[str], float]] = {}
+_LOC_CHANNEL_TTL = 300.0  # 5 min
+
+
 async def get_location_for_channel(org_id: str, channel: str) -> Optional[str]:
     """
     Resolve the fulfillment location for a sales channel.
@@ -1323,9 +1399,21 @@ async def get_location_for_channel(org_id: str, channel: str) -> Optional[str]:
     callers, the explicit .eq("org_id", org_id) filter is the real
     tenant boundary; the admin client just removes a second, unreliable
     enforcement layer from the picture.
+
+    Results are cached in-process for 5 minutes keyed by
+    (org_id, channel). Every location write path clears the cache
+    explicitly; the TTL exists only to catch out-of-band changes.
+    Caching None is intentional: an org with no locations will not
+    repeatedly re-query on every POS keystroke.
     """
     if not org_id:
         return None
+
+    cache_key = (org_id, channel)
+    now = time.time()
+    hit = _LOC_CHANNEL_CACHE.get(cache_key)
+    if hit is not None and (now - hit[1]) < _LOC_CHANNEL_TTL:
+        return hit[0]
 
     priority = {
         "pos":    ["store", "warehouse"],
@@ -1333,6 +1421,8 @@ async def get_location_for_channel(org_id: str, channel: str) -> Optional[str]:
     }.get(channel, ["warehouse"])
 
     client = get_admin_supabase()
+    resolved: Optional[str] = None
+
     for loc_type in priority:
         result = await run_sync_db_call(
             client.table("locations")
@@ -1345,19 +1435,35 @@ async def get_location_for_channel(org_id: str, channel: str) -> Optional[str]:
             .execute
         )
         if result.data:
-            return result.data[0]["id"]
+            resolved = result.data[0]["id"]
+            break
 
-    # Last resort: any active location (preserves behaviour on empty orgs)
-    fallback = await run_sync_db_call(
-        client.table("locations")
-        .select("id")
-        .eq("org_id", org_id)
-        .eq("is_active", True)
-        .order("created_at", desc=False)
-        .limit(1)
-        .execute
-    )
-    return fallback.data[0]["id"] if fallback.data else None
+    if resolved is None:
+        # Last resort: any active location (preserves behaviour on empty orgs)
+        fallback = await run_sync_db_call(
+            client.table("locations")
+            .select("id")
+            .eq("org_id", org_id)
+            .eq("is_active", True)
+            .order("created_at", desc=False)
+            .limit(1)
+            .execute
+        )
+        resolved = fallback.data[0]["id"] if fallback.data else None
+
+    _LOC_CHANNEL_CACHE[cache_key] = (resolved, now)
+    return resolved
+
+
+# Per-org cache for get_active_sale_prices. Stores the UNFILTERED
+# {inventory_id: sale_info} map; callers that pass inventory_ids get
+# the same cached map filtered by set membership after retrieval.
+# This means two POS keystrokes with different inventory_ids share
+# the same DB round trip within the TTL. Every flash sale write path
+# (create, delete, end) pops the affected org's cache entry.
+_SALE_CACHE: Dict[str, Tuple[Dict[int, Dict], float]] = {}
+_SALE_TTL = 60.0  # 1 min — flash sales are rarely-minute-accurate
+
 
 async def get_active_sale_prices(
     org_id: str,
@@ -1377,50 +1483,132 @@ async def get_active_sale_prices(
 
     Returns {} on any failure — callers treat an empty dict as
     "no sale active", which is the correct fallback.
+
+    Results are cached in-process for 60 seconds. The cached value is
+    the FULL {inventory_id: sale_info} map for the org, regardless of
+    which inventory_ids the caller asked for. When the caller passed
+    inventory_ids, the cached map is filtered by set membership before
+    return. The unfiltered branch returns a defensive copy so the
+    caller cannot mutate the cached dict. Every flash sale write path
+    (create, delete, end) clears this org's cache entry explicitly.
     """
     if not org_id:
         return {}
-    client = get_supabase()
-    now_iso = datetime.now(timezone.utc).isoformat()
 
-    try:
-        q = (
-            client.table("flash_sales")
-            .select(
-                "id, name, ends_at, "
-                "flash_sale_items(inventory_id, original_price, sale_price)"
+    now = time.time()
+    hit = _SALE_CACHE.get(org_id)
+    if hit is not None and (now - hit[1]) < _SALE_TTL:
+        sale_map = hit[0]
+    else:
+        client = get_supabase()
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        try:
+            q = (
+                client.table("flash_sales")
+                .select(
+                    "id, name, ends_at, "
+                    "flash_sale_items(inventory_id, original_price, sale_price)"
+                )
+                .eq("org_id", org_id)
+                .eq("is_active", True)
+                .lte("starts_at", now_iso)
+                .gte("ends_at", now_iso)
             )
-            .eq("org_id", org_id)
-            .eq("is_active", True)
-            .lte("starts_at", now_iso)
-            .gte("ends_at", now_iso)
+            res = await run_sync_db_call(q.execute)
+        except Exception as e:
+            logger.error("get_active_sale_prices failed", org_id=org_id, error=str(e))
+            return {}
+
+        out: Dict[int, Dict] = {}
+        for sale in (res.data or []):
+            for item in (sale.get("flash_sale_items") or []):
+                inv_id = item.get("inventory_id")
+                if inv_id is None:
+                    continue
+                sale_price = float(item.get("sale_price") or 0)
+                existing = out.get(inv_id)
+                if existing is None or sale_price < existing["sale_price"]:
+                    out[inv_id] = {
+                        "sale_price":     sale_price,
+                        "original_price": float(item.get("original_price") or 0),
+                        "sale_id":        sale.get("id"),
+                        "sale_name":      sale.get("name"),
+                        "ends_at":        sale.get("ends_at"),
+                    }
+        sale_map = out
+        _SALE_CACHE[org_id] = (sale_map, now)
+
+    if inventory_ids is None:
+        return dict(sale_map)
+    wanted = set(inventory_ids)
+    return {k: v for k, v in sale_map.items() if k in wanted}
+
+
+
+class BranchMemberAssign(BaseModel):
+    branch_ids: List[str] = Field(..., min_items=1)
+
+
+@app.post("/organisations/me/users/{target_user_id}/branches")
+async def assign_user_to_branches(
+    request: Request,
+    target_user_id: str,
+    payload: BranchMemberAssign,
+    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin"])),
+):
+    """
+    Replace a user's branch memberships within this org.
+
+    Permissions:
+      - Owner: can assign any user (including other owners and admins)
+      - Admin: can assign non-owner, non-admin staff only
+    """
+    await rate_limit(get_client_ip(request), user_data[1], request=request)
+    actor_id, org_id, actor_role = user_data
+
+    if target_user_id == actor_id and actor_role != "owner":
+        raise HTTPException(status_code=403, detail="You cannot change your own branch membership")
+
+    client = get_supabase()
+
+    target_member = await run_sync_db_call(
+        client.table("org_members").select("role")
+        .eq("user_id", target_user_id).eq("org_id", org_id).maybe_single().execute
+    )
+    if not target_member or not target_member.data:
+        raise HTTPException(status_code=404, detail="User not in this organisation")
+    target_role = target_member.data.get("role")
+
+    if target_role in ("owner", "admin") and actor_role != "owner":
+        raise HTTPException(
+            status_code=403,
+            detail="Only an owner can change branch membership for owners/admins",
         )
-        res = await run_sync_db_call(q.execute)
-    except Exception as e:
-        logger.error("get_active_sale_prices failed", org_id=org_id, error=str(e))
-        return {}
 
-    wanted = set(inventory_ids) if inventory_ids is not None else None
-    out: Dict[int, Dict] = {}
+    branches_res = await run_sync_db_call(
+        client.table("branches").select("id")
+        .eq("org_id", org_id).in_("id", payload.branch_ids).execute
+    )
+    valid_ids = {r["id"] for r in (branches_res.data or [])}
+    invalid = set(payload.branch_ids) - valid_ids
+    if invalid:
+        raise HTTPException(status_code=400, detail=f"Unknown branch ids: {sorted(invalid)}")
 
-    for sale in (res.data or []):
-        for item in (sale.get("flash_sale_items") or []):
-            inv_id = item.get("inventory_id")
-            if inv_id is None:
-                continue
-            if wanted is not None and inv_id not in wanted:
-                continue
-            sale_price = float(item.get("sale_price") or 0)
-            existing = out.get(inv_id)
-            if existing is None or sale_price < existing["sale_price"]:
-                out[inv_id] = {
-                    "sale_price":     sale_price,
-                    "original_price": float(item.get("original_price") or 0),
-                    "sale_id":        sale.get("id"),
-                    "sale_name":      sale.get("name"),
-                    "ends_at":        sale.get("ends_at"),
-                }
-    return out
+    await run_sync_db_call(
+        client.table("branch_members").delete()
+        .eq("user_id", target_user_id).eq("org_id", org_id).execute
+    )
+    now_iso = datetime.now(timezone.utc).isoformat()
+    rows = [
+        {"org_id": org_id, "branch_id": bid, "user_id": target_user_id, "joined_at": now_iso}
+        for bid in payload.branch_ids
+    ]
+    if rows:
+        await run_sync_db_call(client.table("branch_members").insert(rows).execute)
+
+    return {"user_id": target_user_id, "branch_ids": payload.branch_ids}
+
 # ===================== LOCATION-SCOPED INVENTORY READS =====================
 
 async def fetch_inventory_scoped_to_location(
@@ -1432,6 +1620,7 @@ async def fetch_inventory_scoped_to_location(
     category: Optional[str] = None,
     sort_by: str = "newest",
     require_positive_stock: bool = False,
+    include_count: bool = True,
 ) -> Tuple[List[Dict], int]:
     """
     Read inventory rows scoped to a single location.
@@ -1440,6 +1629,19 @@ async def fetch_inventory_scoped_to_location(
       - location_qty : same value, explicit
       - global_qty   : original inventory.current_qty (org-wide)
       - location_id  : the location we scoped to
+
+    include_count:
+      When True (default), PostgREST returns an exact total via
+      count="exact", which costs a second COUNT(*) round trip
+      (2 network calls total for the list query). Callers that need
+      a real total for a pager (storefront) should leave this at
+      True. Callers that do not (POS terminal) should pass
+      include_count=False and save the second round trip.
+
+      When False, PostgREST returns no Content-Range header, so
+      result.count is None and total falls through to 0. Callers
+      that opted out of counting do not have a use for a total,
+      so returning 0 is the honest value: "we did not count."
     """
     client = get_supabase()
 
@@ -1447,7 +1649,7 @@ async def fetch_inventory_scoped_to_location(
         client.table("inventory")
         .select(
             "*, location_stocks!inner(location_id, quantity, reserved_quantity)",
-            count="exact",
+            count="exact" if include_count else None,
         )
         .eq("org_id", org_id)
         .eq("location_stocks.location_id", location_id)
@@ -1487,7 +1689,10 @@ async def fetch_inventory_scoped_to_location(
     items: List[Dict] = []
     for row in rows:
         stocks = row.pop("location_stocks", None) or []
-        loc_qty = int(stocks[0].get("quantity") or 0) if stocks else 0
+        # Sum across every batch at this location. The distribute_batch_to_locations
+        # trigger creates one location_stocks row per batch, so stocks[0] would
+        # report only the first batch's quantity once a second delivery lands.
+        loc_qty = sum(int(s.get("quantity") or 0) for s in stocks) if stocks else 0
         global_qty = int(row.get("current_qty") or 0)
         row["current_qty"]  = loc_qty
         row["location_qty"] = loc_qty
@@ -2284,80 +2489,191 @@ async def ensure_vector_support():
         logger.error(f"Vector support migration error: {e}")
 
 async def ensure_stock_transfers_table():
+    """
+    Create locations, location_stocks, and stock_transfers if missing.
+
+    ── REWRITE (2026-11) — DO NOT REVERT ──
+
+    The previous version probed `locations` and only ran its CREATE block
+    if that single probe threw. That was wrong in two ways:
+
+      1. If `locations` existed but `stock_transfers` (or `location_stocks`)
+         was missing, the CREATE never fired and the missing table stayed
+         missing. Nothing noticed until the first write blew up.
+
+      2. When the CREATE did fire, it produced the legacy shape:
+           - location_stocks.location_id was INTEGER (all writers and every
+             RPC use UUID)
+           - location_stocks had no batch_id column
+           - location_stocks had UNIQUE(location_id, inventory_id) — the
+             exact constraint that later migrations (ensure_location_stocks_
+             constraints) have to drop to make batch-aware inserts legal
+           - stock_transfers.from_location_id / to_location_id were INTEGER
+             (the RPCs and every endpoint use UUID)
+
+         So a fresh environment would boot with a schema that every other
+         function in this file refuses to write to, and the reconcile
+         migrations would have to undo the damage.
+
+    The new version:
+
+      - probes each table independently
+      - only CREATEs tables that are actually missing (using IF NOT EXISTS
+        so the CREATE is idempotent even if the probe lied)
+      - creates the MODERN shape (UUID ids, batch_id column, composite
+        unique key on (location_id, inventory_id, batch_id))
+
+    On a live, fully-provisioned database all three probes return True and
+    the function returns before any SQL is sent. It is a no-op.
+
+    Call order dependency: this MUST run before ensure_location_stocks_
+    constraints() and ensure_location_stocks_batch_backfill(), so those
+    healers operate on a table that exists. Both the single-instance and
+    multi-instance startup paths already call it in the correct position
+    (see startup_event).
+    """
     supabase = get_supabase()
-    try:
-        test = await run_sync_db_call(supabase.table("locations").select("id").limit(1).execute)
-        logger.info("locations table already exists.")
-    except Exception as e:
-        if 'relation "locations" does not exist' in str(e):
-            logger.warning("Creating locations table...")
-            sql = """
-            CREATE TABLE IF NOT EXISTS public.locations (
-                id SERIAL PRIMARY KEY,
-                org_id UUID NOT NULL REFERENCES public.organisations(id) ON DELETE CASCADE,
-                name VARCHAR(200) NOT NULL,
-                address TEXT,
-                is_warehouse BOOLEAN DEFAULT FALSE,
-                is_active BOOLEAN DEFAULT TRUE,
-                created_at TIMESTAMPTZ DEFAULT now(),
-                updated_at TIMESTAMPTZ DEFAULT now(),
-                UNIQUE(org_id, name)
-            );
-            
-            CREATE INDEX IF NOT EXISTS idx_locations_org ON public.locations(org_id);
-            
-            CREATE TABLE IF NOT EXISTS public.location_stocks (
-                id SERIAL PRIMARY KEY,
-                location_id INTEGER NOT NULL REFERENCES public.locations(id) ON DELETE CASCADE,
-                inventory_id INTEGER NOT NULL REFERENCES public.inventory(id) ON DELETE CASCADE,
-                quantity INTEGER NOT NULL DEFAULT 0,
-                reserved_quantity INTEGER NOT NULL DEFAULT 0,
-                updated_at TIMESTAMPTZ DEFAULT now(),
-                UNIQUE(location_id, inventory_id)
-            );
-            
-            CREATE INDEX IF NOT EXISTS idx_location_stocks_location ON public.location_stocks(location_id);
-            CREATE INDEX IF NOT EXISTS idx_location_stocks_inventory ON public.location_stocks(inventory_id);
-            
-            CREATE TABLE IF NOT EXISTS public.stock_transfers (
-                id SERIAL PRIMARY KEY,
-                org_id UUID NOT NULL REFERENCES public.organisations(id) ON DELETE CASCADE,
-                from_location_id INTEGER REFERENCES public.locations(id) ON DELETE SET NULL,
-                to_location_id INTEGER NOT NULL REFERENCES public.locations(id) ON DELETE CASCADE,
-                inventory_id INTEGER NOT NULL REFERENCES public.inventory(id) ON DELETE CASCADE,
-                quantity INTEGER NOT NULL CHECK (quantity > 0),
-                status VARCHAR(50) DEFAULT 'pending',
-                requested_by UUID REFERENCES public.profiles(id),
-                approved_by UUID REFERENCES public.profiles(id),
-                request_notes TEXT,
-                approval_notes TEXT,
-                tracking_number VARCHAR(100),
-                created_at TIMESTAMPTZ DEFAULT now(),
-                updated_at TIMESTAMPTZ DEFAULT now(),
-                completed_at TIMESTAMPTZ
-            );
-            
-            CREATE INDEX IF NOT EXISTS idx_stock_transfers_org ON public.stock_transfers(org_id);
-            CREATE INDEX IF NOT EXISTS idx_stock_transfers_status ON public.stock_transfers(status);
-            CREATE INDEX IF NOT EXISTS idx_stock_transfers_from_location ON public.stock_transfers(from_location_id);
-            CREATE INDEX IF NOT EXISTS idx_stock_transfers_to_location ON public.stock_transfers(to_location_id);
-            """
-            headers = {
-                "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
-                "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}"
-            }
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
-                    json={"query": sql},
-                    headers=headers
-                )
-                if resp.status_code not in (200, 204):
-                    logger.error(f"Failed to create stock transfer tables: {resp.text}")
-                else:
-                    logger.info("Successfully created locations, location_stocks, and stock_transfers tables.")
-    except Exception as e:
-        logger.error(f"Stock transfers migration error: {e}")
+
+    # ── 1. Probe each table independently. ──
+    async def _table_exists(name: str) -> bool:
+        try:
+            await run_sync_db_call(
+                supabase.table(name).select("id").limit(1).execute
+            )
+            return True
+        except Exception:
+            return False
+
+    has_locations      = await _table_exists("locations")
+    has_location_stocks = await _table_exists("location_stocks")
+    has_stock_transfers = await _table_exists("stock_transfers")
+
+    if has_locations and has_location_stocks and has_stock_transfers:
+        logger.info("locations, location_stocks, stock_transfers already present")
+        return
+
+    logger.warning(
+        "provisioning missing tables",
+        locations=has_locations,
+        location_stocks=has_location_stocks,
+        stock_transfers=has_stock_transfers,
+    )
+
+    # ── 2. Build the CREATE statements for whatever's missing. ──
+    # Every table uses IF NOT EXISTS as a belt-and-braces guard against
+    # a wrong probe result (e.g. RLS hid the row from a select but the
+    # table still exists).
+    sql_parts: List[str] = []
+
+    if not has_locations:
+        sql_parts.append("""
+        CREATE TABLE IF NOT EXISTS public.locations (
+            id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            org_id            UUID NOT NULL REFERENCES public.organisations(id) ON DELETE CASCADE,
+            branch_id         UUID REFERENCES public.branches(id) ON DELETE SET NULL,
+            name              VARCHAR(200) NOT NULL,
+            address           TEXT,
+            type              VARCHAR(50) DEFAULT 'store',
+            is_warehouse      BOOLEAN DEFAULT FALSE,
+            is_active         BOOLEAN DEFAULT TRUE,
+            manager_email     TEXT,
+            inventory_email   TEXT,
+            procurement_email TEXT,
+            auditor_email     TEXT,
+            dev_team          TEXT,
+            created_at        TIMESTAMPTZ DEFAULT now(),
+            updated_at        TIMESTAMPTZ DEFAULT now(),
+            UNIQUE(org_id, name)
+        );
+        CREATE INDEX IF NOT EXISTS idx_locations_org
+            ON public.locations(org_id);
+        CREATE INDEX IF NOT EXISTS idx_locations_branch
+            ON public.locations(branch_id);
+        """)
+
+    if not has_location_stocks:
+        # NOTE: batch_id is nullable on creation. ensure_location_stocks_
+        # batch_backfill() will backfill it and then set NOT NULL. The
+        # composite unique key here matches what ensure_location_stocks_
+        # constraints() enforces, so that function becomes a no-op.
+        #
+        # No FK on batch_id — inventory_batches is not guaranteed to be
+        # present at this point in a fresh-environment bootstrap, and the
+        # FK is not required for correctness (all writers go through
+        # _write_location_stock which resolves a real batch id first).
+        sql_parts.append("""
+        CREATE TABLE IF NOT EXISTS public.location_stocks (
+            id                SERIAL PRIMARY KEY,
+            location_id       UUID NOT NULL REFERENCES public.locations(id) ON DELETE CASCADE,
+            inventory_id      INTEGER NOT NULL REFERENCES public.inventory(id) ON DELETE CASCADE,
+            batch_id          INTEGER,
+            quantity          INTEGER NOT NULL DEFAULT 0,
+            reserved_quantity INTEGER NOT NULL DEFAULT 0,
+            expiry_date       DATE,
+            last_verified_at  TIMESTAMPTZ,
+            last_verified_by  UUID,
+            updated_at        TIMESTAMPTZ DEFAULT now(),
+            UNIQUE(location_id, inventory_id, batch_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_location_stocks_location
+            ON public.location_stocks(location_id);
+        CREATE INDEX IF NOT EXISTS idx_location_stocks_inventory
+            ON public.location_stocks(inventory_id);
+        CREATE INDEX IF NOT EXISTS idx_location_stocks_batch
+            ON public.location_stocks(batch_id);
+        """)
+
+    if not has_stock_transfers:
+        sql_parts.append("""
+        CREATE TABLE IF NOT EXISTS public.stock_transfers (
+            id                SERIAL PRIMARY KEY,
+            org_id            UUID NOT NULL REFERENCES public.organisations(id) ON DELETE CASCADE,
+            branch_id         UUID REFERENCES public.branches(id) ON DELETE SET NULL,
+            from_location_id  UUID REFERENCES public.locations(id) ON DELETE SET NULL,
+            to_location_id    UUID NOT NULL REFERENCES public.locations(id) ON DELETE CASCADE,
+            inventory_id      INTEGER NOT NULL REFERENCES public.inventory(id) ON DELETE CASCADE,
+            quantity          INTEGER NOT NULL CHECK (quantity > 0),
+            status            VARCHAR(50) DEFAULT 'pending',
+            requested_by      UUID REFERENCES public.profiles(id),
+            approved_by       UUID REFERENCES public.profiles(id),
+            request_notes     TEXT,
+            approval_notes    TEXT,
+            tracking_number   VARCHAR(100),
+            created_at        TIMESTAMPTZ DEFAULT now(),
+            updated_at        TIMESTAMPTZ DEFAULT now(),
+            completed_at      TIMESTAMPTZ
+        );
+        CREATE INDEX IF NOT EXISTS idx_stock_transfers_org
+            ON public.stock_transfers(org_id);
+        CREATE INDEX IF NOT EXISTS idx_stock_transfers_branch
+            ON public.stock_transfers(branch_id);
+        CREATE INDEX IF NOT EXISTS idx_stock_transfers_status
+            ON public.stock_transfers(status);
+        CREATE INDEX IF NOT EXISTS idx_stock_transfers_from_location
+            ON public.stock_transfers(from_location_id);
+        CREATE INDEX IF NOT EXISTS idx_stock_transfers_to_location
+            ON public.stock_transfers(to_location_id);
+        """)
+
+    if not sql_parts:
+        return
+
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    sql = "\n".join(sql_parts)
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"Failed to provision stock transfer tables: {resp.text}")
+        raise RuntimeError(f"stock transfer table provisioning failed: {resp.text}")
+    logger.info("stock transfer tables provisioned (missing ones only)")
 
 
 async def ensure_location_stocks_constraints():
@@ -6507,6 +6823,8 @@ async def startup_event():
             )
 
         await ensure_branches_table()
+        await ensure_branch_members_table()
+        await ensure_stock_transfers_table()
         await ensure_location_stocks_constraints()
         await ensure_location_stocks_batch_backfill()
         await ensure_batch_expiry_reconciliation()
@@ -6523,7 +6841,6 @@ async def startup_event():
         await ensure_knowledge_audit_table()
         await ensure_vector_support()
         await ensure_loyalty_tables()
-        await ensure_stock_transfers_table()
         await ensure_stock_transfer_rpcs()
         await ensure_transfer_suggestions_last_updated_column()
         await ensure_decrement_stock_fefo()
@@ -6622,6 +6939,8 @@ async def startup_event():
         )
 
         await ensure_branches_table()
+        await ensure_branch_members_table()
+        await ensure_stock_transfers_table()
         await ensure_location_stocks_constraints()
         await ensure_location_stocks_batch_backfill()
         await ensure_batch_expiry_reconciliation()
@@ -6638,7 +6957,6 @@ async def startup_event():
         await ensure_knowledge_audit_table()
         await ensure_vector_support()
         await ensure_loyalty_tables()
-        await ensure_stock_transfers_table()
         await ensure_stock_transfer_rpcs()
         await ensure_transfer_suggestions_last_updated_column()
         await ensure_decrement_stock_fefo()
@@ -7186,6 +7504,215 @@ async def send_status_update_email(sale_id: str, old_status: str, new_status: st
         await send_sendgrid_email(logistics_email, f"Order Update: {sale_data['receipt_number']} - {new_status}", internal_html)
     else:
         logger.warning(f"No logistics email configured for org {sale_data['org_id']}")
+
+
+async def get_user_branches(user_id: str, org_id: str) -> List[Dict]:
+    """
+    Return every branch this user belongs to within this org.
+    Owners are returned all org branches (they may have no explicit
+    branch_members rows if they were created before this migration ran,
+    so we defensively fall back to role='owner' semantics).
+    """
+    client = get_supabase()
+
+    # Resolve role — owners implicitly belong to every branch.
+    role_res = await run_sync_db_call(
+        client.table("org_members").select("role")
+        .eq("user_id", user_id).eq("org_id", org_id).maybe_single().execute
+    )
+    role = (role_res.data or {}).get("role") if role_res and role_res.data else "customer"
+
+    if role == "owner":
+        branches_res = await run_sync_db_call(
+            client.table("branches")
+            .select("id, name, code, is_default")
+            .eq("org_id", org_id)
+            .order("is_default", desc=True)
+            .order("name")
+            .execute
+        )
+        return [
+            {
+                "id":         b["id"],
+                "name":       b.get("name"),
+                "code":       b.get("code"),
+                "is_default": bool(b.get("is_default")),
+            }
+            for b in (branches_res.data or [])
+        ]
+
+    mem_res = await run_sync_db_call(
+        client.table("branch_members")
+        .select("branch_id, branches(id, name, code, is_default)")
+        .eq("org_id", org_id)
+        .eq("user_id", user_id)
+        .execute
+    )
+    branches: List[Dict] = []
+    for row in (mem_res.data or []):
+        b = row.get("branches") or {}
+        if b:
+            branches.append({
+                "id":         b.get("id"),
+                "name":       b.get("name"),
+                "code":       b.get("code"),
+                "is_default": bool(b.get("is_default")),
+            })
+    branches.sort(key=lambda x: (not x["is_default"], (x["name"] or "").lower()))
+    return branches
+
+
+async def is_user_in_branch(user_id: str, org_id: str, branch_id: str) -> bool:
+    """
+    True if the user may operate within this branch of this org.
+    Owners: implicit membership in every branch of their org.
+    Everyone else: must have a branch_members row.
+    """
+    if not branch_id or not org_id or not user_id:
+        return False
+    client = get_admin_supabase()
+
+    role_res = await run_sync_db_call(
+        client.table("org_members").select("role")
+        .eq("user_id", user_id).eq("org_id", org_id).maybe_single().execute
+    )
+    role = (role_res.data or {}).get("role") if role_res and role_res.data else None
+
+    if role == "owner":
+        branch_res = await run_sync_db_call(
+            client.table("branches").select("id")
+            .eq("id", branch_id).eq("org_id", org_id).maybe_single().execute
+        )
+        return bool(branch_res and branch_res.data)
+
+    mem_res = await run_sync_db_call(
+        client.table("branch_members").select("id")
+        .eq("org_id", org_id).eq("user_id", user_id).eq("branch_id", branch_id)
+        .maybe_single().execute
+    )
+    return bool(mem_res and mem_res.data)
+
+
+async def resolve_request_branch(
+    request: Request,
+    user_id: str,
+    org_id: str,
+    role: str,
+) -> Optional[str]:
+    """
+    Resolve which branch this request is scoped to.
+
+    Returns:
+      - A branch UUID  → caller wants this specific branch
+      - None           → caller wants "all branches" (owner only)
+
+    Resolution order:
+      1. X-Selected-Branch-Id header (validated)
+      2. JWT app_metadata.branch_scope (legacy fallback, currently always None)
+      3. Owner: None (all branches)
+      4. Non-owner with exactly 1 branch: that branch
+      5. Non-owner with >1 branch: 400 — must send the header
+      6. Non-owner with 0 branches: the org's default branch
+    """
+    header_branch = (request.headers.get("X-Selected-Branch-Id") or "").strip()
+    if header_branch:
+        if not await is_user_in_branch(user_id, org_id, header_branch):
+            raise HTTPException(
+                status_code=403,
+                detail="You are not a member of the selected branch",
+            )
+        return header_branch
+
+    # Legacy fallback: JWT app_metadata.branch_scope
+    try:
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header.split(" ", 1)[1]
+            auth_client = get_user_supabase()
+            user_resp = await run_sync_db_call(auth_client.auth.get_user, token)
+            if user_resp and user_resp.user:
+                app_meta = getattr(user_resp.user, "app_metadata", None) or {}
+                meta_branch = app_meta.get("branch_scope")
+                if meta_branch and await is_user_in_branch(user_id, org_id, meta_branch):
+                    return meta_branch
+    except Exception as e:
+        logger.warning(f"resolve_request_branch: app_metadata read failed: {e}")
+
+    if role == "owner":
+        return None  # owner with no explicit selection → see all branches
+
+    branches = await get_user_branches(user_id, org_id)
+    if len(branches) == 1:
+        return branches[0]["id"]
+    if len(branches) == 0:
+        # Legacy user with no memberships; fall back to default branch.
+        default_id = await ensure_default_branch(org_id)
+        if default_id:
+            return default_id
+        raise HTTPException(
+            status_code=400,
+            detail="No branch assigned. Contact your administrator.",
+        )
+    raise HTTPException(
+        status_code=400,
+        detail="Multiple branches available. Send X-Selected-Branch-Id header.",
+    )
+
+
+async def resolve_request_branch_for_write(
+    request: Request,
+    user_id: str,
+    org_id: str,
+    role: str,
+) -> str:
+    """
+    Like resolve_request_branch() but always returns a concrete branch id.
+    Owners who sent no header get their org's default branch — a write
+    must land on some branch.
+    """
+    branch = await resolve_request_branch(request, user_id, org_id, role)
+    if branch:
+        return branch
+    default_id = await ensure_default_branch(org_id)
+    if not default_id:
+        raise HTTPException(status_code=500, detail="No default branch for this organisation")
+    return default_id
+
+
+async def get_visible_user_ids(
+    user_id: str,
+    org_id: str,
+    role: str,
+) -> Optional[set]:
+    """
+    Return the set of user_ids whose records this caller may see in this org.
+
+    - Owner → None (see everyone)
+    - Non-owner → set of user_ids that share at least one branch with the caller
+                  (always includes the caller themselves)
+    """
+    if role == "owner":
+        return None
+
+    client = get_supabase()
+
+    my_branches_res = await run_sync_db_call(
+        client.table("branch_members").select("branch_id")
+        .eq("user_id", user_id).eq("org_id", org_id).execute
+    )
+    branch_ids = [r["branch_id"] for r in (my_branches_res.data or []) if r.get("branch_id")]
+
+    if not branch_ids:
+        # No branch memberships at all → can only see themselves.
+        return {user_id}
+
+    members_res = await run_sync_db_call(
+        client.table("branch_members").select("user_id")
+        .eq("org_id", org_id).in_("branch_id", branch_ids).execute
+    )
+    visible = {r["user_id"] for r in (members_res.data or []) if r.get("user_id")}
+    visible.add(user_id)
+    return visible
 
 
 
@@ -8394,8 +8921,134 @@ async def create_location(
     result = await run_sync_db_call(client.table("locations").insert(data).execute)
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to create location")
+    _LOC_CHANNEL_CACHE.clear()
     return {"location": result.data[0]}
+
+
+class BranchCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    code: Optional[str] = Field(None, max_length=20)
+
+
+@app.get("/branches")
+async def list_branches(
+    request: Request,
+    user_data: Tuple[str, str, str] = Depends(
+        require_role(["owner", "admin", "inventory_manager", "logistics", "finance", "sales_rep"])
+    ),
+):
+    await rate_limit(get_client_ip(request), user_data[1], request=request)
+    user_id, org_id, role = user_data
+
+    if role == "owner":
+        client = get_supabase()
+        res = await run_sync_db_call(
+            client.table("branches")
+            .select("id, name, code, is_default, created_at")
+            .eq("org_id", org_id)
+            .order("is_default", desc=True)
+            .order("name")
+            .execute
+        )
+        return {"branches": res.data or []}
+
+    return {"branches": await get_user_branches(user_id, org_id)}
+
+
+@app.post("/branches")
+async def create_branch(
+    request: Request,
+    payload: BranchCreate,
+    user_data: Tuple[str, str, str] = Depends(require_role(["owner"])),
+):
+    await rate_limit(get_client_ip(request), user_data[1], request=request)
+    _, org_id, role = user_data
+    if role != "owner":
+        raise HTTPException(status_code=403, detail="Only owners can create branches")
+
+    client = get_supabase()
+
+    if payload.code:
+        code_check = await run_sync_db_call(
+            client.table("branches").select("id")
+            .eq("org_id", org_id).eq("code", payload.code).maybe_single().execute
+        )
+        if code_check and code_check.data:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Branch code '{payload.code}' already exists",
+            )
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    ins = await run_sync_db_call(
+        client.table("branches").insert({
+            "org_id":     org_id,
+            "name":       payload.name,
+            "code":       payload.code,
+            "is_default": False,
+            "created_at": now_iso,
+            "updated_at": now_iso,
+        }).execute
+    )
+    if not ins.data:
+        raise HTTPException(status_code=500, detail="Failed to create branch")
+    branch = ins.data[0]
+    new_branch_id = branch["id"]
+
+    # Seed branch_members for every owner of this org so they can
+    # immediately operate in the new branch without an admin step.
+    owners_res = await run_sync_db_call(
+        client.table("org_members").select("user_id")
+        .eq("org_id", org_id).eq("role", "owner").execute
+    )
+    owner_ids = [r["user_id"] for r in (owners_res.data or []) if r.get("user_id")]
+    if owner_ids:
+        rows = [
+            {"org_id": org_id, "branch_id": new_branch_id, "user_id": uid, "joined_at": now_iso}
+            for uid in owner_ids
+        ]
+        try:
+            await run_sync_db_call(client.table("branch_members").insert(rows).execute)
+        except Exception as e:
+            logger.warning(f"branch_members auto-assign owners failed: {e}")
+
+    return {"branch": branch}
+
+
+@app.delete("/branches/{branch_id}")
+async def delete_branch(
+    request: Request,
+    branch_id: str,
+    user_data: Tuple[str, str, str] = Depends(require_role(["owner"])),
+):
+    await rate_limit(get_client_ip(request), user_data[1], request=request)
+    _, org_id, role = user_data
+    if role != "owner":
+        raise HTTPException(status_code=403, detail="Only owners can delete branches")
+
+    client = get_supabase()
+    existing = await run_sync_db_call(
+        client.table("branches").select("id, is_default")
+        .eq("id", branch_id).eq("org_id", org_id).maybe_single().execute
+    )
+    if not existing or not existing.data:
+        raise HTTPException(status_code=404, detail="Branch not found")
+    if existing.data.get("is_default"):
+        raise HTTPException(status_code=400, detail="Cannot delete the default branch")
+
+    loc_check = await run_sync_db_call(
+        client.table("locations").select("id")
+        .eq("branch_id", branch_id).limit(1).execute
+    )
+    if loc_check.data:
+        raise HTTPException(status_code=400, detail="Cannot delete branch with locations")
+
+    await run_sync_db_call(
+        client.table("branches").delete().eq("id", branch_id).eq("org_id", org_id).execute
+    )
+    return {"message": "Branch deleted"}
     
+
 @app.put("/locations/{location_id}")
 async def update_location(
     request: Request,
@@ -8490,6 +9143,7 @@ async def update_location(
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to update location")
 
+    _LOC_CHANNEL_CACHE.clear()
     return {"location": result.data[0]}
     
 
@@ -8537,7 +9191,9 @@ async def delete_location(
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to delete location")
 
+    _LOC_CHANNEL_CACHE.clear()
     return {"message": "Location deleted successfully"}
+
 
 @app.get("/inventory/v2")
 async def get_inventory_by_location(
@@ -8597,20 +9253,23 @@ async def get_inventory_by_location(
         items = []
         for inv in inventory_items:
             stock_info = inv.pop("location_stocks", None) or []
-            stock = stock_info[0] if stock_info else {}
-            qty = int(stock.get("quantity") or 0)
+            # Sum across every batch at this location. One location_stocks row
+            # exists per (location, batch), so reading only stock_info[0] would
+            # under-report stock the moment a SKU has more than one batch here.
+            qty      = sum(int(s.get("quantity")          or 0) for s in stock_info) if stock_info else 0
+            reserved = sum(int(s.get("reserved_quantity") or 0) for s in stock_info) if stock_info else 0
             items.append({
                 **inv,
-                "current_qty":      qty,               # override so card badge is location-scoped
+                "current_qty":      qty,
                 "location_qty":     qty,
                 "location_id":      location_id,
                 "location_name":    location_name_by_id.get(location_id),
-                "reserved_quantity": int(stock.get("reserved_quantity") or 0),
+                "reserved_quantity": reserved,
                 "location_stocks": [{
                     "location_id":   location_id,
                     "location_name": location_name_by_id.get(location_id),
                     "quantity":      qty,
-                    "reserved_quantity": int(stock.get("reserved_quantity") or 0),
+                    "reserved_quantity": reserved,
                 }],
             })
         return {"items": items, "total": total_count, "limit": limit, "offset": offset}
@@ -8712,7 +9371,7 @@ async def request_stock_transfer(
     user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    user_id, org_id, _ = user_data
+    user_id, org_id, role = user_data
     client = get_supabase()
 
     if transfer.from_location_id:
@@ -8756,7 +9415,7 @@ async def request_stock_transfer(
         if from_loc_full and from_loc_full.data:
             branch_id_for_transfer = from_loc_full.data.get("branch_id")
     if not branch_id_for_transfer:
-        branch_id_for_transfer = await resolve_branch_for_write(org_id)
+        branch_id_for_transfer = await resolve_request_branch_for_write(request, user_id, org_id, role)
 
     # Insert the transfer record
     result = await run_sync_db_call(
@@ -8836,7 +9495,7 @@ async def request_stock_transfer_bulk(
     warehouse to shelf.
     """
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    user_id, org_id, _ = user_data
+    user_id, org_id, role = user_data
     client = get_supabase()
 
     # Validate the endpoints once. If they don't belong to the org,
@@ -8871,7 +9530,7 @@ async def request_stock_transfer_bulk(
         if b and b.data:
             branch_id = b.data.get("branch_id")
     if not branch_id:
-        branch_id = await resolve_branch_for_write(org_id)
+        branch_id = await resolve_request_branch_for_write(request, user_id, org_id, role)
 
     results = []
     for line in payload.items:
@@ -8982,12 +9641,17 @@ async def list_stock_transfers(
     user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager", "logistics"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, role = user_data
     client = get_supabase()
+
+    selected_branch = await resolve_request_branch(request, user_id, org_id, role)
 
     query = client.table("stock_transfers") \
         .select("*, from_location:from_location_id(name), to_location:to_location_id(name), inventory:inventory_id(description, item_code), requested_by_user:requested_by(first_name, last_name), approved_by_user:approved_by(first_name, last_name)") \
         .eq("org_id", org_id)
+
+    if selected_branch:
+        query = query.eq("branch_id", selected_branch)
 
     if status:
         query = query.eq("status", status)
@@ -9003,17 +9667,21 @@ async def get_stock_transfer(
     user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager", "logistics"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, role = user_data
     client = get_supabase()
 
-    result = await run_sync_db_call(
+    selected_branch = await resolve_request_branch(request, user_id, org_id, role)
+
+    q = (
         client.table("stock_transfers")
         .select("*, from_location:from_location_id(*), to_location:to_location_id(*), inventory:inventory_id(*), requested_by_user:requested_by(first_name, last_name, email), approved_by_user:approved_by(first_name, last_name, email)")
         .eq("id", transfer_id)
         .eq("org_id", org_id)
-        .maybe_single()
-        .execute
     )
+    if selected_branch:
+        q = q.eq("branch_id", selected_branch)
+
+    result = await run_sync_db_call(q.maybe_single().execute)
 
     if not result.data:
         raise HTTPException(status_code=404, detail="Transfer not found")
@@ -9177,7 +9845,9 @@ async def create_flash_sale(
     ]
     await run_sync_db_call(client.table("flash_sale_items").insert(items).execute)
 
+    _SALE_CACHE.pop(org_id, None)
     return {"sale_id": sale_id, "items_count": len(items), "name": payload.name}
+
 
 
 @app.get("/flash-sales")
@@ -9250,7 +9920,9 @@ async def delete_flash_sale(
     await run_sync_db_call(
         client.table("flash_sales").delete().eq("id", sale_id).eq("org_id", org_id).execute
     )
+    _SALE_CACHE.pop(org_id, None)
     return {"message": "Flash sale deleted"}
+
 
 
 @app.post("/flash-sales/{sale_id}/end")
@@ -9274,6 +9946,7 @@ async def end_flash_sale(
     )
     if not res.data:
         raise HTTPException(status_code=404, detail="Flash sale not found")
+    _SALE_CACHE.pop(org_id, None)
     return {"message": "Flash sale ended"}
 
 
@@ -9469,27 +10142,75 @@ async def login(request: Request, auth: LoginRequest):
         # Auth operations use a throwaway anon client so the shared
         # service-role client never carries a user session.
         auth_client = get_user_supabase()
-        resp = await run_sync_db_call(auth_client.auth.sign_in_with_password, {"email": auth.email, "password": auth.password})
-        if resp.session:
-            client = get_supabase()
-            profile_res = await run_sync_db_call(client.table("profiles").select("first_name, last_name").eq("id", resp.user.id).maybe_single().execute)
-            profile_data = profile_res.data if profile_res else None
+        resp = await run_sync_db_call(
+            auth_client.auth.sign_in_with_password,
+            {"email": auth.email, "password": auth.password},
+        )
+        if not resp.session:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
 
-            first_name = profile_data.get("first_name", "User") if profile_data else "User"
-            last_name = profile_data.get("last_name", "") if profile_data else ""
-            display_name = f"{first_name} {last_name}".strip()
+        user_id = resp.user.id
+        client = get_supabase()
 
-            return {
-                "user_id": resp.user.id,
-                "access_token": resp.session.access_token,
-                "refresh_token": resp.session.refresh_token,
-                "display_name": display_name,
-                "first_name": first_name,
-                "last_name": last_name
-            }
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        profile_res = await run_sync_db_call(
+            client.table("profiles").select("first_name, last_name")
+            .eq("id", user_id).maybe_single().execute
+        )
+        profile_data = profile_res.data if profile_res else None
+        first_name = profile_data.get("first_name", "User") if profile_data else "User"
+        last_name  = profile_data.get("last_name", "") if profile_data else ""
+        display_name = f"{first_name} {last_name}".strip()
+
+        # Resolve the user's default org so we can return the branch list.
+        org_rows_res = await run_sync_db_call(
+            client.table("org_members")
+            .select("org_id, role")
+            .eq("user_id", user_id)
+            .order("org_id", desc=False)
+            .execute
+        )
+        org_rows = org_rows_res.data or []
+        org_id = None
+        role = "customer"
+        if org_rows:
+            chosen = await _pick_default_org(client, org_rows)
+            if chosen:
+                org_id = chosen["org_id"]
+                role = chosen.get("role", "customer")
+
+        branches: List[Dict] = []
+        is_owner = (role == "owner")
+        requires_branch_selection = False
+        default_branch_id = None
+        if org_id:
+            branches = await get_user_branches(user_id, org_id)
+            if not is_owner:
+                if len(branches) == 1:
+                    default_branch_id = branches[0]["id"]
+                elif len(branches) > 1:
+                    requires_branch_selection = True
+
+        return {
+            "user_id": user_id,
+            "access_token": resp.session.access_token,
+            "refresh_token": resp.session.refresh_token,
+            "display_name": display_name,
+            "first_name": first_name,
+            "last_name": last_name,
+            "org_id": org_id,
+            "role": role,
+            "branches": branches,
+            "is_owner": is_owner,
+            "can_view_all_branches": is_owner,
+            "requires_branch_selection": requires_branch_selection,
+            "default_branch_id": default_branch_id,
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))
+
+
 
 @app.post("/auth/refresh")
 async def refresh_token(request: Request, req: RefreshRequest):
@@ -9528,16 +10249,11 @@ async def logout(request: Request, authorization: str = Header(None)):
     return {"message": "Logged out"}
 
 @app.get("/auth/me")
-async def me(request: Request, authorization: str = Header(None), x_selected_org_id: Optional[str] = Header(None)):
-    """
-    Return the caller's identity and current org.
-
-    Always 200 for a valid session. /auth/me is how the frontend learns
-    who is signed in — it must never 402 on a suspended org, or the
-    frontend will redirect the user out of the app even though they
-    still belong to other active orgs. Instead, this endpoint reports
-    the org's status so the frontend can show the right banner.
-    """
+async def me(
+    request: Request,
+    authorization: str = Header(None),
+    x_selected_org_id: Optional[str] = Header(None),
+):
     await rate_limit(get_client_ip(request))
     user_data = await get_current_user_with_role(authorization, x_selected_org_id)
     if not user_data:
@@ -9545,46 +10261,52 @@ async def me(request: Request, authorization: str = Header(None), x_selected_org
     user_id, org_id, role = user_data
 
     client = get_supabase()
-    profile_res = await run_sync_db_call(client.table("profiles").select("first_name, last_name, email").eq("id", user_id).maybe_single().execute)
+    profile_res = await run_sync_db_call(
+        client.table("profiles").select("first_name, last_name, email")
+        .eq("id", user_id).maybe_single().execute
+    )
     profile_data = profile_res.data if profile_res else None
-
     first_name = profile_data.get("first_name", "User") if profile_data else "User"
-    last_name = profile_data.get("last_name", "") if profile_data else ""
-    email = profile_data.get("email") if profile_data else None
+    last_name  = profile_data.get("last_name", "") if profile_data else ""
+    email      = profile_data.get("email")         if profile_data else None
     display_name = f"{first_name} {last_name}".strip()
 
-    # branch_scope is stamped into the JWT app_metadata at signup/staff-create time.
-    branch_scope = None
+    branches = await get_user_branches(user_id, org_id)
+    is_owner = (role == "owner")
+
+    # What branch is *this particular request* scoped to?
+    current_branch_id = None
+    try:
+        current_branch_id = await resolve_request_branch(request, user_id, org_id, role)
+    except HTTPException:
+        # Caller hasn't selected yet — frontend should show the picker.
+        current_branch_id = None
+
+    # Legacy branch_scope from JWT, kept for informational parity.
+    branch_scope_meta = None
     try:
         token = None
         if authorization and authorization.startswith("Bearer "):
-            token = authorization.split(" ")[1]
+            token = authorization.split(" ", 1)[1]
         if token:
             auth_client = get_user_supabase()
-            user = await run_sync_db_call(auth_client.auth.get_user, token)
-            if user and user.user:
-                app_meta = getattr(user.user, "app_metadata", None) or {}
-                branch_scope = app_meta.get("branch_scope")
+            u = await run_sync_db_call(auth_client.auth.get_user, token)
+            if u and u.user:
+                app_meta = getattr(u.user, "app_metadata", None) or {}
+                branch_scope_meta = app_meta.get("branch_scope")
     except Exception as e:
         logger.warning(f"Could not read branch_scope from token: {e}")
 
-    # Read the resolved org's status so the frontend can show a
-    # suspension banner without needing to probe another endpoint and
-    # interpret a 402. /auth/me itself always succeeds for a valid
-    # session.
     org_status = "active"
     try:
         org_row = await run_sync_db_call(
-            client.table("organisations")
-            .select("status")
-            .eq("id", org_id)
-            .maybe_single()
-            .execute
+            client.table("organisations").select("status")
+            .eq("id", org_id).maybe_single().execute
         )
         if org_row and org_row.data:
             org_status = org_row.data.get("status") or "active"
     except Exception as e:
-        logger.warning(f"Could not read org status for /auth/me: {e}")
+        logger.warning(f"Could not read org status: {e}")
 
     return {
         "user_id": user_id,
@@ -9594,7 +10316,14 @@ async def me(request: Request, authorization: str = Header(None), x_selected_org
         "first_name": first_name,
         "last_name": last_name,
         "email": email,
-        "branch_scope": branch_scope,
+        "branch_scope": branch_scope_meta,
+        "current_branch_id": current_branch_id,
+        "branches": branches,
+        "is_owner": is_owner,
+        "can_view_all_branches": is_owner,
+        "requires_branch_selection": (
+            not is_owner and len(branches) > 1 and current_branch_id is None
+        ),
         "org_status": org_status,
     }
 
@@ -9682,59 +10411,71 @@ ALLOWED_STAFF_ROLES = {
 @app.get("/organisations/me/users")
 async def list_org_members(
     request: Request,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin"]))
+    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin"])),
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, role = user_data
 
-    # 1. org_members — staff only. Customers live in org_leads now, so any
-    #    org_members row with role='customer' is a legacy artifact and is
-    #    excluded from the Team & Access page.
+    # ── Branch-visibility gate (constraint 2) ──
+    # None   → owner, sees all staff
+    # set    → non-owner, sees branch-mates only
+    visible_user_ids = await get_visible_user_ids(user_id, org_id, role)
+
     members_raw = await supabase_rest_get(
         "org_members",
         select="user_id, role, joined_at",
-        filter_string=f"org_id=eq.{org_id}"
+        filter_string=f"org_id=eq.{org_id}",
     )
+    # Exclude legacy customer rows (customers live in org_leads now).
     members = [m for m in members_raw if (m.get("role") or "").lower() != "customer"]
+
+    # Apply branch visibility filter.
+    if visible_user_ids is not None:
+        members = [m for m in members if m["user_id"] in visible_user_ids]
+
     logger.info(
         f"🔍 Found {len(members)} staff in org {org_id} "
-        f"(excluded {len(members_raw) - len(members)} customer rows)"
+        f"(excluded {len(members_raw) - len(members)} customer/invisible rows)"
     )
     if not members:
         return {"users": []}
 
-    # 2. Profiles — identity-only columns now. Do NOT select
-    #    current_points/tier/membership_id: those were renamed to legacy_*
-    #    during the migration and no longer exist.
     user_ids = [m["user_id"] for m in members]
     ids_str = ",".join(user_ids)
     profiles = await supabase_rest_get(
         "profiles",
         select="id,first_name,last_name,email,phone,status,created_at",
-        filter_string=f"id=in.({ids_str})"
+        filter_string=f"id=in.({ids_str})",
     )
     profile_map = {p["id"]: p for p in profiles}
 
-    # 3. HR records for this org, keyed by profile id
     hr_records = await supabase_rest_get(
         "hr_employees",
         select="id,user_id,status,position,department_id",
-        filter_string=f"org_id=eq.{org_id}"
+        filter_string=f"org_id=eq.{org_id}",
     )
     hr_map = {h["user_id"]: h for h in hr_records if h.get("user_id")}
 
-    # 4. Department names (single batch lookup)
     dept_ids = list({h["department_id"] for h in hr_records if h.get("department_id")})
     dept_map = {}
     if dept_ids:
         depts = await supabase_rest_get(
             "hr_departments",
             select="id,name",
-            filter_string=f"id=in.({','.join(str(d) for d in dept_ids)})"
+            filter_string=f"id=in.({','.join(str(d) for d in dept_ids)})",
         )
         dept_map = {d["id"]: d["name"] for d in depts}
 
-    # 5. Assemble
+    # Optional per-user branch membership list, so the UI can show it.
+    branch_roles_res = await supabase_rest_get(
+        "branch_members",
+        select="user_id, branch_id",
+        filter_string=f"org_id=eq.{org_id}&user_id=in.({ids_str})",
+    )
+    branches_by_user = {}
+    for row in branch_roles_res:
+        branches_by_user.setdefault(row["user_id"], []).append(row["branch_id"])
+
     users = []
     for m in members:
         profile = profile_map.get(m["user_id"], {})
@@ -9754,31 +10495,32 @@ async def list_org_members(
             "position": hr.get("position"),
             "department_name": dept_map.get(dept_id) if dept_id else None,
             "created_at": profile.get("created_at"),
+            "branch_ids": branches_by_user.get(m["user_id"], []),
         })
 
     users.sort(key=lambda u: ((u["first_name"] or "").lower(), (u["last_name"] or "").lower()))
-    logger.info(f"✅ Returning {len(users)} staff users (REST API)")
     return {"users": users}
 
 
 @app.get("/organisations/me/available-staff")
 async def list_available_staff(
     request: Request,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin"]))
+    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin"])),
 ):
-    """HR staff in this org who do not yet have dashboard access."""
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, role = user_data
+
+    visible_user_ids = await get_visible_user_ids(user_id, org_id, role)
 
     hr_records = await supabase_rest_get(
         "hr_employees",
         select="id,user_id,first_name,last_name,email,position,status,department_id",
-        filter_string=f"org_id=eq.{org_id}"
+        filter_string=f"org_id=eq.{org_id}",
     )
     members = await supabase_rest_get(
         "org_members",
         select="user_id",
-        filter_string=f"org_id=eq.{org_id}"
+        filter_string=f"org_id=eq.{org_id}",
     )
     member_user_ids = {m["user_id"] for m in members if m.get("user_id")}
 
@@ -9788,7 +10530,7 @@ async def list_available_staff(
         depts = await supabase_rest_get(
             "hr_departments",
             select="id,name",
-            filter_string=f"id=in.({','.join(str(d) for d in dept_ids)})"
+            filter_string=f"id=in.({','.join(str(d) for d in dept_ids)})",
         )
         dept_map = {d["id"]: d["name"] for d in depts}
 
@@ -9798,6 +10540,11 @@ async def list_available_staff(
             continue
         uid = h.get("user_id")
         if uid and uid in member_user_ids:
+            continue
+        # If non-owner has no HR record visible to them, skip.
+        # (Only applied when uid is known; unlinked HR rows are visible
+        #  to all admins because there is nobody to branch-scope yet.)
+        if visible_user_ids is not None and uid and uid not in visible_user_ids:
             continue
         dept_id = h.get("department_id")
         available.append({
@@ -9811,7 +10558,6 @@ async def list_available_staff(
         })
 
     available.sort(key=lambda e: ((e["first_name"] or "").lower(), (e["last_name"] or "").lower()))
-    logger.info(f"✅ {len(available)} available staff in org {org_id}")
     return {"employees": available}
 
 
@@ -9962,6 +10708,27 @@ async def create_staff_member(
                 await http_client.delete(f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}", headers=headers)
             raise HTTPException(status_code=500, detail="Failed to add staff to organisation")
 
+        # Seed branch_members with the org's default branch so the new
+        # staff member has an actual branch to operate in. Without this
+        # they would fail is_user_in_branch() on any explicit
+        # X-Selected-Branch-Id header, and get_user_branches() would
+        # return [] — no dashboard access to any branch data.
+        try:
+            default_branch_id = await ensure_default_branch(org_id)
+            if default_branch_id:
+                await http_client.post(
+                    f"{SUPABASE_URL}/rest/v1/branch_members",
+                    json={
+                        "org_id":     org_id,
+                        "branch_id":  default_branch_id,
+                        "user_id":    user_id,
+                        "joined_at":  datetime.now(timezone.utc).isoformat(),
+                    },
+                    headers=headers,
+                )
+        except Exception as bm_err:
+            logger.warning(f"branch_members seeding failed for {user_id}: {bm_err}")
+
     await _admin_set_app_metadata(user_id, {
         "org_id": org_id,
         "role": staff.role,
@@ -10021,6 +10788,20 @@ async def remove_staff_member(
             raise HTTPException(status_code=403, detail="Admin secret key required to delete an owner")
 
     await run_sync_db_call(client.table("org_members").delete().eq("user_id", target_user_id).eq("org_id", org_id).execute)
+
+    # Remove branch memberships so the user does not retain per-branch
+    # access after revocation. Best-effort; the org_members delete above
+    # is the authoritative access gate.
+    try:
+        await run_sync_db_call(
+            client.table("branch_members")
+            .delete()
+            .eq("user_id", target_user_id)
+            .eq("org_id", org_id)
+            .execute
+        )
+    except Exception as bm_err:
+        logger.warning(f"branch_members cleanup failed for {target_user_id}: {bm_err}")
 
     # profiles.status is now global identity, not per-org access. Flipping it
     # to 'inactive' here would also lock the person out of every OTHER org they
@@ -12336,13 +13117,18 @@ async def list_purchase_orders(
     user_data: Tuple[str, str, str] = Depends(require_feature("procurement", allowed_roles=["owner", "admin", "inventory_manager"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, role = user_data
     client = get_supabase()
+
+    selected_branch = await resolve_request_branch(request, user_id, org_id, role)
 
     query = client.table("purchase_orders").select(
         "id, po_number, order_date, expected_delivery_date, status, total_amount, notes, "
         "supplier:supplier_id(name, id), created_by, created_at"
     ).eq("org_id", org_id)
+
+    if selected_branch:
+        query = query.eq("branch_id", selected_branch)
 
     if status:
         statuses = [s.strip() for s in status.split(",") if s.strip()]
@@ -12368,7 +13154,7 @@ async def create_purchase_order(
     user_data: Tuple[str, str, str] = Depends(require_feature("procurement", allowed_roles=["owner", "admin", "inventory_manager"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    user_id, org_id, _ = user_data
+    user_id, org_id, role = user_data
     client = get_supabase()
 
     supplier = await run_sync_db_call(
@@ -12397,7 +13183,7 @@ async def create_purchase_order(
 
     total_amount = float(sum(item.unit_cost * item.quantity_ordered for item in po.items))
 
-    branch_id_for_po = await resolve_branch_for_write(org_id)
+    branch_id_for_po = await resolve_request_branch_for_write(request, user_id, org_id, role)
     po_data = {
         "org_id": org_id,
         "branch_id": branch_id_for_po,
@@ -12446,17 +13232,21 @@ async def get_purchase_order(
     user_data: Tuple[str, str, str] = Depends(require_feature("procurement", allowed_roles=["owner", "admin", "inventory_manager"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, role = user_data
     client = get_supabase()
 
-    result = await run_sync_db_call(
+    selected_branch = await resolve_request_branch(request, user_id, org_id, role)
+
+    q = (
         client.table("purchase_orders")
         .select("*, supplier:supplier_id(*), purchase_order_items(*, inventory:inventory_id(item_code, description))")
         .eq("id", po_id)
         .eq("org_id", org_id)
-        .maybe_single()
-        .execute
     )
+    if selected_branch:
+        q = q.eq("branch_id", selected_branch)
+
+    result = await run_sync_db_call(q.maybe_single().execute)
     if not result.data:
         raise HTTPException(status_code=404, detail="Purchase order not found")
     return {"purchase_order": jsonable_encoder(result.data)}
@@ -12615,14 +13405,19 @@ async def list_grn(
     user_data: Tuple[str, str, str] = Depends(require_feature("procurement", allowed_roles=["owner", "admin", "inventory_manager"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, role = user_data
     client = get_supabase()
+
+    selected_branch = await resolve_request_branch(request, user_id, org_id, role)
 
     query = client.table("grn").select(
         "id, grn_number, received_date, status, notes, "
         "po:purchase_orders(po_number, supplier:supplier_id(name)), "
         "location:location_id(name), created_by, created_at"
     ).eq("org_id", org_id)
+
+    if selected_branch:
+        query = query.eq("branch_id", selected_branch)
 
     if po_id:
         query = query.eq("po_id", po_id)
@@ -12643,7 +13438,7 @@ async def create_grn(
     user_data: Tuple[str, str, str] = Depends(require_feature("procurement", allowed_roles=["owner", "admin", "inventory_manager"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    user_id, org_id, _ = user_data
+    user_id, org_id, role = user_data
     client = get_supabase()
 
     po = await run_sync_db_call(
@@ -12683,7 +13478,7 @@ async def create_grn(
     )
     grn_number = f"GRN-{org_id[:4]}-{grn_count.count + 1:04d}"
 
-    branch_id_for_grn = await resolve_branch_for_write(org_id)
+    branch_id_for_grn = await resolve_request_branch_for_write(request, user_id, org_id, role)
     grn_data = {
         "org_id": org_id,
         "branch_id": branch_id_for_grn,
@@ -12735,17 +13530,21 @@ async def get_grn(
     user_data: Tuple[str, str, str] = Depends(require_feature("procurement", allowed_roles=["owner", "admin", "inventory_manager"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, role = user_data
     client = get_supabase()
 
-    result = await run_sync_db_call(
+    selected_branch = await resolve_request_branch(request, user_id, org_id, role)
+
+    q = (
         client.table("grn")
         .select("*, grn_items(*, po_item:purchase_order_items(inventory_id, quantity_ordered)), po:purchase_orders(po_number, expected_delivery_date, supplier:supplier_id(name))")
         .eq("id", grn_id)
         .eq("org_id", org_id)
-        .maybe_single()
-        .execute
     )
+    if selected_branch:
+        q = q.eq("branch_id", selected_branch)
+
+    result = await run_sync_db_call(q.maybe_single().execute)
     if not result.data:
         raise HTTPException(status_code=404, detail="GRN not found")
     return {"grn": result.data}
@@ -13308,7 +14107,12 @@ async def pos_inventory(
         query = client.table("inventory").select("*", count="exact").eq("org_id", org_id)
         if q:
             or_condition = f"description.ilike.%{q}%,item_code.ilike.%{q}%,product_group.ilike.%{q}%"
-            query = query.or_(or_condition)
+            # supabase-py's SyncSelectRequestBuilder has no .or_() method.
+            # Set the raw PostgREST "or" parameter on the underlying builder.
+            # When ORG_SCOPE_CANARY is on, `query` is wrapped in _CanaryBuilder
+            # whose __slots__ blocks attribute writes — unwrap via _inner first.
+            inner = getattr(query, "_inner", query)
+            inner.params = inner.params.set("or", f"({or_condition})")
         result = await run_sync_db_call(query.range(offset, offset + limit - 1).execute)
         return {"items": result.data or [], "total": result.count or 0, "location_id": None}
 
@@ -13320,6 +14124,7 @@ async def pos_inventory(
         q=q,
         sort_by="newest",
         require_positive_stock=False,
+        include_count=False,     # POS terminal renders a list, not a pager — skip COUNT(*)
     )
 
     sale_map = await get_active_sale_prices(org_id, [it["id"] for it in items])
@@ -15668,17 +16473,21 @@ async def expiry_dashboard(
 @app.get("/sales/product-stats")
 async def product_stats(request: Request, start_date: str, end_date: str, user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "finance", "sales_rep"]))):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, role = user_data
     client = get_supabase()
 
-    items_result = await run_sync_db_call(
+    selected_branch = await resolve_request_branch(request, user_id, org_id, role)
+
+    si_q = (
         client.table("sale_items")
         .select("product_name, quantity, subtotal, inventory_id, sales!inner(org_id, created_at)")
         .eq("sales.org_id", org_id)
         .gte("sales.created_at", start_date)
         .lte("sales.created_at", end_date)
-        .execute
     )
+    if selected_branch:
+        si_q = si_q.eq("sales.branch_id", selected_branch)
+    items_result = await run_sync_db_call(si_q.execute)
     items_data = items_result.data if hasattr(items_result, 'data') else []
 
     if not items_data:
@@ -15726,29 +16535,35 @@ async def product_stats(request: Request, start_date: str, end_date: str, user_d
 @app.get("/sales/summary")
 async def sales_summary(request: Request, start_date: str, end_date: str, user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "finance", "sales_rep"]))):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, role = user_data
     client = get_supabase()
 
-    sales_result = await run_sync_db_call(
+    selected_branch = await resolve_request_branch(request, user_id, org_id, role)
+
+    sales_q = (
         client.table("sales").select("id, total_amount")
         .eq("org_id", org_id)
         .gte("created_at", start_date)
         .lte("created_at", end_date)
-        .execute
     )
+    if selected_branch:
+        sales_q = sales_q.eq("branch_id", selected_branch)
+    sales_result = await run_sync_db_call(sales_q.execute)
     sales_data = sales_result.data if hasattr(sales_result, 'data') else []
 
     if not sales_data:
         return {"total_revenue": 0, "total_cogs": 0, "total_profit": 0, "count": 0}
 
-    items_result = await run_sync_db_call(
+    si_q = (
         client.table("sale_items")
         .select("quantity, subtotal, inventory_id, sales!inner(org_id, created_at)")
         .eq("sales.org_id", org_id)
         .gte("sales.created_at", start_date)
         .lte("sales.created_at", end_date)
-        .execute
     )
+    if selected_branch:
+        si_q = si_q.eq("sales.branch_id", selected_branch)
+    items_result = await run_sync_db_call(si_q.execute)
     items_data = items_result.data if hasattr(items_result, 'data') else []
 
     inv_ids = list(set([it["inventory_id"] for it in items_data if it.get("inventory_id")]))
@@ -15773,16 +16588,18 @@ async def sales_summary(request: Request, start_date: str, end_date: str, user_d
 @app.get("/sales/trend")
 async def sales_trend(request: Request, days: int = 30, user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "finance", "sales_rep"]))):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, role = user_data
     client = get_supabase()
+    selected_branch = await resolve_request_branch(request, user_id, org_id, role)
     start_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    result = await run_sync_db_call(
+    q = (
         client.table("sales").select("total_amount, created_at")
         .eq("org_id", org_id)
         .gte("created_at", start_date)
-        .order("created_at", desc=False)
-        .execute
     )
+    if selected_branch:
+        q = q.eq("branch_id", selected_branch)
+    result = await run_sync_db_call(q.order("created_at", desc=False).execute)
     daily = {}
     for s in result.data:
         date_str = s["created_at"][:10]
@@ -15822,7 +16639,7 @@ async def upload_leads_csv(
     user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "sales_rep"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, role = user_data
     if not file.filename.endswith('.csv'):
         raise HTTPException(status_code=400, detail="Only CSV files are supported.")
     try:
@@ -15833,7 +16650,7 @@ async def upload_leads_csv(
             decoded_content = contents.decode('latin-1')
         csv_reader = csv.DictReader(io.StringIO(decoded_content))
         leads_to_insert = []
-        branch_id_for_upload = await resolve_branch_for_write(org_id)
+        branch_id_for_upload = await resolve_request_branch_for_write(request, user_id, org_id, role)
         for row in csv_reader:
             name = row.get("name", "").strip()
             if not name:
@@ -15878,6 +16695,9 @@ async def upload_leads_csv(
         logger.error(f"Error parsing CSV: {str(e)}", exc_info=True)
         raise HTTPException(status_code=400, detail=f"CSV processing failed: {str(e)}")
 
+
+
+
 @app.get("/leads")
 async def get_leads(
     request: Request,
@@ -15901,17 +16721,18 @@ async def get_leads(
 @app.post("/leads")
 async def create_lead(request: Request, lead: LeadCreate, user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "sales_rep"]))):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, role = user_data
     client = get_supabase()
     data = lead.dict()
     data["org_id"] = org_id
-    data["branch_id"] = await resolve_branch_for_write(org_id)
+    data["branch_id"] = await resolve_request_branch_for_write(request, user_id, org_id, role)
     if not data.get("acquired_date"):
         data["acquired_date"] = datetime.now(timezone.utc).date().isoformat()
     result = await run_sync_db_call(client.table("org_leads").insert(data).execute)
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to create lead")
     return result.data[0]
+
 
 @app.patch("/leads/{lead_id}")
 async def update_lead(request: Request, lead_id: str, lead: LeadUpdate, user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "sales_rep"]))):
@@ -16068,12 +16889,12 @@ class TicketCreate(BaseModel):
 @app.post("/api/support/ticket")
 async def create_ticket(request: Request, ticket: TicketCreate, user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "support", "customer"]))):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    user_id, org_id, _ = user_data
+    user_id, org_id, role = user_data
     client = get_supabase()
     ticket_data = {
         "user_id": user_id,
         "org_id": org_id,
-        "branch_id": await resolve_branch_for_write(org_id),
+        "branch_id": await resolve_request_branch_for_write(request, user_id, org_id, role),
         "subject": ticket.subject,
         "priority": ticket.priority,
         "status": "open",
@@ -16511,7 +17332,7 @@ class POSCheckoutRequest(BaseModel):
 @app.post("/pos/checkout")
 async def checkout(request: Request, req: CheckoutRequest, user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "sales_rep"]))):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    user_id, org_id, _ = user_data
+    user_id, org_id, role = user_data
 
     logger.info(f"🔵 /pos/checkout called by user {user_id}")
 
@@ -16544,6 +17365,24 @@ async def checkout(request: Request, req: CheckoutRequest, user_data: Tuple[str,
     gateway_config = org.data.get("payment_gateway_config", {"provider": "paystack", "credentials": {}})
     subaccount_code = org.data.get("subaccount_code")
 
+    # ── Resolve the online fulfilment location FIRST. ──
+    #
+    # The online flow fulfils from exactly one location. If that
+    # location cannot be resolved, the order cannot be fulfilled —
+    # finalize_online_order would warn and decrement inventory.current_qty
+    # without any corresponding location_stocks decrement, creating drift.
+    # Refuse before we create a sale.
+    online_location_id = await get_location_for_channel(org_id, "online")
+    if not online_location_id:
+        logger.error(
+            "/pos/checkout: org has no active fulfilment location",
+            org_id=org_id,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="This store is not currently accepting online orders.",
+        )
+
     product_ids = [item.inventory_id for item in req.items]
     inventory_response = await run_sync_db_call(
         client.table("inventory")
@@ -16556,14 +17395,62 @@ async def checkout(request: Request, req: CheckoutRequest, user_data: Tuple[str,
         raise HTTPException(status_code=404, detail="No valid products found")
     inventory_map = {p["id"]: p for p in inventory_response.data}
 
-    product_total = 0
-    sale_items_batch = []
+    # ── Location-scoped stock check ──
+    #
+    # Single query for the whole cart. location_stocks is the
+    # authoritative source for physical stock at the fulfilment
+    # location; inventory.current_qty is the org-wide sum across
+    # every location. Checking the org-wide sum would let a customer
+    # pay for stock that exists somewhere else in the org — the exact
+    # bug this fix closes.
+    #
+    # Missing row for a SKU = 0 units physically present at this
+    # location = out of stock. No fallback to org-wide.
+    ls_res = await run_sync_db_call(
+        client.table("location_stocks")
+        .select("inventory_id, quantity")
+        .eq("location_id", online_location_id)
+        .in_("inventory_id", product_ids)
+        .execute
+    )
+    available_by_inv: Dict[int, int] = {}
+    for row in (ls_res.data or []):
+        inv_id = row.get("inventory_id")
+        if inv_id is not None:
+            available_by_inv[inv_id] = (
+                available_by_inv.get(inv_id, 0) + int(row.get("quantity") or 0)
+            )
+
+    # Collect every shortfall, then raise once so the customer sees
+    # the whole problem, not one item at a time.
+    shortfalls: List[str] = []
     for item in req.items:
         prod = inventory_map.get(item.inventory_id)
         if not prod:
-            raise HTTPException(status_code=404, detail=f"Product ID {item.inventory_id} not found in this organisation")
-        if prod["current_qty"] < item.quantity:
-            raise HTTPException(status_code=400, detail=f"Insufficient stock for {prod['description']}. Available: {prod['current_qty']}")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Product ID {item.inventory_id} not found in this organisation",
+            )
+        available = available_by_inv.get(item.inventory_id, 0)
+        name = prod.get("description") or f"Product {item.inventory_id}"
+        if available == 0:
+            shortfalls.append(f"'{name}' is out of stock")
+        elif available < item.quantity:
+            shortfalls.append(
+                f"'{name}': quantity requested ({item.quantity}) "
+                f"exceeds quantity available ({available})"
+            )
+
+    if shortfalls:
+        raise HTTPException(
+            status_code=400,
+            detail="Order cannot be placed — " + "; ".join(shortfalls),
+        )
+
+    product_total = 0
+    sale_items_batch = []
+    for item in req.items:
+        prod = inventory_map[item.inventory_id]
         subtotal = prod["price_naira"] * item.quantity
         product_total += subtotal
         sale_items_batch.append({
@@ -16579,8 +17466,7 @@ async def checkout(request: Request, req: CheckoutRequest, user_data: Tuple[str,
     receipt_num = f"RCP-{org_id[:4]}-{uuid.uuid4().hex[:8].upper()}"
     payment_ref = str(uuid.uuid4())
 
-    branch_id_for_sale = await resolve_branch_for_write(org_id)
-    online_location_id = await get_location_for_channel(org_id, "online")
+    branch_id_for_sale = await resolve_request_branch_for_write(request, user_id, org_id, role)
     sale_data = {
         "org_id": org_id,
         "branch_id": branch_id_for_sale,
@@ -16636,6 +17522,13 @@ async def checkout(request: Request, req: CheckoutRequest, user_data: Tuple[str,
         )
     except Exception as e:
         logger.error(f"Gateway init failed: {e}")
+        # Mark the sale cancelled so it doesn't linger as a pending ghost.
+        await run_sync_db_call(
+            client.table("sales")
+            .update({"status": "cancelled", "updated_at": datetime.now(timezone.utc).isoformat()})
+            .eq("id", sale_id)
+            .execute
+        )
         raise HTTPException(status_code=400, detail=f"Payment initialization failed: {str(e)}")
 
     return {
@@ -16662,7 +17555,7 @@ async def pos_terminal_checkout(
     )
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    user_id, org_id, _ = user_data
+    user_id, org_id, role = user_data
 
     items_payload = [{"inventory_id": item.inventory_id, "quantity": item.quantity} for item in req.items]
     receipt_num = f"POS-{org_id[:4]}-{uuid.uuid4().hex[:8].upper()}"
@@ -16676,6 +17569,67 @@ async def pos_terminal_checkout(
 
     if not location_id:
         raise HTTPException(status_code=400, detail="No location available for this organisation")
+
+    # ── Location-scoped stock pre-check ──
+    #
+    # process_batch_checkout_v2 enforces this too, but its exception
+    # is caught below and surfaced as a generic "Checkout failed –
+    # please try again". Pre-checking here gives the cashier a
+    # specific, actionable message before the RPC fires.
+    #
+    # Same rule as the online checkout: no fallback. A SKU with no
+    # location_stocks row at this location is out of stock here.
+    product_ids = [it["inventory_id"] for it in items_payload]
+    if product_ids:
+        inv_res = await run_sync_db_call(
+            get_supabase().table("inventory")
+            .select("id, description, current_qty")
+            .eq("org_id", org_id)
+            .in_("id", product_ids)
+            .execute
+        )
+        inv_map = {p["id"]: p for p in (inv_res.data or [])}
+
+        ls_res = await run_sync_db_call(
+            get_supabase().table("location_stocks")
+            .select("inventory_id, quantity")
+            .eq("location_id", location_id)
+            .in_("inventory_id", product_ids)
+            .execute
+        )
+        available_by_inv: Dict[int, int] = {}
+        for row in (ls_res.data or []):
+            inv_id = row.get("inventory_id")
+            if inv_id is not None:
+                available_by_inv[inv_id] = (
+                    available_by_inv.get(inv_id, 0) + int(row.get("quantity") or 0)
+                )
+
+        shortfalls: List[str] = []
+        for item in items_payload:
+            inv_id = item["inventory_id"]
+            qty = item["quantity"]
+            prod = inv_map.get(inv_id)
+            if not prod:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Product {inv_id} not found in this organisation",
+                )
+            available = available_by_inv.get(inv_id, 0)
+            name = prod.get("description") or f"Product {inv_id}"
+            if available == 0:
+                shortfalls.append(f"'{name}' is out of stock")
+            elif available < qty:
+                shortfalls.append(
+                    f"'{name}': quantity requested ({qty}) "
+                    f"exceeds quantity available ({available})"
+                )
+
+        if shortfalls:
+            raise HTTPException(
+                status_code=400,
+                detail="Sale cannot be completed — " + "; ".join(shortfalls),
+            )
 
     # Build offline metadata payload (new field preferred, old field as fallback)
     offline_meta_payload = None
@@ -16724,7 +17678,7 @@ async def pos_terminal_checkout(
 
         # The RPC inserts status='completed' already, but branch_id and
         # shipping_status still need setting. Idempotent to re-apply.
-        branch_id_for_sale = await resolve_branch_for_write(org_id)
+        branch_id_for_sale = await resolve_request_branch_for_write(request, user_id, org_id, role)
         await run_sync_db_call(
             get_supabase().table("sales")
             .update({
@@ -17749,7 +18703,7 @@ async def list_fulfillment_orders(
     if not org_id:
         raise HTTPException(status_code=403, detail="Organisation context missing")
 
-    branch_scope = await _resolve_branch_scope_for_request(request)
+    selected_branch = await resolve_request_branch(request, user_id, org_id, role)
 
     client = get_supabase()
     query = (
@@ -17760,8 +18714,8 @@ async def list_fulfillment_orders(
         .in_("payment_method", list(ECOMMERCE_PAYMENT_METHODS))
     )
 
-    if branch_scope:
-        query = query.eq("branch_id", branch_scope)
+    if selected_branch:
+        query = query.eq("branch_id", selected_branch)
 
     if not include_pending:
         query = query.neq("status", "pending")
@@ -17779,7 +18733,7 @@ async def list_fulfillment_orders(
         user_id=user_id,
         org_id=org_id,
         role=role,
-        branch_scope=branch_scope,
+        branch_scope=selected_branch,
         count=len(orders),
         status_filter=status,
         include_pending=include_pending,
@@ -17805,6 +18759,7 @@ async def list_fulfillment_orders(
 
     return {"orders": orders}
 
+
 @app.get("/fulfillment/order/{order_id}")
 async def get_fulfillment_order(
     request: Request,
@@ -17814,11 +18769,11 @@ async def get_fulfillment_order(
     ),
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, role = user_data
     if not org_id:
         raise HTTPException(status_code=403, detail="Organisation context missing")
 
-    branch_scope = await _resolve_branch_scope_for_request(request)
+    selected_branch = await resolve_request_branch(request, user_id, org_id, role)
     client = get_supabase()
 
     order_query = (
@@ -17828,8 +18783,8 @@ async def get_fulfillment_order(
         .eq("org_id", org_id)
         .in_("payment_method", list(ECOMMERCE_PAYMENT_METHODS))
     )
-    if branch_scope:
-        order_query = order_query.eq("branch_id", branch_scope)
+    if selected_branch:
+        order_query = order_query.eq("branch_id", selected_branch)
 
     order = await run_sync_db_call(order_query.maybe_single().execute)
     if not order or not order.data:
@@ -17867,11 +18822,11 @@ async def update_fulfillment_status(
     ),
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, role = user_data
     if not org_id:
         raise HTTPException(status_code=403, detail="Organisation context missing")
 
-    branch_scope = await _resolve_branch_scope_for_request(request)
+    selected_branch = await resolve_request_branch(request, user_id, org_id, role)
     client = get_supabase()
 
     # Ownership + eligibility pre-flight. Same filters as the read
@@ -17884,8 +18839,8 @@ async def update_fulfillment_status(
         .eq("org_id", org_id)
         .in_("payment_method", list(ECOMMERCE_PAYMENT_METHODS))
     )
-    if branch_scope:
-        order_query = order_query.eq("branch_id", branch_scope)
+    if selected_branch:
+        order_query = order_query.eq("branch_id", selected_branch)
 
     order = await run_sync_db_call(order_query.maybe_single().execute)
     if not order or not order.data:
@@ -17919,8 +18874,8 @@ async def update_fulfillment_status(
         .eq("org_id", org_id)
         .in_("payment_method", list(ECOMMERCE_PAYMENT_METHODS))
     )
-    if branch_scope:
-        update_query = update_query.eq("branch_id", branch_scope)
+    if selected_branch:
+        update_query = update_query.eq("branch_id", selected_branch)
 
     result = await run_sync_db_call(update_query.execute)
     if not result.data:
@@ -17944,25 +18899,28 @@ async def update_fulfillment_status(
 @app.get("/loyalty/balance")
 async def loyalty_balance(request: Request, user_data: Tuple[str, str, str] = Depends(require_feature("loyalty"))):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    user_id, _, _ = user_data
-    balance = await get_loyalty_balance(user_id)
+    user_id, org_id, _ = user_data
+    balance = await get_loyalty_balance(user_id, org_id)
     return balance
+
 
 @app.get("/loyalty/transactions")
 async def loyalty_transactions(request: Request, limit: int = 50, offset: int = 0, user_data: Tuple[str, str, str] = Depends(require_feature("loyalty"))):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    user_id, _, _ = user_data
-    txns = await get_loyalty_transactions(user_id, limit, offset)
+    user_id, org_id, _ = user_data
+    txns = await get_loyalty_transactions(user_id, org_id, limit, offset)
     return {"transactions": txns, "limit": limit, "offset": offset}
+
 
 class RedeemRequest(BaseModel):
     points: int = Field(..., gt=0)
 
+
 @app.post("/loyalty/redeem")
 async def redeem_points(request: Request, req: RedeemRequest, user_data: Tuple[str, str, str] = Depends(require_feature("loyalty"))):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    user_id, _, _ = user_data
-    credit_added = await redeem_points_to_credit(user_id, req.points)
+    user_id, org_id, _ = user_data
+    credit_added = await redeem_points_to_credit(user_id, req.points, org_id)
     return {"message": f"Redeemed {req.points} points for ₦{credit_added} store credit", "credit_added": credit_added}
 
 # ===================== ACCOUNTING ENDPOINTS =====================
@@ -18058,9 +19016,16 @@ async def list_journal_entries(
     user_data: Tuple[str, str, str] = Depends(require_feature("accounting", allowed_roles=["owner", "admin", "finance", "auditor"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, role = user_data
     client = get_supabase()
+
+    selected_branch = await resolve_request_branch(request, user_id, org_id, role)
+
     query = client.table("journal_entries").select("*").eq("org_id", org_id)
+
+    if selected_branch:
+        query = query.eq("branch_id", selected_branch)
+
     if status:
         query = query.eq("status", status)
     if from_date:
@@ -18142,9 +19107,16 @@ async def list_ar(
     user_data: Tuple[str, str, str] = Depends(require_feature("accounting", allowed_roles=["owner", "admin", "finance", "auditor"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, role = user_data
     client = get_supabase()
+
+    selected_branch = await resolve_request_branch(request, user_id, org_id, role)
+
     query = client.table("accounts_receivable").select("*").eq("org_id", org_id)
+
+    if selected_branch:
+        query = query.eq("branch_id", selected_branch)
+
     if status:
         query = query.eq("status", status)
     if customer_id:
@@ -18288,9 +19260,16 @@ async def list_ap(
     user_data: Tuple[str, str, str] = Depends(require_feature("accounting", allowed_roles=["owner", "admin", "finance", "auditor"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, role = user_data
     client = get_supabase()
+
+    selected_branch = await resolve_request_branch(request, user_id, org_id, role)
+
     query = client.table("accounts_payable").select("*").eq("org_id", org_id)
+
+    if selected_branch:
+        query = query.eq("branch_id", selected_branch)
+
     if status:
         query = query.eq("status", status)
     if supplier_id:
@@ -20088,10 +21067,15 @@ async def get_system_logs(
     user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    user_id, org_id, _ = user_data
+    user_id, org_id, role = user_data
     client = get_supabase()
 
+    selected_branch = await resolve_request_branch(request, user_id, org_id, role)
+
     query = client.table("system_logs").select("*").eq("org_id", org_id)
+
+    if selected_branch:
+        query = query.eq("branch_id", selected_branch)
 
     if level:
         query = query.eq("level", level)
@@ -20115,13 +21099,13 @@ async def create_system_log(
     user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    user_id, org_id, _ = user_data
+    user_id, org_id, role = user_data
 
     client = get_supabase()
 
     data = {
         "org_id": org_id,
-        "branch_id": await resolve_branch_for_write(org_id),
+        "branch_id": await resolve_request_branch_for_write(request, user_id, org_id, role),
         "user_id": user_id,
         "level": log_data.get("level", "INFO"),
         "message": log_data.get("message"),
@@ -20833,15 +21817,33 @@ async def list_employees(
     user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "hr", "finance"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, role = user_data
     client = get_supabase()
+
+    selected_branch = await resolve_request_branch(request, user_id, org_id, role)
+    visible_user_ids = await get_visible_user_ids(user_id, org_id, role)
+
     query = client.table("hr_employees").select("*").eq("org_id", org_id)
     if department_id:
         query = query.eq("department_id", department_id)
     if status:
         query = query.eq("status", status)
+    if selected_branch:
+        query = query.eq("branch_id", selected_branch)
+
     result = await run_sync_db_call(query.order("last_name").range(offset, offset + limit - 1).execute)
-    return {"employees": result.data, "total": len(result.data) if result.data else 0}
+    rows = result.data or []
+
+    # Owners (visible_user_ids is None) see everything. Everyone else sees
+    # only HR records whose linked user_id is in their branch-sharing set,
+    # plus unlinked records (no user_id → nothing to gate on yet).
+    if visible_user_ids is not None:
+        rows = [
+            r for r in rows
+            if not r.get("user_id") or r["user_id"] in visible_user_ids
+        ]
+
+    return {"employees": rows, "total": len(rows)}
 
 @hr_router.post("/employees")
 async def create_employee(
@@ -20850,7 +21852,7 @@ async def create_employee(
     user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "hr"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, role = user_data
     client = get_supabase()
     if emp.user_id:
         member_check = await run_sync_db_call(
@@ -20876,7 +21878,7 @@ async def create_employee(
 
     data = emp.dict()
     data["org_id"] = org_id
-    data["branch_id"] = await resolve_branch_for_write(org_id)
+    data["branch_id"] = await resolve_request_branch_for_write(request, user_id, org_id, role)
     data["created_at"] = datetime.now(timezone.utc).isoformat()
     data["updated_at"] = datetime.now(timezone.utc).isoformat()
     result = await run_sync_db_call(client.table("hr_employees").insert(data).execute)
@@ -20975,7 +21977,7 @@ async def clock_in(
     clock: AttendanceClockIn,
     user_data: Tuple[str, str, str] = Depends(require_role(["employee"]))
 ):
-    user_id, org_id, _ = user_data
+    user_id, org_id, role = user_data
     emp = await get_employee_by_user_id(user_id, org_id)
     if not emp or emp["id"] != clock.employee_id:
         raise HTTPException(status_code=403, detail="Not authorised to clock in for this employee")
@@ -20994,7 +21996,7 @@ async def clock_in(
         raise HTTPException(status_code=400, detail="Already clocked in today; please clock out first")
     data = {
         "employee_id": clock.employee_id,
-        "branch_id": (emp.get("branch_id") if emp else None) or await resolve_branch_for_write(org_id),
+        "branch_id": (emp.get("branch_id") if emp else None) or await resolve_request_branch_for_write(request, user_id, org_id, role),
         "date": today,
         "clock_in": clock.clock_in.isoformat(),
         "status": "present"
@@ -21062,6 +22064,10 @@ async def get_attendance(
         if employee_id and employee_id != emp["id"]:
             raise HTTPException(status_code=403, detail="Can only view own attendance")
         target_employee_id = emp["id"]
+
+    selected_branch = await resolve_request_branch(request, user_id, org_id, role)
+    visible_user_ids = await get_visible_user_ids(user_id, org_id, role)
+
     query = client.table("hr_attendance").select("*").eq("org_id", org_id)
     if target_employee_id:
         query = query.eq("employee_id", target_employee_id)
@@ -21069,8 +22075,22 @@ async def get_attendance(
         query = query.gte("date", start_date.isoformat())
     if end_date:
         query = query.lte("date", end_date.isoformat())
+    if selected_branch:
+        query = query.eq("branch_id", selected_branch)
     result = await run_sync_db_call(query.order("date", desc=True).range(offset, offset + limit - 1).execute)
-    return {"attendance": result.data, "total": len(result.data) if result.data else 0}
+    rows = result.data or []
+
+    if visible_user_ids is not None:
+        hr_emp_ids_res = await run_sync_db_call(
+            client.table("hr_employees").select("id, user_id")
+            .eq("org_id", org_id)
+            .in_("user_id", list(visible_user_ids))
+            .execute
+        )
+        allowed_emp_ids = {r["id"] for r in (hr_emp_ids_res.data or [])}
+        rows = [r for r in rows if r.get("employee_id") in allowed_emp_ids]
+
+    return {"attendance": rows, "total": len(rows)}
 
 @hr_router.post("/leave-requests")
 async def create_leave_request(
@@ -21078,7 +22098,7 @@ async def create_leave_request(
     leave: LeaveRequestCreate,
     user_data: Tuple[str, str, str] = Depends(require_role(["employee"]))
 ):
-    user_id, org_id, _ = user_data
+    user_id, org_id, role = user_data
     emp = await get_employee_by_user_id(user_id, org_id)
     if not emp or emp["id"] != leave.employee_id:
         raise HTTPException(status_code=403, detail="Not authorised")
@@ -21087,7 +22107,7 @@ async def create_leave_request(
     client = get_supabase()
     data = leave.dict()
     data["org_id"] = org_id
-    data["branch_id"] = (emp.get("branch_id") if emp else None) or await resolve_branch_for_write(org_id)
+    data["branch_id"] = (emp.get("branch_id") if emp else None) or await resolve_request_branch_for_write(request, user_id, org_id, role)
     data["status"] = "pending"
     data["created_at"] = datetime.now(timezone.utc).isoformat()
     data["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -21116,13 +22136,31 @@ async def list_leave_requests(
         if employee_id and employee_id != emp["id"]:
             raise HTTPException(status_code=403, detail="Can only view own leave requests")
         target_employee_id = emp["id"]
+
+    selected_branch = await resolve_request_branch(request, user_id, org_id, role)
+    visible_user_ids = await get_visible_user_ids(user_id, org_id, role)
+
     query = client.table("hr_leave_requests").select("*").eq("org_id", org_id)
     if target_employee_id:
         query = query.eq("employee_id", target_employee_id)
     if status:
         query = query.eq("status", status)
+    if selected_branch:
+        query = query.eq("branch_id", selected_branch)
     result = await run_sync_db_call(query.order("created_at", desc=True).range(offset, offset + limit - 1).execute)
-    return {"requests": result.data, "total": len(result.data) if result.data else 0}
+    rows = result.data or []
+
+    if visible_user_ids is not None:
+        hr_emp_ids_res = await run_sync_db_call(
+            client.table("hr_employees").select("id, user_id")
+            .eq("org_id", org_id)
+            .in_("user_id", list(visible_user_ids))
+            .execute
+        )
+        allowed_emp_ids = {r["id"] for r in (hr_emp_ids_res.data or [])}
+        rows = [r for r in rows if r.get("employee_id") in allowed_emp_ids]
+
+    return {"requests": rows, "total": len(rows)}
 
 @hr_router.put("/leave-requests/{request_id}")
 async def update_leave_request(
@@ -21193,7 +22231,7 @@ async def generate_payroll(
     user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "hr", "finance"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, role = user_data
     client = get_supabase()
     employees = await run_sync_db_call(
         client.table("hr_employees")
@@ -21220,7 +22258,7 @@ async def generate_payroll(
         )
         if existing.data:
             continue
-        branch_id_for_payroll = await resolve_branch_for_write(org_id)
+        branch_id_for_payroll = await resolve_request_branch_for_write(request, user_id, org_id, role)
         payroll_data = {
             "org_id": org_id,
             "branch_id": branch_id_for_payroll,
@@ -21262,6 +22300,10 @@ async def list_payroll(
         if employee_id and employee_id != emp["id"]:
             raise HTTPException(status_code=403, detail="Can only view own payroll")
         target_employee_id = emp["id"]
+
+    selected_branch = await resolve_request_branch(request, user_id, org_id, role)
+    visible_user_ids = await get_visible_user_ids(user_id, org_id, role)
+
     query = client.table("hr_payroll").select("*").eq("org_id", org_id)
     if target_employee_id:
         query = query.eq("employee_id", target_employee_id)
@@ -21269,8 +22311,22 @@ async def list_payroll(
         query = query.eq("month", month)
     if year:
         query = query.eq("year", year)
+    if selected_branch:
+        query = query.eq("branch_id", selected_branch)
     result = await run_sync_db_call(query.order("year", desc=True).order("month", desc=True).range(offset, offset + limit - 1).execute)
-    return {"payroll": result.data, "total": len(result.data) if result.data else 0}
+    rows = result.data or []
+
+    if visible_user_ids is not None:
+        hr_emp_ids_res = await run_sync_db_call(
+            client.table("hr_employees").select("id, user_id")
+            .eq("org_id", org_id)
+            .in_("user_id", list(visible_user_ids))
+            .execute
+        )
+        allowed_emp_ids = {r["id"] for r in (hr_emp_ids_res.data or [])}
+        rows = [r for r in rows if r.get("employee_id") in allowed_emp_ids]
+
+    return {"payroll": rows, "total": len(rows)}
 
 # ===================== INCLUDE ROUTERS =====================
 app.include_router(hr_router)
