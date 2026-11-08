@@ -196,6 +196,7 @@ def _compute_migration_suite_hash() -> str:
         "ensure_org_delivery_columns",
         "ensure_role_column",
         "ensure_org_registry_schema",
+        "ensure_org_accounting_columns",
         "ensure_health_check_schema",
         "ensure_knowledge_audit_table",
         "ensure_vector_support",
@@ -6651,6 +6652,53 @@ async def ensure_chat_messages_columns():
     logger.info("chat_messages sender_type/sender_id columns installed")
 
 
+
+
+async def ensure_org_accounting_columns():
+    """
+    Adds the per-org payment / accounting integration columns that
+    several endpoints select but no migration ever created.
+
+      accounting_webhook_url  → read by POST /accounts/sync-webhook.
+                                Outbound-only: the platform POSTs a
+                                {"event": "sync_requested"} payload to
+                                this URL. It is NOT an inbound webhook
+                                receiver from Sage / QuickBooks / Xero.
+                                See Part 2 below.
+
+      subaccount_code         → read by POST /pos/checkout and
+                                POST /public/checkout, forwarded to the
+                                payment gateway as the split-settlement
+                                subaccount.
+
+    Both are nullable. NULL means "not configured", which the calling
+    endpoints already handle (400 "No webhook URL configured").
+
+    Idempotent. Safe on every boot. Raises on failure so the boot
+    aborts rather than serving endpoints that will 400 on first call.
+    """
+    sql = """
+    ALTER TABLE public.organisations
+        ADD COLUMN IF NOT EXISTS accounting_webhook_url TEXT,
+        ADD COLUMN IF NOT EXISTS subaccount_code        TEXT;
+    """
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"org accounting columns migration failed: {resp.text}")
+        raise RuntimeError(f"org accounting columns migration failed: {resp.text}")
+    logger.info("organisations.accounting_webhook_url + subaccount_code installed")
+
+
 async def ensure_expenses_table():
     """
     Create the expenses table and its indexes.
@@ -6837,6 +6885,7 @@ async def startup_event():
         await ensure_org_delivery_columns()
         await ensure_role_column()
         await ensure_org_registry_schema()
+        await ensure_org_accounting_columns()
         await ensure_health_check_schema()
         await ensure_knowledge_audit_table()
         await ensure_vector_support()
@@ -6953,6 +7002,7 @@ async def startup_event():
         await ensure_org_delivery_columns()
         await ensure_role_column()
         await ensure_org_registry_schema()
+        await ensure_org_accounting_columns()
         await ensure_health_check_schema()
         await ensure_knowledge_audit_table()
         await ensure_vector_support()
@@ -19531,32 +19581,96 @@ async def export_accounting_data(
 @app.post("/accounts/sync-webhook")
 async def trigger_sync_webhook(
     request: Request,
-    user_data: Tuple[str, str, str] = Depends(require_feature("accounting", allowed_roles=["owner", "admin", "finance"]))
+    user_data: Tuple[str, str, str] = Depends(
+        require_feature("accounting", allowed_roles=["owner", "admin", "finance"])
+    )
 ):
     org_id = user_data[1]
     client = get_supabase()
-    org = await run_sync_db_call(
-        client.table("organisations")
-        .select("accounting_webhook_url")
-        .eq("id", org_id)
-        .maybe_single()
-        .execute
-    )
-    webhook_url = org.data.get("accounting_webhook_url") if org.data else None
+
+    # ── Read the org's configured accounting webhook. ──
+    # Wrapped in try/except because postgrest-py collapses a PostgREST
+    # 400 (e.g. "column does not exist") into a misleading
+    # "Missing response / code 204" APIError. Without this, a schema
+    # drift surfaces as a phantom 204 instead of the real cause.
+    try:
+        org = await run_sync_db_call(
+            client.table("organisations")
+            .select("accounting_webhook_url")
+            .eq("id", org_id)
+            .maybe_single()
+            .execute
+        )
+    except Exception as e:
+        logger.error(
+            "trigger_sync_webhook: org read failed",
+            org_id=org_id, error=str(e),
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Could not read organisation settings.",
+        )
+
+    webhook_url = (org.data or {}).get("accounting_webhook_url") if org else None
     if not webhook_url:
-        raise HTTPException(status_code=400, detail="No webhook URL configured for this organisation")
+        raise HTTPException(
+            status_code=400,
+            detail="No webhook URL configured for this organisation",
+        )
 
-    payload = {"org_id": org_id, "timestamp": datetime.now(timezone.utc).isoformat(), "event": "sync_requested"}
-    async with httpx.AsyncClient() as http:
-        try:
-            resp = await http.post(webhook_url, json=payload, timeout=10.0)
-            if resp.status_code >= 400:
-                logger.error(f"Webhook failed: {resp.text}")
-                raise HTTPException(status_code=502, detail="External service error")
-        except Exception as e:
-            logger.error(f"Webhook error: {e}")
-            raise HTTPException(status_code=502, detail="Failed to reach external service")
+    # ── Reject non-HTTP schemes before handing the value to httpx. ──
+    # A misconfigured value like "ftp://..." or "file://..." would
+    # otherwise fail deep inside the client with an opaque error.
+    if not webhook_url.startswith(("https://", "http://")):
+        raise HTTPException(
+            status_code=400,
+            detail="Configured webhook URL must start with http:// or https://",
+        )
 
+    payload = {
+        "org_id":    org_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "event":     "sync_requested",
+    }
+
+    # ── Outbound POST. ──
+    # Transport errors and HTTP errors are handled separately so the
+    # caller can tell "the URL didn't resolve / timed out" from
+    # "the URL resolved but returned 500".
+    #
+    # The previous version wrapped a raised HTTPException in a bare
+    # `except Exception`, so the "External service error" detail was
+    # always replaced with "Failed to reach external service". That is
+    # misleading: a 500 from a healthy endpoint was reported as
+    # unreachable. Split here.
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as http:
+            resp = await http.post(webhook_url, json=payload)
+    except httpx.HTTPError as e:
+        logger.error(
+            "trigger_sync_webhook: transport error",
+            org_id=org_id, url=webhook_url, error=str(e),
+        )
+        raise HTTPException(
+            status_code=502,
+            detail="Failed to reach external service",
+        )
+
+    if resp.status_code >= 400:
+        logger.error(
+            "trigger_sync_webhook: external service rejected",
+            org_id=org_id, url=webhook_url,
+            status=resp.status_code, body=resp.text[:500],
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"External service returned {resp.status_code}",
+        )
+
+    logger.info(
+        "trigger_sync_webhook: dispatched",
+        org_id=org_id, url=webhook_url, status=resp.status_code,
+    )
     return {"message": "Webhook triggered successfully"}
 
 # ------------------------------------------------------------------
