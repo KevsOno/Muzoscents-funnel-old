@@ -14826,89 +14826,126 @@ async def post_journal_entry(entry_id: UUID, org_id: str, user_id: str) -> Dict:
     return result.data[0]
 
 async def generate_profit_loss(org_id: str, start_date: date, end_date: date) -> Dict:
+    """
+    Profit & Loss for the period, calculated from the same source the
+    Executive Dashboard uses: sales + sale_items + expenses.
+
+    WHY THIS REPLACED THE JOURNAL-BASED VERSION:
+
+        The old body calculated revenue and COGS exclusively from
+        `journal_lines`, and expenses from `journal_lines` of type
+        `expense`. That is a correct double-entry reading, but in this
+        codebase POS and online sales are NOT automatically journaled —
+        only `create_ar_from_sale` writes a revenue journal entry, and
+        nothing writes a COGS journal entry. So the Accounts P&L
+        always reported ₦0 revenue and ₦0 COGS while the Dashboard
+        reported the real figures from `sales`. The two pages
+        disagreed, and users trusted neither.
+
+        This version pulls revenue and COGS from `sales` and
+        `sale_items`, and operating expenses from the `expenses`
+        table. That is the same shape `/dashboard/profitability`
+        returns, so the two pages reconcile exactly for any period.
+
+    Idempotent on write: the summary row for (org, period) is
+    deleted before insert, so a re-run does not accumulate duplicate
+    rows and break `get_pl_summary`'s `.maybe_single()`.
+    """
     client = get_supabase()
-    accounts = await run_sync_db_call(
-        client.table("chart_of_accounts")
-        .select("id, type")
+    from_iso = start_date.isoformat()
+    to_iso = end_date.isoformat()
+
+    # ── 1. Revenue & COGS from sales ──
+    sales_res = await run_sync_db_call(
+        client.table("sales")
+        .select("id, total_amount")
         .eq("org_id", org_id)
-        .in_("type", ["revenue", "expense"])
+        .eq("status", "completed")
+        .gte("created_at", f"{from_iso}T00:00:00")
+        .lte("created_at", f"{to_iso}T23:59:59")
         .execute
     )
-    account_ids = [a["id"] for a in accounts.data] if accounts.data else []
-    if not account_ids:
-        return {"revenue": 0, "cogs": 0, "gross_profit": 0, "operating_expenses": 0, "net_income": 0}
+    sales_rows = sales_res.data or []
+    revenue_total = sum(float(s.get("total_amount") or 0) for s in sales_rows)
+    sales_ids = [s["id"] for s in sales_rows]
 
-    cogs_ids = []
-    cogs_total = 0
-    try:
-        cogs_accounts = await run_sync_db_call(
-            client.table("chart_of_accounts")
-            .select("id")
-            .eq("org_id", org_id)
-            .eq("is_cogs", True)
+    cogs_total = 0.0
+    if sales_ids:
+        si_res = await run_sync_db_call(
+            client.table("sale_items")
+            .select("inventory_id, quantity")
+            .in_("sale_id", sales_ids)
             .execute
         )
-        cogs_ids = [a["id"] for a in cogs_accounts.data] if cogs_accounts.data else []
-        if cogs_ids:
-            cogs_lines = await run_sync_db_call(
-                client.table("journal_lines")
-                .select("debit, credit")
-                .in_("account_id", cogs_ids)
-                .eq("journal_entry.status", "posted")
-                .gte("journal_entry.entry_date", start_date.isoformat())
-                .lte("journal_entry.entry_date", end_date.isoformat())
+        si_rows = si_res.data or []
+        inv_ids = list({r["inventory_id"] for r in si_rows if r.get("inventory_id")})
+        cost_map: Dict[int, float] = {}
+        if inv_ids:
+            inv_res = await run_sync_db_call(
+                client.table("inventory")
+                .select("id, cost_price_naira")
+                .eq("org_id", org_id)
+                .in_("id", inv_ids)
                 .execute
             )
-            cogs_total = sum((line["debit"] - line["credit"]) for line in cogs_lines.data) if cogs_lines.data else 0
-    except Exception as e:
-        logger.warning(f"COGS column missing (is_cogs), assuming all expenses are operating: {e}")
+            cost_map = {
+                r["id"]: float(r.get("cost_price_naira") or 0)
+                for r in (inv_res.data or [])
+            }
+        for si in si_rows:
+            unit_cost = cost_map.get(si["inventory_id"], 0.0)
+            cogs_total += unit_cost * int(si["quantity"] or 0)
 
-    rev_accounts = [a["id"] for a in accounts.data if a["type"] == "revenue"]
-    rev_lines = await run_sync_db_call(
-        client.table("journal_lines")
-        .select("debit, credit, journal_entry:journal_entry_id(entry_date, status)")
-        .in_("account_id", rev_accounts)
-        .eq("journal_entry.status", "posted")
-        .gte("journal_entry.entry_date", start_date.isoformat())
-        .lte("journal_entry.entry_date", end_date.isoformat())
+    # ── 2. Operating expenses ──
+    exp_res = await run_sync_db_call(
+        client.table("expenses")
+        .select("amount")
+        .eq("org_id", org_id)
+        .eq("status", "posted")
+        .gte("expense_date", from_iso)
+        .lte("expense_date", to_iso)
         .execute
     )
-    revenue_total = sum((line["credit"] - line["debit"]) for line in rev_lines.data) if rev_lines.data else 0
-
-    expense_accounts = [a["id"] for a in accounts.data if a["type"] == "expense" and a["id"] not in cogs_ids]
-    exp_lines = await run_sync_db_call(
-        client.table("journal_lines")
-        .select("debit, credit, journal_entry:journal_entry_id(entry_date, status)")
-        .in_("account_id", expense_accounts)
-        .eq("journal_entry.status", "posted")
-        .gte("journal_entry.entry_date", start_date.isoformat())
-        .lte("journal_entry.entry_date", end_date.isoformat())
-        .execute
-    )
-    operating_expenses = sum((line["debit"] - line["credit"]) for line in exp_lines.data) if exp_lines.data else 0
+    exp_rows = exp_res.data or []
+    operating_expenses = sum(float(r.get("amount") or 0) for r in exp_rows)
 
     gross_profit = revenue_total - cogs_total
     net_income = gross_profit - operating_expenses
 
+    # ── 3. Persist summary (delete-then-insert to avoid duplicates) ──
     summary_data = {
-        "org_id": org_id,
-        "period_start": start_date.isoformat(),
-        "period_end": end_date.isoformat(),
-        "revenue": revenue_total,
-        "cogs": cogs_total,
-        "gross_profit": gross_profit,
+        "org_id":            org_id,
+        "period_start":      from_iso,
+        "period_end":        to_iso,
+        "revenue":           revenue_total,
+        "cogs":              cogs_total,
+        "gross_profit":      gross_profit,
         "operating_expenses": operating_expenses,
-        "net_income": net_income,
-        "created_at": datetime.now(timezone.utc).isoformat()
+        "net_income":        net_income,
+        "created_at":        datetime.now(timezone.utc).isoformat(),
     }
-    await run_sync_db_call(client.table("profit_loss_summary").insert(summary_data).execute)
+    try:
+        await run_sync_db_call(
+            client.table("profit_loss_summary")
+            .delete()
+            .eq("org_id", org_id)
+            .eq("period_start", from_iso)
+            .eq("period_end", to_iso)
+            .execute
+        )
+        await run_sync_db_call(
+            client.table("profit_loss_summary").insert(summary_data).execute
+        )
+    except Exception as e:
+        # Cache write failure must not break the live calculation.
+        logger.warning(f"generate_profit_loss: summary write failed: {e}")
 
     return {
-        "revenue": revenue_total,
-        "cogs": cogs_total,
-        "gross_profit": gross_profit,
+        "revenue":           revenue_total,
+        "cogs":              cogs_total,
+        "gross_profit":      gross_profit,
         "operating_expenses": operating_expenses,
-        "net_income": net_income
+        "net_income":        net_income,
     }
 
 async def _log_audit_event(org_id: str, user_id: str, table_name: str, action: str, record_id: UUID, old_vals: Optional[dict], new_vals: Optional[dict]):
@@ -19534,19 +19571,29 @@ async def get_pl_summary(
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
     client = get_supabase()
+
+    # Order + limit 1 instead of .maybe_single(). The old code crashed
+    # with a 500 on the second call for the same period, because
+    # generate_profit_loss used to insert a new summary row on every
+    # invocation and .maybe_single() raises when it sees more than
+    # one. generate_profit_loss is now delete-then-insert, so a single
+    # row is the expected state — but ordering by created_at desc and
+    # taking the first row is correct even if a historical row
+    # survives a partial failure.
     result = await run_sync_db_call(
         client.table("profit_loss_summary")
         .select("*")
         .eq("org_id", org_id)
         .eq("period_start", period_start.isoformat())
         .eq("period_end", period_end.isoformat())
-        .maybe_single()
+        .order("created_at", desc=True)
+        .limit(1)
         .execute
     )
     if not result or not result.data:
         pl = await generate_profit_loss(org_id, period_start, period_end)
         return {"profit_loss": pl}
-    return result.data
+    return result.data[0]
 
 @app.post("/accounts/export")
 async def export_accounting_data(
