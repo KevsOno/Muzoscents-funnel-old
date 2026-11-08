@@ -30,14 +30,14 @@ async def profitability(
     One-shot profitability analysis for a date range, scoped to the
     caller's selected branch.
 
-    Branch scoping rules:
-      - Owner with no X-Selected-Branch-Id → all branches (org-wide)
-      - Owner with X-Selected-Branch-Id  → that branch
-      - Non-owner, single branch        → that branch
-      - Non-owner, multiple branches     → 400 unless they send the header
+    Branch scoping:
+      - Owner, no X-Selected-Branch-Id → all branches (org-wide)
+      - Owner, X-Selected-Branch-Id set → that branch
+      - Non-owner, single branch       → that branch
+      - Non-owner, multiple branches    → 400 unless they send the header
         (same contract as /accounts/ar, /accounts/ap, /expenses)
 
-    Response now includes `branch_id` so the frontend can prove what
+    Response includes `branch_id` so the frontend can display which
     scope the numbers came from.
     """
     await rate_limit(get_client_ip(request), user_data[1], request=request)
@@ -66,9 +66,7 @@ async def profitability(
     revenue = sum(float(s.get("total_amount") or 0) for s in sales_rows)
     sales_ids = [s["id"] for s in sales_rows]
 
-    # COGS is derived from sale_items whose parent sale already passed
-    # the branch filter above. No additional filter is needed here —
-    # every sale_item belongs to a sale we've already scoped.
+    # COGS derived from sale_items of the already-branch-scoped sale IDs.
     cogs = 0.0
     cogs_by_product: dict = {}
     if sales_ids:
@@ -125,41 +123,56 @@ async def profitability(
 
     # ── 3. Waste ─────────────────────────────────────────────────
     #
-    # Waste is a per-location fact (a specific batch sitting on a
-    # specific shelf expired). For a branch view, we sum through
-    # location_stocks → inventory_batches → locations filtered by
-    # branch. For an org-wide view, the original batch-level
-    # aggregate is correct and cheaper.
-    if selected_branch:
-        waste_res = await run_sync_db_call(
+    # Two paths with different scoping semantics but the same unit
+    # (naira), so a branch's number + every other branch's number
+    # equals the org-wide number when there's no stock drift.
+    #
+    #   Org-wide path: sum inventory_batches.quantity × cost for
+    #                  batches expiring in range. This matches the
+    #                  original behaviour byte-for-byte.
+    #
+    #   Branch path:   sum location_stocks.quantity × cost for rows
+    #                  whose batch expired in range and whose location
+    #                  is in the selected branch. That's the value of
+    #                  expired stock *physically sitting at this branch's
+    #                  locations*, which is the correct branch-level
+    #                  waste number.
+    #
+    # The two-queries are needed because location_stocks.batch_id has
+    # no FK to inventory_batches.id in the current schema, so
+    # PostgREST can't embed one inside the other.
+    waste_value = 0.0
+    expired_q = (
+        client.table("inventory_batches")
+        .select("id, quantity, cost_price_naira")
+        .eq("inventory.org_id", org_id)
+        .gte("expiry_date", from_iso)
+        .lte("expiry_date", to_iso)
+    )
+    expired_res = await run_sync_db_call(expired_q.execute)
+    expired_batches = {r["id"]: r for r in (expired_res.data or [])}
+
+    if expired_batches and not selected_branch:
+        # Org-wide: match original behaviour exactly.
+        waste_value = sum(
+            float(b.get("quantity") or 0) * float(b.get("cost_price_naira") or 0)
+            for b in expired_batches.values()
+        )
+    elif expired_batches and selected_branch:
+        # Branch-scoped: sum per-location quantity × batch cost.
+        ls_res = await run_sync_db_call(
             client.table("location_stocks")
-            .select(
-                "quantity, "
-                "batch:inventory_batches!inner(expiry_date, cost_price_naira), "
-                "location:locations!inner(branch_id, org_id)"
-            )
-            .eq("location.org_id", org_id)
+            .select("batch_id, quantity, location:locations!inner(branch_id)")
+            .in_("batch_id", list(expired_batches.keys()))
             .eq("location.branch_id", selected_branch)
-            .gte("batch.expiry_date", from_iso)
-            .lte("batch.expiry_date", to_iso)
             .execute
         )
-        waste_value = 0.0
-        for ls in (waste_res.data or []):
-            batch = ls.get("batch") or {}
-            waste_value += float(ls.get("quantity") or 0) * float(batch.get("cost_price_naira") or 0)
-    else:
-        expired_res = await run_sync_db_call(
-            client.table("inventory_batches")
-            .select("quantity, cost_price_naira, expiry_date, inventory!inner(org_id)")
-            .eq("inventory.org_id", org_id)
-            .gte("expiry_date", from_iso)
-            .lte("expiry_date", to_iso)
-            .execute
+        waste_value = sum(
+            float(r.get("quantity") or 0)
+            * float(expired_batches[r["batch_id"]].get("cost_price_naira") or 0)
+            for r in (ls_res.data or [])
+            if r.get("batch_id") in expired_batches
         )
-        waste_value = 0.0
-        for b in (expired_res.data or []):
-            waste_value += float(b.get("quantity") or 0) * float(b.get("cost_price_naira") or 0)
 
     # ── 4. Uncollected A/R ───────────────────────────────────────
     ar_q = (
@@ -183,12 +196,12 @@ async def profitability(
     # ── 5. Month-by-month breakdown ──────────────────────────────
     monthly: dict = {}
     for s in sales_rows:
-        m = (s.get("created_at") or "")[:7]  # YYYY-MM
+        m = (s.get("created_at") or "")[:7]
         if m not in monthly:
             monthly[m] = {"revenue": 0.0, "expenses": 0.0}
         monthly[m]["revenue"] += float(s.get("total_amount") or 0)
     for e in exp_rows:
-        m = e.get("expense_date", "")[:7]
+        m = (e.get("expense_date") or "")[:7]
         if m not in monthly:
             monthly[m] = {"revenue": 0.0, "expenses": 0.0}
         monthly[m]["expenses"] += float(e.get("amount") or 0)
@@ -208,7 +221,7 @@ async def profitability(
 
     return {
         "period": {"from": from_iso, "to": to_iso},
-        "branch_id": selected_branch,          # ← new field, proves scope
+        "branch_id": selected_branch,
         "revenue": round(revenue, 2),
         "cogs": round(cogs, 2),
         "gross_profit": round(gross_profit, 2),
