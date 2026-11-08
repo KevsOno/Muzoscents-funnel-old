@@ -445,12 +445,42 @@
   }
 
   // ─── Public switch ───
+  //
+  // Cancel-safe: if the user dismisses the picker (or ensure() throws),
+  // the previous selection is restored so the still-mounted page does
+  // not end up firing unscoped requests after a cancelled switch.
+  //
+  // Resolves:
+  //   * the new session on success
+  //   * null on user cancel (previous selection restored)
+  //   * throws if ensure() fails (previous selection restored)
   async function switchSession(opts) {
+    var prevOrgId    = K.readSelectedOrg();
+    var prevOrgName  = K.readSelectedOrgName();
+    var prevBranchId = K.readSelectedBranch();
+    var prevBranchNm = K.readSelectedBranchName();
+
     K.clearSelectedOrg();
     K.clearSelectedBranch();
-    var next = await ensure(Object.assign({ force: true }, opts || {}));
-    if (next) emitChange(next);
-    return next;
+
+    var next;
+    try {
+      next = await ensure(Object.assign({ force: true }, opts || {}));
+    } catch (err) {
+      K.writeSelectedOrg(prevOrgId, prevOrgName);
+      K.writeSelectedBranch(prevBranchId, prevBranchNm);
+      throw err;
+    }
+
+    if (next) {
+      emitChange(next);
+      return next;
+    }
+
+    // User cancelled the picker — restore and return null.
+    K.writeSelectedOrg(prevOrgId, prevOrgName);
+    K.writeSelectedBranch(prevBranchId, prevBranchNm);
+    return null;
   }
 
   // ─── Subscription ───
