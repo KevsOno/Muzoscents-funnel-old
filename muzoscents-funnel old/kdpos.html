@@ -282,6 +282,27 @@
             });
         }
 
+        // ---------- Search tokenisation ----------
+        // Produces lowercase word-tokens from description, item_code, sku.
+        // Stored on each product row as `search_tokens` and indexed as a
+        // Dexie multiEntry index (`*search_tokens`).
+        //
+        // Why: offline search then has three tiers instead of two.
+        //   - Indexed prefix search on description / item_code / sku
+        //   - NEW: indexed word-prefix search on search_tokens
+        //         ("phone" finds "iPhone 15" because "iphone" is a token)
+        //   - Bounded substring fallback (only when the first two find nothing)
+        //
+        // Unicode-aware: \p{L}\p{N} preserves accented letters and
+        // non-Latin scripts.
+        function computeSearchTokens(product) {
+            const source = `${product.description || ''} ${product.item_code || ''} ${product.sku || ''}`.toLowerCase();
+            const tokens = source
+                .split(/[^\p{L}\p{N}]+/u)
+                .filter(t => t.length > 0);
+            return Array.from(new Set(tokens));
+        }
+
         // ---------- Dexie IndexedDB ----------
         // ⚠️  Do NOT change the primary key of any existing store. Dexie
         //     refuses PK changes on existing tables at runtime
@@ -290,6 +311,11 @@
         //     operation — including login. The `orders` table keeps its
         //     auto-increment `id` primary key; application code looks
         //     orders up via the `offlineRef` *index* instead.
+        //
+        // v3 adds `*search_tokens` (multiEntry index). The upgrade
+        // callback backfills tokens on existing rows so a terminal that
+        // already has a populated cache upgrades in place without a
+        // full re-download.
         const db = new Dexie('KevsPOSOffline');
         db.version(2).stores({
             products:   'id, description, item_code, sku, price_naira, current_qty',
@@ -297,6 +323,20 @@
             orders:     '++id, offlineRef, cashierId, createdAt, status, syncedAt, receiptData',
             syncQueue:  '++id, orderId, attempts, lastTry',
             auditQueue: '++id, eventType, createdAt, retryCount'
+        });
+
+        db.version(3).stores({
+            products:   'id, description, item_code, sku, price_naira, current_qty, *search_tokens',
+            customers:  'id, first_name, last_name, phone, email, loyalty_points',
+            orders:     '++id, offlineRef, cashierId, createdAt, status, syncedAt, receiptData',
+            syncQueue:  '++id, orderId, attempts, lastTry',
+            auditQueue: '++id, eventType, createdAt, retryCount'
+        }).upgrade(tx => {
+            // v2 → v3: backfill search_tokens on every existing product
+            // row. Runs once per device. ~50μs per row.
+            return tx.table('products').toCollection().modify(product => {
+                product.search_tokens = computeSearchTokens(product);
+            });
         });
 
         // ---------- Order helpers (offlineRef is an INDEX, not the PK) ----------
@@ -466,7 +506,7 @@
         // ================================================================
 
         function normalizeProduct(p) {
-            return {
+            const normalized = {
                 id: p.id,
                 description: p.description || '',
                 item_code: p.item_code || '',
@@ -478,6 +518,8 @@
                 weight_kg: Number(p.weight_kg) || 0,
                 product_group: p.product_group || ''
             };
+            normalized.search_tokens = computeSearchTokens(normalized);
+            return normalized;
         }
 
         async function refreshCachedCount() {
@@ -555,49 +597,65 @@
             let total = 0;
             const seenIds = new Set();
             try {
+                // ── Page 0: WITH count. Populates CATALOG_EXPECTED_KEY. ──
                 const firstRes = await apiCall(
                     `/inventory/pos?limit=${CATALOG_PAGE_SIZE}&offset=0`,
                     'GET'
                 );
                 total = Number(firstRes.total) || 0;
 
-                if (total > 0) {
-                    localStorage.setItem(CATALOG_EXPECTED_KEY, String(total));
-                    await refreshCachedCount();
-                }
-
                 const firstItems = (firstRes.items || []).map(normalizeProduct);
 
-                if (total === 0) {
+                // Do NOT gate on `total === 0`. If the server sent items,
+                // save them regardless of what it reported for the count.
+                // `total` is only a pagination hint now.
+                if (firstItems.length === 0) {
                     showToast('Catalog is empty', 'info');
                     hideCatalogBanner();
                     return;
                 }
 
+                if (total > 0) {
+                    localStorage.setItem(CATALOG_EXPECTED_KEY, String(total));
+                    await refreshCachedCount();
+                }
+
                 await db.products.bulkPut(firstItems);
                 firstItems.forEach(p => seenIds.add(p.id));
                 processed = firstItems.length;
-                updateCatalogProgress(processed, total);
+                updateCatalogProgress(processed, total || processed);
                 await refreshCachedCount();
 
+                // ── Pages 1+: skip_count=true. ──
+                //
+                // The loop terminates on an empty page, not on
+                // offset < total. Only page 0 needs COUNT(*) to
+                // populate CATALOG_EXPECTED_KEY. Pages 1+ save one
+                // COUNT per page — 29 COUNTs saved at 15k SKUs,
+                // 99 at 50k.
                 let offset = CATALOG_PAGE_SIZE;
-                while (offset < total) {
+                while (true) {
                     let pageRes;
                     try {
                         pageRes = await apiCall(
-                            `/inventory/pos?limit=${CATALOG_PAGE_SIZE}&offset=${offset}`,
+                            `/inventory/pos?limit=${CATALOG_PAGE_SIZE}&offset=${offset}&skip_count=true`,
                             'GET'
                         );
                     } catch (pageErr) {
                         console.warn('[Catalog] page failed, retrying', offset, pageErr);
                         await new Promise(r => setTimeout(r, 1500));
                         pageRes = await apiCall(
-                            `/inventory/pos?limit=${CATALOG_PAGE_SIZE}&offset=${offset}`,
+                            `/inventory/pos?limit=${CATALOG_PAGE_SIZE}&offset=${offset}&skip_count=true`,
                             'GET'
                         );
                     }
 
                     const items = (pageRes.items || []).map(normalizeProduct);
+
+                    // Real end condition. If the page is empty, we're
+                    // done. Do NOT trust `total` to tell us when to
+                    // stop — it may be stale if the catalog changed
+                    // mid-sync.
                     if (items.length === 0) break;
 
                     await db.products.bulkPut(items);
@@ -605,10 +663,19 @@
                     processed += items.length;
                     offset += CATALOG_PAGE_SIZE;
 
-                    updateCatalogProgress(processed, total);
+                    updateCatalogProgress(processed, total || processed);
                     await refreshCachedCount();
 
                     await new Promise(r => setTimeout(r, 0));
+                }
+
+                // If the server never reported a total, use the count
+                // we actually synced. Empty-page termination above
+                // guarantees we saw every available row, so `processed`
+                // is the true count.
+                if (total === 0 && processed > 0) {
+                    localStorage.setItem(CATALOG_EXPECTED_KEY, String(processed));
+                    total = processed;
                 }
 
                 // Prune stale products (deleted server-side)
@@ -622,7 +689,7 @@
                 }
                 await refreshCachedCount();
 
-                updateCatalogProgress(processed, total);
+                updateCatalogProgress(processed, total || processed);
                 localStorage.setItem(CATALOG_LAST_SYNC_KEY, new Date().toISOString());
 
                 showToast(`✅ Catalog ready offline: ${processed.toLocaleString()} products`, 'success');
@@ -706,30 +773,72 @@
         // ================================================================
         //  Product search
         // ================================================================
-
+        //
+        // Three-tier strategy:
+        //
+        //   Tier 1 — Indexed prefix + word-prefix search.
+        //            Four `.or()` arms, all served from indexes:
+        //              description startsWith term
+        //              item_code   startsWith term
+        //              sku         startsWith term
+        //              search_tokens contains a token starting with term
+        //            Cost: O(log n + results). ~10–30ms at 15k rows.
+        //
+        //   Tier 2 — Bounded substring fallback.
+        //            Only fires when tier 1 finds nothing and the term
+        //            is 3+ chars. Scans row by row but stops as soon
+        //            as it has filled the current page, so a rare
+        //            search on a 15k catalog costs 30–100ms, not a
+        //            full in-memory filter of the whole catalog.
+        //
         async function searchOfflineCatalog(term, offset, limit) {
             const lowerTerm = term.toLowerCase();
 
+            // ── Tier 1: indexed prefix + word-prefix search ──
             let collection = db.products
                 .where('description').startsWithIgnoreCase(term)
                 .or('item_code').startsWithIgnoreCase(term)
-                .or('sku').startsWithIgnoreCase(term);
+                .or('sku').startsWithIgnoreCase(term)
+                .or('search_tokens').startsWith(lowerTerm);
 
             let total = await collection.count();
-            let items = await collection.offset(offset).limit(limit).toArray();
-
-            if (total === 0 && term.length >= 3) {
-                const all = await db.products.toArray();
-                const filtered = all.filter(p => {
-                    const d = (p.description || '').toLowerCase();
-                    const c = (p.item_code || '').toLowerCase();
-                    const s = (p.sku || '').toLowerCase();
-                    return d.includes(lowerTerm) || c.includes(lowerTerm) || s.includes(lowerTerm);
-                });
-                total = filtered.length;
-                items = filtered.slice(offset, offset + limit);
+            if (total > 0) {
+                const items = await collection.offset(offset).limit(limit).toArray();
+                return { items, total };
             }
-            return { items, total };
+
+            // ── Tier 2: bounded substring fallback ──
+            if (term.length < 3) {
+                return { items: [], total: 0 };
+            }
+
+            let skipped = 0;
+            let matched = [];
+            let stoppedEarly = false;
+
+            try {
+                await db.products.each(p => {
+                    const haystack = `${p.description || ''} ${p.item_code || ''} ${p.sku || ''}`.toLowerCase();
+                    if (!haystack.includes(lowerTerm)) return;
+                    if (skipped < offset) { skipped++; return; }
+                    matched.push(p);
+                    if (matched.length >= limit) {
+                        stoppedEarly = true;
+                        throw { _break: true };
+                    }
+                });
+            } catch (e) {
+                if (!e || !e._break) throw e;
+            }
+
+            // If we stopped early, there may be more matches below.
+            // Report a total one higher than what we have so
+            // posHasMore stays true and the next scroll re-enters
+            // this function with a larger offset. If we ran to
+            // completion without hitting `limit`, the reported total
+            // is exact and infinite scroll terminates.
+            const reportedTotal = skipped + matched.length + (stoppedEarly ? 1 : 0);
+            return { items: matched, total: reportedTotal };
         }
 
         async function loadPOSProducts(reset = true) {
@@ -775,10 +884,15 @@
                 // nothing local: first run before the catalogue has
                 // downloaded, or a corrupt/cleared cache. Otherwise the
                 // search never leaves the device.
+                //
+                // Cache readiness requires a POSITIVE expected count
+                // AND the cached count to meet or exceed it. Without
+                // the expectedCount > 0 guard, a fresh device with one
+                // cached product would treat its cache as complete and
+                // never query the server again.
                 const cachedCount   = await db.products.count();
                 const expectedCount = Number(localStorage.getItem(CATALOG_EXPECTED_KEY) || 0);
-                const cacheReady    = cachedCount > 0
-                                    && (expectedCount === 0 || cachedCount >= expectedCount);
+                const cacheReady    = expectedCount > 0 && cachedCount >= expectedCount;
                 const useLocal      = cacheReady || !isOnline;
 
                 if (useLocal) {
@@ -786,6 +900,9 @@
                     items = result.items;
                     total = result.total;
                 } else {
+                    // Server path. include_count stays on (no
+                    // skip_count param) because pagination needs a
+                    // real total for posHasMore.
                     const url = `/inventory/pos?limit=${POS_PAGE_SIZE}&offset=${offset}&q=${encodeURIComponent(trimmed)}`;
                     const data = await apiCall(url, 'GET', null, true, abortController.signal);
                     items = data.items || [];
