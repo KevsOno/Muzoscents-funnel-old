@@ -14,6 +14,7 @@ from deps import require_role
 
 router = APIRouter(prefix="/customers", tags=["Customers"])
 
+
 class CustomerCreate(BaseModel):
     first_name: str
     last_name: str
@@ -22,6 +23,7 @@ class CustomerCreate(BaseModel):
     tier: str = "bronze"
     loyalty_points: int = 0
     address: Optional[str] = None
+
 
 @router.get("")
 async def list_customers(
@@ -35,20 +37,21 @@ async def list_customers(
     _, org_id, _ = user_data
     client = get_supabase()
 
-    # Query the new crm_customers view
+    # Query the crm_customers view
     q = client.table("crm_customers").select("*", count="exact").eq("org_id", org_id)
-    
+
     if search:
         q = q.or_(f"name.ilike.%{search}%,email.ilike.%{search}%,phone.ilike.%{search}%")
 
     res = await run_sync_db_call(q.order("created_at", desc=True).range(offset, offset + limit - 1).execute)
-    
+
     return {
         "customers": res.data or [],
         "total": res.count or 0,
         "limit": limit,
-        "offset": offset
+        "offset": offset,
     }
+
 
 @router.post("")
 async def create_customer(
@@ -65,18 +68,36 @@ async def create_customer(
     headers = {
         "apikey": SUPABASE_SERVICE_ROLE_KEY,
         "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
 
     async with httpx.AsyncClient() as http_client:
-        # Check if user exists
+        # ── Step 1: does a profile already exist for this email? ──
         check_url = f"{SUPABASE_URL}/rest/v1/profiles?select=id&email=eq.{customer.email}"
         check_resp = await http_client.get(check_url, headers=headers)
-        
-        if check_resp.status_code == 200 and check_resp.json():
-            user_id = check_resp.json()[0]["id"]
+        existing_profiles = check_resp.json() if check_resp.status_code == 200 else []
+
+        if existing_profiles:
+            user_id = existing_profiles[0]["id"]
             created_new_user = False
+
+            # ── Step 1a: refuse if already a member of THIS org ──
+            #
+            # Without this, the subsequent org_members insert fails with
+            # a raw 23505 unique-constraint error that surfaces as a
+            # 500 to the operator with no actionable message.
+            member_check_url = (
+                f"{SUPABASE_URL}/rest/v1/org_members"
+                f"?select=user_id&user_id=eq.{user_id}&org_id=eq.{org_id}"
+            )
+            member_resp = await http_client.get(member_check_url, headers=headers)
+            if member_resp.status_code == 200 and member_resp.json():
+                raise HTTPException(
+                    status_code=409,
+                    detail="This email is already a customer of this organisation.",
+                )
         else:
+            # ── Step 2: create a fresh auth user + profile ──
             temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
             admin_url = f"{SUPABASE_URL}/auth/v1/admin/users"
             admin_payload = {
@@ -86,56 +107,106 @@ async def create_customer(
                 "user_metadata": {
                     "first_name": customer.first_name,
                     "last_name": customer.last_name,
-                    "phone": customer.phone
-                }
+                    "phone": customer.phone,
+                },
             }
             admin_resp = await http_client.post(admin_url, json=admin_payload, headers=headers)
             if admin_resp.status_code != 200:
                 raise HTTPException(status_code=500, detail=f"Failed to create auth user: {admin_resp.text}")
-            
+
             user_id = admin_resp.json().get("id")
+            if not user_id:
+                raise HTTPException(status_code=500, detail="Auth user created but no id returned")
             created_new_user = True
 
-            # Create Profile
+            # ── Step 2a: create the identity-only profile ──
+            #
+            # IMPORTANT: profiles is identity-only now. Loyalty state
+            # (current_points, tier, membership_id) lives on org_leads.
+            # Writing loyalty columns here silently fails with a 400
+            # from PostgREST ("column does not exist"), and the profile
+            # is never created — the customer then has an auth user and
+            # org_members row but no profile, which breaks every
+            # profile-dependent read.
+            now_iso = datetime.now(timezone.utc).isoformat()
             profile_data = {
                 "id": user_id,
                 "email": customer.email,
                 "first_name": customer.first_name,
                 "last_name": customer.last_name,
                 "phone": customer.phone,
-                "membership_id": f"MEM-{user_id[:8]}",
                 "status": "active",
-                "current_points": customer.loyalty_points,
-                "tier": customer.tier,
                 "address": customer.address,
-                "created_at": datetime.now(timezone.utc).isoformat()
+                "created_at": now_iso,
+                "updated_at": now_iso,
             }
-            await http_client.post(f"{SUPABASE_URL}/rest/v1/profiles", json=profile_data, headers=headers)
+            profile_resp = await http_client.post(
+                f"{SUPABASE_URL}/rest/v1/profiles",
+                json=profile_data,
+                headers=headers,
+            )
+            if profile_resp.status_code not in (200, 201):
+                # Roll back the auth user so we don't leave an orphan.
+                await http_client.delete(
+                    f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}",
+                    headers=headers,
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to create profile: {profile_resp.text}",
+                )
 
-        # Add to org_members (role: customer)
+        # ── Step 3: add to org_members (role: customer) ──
         member_data = {
             "user_id": user_id,
             "org_id": org_id,
             "role": "customer",
-            "joined_at": datetime.now(timezone.utc).isoformat()
+            "joined_at": datetime.now(timezone.utc).isoformat(),
         }
-        await http_client.post(f"{SUPABASE_URL}/rest/v1/org_members", json=member_data, headers=headers)
+        member_resp = await http_client.post(
+            f"{SUPABASE_URL}/rest/v1/org_members",
+            json=member_data,
+            headers=headers,
+        )
+        if member_resp.status_code not in (200, 201):
+            # Roll back the newly-created auth user and profile if the
+            # membership couldn't be created. Leaving orphans behind is
+            # worse than failing loudly.
+            if created_new_user:
+                await http_client.delete(
+                    f"{SUPABASE_URL}/rest/v1/profiles?id=eq.{user_id}",
+                    headers=headers,
+                )
+                await http_client.delete(
+                    f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}",
+                    headers=headers,
+                )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to add customer to organisation: {member_resp.text}",
+            )
 
-        # Upsert into org_leads (crm_customers view is built on this)
+        # ── Step 4: upsert org_leads (source of truth for crm_customers) ──
+        #
+        # Loyalty state goes here — current_points and tier belong on
+        # org_leads, not profiles. The crm_customers view is built on
+        # this table.
         client = get_supabase()
         await run_sync_db_call(
             client.table("org_leads").upsert({
                 "org_id": org_id,
                 "profile_id": user_id,
-                "name": f"{customer.first_name} {customer.last_name}",
+                "name": f"{customer.first_name} {customer.last_name}".strip(),
                 "email": customer.email,
                 "phone": customer.phone,
                 "status": "active",
                 "tier": customer.tier,
-                "current_points": customer.loyalty_points
+                "current_points": customer.loyalty_points,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
             }, on_conflict="org_id,profile_id").execute()
         )
 
+    # ── Step 5: welcome email with credentials for new accounts ──
     if created_new_user:
         login_link = f"{PRODUCTION_HOST}/kdsiginin"
         html = f"""
@@ -148,4 +219,8 @@ async def create_customer(
         """
         await send_sendgrid_email(customer.email, "Your customer account has been created", html)
 
-    return {"message": "Customer processed successfully", "user_id": user_id, "created": created_new_user}
+    return {
+        "message": "Customer processed successfully",
+        "user_id": user_id,
+        "created": created_new_user,
+    }
