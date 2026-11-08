@@ -18,6 +18,7 @@ from main import (           # noqa: E402
     rate_limit,
     get_client_ip,
     resolve_branch_for_write,
+    resolve_request_branch,
     create_journal_entry,
     _log_audit_event,
 )
@@ -213,21 +214,36 @@ async def create_expense(
 @router.get("")
 async def list_expenses(
     request: Request,
-    from_date: Optional[date] = Query(None),
-    to_date: Optional[date] = Query(None),
+    from_date: Optional[date] = Query(None, description="Filter: expense_date >= from_date (YYYY-MM-DD)"),
+    to_date: Optional[date] = Query(None, description="Filter: expense_date <= to_date (YYYY-MM-DD)"),
     category: Optional[str] = Query(None),
     payment_method: Optional[str] = Query(None),
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(500, ge=1, le=2000),
     offset: int = Query(0, ge=0),
     user_data: Tuple[str, str, str] = Depends(
         require_feature("accounting", allowed_roles=["owner", "admin", "finance", "auditor"])
     ),
 ):
+    """
+    List expenses. Filters by date range (expense_date), category,
+    payment method, and — when the caller has picked a branch — by
+    branch. `total` is the exact number of matching rows from
+    `count="exact"`, independent of the limit/offset slice.
+    """
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, role = user_data
     client = get_supabase()
 
+    # Branch scoping. Owners with no branch header see all branches;
+    # everyone else sees their selected branch (or their single
+    # branch if they only have one).
+    selected_branch = await resolve_request_branch(request, user_id, org_id, role)
+
     q = client.table("expenses").select("*", count="exact").eq("org_id", org_id)
+
+    if selected_branch:
+        q = q.eq("branch_id", selected_branch)
+
     if from_date:
         q = q.gte("expense_date", from_date.isoformat())
     if to_date:
@@ -259,20 +275,27 @@ async def expenses_summary(
 ):
     """
     Totals grouped by category, plus a daily series for charting.
+    Branch-scoped: if the caller has selected a branch, the totals
+    match the list endpoint for that same branch.
     """
     await rate_limit(get_client_ip(request), user_data[1], request=request)
-    _, org_id, _ = user_data
+    user_id, org_id, role = user_data
     client = get_supabase()
 
-    res = await run_sync_db_call(
+    selected_branch = await resolve_request_branch(request, user_id, org_id, role)
+
+    q = (
         client.table("expenses")
         .select("expense_date, category, amount, payment_method")
         .eq("org_id", org_id)
         .gte("expense_date", from_date.isoformat())
         .lte("expense_date", to_date.isoformat())
         .eq("status", "posted")
-        .execute
     )
+    if selected_branch:
+        q = q.eq("branch_id", selected_branch)
+
+    res = await run_sync_db_call(q.execute)
     rows = res.data or []
 
     by_category: dict = {}
