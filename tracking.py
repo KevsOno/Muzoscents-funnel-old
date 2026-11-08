@@ -154,26 +154,46 @@ async def public_track(tracking_code: str, request: Request):
 
 @router.patch("/status/{sale_id}")
 async def advance_status(
+    request: Request,
     sale_id: str,
     payload: dict,
     user_data = Depends(require_role(["driver", "owner", "admin", "logistics"])),
 ):
+    # Local import — tracking.py is imported at the top of main.py, so
+    # main is only partially loaded at module-import time.
+    # resolve_request_branch is defined later in main.py, so we defer
+    # the import to request time when main is fully loaded.
+    from main import resolve_request_branch  # noqa: E402
+
     user_id, org_id, role = user_data
     next_status = payload.get("status")
 
     if next_status not in ["picked", "in_transit", "delivered", "cancelled", "failed"]:
         raise HTTPException(400, "Invalid status")
 
+    # Branch scope for non-driver roles only. Drivers are already
+    # gated by assigned_driver_id — that's stricter than branch, and a
+    # driver may legitimately be assigned to a branch's order without
+    # being a member of that branch.
+    selected_branch = None
+    if role in ("owner", "admin", "logistics"):
+        selected_branch = await resolve_request_branch(request, user_id, org_id, role)
+
     client = get_supabase()
 
-    sale = await fetch_one(
+    q = (
         client.table("sales")
         .select("status, assigned_driver_id")
         .eq("id", sale_id)
         .eq("org_id", org_id)
-        .maybe_single()
     )
+    if selected_branch:
+        q = q.eq("branch_id", selected_branch)
+
+    sale = await fetch_one(q.maybe_single())
     if not sale:
+        # 404, not 403 — a wrong-branch sale and a nonexistent sale
+        # are indistinguishable to the caller. No cross-tenant info leak.
         raise HTTPException(404, "Sale not found")
 
     if role == "driver" and sale["assigned_driver_id"] != user_id:
@@ -187,9 +207,9 @@ async def advance_status(
 
     now = datetime.now(timezone.utc).isoformat()
     upd = {"status": next_status, "updated_at": now}
-    if next_status == "picked":    upd["picked_at"] = now
+    if next_status == "picked":     upd["picked_at"] = now
     if next_status == "in_transit": upd["dispatched_at"] = now
-    if next_status == "delivered": upd["delivered_at"] = now
+    if next_status == "delivered":  upd["delivered_at"] = now
 
     await run_sync_db_call(
         client.table("sales").update(upd).eq("id", sale_id).execute
