@@ -268,7 +268,7 @@
         const CATALOG_LAST_SYNC_KEY  = 'catalog_last_sync';
         const CATALOG_COUNT_KEY      = 'catalog_count';
         const CATALOG_EXPECTED_KEY   = 'catalog_expected';
-        const CATALOG_TTL_MS         = 24 * 60 * 60 * 1000;
+        const CATALOG_TTL_MS         = 15 * 60 * 1000;  // 15 minutes
 
         // ---------- UUID generator ----------
         function generateUUID() {
@@ -764,7 +764,27 @@
             try {
                 let items = [];
                 let total = 0;
-                if (isOnline) {
+
+                // ── Prefer the local catalogue ──
+                // The Dexie cache is populated at login and refreshed on
+                // TTL. When it has data, use it. That is 5–20 ms per
+                // keystroke instead of 300–500 ms for a round trip.
+                //
+                // The server is only consulted when we genuinely have
+                // nothing local: first run before the catalogue has
+                // downloaded, or a corrupt/cleared cache. Otherwise the
+                // search never leaves the device.
+                const cachedCount   = await db.products.count();
+                const expectedCount = Number(localStorage.getItem(CATALOG_EXPECTED_KEY) || 0);
+                const cacheReady    = cachedCount > 0
+                                    && (expectedCount === 0 || cachedCount >= expectedCount);
+                const useLocal      = cacheReady || !isOnline;
+
+                if (useLocal) {
+                    const result = await searchOfflineCatalog(trimmed, offset, POS_PAGE_SIZE);
+                    items = result.items;
+                    total = result.total;
+                } else {
                     const url = `/inventory/pos?limit=${POS_PAGE_SIZE}&offset=${offset}&q=${encodeURIComponent(trimmed)}`;
                     const data = await apiCall(url, 'GET', null, true, abortController.signal);
                     items = data.items || [];
@@ -774,10 +794,6 @@
                         await db.products.bulkPut(items.map(normalizeProduct));
                         refreshCachedCount();
                     }
-                } else {
-                    const result = await searchOfflineCatalog(trimmed, offset, POS_PAGE_SIZE);
-                    items = result.items;
-                    total = result.total;
                 }
                 posTotalItems = total;
                 posHasMore = (offset + POS_PAGE_SIZE) < total;
