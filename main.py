@@ -19033,8 +19033,8 @@ async def list_journal_entries(
     status: Optional[str] = None,
     from_date: Optional[date] = None,
     to_date: Optional[date] = None,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(500, ge=1, le=2000),
+    offset: int = Query(0, ge=0),
     user_data: Tuple[str, str, str] = Depends(require_feature("accounting", allowed_roles=["owner", "admin", "finance", "auditor"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
@@ -19043,7 +19043,19 @@ async def list_journal_entries(
 
     selected_branch = await resolve_request_branch(request, user_id, org_id, role)
 
-    query = client.table("journal_entries").select("*").eq("org_id", org_id)
+    # count="exact" makes PostgREST run a second COUNT(*) against the
+    # same filter and return it as result.count. That is the number of
+    # MATCHING rows, independent of the limit/offset slice. Without it,
+    # `total` was being computed as `len(result.data)` — the number of
+    # rows returned, which is capped at `limit`. A shop with 4,000
+    # journal entries and a 500 limit was reporting total=500, and the
+    # frontend badge read "Showing 500 of 500" instead of
+    # "Showing 500 of 4,000".
+    query = (
+        client.table("journal_entries")
+        .select("*", count="exact")
+        .eq("org_id", org_id)
+    )
 
     if selected_branch:
         query = query.eq("branch_id", selected_branch)
@@ -19054,8 +19066,18 @@ async def list_journal_entries(
         query = query.gte("entry_date", from_date.isoformat())
     if to_date:
         query = query.lte("entry_date", to_date.isoformat())
-    result = await run_sync_db_call(query.order("entry_date", desc=True).range(offset, offset + limit - 1).execute)
-    return {"entries": result.data, "total": len(result.data) if result.data else 0}
+
+    result = await run_sync_db_call(
+        query.order("entry_date", desc=True).range(offset, offset + limit - 1).execute
+    )
+
+    return {
+        "entries": result.data or [],
+        "total": result.count or 0,
+        "returned": len(result.data or []),
+    }
+
+
 
 @app.get("/accounts/journal-entries/{entry_id}")
 async def get_journal_entry(
@@ -19124,8 +19146,10 @@ async def list_ar(
     request: Request,
     status: Optional[str] = None,
     customer_id: Optional[UUID] = None,
-    limit: int = 50,
-    offset: int = 0,
+    from_date: Optional[date] = Query(None, description="Filter: due_date >= from_date (YYYY-MM-DD)"),
+    to_date: Optional[date] = Query(None, description="Filter: due_date <= to_date (YYYY-MM-DD)"),
+    limit: int = Query(500, ge=1, le=2000),
+    offset: int = Query(0, ge=0),
     user_data: Tuple[str, str, str] = Depends(require_feature("accounting", allowed_roles=["owner", "admin", "finance", "auditor"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
@@ -19134,7 +19158,11 @@ async def list_ar(
 
     selected_branch = await resolve_request_branch(request, user_id, org_id, role)
 
-    query = client.table("accounts_receivable").select("*").eq("org_id", org_id)
+    query = (
+        client.table("accounts_receivable")
+        .select("*", count="exact")
+        .eq("org_id", org_id)
+    )
 
     if selected_branch:
         query = query.eq("branch_id", selected_branch)
@@ -19143,14 +19171,28 @@ async def list_ar(
         query = query.eq("status", status)
     if customer_id:
         query = query.eq("customer_id", customer_id)
+
+    # ── Date filter on due_date ──
+    # due_date is the column the UI displays in the A/R table, so this
+    # is the intuitive filter ("show me everything due in October").
+    # If you ever want "when was this created", switch to created_at —
+    # one line, and note the frontend would need to agree.
+    if from_date:
+        query = query.gte("due_date", from_date.isoformat())
+    if to_date:
+        query = query.lte("due_date", to_date.isoformat())
+
     result = await run_sync_db_call(
         query.order("due_date").range(offset, offset + limit - 1).execute
     )
     rows = result.data or []
-    if not rows:
-        return {"ar": [], "total": 0}
+    total = result.count or 0
 
-    # Enrich with cashier info via sales + profiles
+    if not rows:
+        return {"ar": [], "total": total, "returned": 0}
+
+    # ── Enrich with cashier info via sales + profiles ──
+    # (unchanged from the existing endpoint)
     sale_ids = [r["sale_id"] for r in rows if r.get("sale_id")]
     cashier_by_sale = {}
     if sale_ids:
@@ -19182,8 +19224,8 @@ async def list_ar(
                     filter(None, [prof.get("first_name"), prof.get("last_name")])
                 ).strip() or None
             cashier_by_sale[s["id"]] = {
-                "cashier_id":   uid,
-                "cashier_name": full_name,
+                "cashier_id":     uid,
+                "cashier_name":   full_name,
                 "receipt_number": s.get("receipt_number"),
             }
 
@@ -19193,7 +19235,11 @@ async def list_ar(
         r["cashier_name"]   = extra.get("cashier_name")
         r["receipt_number"] = extra.get("receipt_number")
 
-    return {"ar": rows, "total": len(rows)}
+    return {
+        "ar": rows,
+        "total": total,          # total of the FILTERED set
+        "returned": len(rows),
+    }
 
 @app.post("/accounts/ar/{ar_id}/payment")
 async def register_ar_payment(
@@ -19277,8 +19323,10 @@ async def list_ap(
     request: Request,
     status: Optional[str] = None,
     supplier_id: Optional[UUID] = None,
-    limit: int = 50,
-    offset: int = 0,
+    from_date: Optional[date] = Query(None, description="Filter: due_date >= from_date (YYYY-MM-DD)"),
+    to_date: Optional[date] = Query(None, description="Filter: due_date <= to_date (YYYY-MM-DD)"),
+    limit: int = Query(500, ge=1, le=2000),
+    offset: int = Query(0, ge=0),
     user_data: Tuple[str, str, str] = Depends(require_feature("accounting", allowed_roles=["owner", "admin", "finance", "auditor"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
@@ -19287,7 +19335,11 @@ async def list_ap(
 
     selected_branch = await resolve_request_branch(request, user_id, org_id, role)
 
-    query = client.table("accounts_payable").select("*").eq("org_id", org_id)
+    query = (
+        client.table("accounts_payable")
+        .select("*", count="exact")
+        .eq("org_id", org_id)
+    )
 
     if selected_branch:
         query = query.eq("branch_id", selected_branch)
@@ -19296,8 +19348,25 @@ async def list_ap(
         query = query.eq("status", status)
     if supplier_id:
         query = query.eq("supplier_id", supplier_id)
-    result = await run_sync_db_call(query.order("due_date").range(offset, offset + limit - 1).execute)
-    return {"ap": result.data, "total": len(result.data) if result.data else 0}
+
+    # Same due_date rationale as A/R. The A/P table displays due_date,
+    # so that is what the user expects to filter on.
+    if from_date:
+        query = query.gte("due_date", from_date.isoformat())
+    if to_date:
+        query = query.lte("due_date", to_date.isoformat())
+
+    result = await run_sync_db_call(
+        query.order("due_date").range(offset, offset + limit - 1).execute
+    )
+    rows = result.data or []
+    total = result.count or 0
+
+    return {
+        "ap": rows,
+        "total": total,
+        "returned": len(rows),
+    }
 
 @app.post("/accounts/ap/{ap_id}/payment")
 async def register_ap_payment(
@@ -19420,19 +19489,31 @@ async def export_accounting_data(
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
     client = get_supabase()
+
     table_map = {
         "accounts_receivable": "accounts_receivable",
-        "accounts_payable": "accounts_payable",
-        "journal_entries": "journal_entries",
-        "profit_loss": "profit_loss_summary"
+        "accounts_payable":    "accounts_payable",
+        "journal_entries":     "journal_entries",
+        "profit_loss":         "profit_loss_summary",
+    }
+    # Each entity has a natural date field. Filtering them all by
+    # created_at silently excluded records whose business date differs
+    # from their creation date.
+    date_field_map = {
+        "accounts_receivable": "due_date",
+        "accounts_payable":    "due_date",
+        "journal_entries":     "entry_date",
+        "profit_loss":         "period_start",
     }
     if export_req.entity not in table_map:
         raise HTTPException(status_code=400, detail="Invalid entity")
     table = table_map[export_req.entity]
+
     query = client.table(table).select("*").eq("org_id", org_id)
     if export_req.period_start and export_req.period_end:
-        query = query.gte("created_at", export_req.period_start.isoformat())
-        query = query.lte("created_at", export_req.period_end.isoformat())
+        field = date_field_map[export_req.entity]
+        query = query.gte(field, export_req.period_start.isoformat())
+        query = query.lte(field, export_req.period_end.isoformat())
     result = await run_sync_db_call(query.execute)
     data = result.data or []
 
