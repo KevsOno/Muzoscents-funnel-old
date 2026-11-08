@@ -29,16 +29,6 @@ async def profitability(
     """
     One-shot profitability analysis for a date range, scoped to the
     caller's selected branch.
-
-    Branch scoping:
-      - Owner, no X-Selected-Branch-Id → all branches (org-wide)
-      - Owner, X-Selected-Branch-Id set → that branch
-      - Non-owner, single branch       → that branch
-      - Non-owner, multiple branches    → 400 unless they send the header
-        (same contract as /accounts/ar, /accounts/ap, /expenses)
-
-    Response includes `branch_id` so the frontend can display which
-    scope the numbers came from.
     """
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     user_id, org_id, role = user_data
@@ -66,7 +56,6 @@ async def profitability(
     revenue = sum(float(s.get("total_amount") or 0) for s in sales_rows)
     sales_ids = [s["id"] for s in sales_rows]
 
-    # COGS derived from sale_items of the already-branch-scoped sale IDs.
     cogs = 0.0
     cogs_by_product: dict = {}
     if sales_ids:
@@ -123,28 +112,14 @@ async def profitability(
 
     # ── 3. Waste ─────────────────────────────────────────────────
     #
-    # Two paths with different scoping semantics but the same unit
-    # (naira), so a branch's number + every other branch's number
-    # equals the org-wide number when there's no stock drift.
-    #
-    #   Org-wide path: sum inventory_batches.quantity × cost for
-    #                  batches expiring in range. This matches the
-    #                  original behaviour byte-for-byte.
-    #
-    #   Branch path:   sum location_stocks.quantity × cost for rows
-    #                  whose batch expired in range and whose location
-    #                  is in the selected branch. That's the value of
-    #                  expired stock *physically sitting at this branch's
-    #                  locations*, which is the correct branch-level
-    #                  waste number.
-    #
-    # The two-queries are needed because location_stocks.batch_id has
-    # no FK to inventory_batches.id in the current schema, so
-    # PostgREST can't embed one inside the other.
+    # FIX: `inventory` must be in the SELECT with !inner, otherwise
+    # PostgREST cannot resolve the filter `.eq("inventory.org_id", ...)`
+    # and returns 400 — which is why /dashboard/profitability was 500ing
+    # and the dashboard showed "Failed to load profitability data".
     waste_value = 0.0
     expired_q = (
         client.table("inventory_batches")
-        .select("id, quantity, cost_price_naira")
+        .select("id, quantity, cost_price_naira, inventory:inventory_id!inner(org_id)")
         .eq("inventory.org_id", org_id)
         .gte("expiry_date", from_iso)
         .lte("expiry_date", to_iso)
@@ -153,13 +128,11 @@ async def profitability(
     expired_batches = {r["id"]: r for r in (expired_res.data or [])}
 
     if expired_batches and not selected_branch:
-        # Org-wide: match original behaviour exactly.
         waste_value = sum(
             float(b.get("quantity") or 0) * float(b.get("cost_price_naira") or 0)
             for b in expired_batches.values()
         )
     elif expired_batches and selected_branch:
-        # Branch-scoped: sum per-location quantity × batch cost.
         ls_res = await run_sync_db_call(
             client.table("location_stocks")
             .select("batch_id, quantity, location:locations!inner(branch_id)")
