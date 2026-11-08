@@ -706,6 +706,22 @@
             const [fetching, setFetching] = useState(false);
             const [error, setError] = useState('');
 
+            // ── Accounting sync feature status ──
+            // Sourced from GET /accounts/sync-webhook/status. The
+            // backend serves this specifically so the UI can decide
+            // between "show the sync button" and "show a coming-soon
+            // badge" without having to parse a 503 on a POST. While
+            // this is loading we show a spinner in the sync card; if
+            // the fetch fails for any reason (endpoint not deployed,
+            // transient error, role misconfiguration), we assume the
+            // feature is unavailable — the safe default matching the
+            // current rollout posture.
+            const [syncStatus, setSyncStatus] = useState({
+                enabled: false,
+                message: null,
+                loading: true,
+            });
+
             const [showPaymentModal, setShowPaymentModal] = useState(false);
             const [paymentTarget, setPaymentTarget] = useState(null);
             const [paymentType, setPaymentType] = useState('ar');
@@ -743,6 +759,41 @@
 
             useEffect(() => {
                 if (session) fetchAllData();
+            }, [session]);
+
+            // ── Sync feature status fetch ──
+            // Separate effect so a failure here can never block the
+            // main accounting fetches. The cancellation flag prevents
+            // a setState on an unmounted component if the user
+            // navigates away mid-fetch.
+            useEffect(() => {
+                if (!session) return;
+                let cancelled = false;
+                (async () => {
+                    try {
+                        const res = await apiCall('/accounts/sync-webhook/status');
+                        if (cancelled) return;
+                        setSyncStatus({
+                            enabled: !!res.enabled,
+                            message: res.message || null,
+                            loading: false,
+                        });
+                    } catch (err) {
+                        if (cancelled) return;
+                        // 404 = the endpoint isn't deployed yet.
+                        // Any other failure is also treated as "not
+                        // available" — both cases default to the
+                        // coming-soon state, which is the correct
+                        // posture for a feature that isn't live.
+                        console.info('[kdaccount] sync status unavailable:', err.message);
+                        setSyncStatus({
+                            enabled: false,
+                            message: null,
+                            loading: false,
+                        });
+                    }
+                })();
+                return () => { cancelled = true; };
             }, [session]);
 
             const handleSwitch = async () => {
@@ -951,11 +1002,33 @@
                 }
             };
 
+            // Trigger sync is only reachable when syncStatus.enabled
+            // is true, but this handler is defensive against the case
+            // where the status is stale (e.g. the flag was flipped
+            // between the status fetch and the button click). A 503
+            // "coming soon" response is caught and the UI is switched
+            // to the coming-soon state rather than showing a raw error.
             const triggerSync = async () => {
                 try {
                     await apiCall('/accounts/sync-webhook', { method: 'POST' });
                     alert('Sync webhook triggered successfully');
                 } catch (err) {
+                    const msg = err.message || '';
+                    if (msg.toLowerCase().includes('coming soon')) {
+                        // Backend flag was flipped off between our
+                        // status check and this click. Reconcile UI.
+                        setSyncStatus({
+                            enabled: false,
+                            message: msg,
+                            loading: false,
+                        });
+                        alert(
+                            'Accounting sync is coming soon.\n\n' +
+                            'Use the Export buttons above to move data into ' +
+                            'your accounting system in the meantime.'
+                        );
+                        return;
+                    }
                     alert('Sync failed: ' + err.message);
                 }
             };
@@ -1290,10 +1363,41 @@
                         </div>
                         <div className="border p-4 rounded">
                             <h3 className="font-medium mb-2">Sync with External System</h3>
-                            <p className="text-sm text-gray-600 mb-2">Trigger a webhook to sync data to Sage, QuickBooks, etc.</p>
-                            <button onClick={triggerSync} className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700">
-                                <i className="fa-solid fa-rotate mr-1"></i> Trigger Sync
-                            </button>
+                            {syncStatus.loading ? (
+                                <div className="flex items-center text-sm text-gray-500 mt-2">
+                                    <i className="fa-solid fa-spinner fa-spin mr-2"></i> Checking availability…
+                                </div>
+                            ) : syncStatus.enabled ? (
+                                <>
+                                    <p className="text-sm text-gray-600 mb-2">
+                                        Trigger a webhook to sync data to your connected accounting system.
+                                    </p>
+                                    <button
+                                        onClick={triggerSync}
+                                        className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700"
+                                    >
+                                        <i className="fa-solid fa-rotate mr-1"></i> Trigger Sync
+                                    </button>
+                                </>
+                            ) : (
+                                <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 mt-1">
+                                    <div className="flex items-start gap-2">
+                                        <i className="fa-solid fa-clock text-amber-600 mt-0.5"></i>
+                                        <div>
+                                            <p className="font-medium text-amber-900">
+                                                Coming soon
+                                                <span className="ml-2 text-[10px] uppercase tracking-wide bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded">
+                                                    Beta
+                                                </span>
+                                            </p>
+                                            <p className="text-sm text-amber-800 mt-1">
+                                                {syncStatus.message ||
+                                                    "Native integrations with QuickBooks, Xero, and Sage Business Cloud are in development. In the meantime, use the Export buttons to move your data into your accounting system."}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
