@@ -14092,6 +14092,14 @@ async def pos_inventory(
     offset: int = Query(0, ge=0),
     q: Optional[str] = Query(None),
     location_id: Optional[str] = Query(None, description="Override the POS channel's default location"),
+    skip_count: bool = Query(
+        False,
+        description=(
+            "Skip COUNT(*). Use on pages > 0 during a full catalog sync — "
+            "the sync loop terminates on an empty page, so only page 0 "
+            "needs the total. Saves one COUNT per page on 15k+ SKU catalogs."
+        ),
+    ),
     user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "sales_rep"]))
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
@@ -14101,21 +14109,35 @@ async def pos_inventory(
     if not resolved_location_id:
         resolved_location_id = await get_location_for_channel(org_id, "pos")
 
+    # ── Fallback: no POS location resolved ──
     if not resolved_location_id:
         logger.warning(f"/inventory/pos: no location resolved for org {org_id}, falling back to global inventory")
         client = get_supabase()
-        query = client.table("inventory").select("*", count="exact").eq("org_id", org_id)
+        query = client.table("inventory").select(
+            "*",
+            count="planned" if not skip_count else None,
+        ).eq("org_id", org_id)
         if q:
             or_condition = f"description.ilike.%{q}%,item_code.ilike.%{q}%,product_group.ilike.%{q}%"
-            # supabase-py's SyncSelectRequestBuilder has no .or_() method.
-            # Set the raw PostgREST "or" parameter on the underlying builder.
-            # When ORG_SCOPE_CANARY is on, `query` is wrapped in _CanaryBuilder
-            # whose __slots__ blocks attribute writes — unwrap via _inner first.
             inner = getattr(query, "_inner", query)
             inner.params = inner.params.set("or", f"({or_condition})")
         result = await run_sync_db_call(query.range(offset, offset + limit - 1).execute)
-        return {"items": result.data or [], "total": result.count or 0, "location_id": None}
+        return {
+            "items": result.data or [],
+            "total": (result.count or 0) if not skip_count else len(result.data or []),
+            "location_id": None,
+        }
 
+    # ── Primary path: location-scoped read ──
+    #
+    # include_count semantics:
+    #   skip_count=False → include_count=True  → PostgREST issues COUNT(*),
+    #                     result.count is populated, `total` is accurate.
+    #                     Required on page 0 (populates CATALOG_EXPECTED_KEY)
+    #                     and on every search page (drives infinite scroll).
+    #   skip_count=True  → include_count=False → no COUNT(*). `total` is 0.
+    #                     Safe only on sync pages 1+ where the loop
+    #                     terminates on `pageItems.length === 0`.
     items, total = await fetch_inventory_scoped_to_location(
         org_id=org_id,
         location_id=str(resolved_location_id),
@@ -14124,7 +14146,7 @@ async def pos_inventory(
         q=q,
         sort_by="newest",
         require_positive_stock=False,
-        include_count=False,     # POS terminal renders a list, not a pager — skip COUNT(*)
+        include_count=not skip_count,
     )
 
     sale_map = await get_active_sale_prices(org_id, [it["id"] for it in items])
