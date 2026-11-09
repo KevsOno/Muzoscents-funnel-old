@@ -72,7 +72,14 @@
         .printer-method .method-icon { width: 40px; height: 40px; border-radius: 8px; background: #dbeafe; color: #1e40af; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 18px; }
         .printer-method.selected .method-icon { background: #3b82f6; color: white; }
 
-        body.kiosk-mode #admin-controls, body.kiosk-mode #sync-dashboard-modal, body.kiosk-mode #history-modal, body.kiosk-mode #printer-modal { display: none !important; }
+        /* Kiosk mode: hide every admin control EXCEPT the kiosk toggle.
+           The toggle must stay reachable so a cashier can exit self-
+           service without reloading the page. Previously the entire
+           #admin-controls container was hidden, which made kiosk mode
+           one-way — the button that got you in was the only way out,
+           and it was gone. */
+        body.kiosk-mode #admin-controls > *:not(#kiosk-mode-btn) { display: none !important; }
+        body.kiosk-mode #sync-dashboard-modal, body.kiosk-mode #history-modal, body.kiosk-mode #printer-modal { display: none !important; }
         body.kiosk-mode #pos-tabs-container { display: none !important; }
 
         /* Thermal print CSS — no margins, monospace, auto page height */
@@ -1474,6 +1481,19 @@
             }
         });
 
+        // Escape exits kiosk mode. The toggle button is now visible in
+        // kiosk mode (see CSS), but Escape gives a keyboard shortcut so
+        // the mode is always reversible even if the button is ever
+        // obscured or the terminal is being driven without a mouse.
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            if (!document.body.classList.contains('kiosk-mode')) return;
+            document.body.classList.remove('kiosk-mode');
+            kioskModeBtn.innerHTML = '<i class="fa-solid fa-tablet-screen-button"></i> Kiosk';
+            kioskModeBtn.classList.replace('bg-red-600', 'bg-gray-800');
+            showToast('Kiosk Mode: Deactivated', 'info');
+        });
+
         // ORDER TYPE & TABLE NUMBER
         function handleOrderTypeChange(val) {
             tabState[activeTab].orderType = val;
@@ -2037,7 +2057,16 @@
                 if (!isOnline) { await saveOfflineAndFinish('offline'); return; }
                 const result = await apiCall('/pos/terminal/checkout', 'POST', {
                     items: itemsPayload, payment_method: paymentMethod, customer_name: customerName, customer_phone: customerPhone, customer_email: customerEmail,
-                    order_type: state.orderType, table_number: state.tableNumber,
+                    // Only food verticals send fulfilment fields. The backend
+                    // also gates on org.vertical === 'food' as defence in depth,
+                    // but matching the gate here keeps all four outbound paths
+                    // (online checkout + the two sync paths + kitchen ticket)
+                    // consistent and avoids polluting the wire payload with
+                    // null/empty keys the server would just drop.
+                    ...(IS_FOOD_VERTICAL && {
+                        order_type: state.orderType,
+                        table_number: state.tableNumber,
+                    }),
                     offline_meta: { reference: offlineRef, cashier_id: cashierId, created_at: order.createdAt }, receipt_data: receiptData,
                     transfer_account_id: transferAccountId || undefined,
                     transfer_reference: transferReference || undefined,
