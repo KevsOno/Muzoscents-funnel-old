@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fulfillment Dashboard | Kevs bOS</title>
+    <script src="/kdint.js"></script>
+    <script src="/kdsession.js"></script>
+    <script src="/nav.js" defer></script>
+    <link rel="stylesheet" href="/tailwind.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Leaflet Map Libraries -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+    
+    <style>
+        body { background: #0F172A; font-family: 'Inter', sans-serif; }
+        .status-badge { padding: 2px 8px; border-radius: 20px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; }
+        .status-pending { background: #f59e0b20; color: #f59e0b; }
+        .status-processing { background: #3b82f620; color: #3b82f6; }
+        .status-shipped { background: #8b5cf620; color: #8b5cf6; }
+        .status-delivered { background: #10b98120; color: #10b981; }
+        
+        /* Leaflet Dark Mode Overrides */
+        .leaflet-container { background: #1E293B; border-radius: 0.75rem; border: 1px solid #334155; }
+        .leaflet-bar a { background-color: #1E293B !important; color: white !important; border-color: #334155 !important; }
+        .leaflet-bar a:hover { background-color: #334155 !important; }
+        
+        /* Free Dark Mode Map Filter (OpenStreetMap) */
+        .leaflet-layer {
+            filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
+        }
+
+        /* Force the area modal above everything (Leaflet max is 1000) */
+        .z-max {
+            z-index: 99999 !important;
+        }
+        
+        /* Ensure the map inside the modal behaves nicely */
+        #area-draw-map {
+            position: relative;
+            z-index: 1;
+        }
+    </style>
+</head>
+<body class="text-slate-200">
+
+<!-- ========== GLOBAL NAVIGATION (Kevs bOS) ========== -->
+<div id="kevs-nav-container"></div>
+<!-- ========== END GLOBAL NAVIGATION ========== -->
+
+<div class="container mx-auto px-4 py-6 max-w-7xl">
+    <!-- Tab Switcher -->
+    <div class="flex border-b border-slate-700 mb-6">
+        <button id="tab-btn-orders" class="px-6 py-3 text-white border-b-2 border-blue-500 font-medium transition"><i class="fa-solid fa-box mr-2"></i> Orders</button>
+        <button id="tab-btn-areas" class="px-6 py-3 text-slate-400 hover:text-white font-medium transition"><i class="fa-solid fa-map-location-dot mr-2"></i> Areas Covered</button>
+    </div>
+
+    <!-- ORDERS TAB -->
+    <div id="panel-orders">
+        <div class="flex justify-between items-center mb-6 flex-wrap gap-3">
+            <div>
+                <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">📦 Fulfillment Dashboard</h1>
+                <p class="text-slate-400 text-sm">Manage order shipping and dispatch</p>
+            </div>
+            <div class="flex gap-3">
+                <button id="refresh-btn" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg transition"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
+            </div>
+        </div>
+        
+        <div class="bg-slate-800/50 rounded-xl p-4 mb-6 border border-slate-700 flex flex-wrap gap-3 items-end">
+            <div class="flex-1 min-w-[150px]">
+                <label class="text-xs text-slate-400 block mb-1">Status filter</label>
+                <select id="status-filter" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white">
+                    <option value="">All orders</option>
+                    <option value="pending">Pending (unpaid)</option>
+                    <option value="processing">Processing</option>
+                    <option value="shipped">Shipped</option>
+                    <option value="delivered">Delivered</option>
+                </select>
+            </div>
+            <div class="flex items-center gap-2 pb-2">
+                <input type="checkbox" id="include-pending-checkbox" class="w-4 h-4 rounded border-slate-600 bg-slate-800">
+                <label for="include-pending-checkbox" class="text-xs text-slate-300">Show unpaid orders</label>
+            </div>
+            <button id="apply-filter" class="bg-blue-600 hover:bg-blue-700 px-5 py-2 rounded-lg transition">Apply</button>
+        </div>
+        
+        <div id="orders-container" class="space-y-4">
+            <div class="text-center py-12"><i class="fa-solid fa-spinner fa-pulse text-2xl"></i> Loading orders...</div>
+        </div>
+    </div>
+
+    <!-- AREAS COVERED TAB -->
+    <div id="panel-areas" class="hidden">
+        <div class="flex justify-between items-center mb-4">
+            <div>
+                <h2 class="text-xl font-bold text-white">Delivery Zones</h2>
+                <p class="text-sm text-slate-400">Draw polygons to define where you deliver and the base fee for each area.</p>
+            </div>
+            <button id="add-area-btn" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-medium transition">
+                <i class="fa-solid fa-plus mr-1"></i> Add Area
+            </button>
+        </div>
+        
+        <!-- Map Container -->
+        <div id="map-container" class="w-full z-0 mb-6 rounded-xl" style="height: 500px;"></div>
+        
+        <!-- Zones Table -->
+        <div class="bg-slate-800 rounded-xl overflow-hidden border border-slate-700">
+            <table class="w-full text-left text-sm">
+                <thead class="bg-slate-900 border-b border-slate-700 text-slate-400">
+                    <tr>
+                        <th class="p-4 font-medium">Zone Name</th>
+                        <th class="p-4 font-medium">Base Fee (₦)</th>
+                        <th class="p-4 font-medium text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="areas-table-body" class="divide-y divide-slate-700/50">
+                    <tr><td colspan="3" class="p-6 text-center text-slate-500">Loading areas...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ========== MODALS ========== -->
+
+<div id="updateModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+    <div class="bg-slate-800 rounded-2xl max-w-md w-full p-5 border border-slate-700">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-bold">Update Order Status</h3>
+            <button id="closeModalBtn" class="text-slate-400 hover:text-white text-2xl">&times;</button>
+        </div>
+        <div id="modal-order-info" class="text-sm bg-slate-900 p-2 rounded mb-3"></div>
+        <div class="space-y-3">
+            <div>
+                <label class="text-sm block mb-1">Shipping Status</label>
+                <select id="modal-status" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
+                    <option value="processing">Processing (picking/packing)</option>
+                    <option value="shipped">Shipped (dispatched)</option>
+                    <option value="delivered">Delivered</option>
+                </select>
+            </div>
+            <div id="tracking-fields" class="hidden space-y-3">
+                <div>
+                    <label class="text-sm block mb-1">Carrier</label>
+                    <input id="modal-carrier" type="text" placeholder="e.g., DHL, FedEx, GIG Logistics" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
+                </div>
+                <div>
+                    <label class="text-sm block mb-1">Tracking Number</label>
+                    <input id="modal-tracking" type="text" placeholder="Tracking code" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
+                </div>
+                <div>
+                    <label class="text-sm block mb-1">Estimated Delivery Date</label>
+                    <input id="modal-estimated" type="date" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
+                </div>
+            </div>
+            <div>
+                <label class="text-sm block mb-1">Internal Notes (optional)</label>
+                <textarea id="modal-notes" rows="2" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm"></textarea>
+            </div>
+            <div class="flex items-center gap-2">
+                <input type="checkbox" id="modal-confirm-payment" class="w-4 h-4 rounded border-slate-600">
+                <label for="modal-confirm-payment" class="text-sm text-emerald-400">✅ Confirm payment (mark as paid)</label>
+            </div>
+            <button id="modal-update-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 py-2 rounded-lg font-semibold transition">Update Order</button>
+        </div>
+    </div>
+</div>
+
+<div id="viewModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+    <div class="bg-slate-800 rounded-2xl max-w-md w-full p-5 border border-slate-700">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent" id="view-modal-title">Order Details</h3>
+            <button id="closeViewModalBtn" class="text-slate-400 hover:text-white text-2xl">&times;</button>
+        </div>
+        <div class="space-y-4">
+            <div class="grid grid-cols-2 gap-2 text-xs bg-slate-900 p-3 rounded-lg border border-slate-700/50">
+                <div><span class="text-slate-500 block">Customer</span><strong id="view-customer-name" class="text-slate-300">-</strong></div>
+                <div><span class="text-slate-500 block">Shipping Status</span><span id="view-shipping-status" class="status-badge mt-1 inline-block">-</span></div>
+                <div><span class="text-slate-500 block">📞 Phone</span><span id="view-customer-phone" class="text-slate-300">-</span></div>
+                <div><span class="text-slate-500 block">✉️ Email</span><span id="view-customer-email" class="text-slate-300">-</span></div>
+                <div class="col-span-2 mt-1"><span class="text-slate-500 block">Delivery Address</span><p id="view-shipping-address" class="text-slate-300">-</p></div>
+            </div>
+            <div>
+                <h4 class="text-sm font-semibold text-slate-400 mb-2 border-b border-slate-700 pb-1"><i class="fa-solid fa-list-ul text-xs"></i> Items Ordered</h4>
+                <ul id="view-modal-items" class="max-h-48 overflow-y-auto space-y-1 pr-1"></ul>
+            </div>
+            <div class="flex justify-between items-center pt-2 border-t border-slate-700 text-sm">
+                <span class="font-medium text-slate-400">Total Billable Amount:</span>
+                <strong id="view-total-amount" class="text-xl text-emerald-400 font-mono">-</strong>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========== CREATE AREA MODAL ========== -->
+<div id="areaModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-max">
+    <div class="bg-slate-800 rounded-2xl max-w-2xl w-full p-6 border border-slate-700 shadow-2xl">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-bold text-white" id="modal-area-title">Add Delivery Area</h3>
+            <button id="closeAreaModalBtn" class="text-slate-400 hover:text-white text-2xl">&times;</button>
+        </div>
+        
+        <div class="space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-sm text-slate-400 block mb-1">Area Name</label>
+                    <input type="text" id="area-name" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white" placeholder="e.g. Lagos Mainland">
+                </div>
+                <div>
+                    <label class="text-sm text-slate-400 block mb-1">Base Fee (₦)</label>
+                    <input type="number" id="area-fee" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white" placeholder="1500">
+                </div>
+            </div>
+            
+            <div>
+                <label class="text-sm text-slate-400 block mb-1">Draw Zone on Map</label>
+                <div id="area-draw-map" class="w-full rounded-lg z-0" style="height: 300px;"></div>
+                <p class="text-xs text-slate-500 mt-2"><i class="fa-solid fa-info-circle"></i> Use the polygon tool in the top left corner to draw the area.</p>
+            </div>
+            
+            <button id="save-area-btn" class="w-full bg-blue-600 hover:bg-blue-700 py-3 rounded-lg font-semibold text-white transition mt-2">
+                Save Area
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ========== LEAFLET SCRIPTS ========== -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+
+<!-- ========== KDS AUTH BRIDGE + TABS + AREAS SCRIPT ========== -->
+<script>
+    // ==========================================================
+    // KDS AUTH BRIDGE
+    // ----------------------------------------------------------
+    // This page NO LONGER has its own login. It delegates 100%
+    // to the Kevs bOS sign-in (kdsignin / kdsession.js).
+    //
+    // If you already have a KDS helper (e.g. window.KDSession),
+    // it is used first. Otherwise we fall back to the shared
+    // browser storage that kdsession.js populates.
+    // ==========================================================
+    const KDS_SIGNIN_URL = '/kdsignin.html'; // ← change if your KDS sign-in route differs
+    const KDS_TOKEN_KEYS = ['access_token', 'kds_access_token', 'kds_token', 'token'];
+
+    function kdsBridge() {
+        return window.KDSession || window.KDS || window.KevsSession || null;
+    }
+
+    function getAccessToken() {
+        const s = kdsBridge();
+        if (s) {
+            const t = s.accessToken || s.access_token || s.token;
+            if (t) return t;
+        }
+        for (const key of KDS_TOKEN_KEYS) {
+            const v = localStorage.getItem(key) || sessionStorage.getItem(key);
+            if (v) return v;
+        }
+        return null;
+    }
+
+    function getRefreshToken() {
+        const s = kdsBridge();
+        if (s) {
+            const t = s.refreshToken || s.refresh_token;
+            if (t) return t;
+        }
+        return localStorage.getItem('refresh_token') || sessionStorage.getItem('refresh_token');
+    }
+
+    /**
+     * Send the user to the KDS sign-in flow.
+     * Prefers whatever API kdsession.js exposes, then falls back
+     * to a normal redirect carrying a return_to param.
+     */
+    function redirectToKdsSignin() {
+        const s = kdsBridge();
+        try {
+            if (s && typeof s.redirectToSignin === 'function') return s.redirectToSignin();
+            if (s && typeof s.requireAuth === 'function') return s.requireAuth();
+            if (s && typeof s.signIn === 'function') return s.signIn();
+        } catch (e) {
+            console.warn('KDS redirect helper failed, using fallback:', e);
+        }
+        const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
+        window.location.href = `${KDS_SIGNIN_URL}?return_to=${returnTo}`;
+    }
+
+    /**
+     * kdsession.js may hydrate the token asynchronously.
+     * Wait briefly before deciding the user is signed out.
+     */
+    async function resolveToken(maxWaitMs = 1500) {
+        let t = getAccessToken();
+        if (t) return t;
+
+        const s = kdsBridge();
+        if (s && s.ready && typeof s.ready.then === 'function') {
+            try { await s.ready; } catch (e) { /* ignore */ }
+            t = getAccessToken();
+            if (t) return t;
+        }
+
+        const deadline = Date.now() + maxWaitMs;
+        while (Date.now() < deadline) {
+            await new Promise(r => setTimeout(r, 100));
+            t = getAccessToken();
+            if (t) return t;
+        }
+        return null;
+    }
+
+    // ==========================================
+    // TAB SWITCHING LOGIC
+    // ==========================================
+    document.getElementById('tab-btn-orders').addEventListener('click', () => {
+        document.getElementById('panel-orders').classList.remove('hidden');
+        document.getElementById('panel-areas').classList.add('hidden');
+        document.getElementById('tab-btn-orders').className = "px-6 py-3 text-white border-b-2 border-blue-500 font-medium transition";
+        document.getElementById('tab-btn-areas').className = "px-6 py-3 text-slate-400 hover:text-white font-medium transition";
+    });
+
+    document.getElementById('tab-btn-areas').addEventListener('click', () => {
+        document.getElementById('panel-orders').classList.add('hidden');
+        document.getElementById('panel-areas').classList.remove('hidden');
+        document.getElementById('tab-btn-orders').className = "px-6 py-3 text-slate-400 hover:text-white font-medium transition";
+        document.getElementById('tab-btn-areas').className = "px-6 py-3 text-white border-b-2 border-blue-500 font-medium transition";
+        
+        setTimeout(() => {
+            initAreaMap();
+            if (mainMap) mainMap.invalidateSize();
+            loadAreas();
+        }, 50);
+    });
+
+    // ==========================================
+    // MAPS & AREAS LOGIC
+    // ==========================================
+    let mainMap = null;
+    let drawMap = null;
+    let drawnItems = new L.FeatureGroup();
+    let currentPolygonGeoJSON = null;
+    let editingAreaId = null;
+
+    function initAreaMap() {
+        if (mainMap) return;
+        mainMap = L.map('map-container').setView([6.5244, 3.3792], 11);
+        // OpenStreetMap - CSS Dark Mode applied via styles
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(mainMap);
+    }
+
+    function clearAreaLayers() {
+        if (!mainMap) return;
+        mainMap.eachLayer((layer) => {
+            if (layer instanceof L.LayerGroup && !(layer instanceof L.TileLayer)) {
+                mainMap.removeLayer(layer);
+            }
+        });
+    }
+
+    async function loadAreas() {
+        const sessionToken = getAccessToken();
+        if (!sessionToken) {
+            clearAreaLayers();
+            document.getElementById('areas-table-body').innerHTML =
+                `<tr><td colspan="3" class="p-6 text-center text-slate-500">
+                    <i class="fa-solid fa-lock mr-2"></i> Sign in to view and manage delivery areas.
+                 </td></tr>`;
+            return;
+        }
+        try {
+            const res = await apiCall('/api/delivery/areas');
+            const areas = res.areas || [];
+            
+            clearAreaLayers();
+
+            const tbody = document.getElementById('areas-table-body');
+            if (areas.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="3" class="p-6 text-center text-slate-500">No areas defined. Draw one to get started.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = areas.map(a => `
+                <tr>
+                    <td class="p-4 font-medium text-white">${escapeHtml(a.name)}</td>
+                    <td class="p-4 text-emerald-400 font-mono">₦${Number(a.fee).toLocaleString()}</td>
+                    <td class="p-4 text-right">
+                        <button class="text-red-400 hover:text-red-300 transition" onclick="deleteArea(${a.id})"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+
+            const group = new L.FeatureGroup();
+            areas.forEach(area => {
+                if (area.polygon) {
+                    const layer = L.geoJSON(area.polygon, {
+                        style: { color: '#3b82f6', weight: 2, fillColor: '#3b82f6', fillOpacity: 0.2 }
+                    });
+                    layer.bindPopup(`<strong class="text-black">${escapeHtml(area.name)}</strong><br><span class="text-gray-600">Fee: ₦${Number(area.fee).toLocaleString()}</span>`);
+                    group.addLayer(layer);
+                }
+            });
+            mainMap.addLayer(group);
+            if (areas.length > 0) {
+                mainMap.fitBounds(group.getBounds().pad(0.1));
+            }
+        } catch(e) {
+            console.error(e);
+            alert("Failed to load areas: " + e.message);
+        }
+    }
+
+    function initDrawMap() {
+        if (!drawMap) {
+            drawMap = L.map('area-draw-map').setView([6.5244, 3.3792], 12);
+            // OpenStreetMap - CSS Dark Mode applied via styles
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(drawMap);
+            
+            drawnItems = new L.FeatureGroup();
+            drawMap.addLayer(drawnItems);
+
+            const drawControl = new L.Control.Draw({
+                edit: { featureGroup: drawnItems },
+                draw: {
+                    polygon: { allowIntersection: false, showArea: true, shapeOptions: { color: '#3b82f6' } },
+                    polyline: false, rectangle: false, circle: false, marker: false, circlemarker: false
+                }
+            });
+            drawMap.addControl(drawControl);
+
+            drawMap.on(L.Draw.Event.CREATED, function (e) {
+                drawnItems.clearLayers();
+                const layer = e.layer;
+                drawnItems.addLayer(layer);
+                currentPolygonGeoJSON = layer.toGeoJSON().geometry;
+            });
+
+            drawMap.on(L.Draw.Event.EDITED, function (e) {
+                e.layers.eachLayer(function (layer) {
+                    currentPolygonGeoJSON = layer.toGeoJSON().geometry;
+                });
+            });
+
+            window.addEventListener('resize', () => drawMap.invalidateSize());
+        }
+        drawMap.invalidateSize();
+    }
+
+    document.getElementById('add-area-btn').addEventListener('click', () => {
+        if (!getAccessToken()) {
+            redirectToKdsSignin();
+            return;
+        }
+        editingAreaId = null;
+        currentPolygonGeoJSON = null;
+        drawnItems.clearLayers();
+        document.getElementById('area-name').value = '';
+        document.getElementById('area-fee').value = '';
+        
+        document.getElementById('areaModal').classList.remove('hidden');
+        
+        setTimeout(() => {
+            initDrawMap();
+            if (drawMap) {
+                drawMap.invalidateSize();
+            }
+        }, 100);
+    });
+
+    document.getElementById('closeAreaModalBtn').addEventListener('click', () => {
+        document.getElementById('areaModal').classList.add('hidden');
+    });
+
+    document.getElementById('save-area-btn').addEventListener('click', async () => {
+        const name = document.getElementById('area-name').value;
+        const fee = parseInt(document.getElementById('area-fee').value);
+        
+        if (!name || isNaN(fee)) return alert("Please fill in both name and fee.");
+        if (!currentPolygonGeoJSON) return alert("Please draw a polygon on the map first.");
+
+        const btn = document.getElementById('save-area-btn');
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+        btn.disabled = true;
+
+        try {
+            await apiCall('/api/delivery/areas', {
+                method: 'POST',
+                body: JSON.stringify({ name, fee, polygon: currentPolygonGeoJSON })
+            });
+            document.getElementById('areaModal').classList.add('hidden');
+            loadAreas();
+        } catch(e) {
+            alert("Failed to save: " + e.message);
+        } finally {
+            btn.innerHTML = 'Save Area';
+            btn.disabled = false;
+        }
+    });
+
+    async function deleteArea(id) {
+        if (!confirm("Are you sure you want to delete this area?")) return;
+        try {
+            await apiCall(`/api/delivery/areas/${id}`, { method: 'DELETE' });
+            loadAreas();
+        } catch(e) {
+            alert("Failed to delete: " + e.message);
+        }
+    }
+</script>
+
+<!-- ========== MAIN DASHBOARD SCRIPT ========== -->
+<script>
+    const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
+    let token = null;
+    let currentOrderId = null;
+    let currentOrderStatus = null;
+
+    // ==========================================
+    // ORGANISATION SELECTION
+    // ==========================================
+    async function ensureOrgSelected() {
+        const existing = localStorage.getItem('selected_org_id');
+        if (existing) return existing;
+
+        const authToken = getAccessToken();
+        if (!authToken) throw new Error("Not signed in");
+
+        const res = await fetch(`${API_BASE}/auth/my-orgs`, {
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
+        const { orgs } = await res.json();
+
+        if (!orgs || orgs.length === 0) {
+            throw new Error("No organisations found for this user");
+        }
+        if (orgs.length === 1) {
+            localStorage.setItem('selected_org_id', orgs[0].id);
+            return orgs[0].id;
+        }
+        // Multi-org: let the user pick (or use a persisted preference)
+        const chosen = prompt(
+            `You belong to multiple organisations:\n` +
+            orgs.map((o, i) => `${i + 1}. ${o.org_name} (${o.role})`).join('\n') +
+            `\n\nEnter number:`
+        );
+        const idx = Math.max(0, parseInt(chosen || "1", 10) - 1);
+        const orgId = orgs[idx]?.id || orgs[0].id;
+        localStorage.setItem('selected_org_id', orgId);
+        return orgId;
+    }
+
+    // ==========================================
+    // SESSION REFRESH
+    // KDS owns the session. We only ask KDS to refresh;
+    // the legacy endpoint is kept as a last-resort fallback.
+    // ==========================================
+    async function refreshAccessToken() {
+        const s = kdsBridge();
+        if (s && typeof s.refresh === 'function') {
+            try {
+                const fresh = await s.refresh();
+                if (fresh) { token = fresh; return true; }
+            } catch (e) {
+                console.warn("KDS refresh failed", e);
+            }
+        }
+
+        const refresh = getRefreshToken();
+        if (!refresh) return false;
+        try {
+            const res = await fetch(`${API_BASE}/auth/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: refresh })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                localStorage.setItem('access_token', data.access_token);
+                localStorage.setItem('refresh_token', data.refresh_token);
+                token = data.access_token;
+                return true;
+            }
+        } catch(e) { console.warn("refresh failed", e); }
+        return false;
+    }
+
+    async function apiCall(endpoint, options = {}) {
+        const authToken = getAccessToken();
+        if (!authToken) {
+            redirectToKdsSignin();
+            throw new Error("Not signed in — redirecting to sign in.");
+        }
+        token = authToken;
+
+        if (!options.headers) options.headers = {};
+        options.headers['Content-Type'] = 'application/json';
+        options.headers['Authorization'] = `Bearer ${token}`;
+
+        // Send the user's selected org on every call.
+        const selectedOrgId = localStorage.getItem('selected_org_id');
+        if (selectedOrgId) {
+            options.headers['X-Selected-Org-Id'] = selectedOrgId;
+        }
+        
+        let res = await fetch(`${API_BASE}${endpoint}`, options);
+
+        if (res.status === 401) {
+            const refreshed = await refreshAccessToken();
+            if (!refreshed) {
+                redirectToKdsSignin();
+                throw new Error("Session expired — redirecting to sign in.");
+            }
+            token = getAccessToken() || token;
+            options.headers['Authorization'] = `Bearer ${token}`;
+            res = await fetch(`${API_BASE}${endpoint}`, options);
+            if (res.status === 401) {
+                redirectToKdsSignin();
+                throw new Error("Session expired — redirecting to sign in.");
+            }
+        }
+
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({ detail: 'Request error' }));
+            throw new Error(errData.detail || `HTTP ${res.status}`);
+        }
+        return res.json();
+    }
+
+    // ==========================================
+    // ORDERS
+    // ==========================================
+    function renderSigninState(message) {
+        const container = document.getElementById('orders-container');
+        if (!container) return;
+        container.innerHTML = `<div class="bg-slate-800/70 rounded-xl p-10 text-center border border-slate-700">
+            <i class="fa-solid fa-lock text-3xl mb-3 text-emerald-400 block"></i>
+            <p class="text-slate-300">${message || 'Redirecting you to Kevs bOS sign in…'}</p>
+            <p class="text-xs text-slate-500 mt-2">You will be returned here automatically.</p>
+        </div>`;
+    }
+
+    async function loadOrders(status = '', includePending = false) {
+        const container = document.getElementById('orders-container');
+        if (!getAccessToken()) {
+            renderSigninState();
+            redirectToKdsSignin();
+            return;
+        }
+        container.innerHTML = '<div class="text-center py-12"><i class="fa-solid fa-spinner fa-pulse"></i> Loading orders...</div>';
+        try {
+            let url = `/fulfillment/orders?limit=100&include_pending=${includePending}`;
+            if (status) url += `&status=${status}`;
+            const data = await apiCall(url);
+            const orders = data.orders || [];
+            if (orders.length === 0) {
+                container.innerHTML = '<div class="bg-slate-800/50 rounded-xl p-10 text-center text-slate-400">📭 No orders found for this status.</div>';
+                return;
+            }
+            container.innerHTML = orders.map(order => {
+                const statusClass = order.shipping_status || 'pending';
+                const statusLabel = statusClass === 'processing' ? 'Processing' : statusClass === 'shipped' ? 'Shipped' : statusClass === 'delivered' ? 'Delivered' : 'Pending';
+                const paymentBadge = order.status === 'pending' ? '<span class="ml-2 text-[10px] bg-amber-600/30 text-amber-300 px-1.5 py-0.5 rounded-full">⚠️ unpaid</span>' : '';
+                return `
+                    <div class="bg-slate-800/70 border border-slate-700 rounded-xl p-4 hover:shadow-lg transition">
+                        <div class="flex flex-wrap justify-between items-start gap-3">
+                            <div>
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="font-mono text-blue-300">${escapeHtml(order.receipt_number)}</span>
+                                    <span class="status-badge status-${statusClass}">${statusLabel}</span>
+                                    ${paymentBadge}
+                                </div>
+                                <div class="text-sm text-slate-400 mt-1">
+                                    <span><i class="fa-regular fa-calendar"></i> ${new Date(order.created_at).toLocaleString()}</span>
+                                    <span class="mx-2">•</span>
+                                    <span><i class="fa-regular fa-user"></i> ${escapeHtml(order.customer_name || 'Guest')}</span>
+                                </div>
+                                <div class="text-sm mt-1">₦${order.total_amount?.toLocaleString()} | Items: ${order.sale_items?.length || 0}</div>
+                            </div>
+                            <div class="flex gap-2">
+                                <button class="view-order-btn bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg text-sm transition" data-id="${order.id}"><i class="fa-regular fa-eye"></i> View</button>
+                                <button class="update-status-btn bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg text-sm transition" data-id="${order.id}" data-receipt="${escapeHtml(order.receipt_number)}" data-status="${order.shipping_status || 'pending'}" data-payment="${order.status}"><i class="fa-solid fa-truck-fast"></i> Update</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            document.querySelectorAll('.view-order-btn').forEach(btn => {
+                btn.addEventListener('click', () => viewOrder(btn.dataset.id));
+            });
+            document.querySelectorAll('.update-status-btn').forEach(btn => {
+                btn.addEventListener('click', () => openUpdateModal(btn.dataset.id, btn.dataset.receipt, btn.dataset.status, btn.dataset.payment));
+            });
+        } catch (err) {
+            console.error(err);
+            container.innerHTML = `<div class="bg-red-500/20 border border-red-500 p-4 rounded-xl text-red-300">⚠️ Error: ${err.message}. <button id="retry-load" class="underline ml-2">Retry</button></div>`;
+            const retryBtn = document.getElementById('retry-load');
+            if (retryBtn) retryBtn.onclick = () => loadOrders(document.getElementById('status-filter').value, document.getElementById('include-pending-checkbox').checked);
+        }
+    }
+    
+    async function viewOrder(orderId) {
+        try {
+            const order = await apiCall(`/fulfillment/order/${orderId}`);
+            document.getElementById('view-modal-title').innerText = `Order: ${order.receipt_number || 'N/A'}`;
+            document.getElementById('view-customer-name').innerText = order.customer_name || 'Guest User';
+            document.getElementById('view-customer-phone').innerText = order.customer_phone || 'Not provided';
+            document.getElementById('view-customer-email').innerText = order.customer_email || 'Not provided';
+            document.getElementById('view-shipping-address').innerText = order.shipping_address || 'Pickup Arrangement';
+            document.getElementById('view-total-amount').innerText = `₦${order.total_amount?.toLocaleString()}`;
+            
+            const statusElement = document.getElementById('view-shipping-status');
+            const rawStatus = order.shipping_status || 'pending';
+            statusElement.innerText = rawStatus.toUpperCase();
+            statusElement.className = `status-badge status-${rawStatus}`;
+            
+            const itemsHtml = order.sale_items?.map(item => `
+                <li class="flex justify-between border-b border-slate-700/40 py-2 text-sm text-slate-300">
+                    <span><strong class="text-blue-400">${item.quantity}x</strong> ${escapeHtml(item.product_name)}</span>
+                    <span class="font-mono text-slate-400">₦${item.subtotal?.toLocaleString()}</span>
+                </li>
+            `).join('') || '<li class="text-slate-500 text-xs py-2">No items inside order logs</li>';
+            
+            document.getElementById('view-modal-items').innerHTML = itemsHtml;
+            document.getElementById('viewModal').classList.remove('hidden');
+        } catch(err) {
+            alert("Could not load order details: " + err.message);
+        }
+    }
+    
+    function openUpdateModal(orderId, receipt, currentStatus, paymentStatus) {
+        if (!getAccessToken()) { redirectToKdsSignin(); return; }
+        currentOrderId = orderId;
+        currentOrderStatus = currentStatus;
+        document.getElementById('modal-order-info').innerHTML = `<strong>${receipt}</strong> - Current status: ${currentStatus || 'pending'} | Payment: ${paymentStatus === 'pending' ? '⚠️ Unpaid' : '✅ Paid'}`;
+        const statusSelect = document.getElementById('modal-status');
+        statusSelect.value = currentStatus === 'shipped' ? 'shipped' : currentStatus === 'delivered' ? 'delivered' : 'processing';
+        document.getElementById('tracking-fields').classList.remove('hidden');
+        document.getElementById('modal-carrier').value = '';
+        document.getElementById('modal-tracking').value = '';
+        document.getElementById('modal-estimated').value = '';
+        document.getElementById('modal-notes').value = '';
+        
+        const confirmCheckbox = document.getElementById('modal-confirm-payment');
+        if (paymentStatus === 'pending') {
+            confirmCheckbox.checked = false;
+            confirmCheckbox.parentElement.classList.remove('hidden');
+        } else {
+            confirmCheckbox.checked = false;
+            confirmCheckbox.parentElement.classList.add('hidden');
+        }
+        document.getElementById('updateModal').classList.remove('hidden');
+    }
+    
+    document.getElementById('modal-update-btn')?.addEventListener('click', async () => {
+        if (!getAccessToken()) { document.getElementById('updateModal').classList.add('hidden'); redirectToKdsSignin(); return; }
+        const newStatus = document.getElementById('modal-status').value;
+        const carrier = document.getElementById('modal-carrier').value;
+        const tracking = document.getElementById('modal-tracking').value;
+        const estimated = document.getElementById('modal-estimated').value;
+        const notes = document.getElementById('modal-notes').value;
+        const confirmPayment = document.getElementById('modal-confirm-payment')?.checked || false;
+        
+        try {
+            const payload = {
+                shipping_status: newStatus,
+                tracking_number: tracking || null,
+                shipping_carrier: carrier || null,
+                estimated_delivery: estimated || null,
+                notes: notes || null,
+                confirm_payment: confirmPayment
+            };
+            await apiCall(`/fulfillment/order/${currentOrderId}/status`, {
+                method: 'PUT',
+                body: JSON.stringify(payload)
+            });
+            alert(`✅ Order status updated to ${newStatus}${confirmPayment ? ' and payment confirmed.' : '.'}`);
+            document.getElementById('updateModal').classList.add('hidden');
+            const includePending = document.getElementById('include-pending-checkbox').checked;
+            loadOrders(document.getElementById('status-filter').value, includePending);
+        } catch(err) {
+            alert(`Update failed: ${err.message}`);
+        }
+    });
+    
+    document.getElementById('closeModalBtn')?.addEventListener('click', () => {
+        document.getElementById('updateModal').classList.add('hidden');
+    });
+    document.getElementById('closeViewModalBtn')?.addEventListener('click', () => {
+        document.getElementById('viewModal').classList.add('hidden');
+    });
+    
+    document.getElementById('apply-filter')?.addEventListener('click', () => {
+        const status = document.getElementById('status-filter').value;
+        const includePending = document.getElementById('include-pending-checkbox').checked;
+        loadOrders(status, includePending);
+    });
+    document.getElementById('refresh-btn')?.addEventListener('click', () => {
+        const status = document.getElementById('status-filter').value;
+        const includePending = document.getElementById('include-pending-checkbox').checked;
+        loadOrders(status, includePending);
+    });
+    
+    document.getElementById('modal-status')?.addEventListener('change', (e) => {
+        const val = e.target.value;
+        const fields = document.getElementById('tracking-fields');
+        if (val === 'shipped' || val === 'delivered') {
+            fields.classList.remove('hidden');
+        } else {
+            fields.classList.add('hidden');
+        }
+    });
+    
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            document.getElementById('updateModal')?.classList.add('hidden');
+            document.getElementById('viewModal')?.classList.add('hidden');
+            document.getElementById('areaModal')?.classList.add('hidden');
+        }
+    });
+    
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str).replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+    
+    // ==========================================
+    // BOOT — KDS session or bust
+    // ==========================================
+    async function initDashboard() {
+        token = await resolveToken();
+
+        if (!token) {
+            renderSigninState('You are not signed in. Redirecting to Kevs bOS sign in…');
+            redirectToKdsSignin();
+            return;
+        }
+
+        try {
+            try {
+                await ensureOrgSelected();
+            } catch (orgErr) {
+                console.warn("Org selection failed:", orgErr);
+            }
+            await apiCall('/fulfillment/orders?limit=1');
+            await loadOrders();
+        } catch (err) {
+            console.warn("Session invalid:", err);
+            // Only clear legacy storage when KDS isn't managing the session.
+            if (!kdsBridge()) {
+                localStorage.removeItem('access_token');
+                localStorage.removeItem('refresh_token');
+            }
+            localStorage.removeItem('selected_org_id');
+            token = null;
+            renderSigninState('Your session expired. Redirecting to sign in…');
+            redirectToKdsSignin();
+        }
+    }
+    
+    initDashboard();
+</script>
+</body>
+</html>
