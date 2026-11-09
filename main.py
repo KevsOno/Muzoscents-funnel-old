@@ -49,7 +49,10 @@ from migrations_geo import ensure_geo_schema
 from geo import proxy_aws_places, calculate_intelligent_fee
 from delivery_zones import router as delivery_router
 from tracking import router as tracking_router
-
+from pos_transfers import (
+    router as pos_transfers_router,
+    ensure_payment_accounts_schema,
+)
 
 from deps import (
     # Config
@@ -230,6 +233,7 @@ def _compute_migration_suite_hash() -> str:
         "ensure_crm_customers_view",
         "ensure_expenses_table",
         "ensure_geo_schema",
+        "ensure_payment_accounts_schema",
     ]
     h = hashlib.sha256()
     for name in names:
@@ -785,6 +789,8 @@ _ORG_SCOPED_TABLES = frozenset({
     "webhook_events",
     "admin_audit",
     "audit_events",
+    # Payment accounts (new module)
+    "org_payment_accounts",
 })
 
 
@@ -6938,6 +6944,7 @@ async def startup_event():
         await ensure_crm_customers_view()
         await ensure_expenses_table()
         await ensure_geo_schema()
+        await ensure_payment_accounts_schema()
 
         await _record_migration_hash(
             suite_hash=current_hash,
@@ -7055,6 +7062,7 @@ async def startup_event():
         await ensure_crm_customers_view()
         await ensure_expenses_table()
         await ensure_geo_schema()
+        await ensure_payment_accounts_schema()
         await _record_migration_hash(
             suite_hash=current_hash,
             applied_by=instance_id,
@@ -17452,6 +17460,25 @@ class POSCheckoutRequest(BaseModel):
     offline_reference: Optional[str] = None
     receipt_data: Optional[dict] = None
     location_id: Optional[UUID] = None
+    
+    # ── Bank-transfer tracking (new) ──
+          #
+          # When payment_method='transfer', transfer_account_id is REQUIRED.
+          # The POS terminal is the authority on which of the org's receiving
+          # accounts the customer's money landed in. Without this, a transfer
+          # is indistinguishable from cash in the audit trail.
+          #
+          # transfer_reference carries the bank's own transaction reference
+          # (the customer's banking app shows it), so reconciliation against
+          # the account statement can match on it.
+          #
+          # For legacy offline-queue replays (built before this change), both
+          # fields may be absent; the endpoint will fall back to
+          # receipt_data.payment.{account_id, transfer_reference}.
+          transfer_account_id: Optional[UUID] = None
+          transfer_reference: Optional[str] = None
+
+
 
 # ------------------------------------------------------------------
 # /pos/checkout
@@ -17697,6 +17724,53 @@ async def pos_terminal_checkout(
     if not location_id:
         raise HTTPException(status_code=400, detail="No location available for this organisation")
 
+    # ── Transfer-account resolution ──
+    # For payment_method='transfer', a receiving account is mandatory.
+    # This is what turns a POS sale into an auditable bank transfer: the
+    # money landed in exactly one of the org's registered accounts, and
+    # the sale row records which one. Without it, 'transfer' is
+    # indistinguishable from cash in the audit trail.
+    transfer_account_info = None
+    resolved_transfer_reference = req.transfer_reference
+
+    if req.payment_method == "transfer":
+        acct_id = req.transfer_account_id
+        if not acct_id and req.receipt_data:
+            pmt = req.receipt_data.get("payment") or {}
+            raw_id = pmt.get("account_id")
+            if raw_id:
+                try:
+                    acct_id = UUID(str(raw_id))
+                except (ValueError, TypeError):
+                    acct_id = None
+            if not resolved_transfer_reference:
+                resolved_transfer_reference = pmt.get("transfer_reference")
+
+        if not acct_id:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Transfer payments require a receiving account. "
+                    "Select which organisation account the money landed in."
+                ),
+            )
+
+        acct_res = await run_sync_db_call(
+            get_supabase().table("org_payment_accounts")
+            .select("id, label, provider, account_number, account_name")
+            .eq("id", str(acct_id))
+            .eq("org_id", org_id)
+            .eq("is_active", True)
+            .maybe_single()
+            .execute
+        )
+        if not acct_res or not acct_res.data:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid or inactive receiving account for this organisation",
+            )
+        transfer_account_info = acct_res.data
+
     # ── Location-scoped stock pre-check ──
     #
     # process_batch_checkout_v2 enforces this too, but its exception
@@ -17803,19 +17877,56 @@ async def pos_terminal_checkout(
         if is_duplicate:
             logger.info(f"↩ POS sale {sale_id} already exists (offline ref replay) – skipping side effects")
 
+
+
+
+
         # The RPC inserts status='completed' already, but branch_id and
         # shipping_status still need setting. Idempotent to re-apply.
         branch_id_for_sale = await resolve_request_branch_for_write(request, user_id, org_id, role)
-        await run_sync_db_call(
-            get_supabase().table("sales")
-            .update({
-                "status": "completed",
-                "shipping_status": "processing",
-                "branch_id": branch_id_for_sale,
-            })
-            .eq("id", sale_id)
-            .execute
-        )
+        sale_update_payload = {
+            "status": "completed",
+            "shipping_status": "processing",
+            "branch_id": branch_id_for_sale,
+        }
+        if transfer_account_info:
+            # Prefer the original offline creation time when this is a
+            # queue replay, so the audit trail reflects when the cashier
+            # actually confirmed the transfer, not when the sync ran.
+            confirmed_at = datetime.now(timezone.utc).isoformat()
+            if offline_meta_payload and offline_meta_payload.get("created_at"):
+                try:
+                    confirmed_at = offline_meta_payload["created_at"]
+                except Exception:
+                    pass
+            sale_update_payload["payment_account_id"] = transfer_account_info["id"]
+            sale_update_payload["payment_transfer_reference"] = resolved_transfer_reference
+            sale_update_payload["payment_confirmed_at"] = confirmed_at
+            sale_update_payload["payment_confirmed_by"] = user_id
+
+        try:
+            await run_sync_db_call(
+                get_supabase().table("sales")
+                .update(sale_update_payload)
+                .eq("id", sale_id)
+                .execute
+            )
+        except Exception as e:
+            # The sale exists; only the transfer metadata failed to
+            # attach. Log for reconciliation rather than failing the
+            # cashier's completed transaction.
+            if transfer_account_info:
+                logger.error(
+                    "Failed to attach transfer metadata to sale",
+                    sale_id=str(sale_id),
+                    account_id=str(transfer_account_info.get("id")),
+                    error=str(e),
+                )
+            else:
+                logger.error(
+                    "Failed to update sale status",
+                    sale_id=str(sale_id), error=str(e),
+                )
 
         result["status"] = "completed"
         result["sale_status"] = "completed"
@@ -22648,7 +22759,8 @@ from support_chat import router as support_chat_router
 app.include_router(expenses_router)
 app.include_router(exec_profitability_router)
 app.include_router(customers_router)
-app.include_router(support_chat_router) 
+app.include_router(support_chat_router)
+app.include_router(pos_transfers_router) 
 
 
 # --- CENTRALIZED LOG SHIPPING (Optional) AXIOM ---
