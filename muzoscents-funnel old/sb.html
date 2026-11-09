@@ -80,9 +80,23 @@
                     <option value="delivered">Delivered</option>
                 </select>
             </div>
+            <div class="flex-1 min-w-[150px]">
+                <label class="text-xs text-slate-400 block mb-1">From date <span class="text-slate-600">(UTC)</span></label>
+                <input type="date" id="filter-from-date" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white">
+            </div>
+            <div class="flex-1 min-w-[150px]">
+                <label class="text-xs text-slate-400 block mb-1">To date <span class="text-slate-600">(UTC)</span></label>
+                <input type="date" id="filter-to-date" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white">
+            </div>
             <div class="flex items-center gap-2 pb-2">
                 <input type="checkbox" id="include-pending-checkbox" class="w-4 h-4 rounded border-slate-600 bg-slate-800">
                 <label for="include-pending-checkbox" class="text-xs text-slate-300">Show unpaid orders</label>
+            </div>
+            <div class="flex gap-1 pb-2" title="Quick ranges (relative to today, UTC)">
+                <button id="quick-today"   type="button" class="text-xs px-2 py-1.5 rounded border border-slate-600 text-slate-300 hover:bg-slate-700">Today</button>
+                <button id="quick-7d"      type="button" class="text-xs px-2 py-1.5 rounded border border-slate-600 text-slate-300 hover:bg-slate-700">7d</button>
+                <button id="quick-30d"     type="button" class="text-xs px-2 py-1.5 rounded border border-slate-600 text-slate-300 hover:bg-slate-700">30d</button>
+                <button id="quick-clear"   type="button" class="text-xs px-2 py-1.5 rounded border border-slate-600 text-slate-300 hover:bg-slate-700">Clear</button>
             </div>
             <button id="apply-filter" class="bg-blue-600 hover:bg-blue-700 px-5 py-2 rounded-lg transition">Apply</button>
         </div>
@@ -520,6 +534,46 @@
 <script>
     const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
     let token = null;
+
+    // ── Filter state: single source of truth for what the filter bar is asking for.
+    // Every call site that triggers a list reload goes through this helper
+    // instead of reading the DOM ad hoc, so a change to the filter bar only
+    // needs updating here.
+    const FILTER_LS_KEY = 'fulfillment_filter_v1';
+
+    function getFilterState() {
+        return {
+            status:         document.getElementById('status-filter').value || '',
+            includePending: document.getElementById('include-pending-checkbox').checked,
+            fromDate:       document.getElementById('filter-from-date').value || '',
+            toDate:         document.getElementById('filter-to-date').value || '',
+        };
+    }
+
+    function applyFilterToDOM(state) {
+        document.getElementById('status-filter').value = state.status || '';
+        document.getElementById('include-pending-checkbox').checked = !!state.includePending;
+        document.getElementById('filter-from-date').value = state.fromDate || '';
+        document.getElementById('filter-to-date').value = state.toDate || '';
+    }
+
+    function persistFilterState(state) {
+        try { localStorage.setItem(FILTER_LS_KEY, JSON.stringify(state)); } catch (e) {}
+    }
+
+    function restoreFilterState() {
+        try {
+            const raw = localStorage.getItem(FILTER_LS_KEY);
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) { return null; }
+    }
+
+    function reloadOrders() {
+        const f = getFilterState();
+        persistFilterState(f);
+        return loadOrders(f.status, f.includePending, f.fromDate, f.toDate);
+    }
+
     let currentOrderId = null;
     let currentOrderStatus = null;
 
@@ -647,7 +701,7 @@
         </div>`;
     }
 
-    async function loadOrders(status = '', includePending = false) {
+    async function loadOrders(status = '', includePending = false, fromDate = '', toDate = '') {
         const container = document.getElementById('orders-container');
         if (!getAccessToken()) {
             renderSigninState();
@@ -657,11 +711,18 @@
         container.innerHTML = '<div class="text-center py-12"><i class="fa-solid fa-spinner fa-pulse"></i> Loading orders...</div>';
         try {
             let url = `/fulfillment/orders?limit=100&include_pending=${includePending}`;
-            if (status) url += `&status=${status}`;
+            if (status)   url += `&status=${encodeURIComponent(status)}`;
+            if (fromDate) url += `&from_date=${encodeURIComponent(fromDate)}`;
+            if (toDate)   url += `&to_date=${encodeURIComponent(toDate)}`;
+
             const data = await apiCall(url);
             const orders = data.orders || [];
             if (orders.length === 0) {
-                container.innerHTML = '<div class="bg-slate-800/50 rounded-xl p-10 text-center text-slate-400">📭 No orders found for this status.</div>';
+                const hasDateFilter = fromDate || toDate;
+                const msg = hasDateFilter
+                    ? '📭 No orders in the selected date range.'
+                    : '📭 No orders found for this status.';
+                container.innerHTML = `<div class="bg-slate-800/50 rounded-xl p-10 text-center text-slate-400">${msg}</div>`;
                 return;
             }
             container.innerHTML = orders.map(order => {
@@ -703,7 +764,7 @@
             console.error(err);
             container.innerHTML = `<div class="bg-red-500/20 border border-red-500 p-4 rounded-xl text-red-300">⚠️ Error: ${err.message}. <button id="retry-load" class="underline ml-2">Retry</button></div>`;
             const retryBtn = document.getElementById('retry-load');
-            if (retryBtn) retryBtn.onclick = () => loadOrders(document.getElementById('status-filter').value, document.getElementById('include-pending-checkbox').checked);
+            if (retryBtn) retryBtn.onclick = reloadOrders;
         }
     }
     
@@ -784,8 +845,7 @@
             });
             alert(`✅ Order status updated to ${newStatus}${confirmPayment ? ' and payment confirmed.' : '.'}`);
             document.getElementById('updateModal').classList.add('hidden');
-            const includePending = document.getElementById('include-pending-checkbox').checked;
-            loadOrders(document.getElementById('status-filter').value, includePending);
+            reloadOrders();
         } catch(err) {
             alert(`Update failed: ${err.message}`);
         }
@@ -798,16 +858,8 @@
         document.getElementById('viewModal').classList.add('hidden');
     });
     
-    document.getElementById('apply-filter')?.addEventListener('click', () => {
-        const status = document.getElementById('status-filter').value;
-        const includePending = document.getElementById('include-pending-checkbox').checked;
-        loadOrders(status, includePending);
-    });
-    document.getElementById('refresh-btn')?.addEventListener('click', () => {
-        const status = document.getElementById('status-filter').value;
-        const includePending = document.getElementById('include-pending-checkbox').checked;
-        loadOrders(status, includePending);
-    });
+    document.getElementById('apply-filter')?.addEventListener('click', reloadOrders);
+    document.getElementById('refresh-btn')?.addEventListener('click', reloadOrders);
     
     document.getElementById('modal-status')?.addEventListener('change', (e) => {
         const val = e.target.value;
@@ -818,6 +870,55 @@
             fields.classList.add('hidden');
         }
     });
+
+    // Quick-range buttons. All ranges are inclusive and anchored to today (UTC)
+    // — matching the "From date (UTC)" label above the inputs.
+    (function bindQuickRanges() {
+        const fromEl = document.getElementById('filter-from-date');
+        const toEl   = document.getElementById('filter-to-date');
+        if (!fromEl || !toEl) return;
+
+        const todayUTC = () => new Date().toISOString().slice(0, 10);
+        const daysAgoUTC = (n) => {
+            const d = new Date();
+            d.setUTCDate(d.getUTCDate() - n);
+            return d.toISOString().slice(0, 10);
+        };
+
+        document.getElementById('quick-today')?.addEventListener('click', () => {
+            fromEl.value = todayUTC();
+            toEl.value   = todayUTC();
+            reloadOrders();
+        });
+        document.getElementById('quick-7d')?.addEventListener('click', () => {
+            fromEl.value = daysAgoUTC(6);   // "last 7 days" = today + previous 6
+            toEl.value   = todayUTC();
+            reloadOrders();
+        });
+        document.getElementById('quick-30d')?.addEventListener('click', () => {
+            fromEl.value = daysAgoUTC(29);
+            toEl.value   = todayUTC();
+            reloadOrders();
+        });
+        document.getElementById('quick-clear')?.addEventListener('click', () => {
+            fromEl.value = '';
+            toEl.value   = '';
+            reloadOrders();
+        });
+
+        // Inline validation: if someone types a reversed range, show a
+        // toast rather than firing a request that will 400. The backend
+        // guard remains the authoritative check.
+        [fromEl, toEl].forEach(el => {
+            el.addEventListener('change', () => {
+                if (fromEl.value && toEl.value && fromEl.value > toEl.value) {
+                    // small non-modal alert; matches the rest of the page's
+                    // error handling style (alert-based)
+                    alert('⚠️ "From date" is after "To date" — results will be empty until you fix the range.');
+                }
+            });
+        });
+    })();
     
     window.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
@@ -856,7 +957,12 @@
                 console.warn("Org selection failed:", orgErr);
             }
             await apiCall('/fulfillment/orders?limit=1');
-            await loadOrders();
+
+            // Restore whatever filter the dispatcher last used.
+            const saved = restoreFilterState();
+            if (saved) applyFilterToDOM(saved);
+
+            await reloadOrders();
         } catch (err) {
             console.warn("Session invalid:", err);
             // Only clear legacy storage when KDS isn't managing the session.
