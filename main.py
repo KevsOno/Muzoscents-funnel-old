@@ -18958,6 +18958,12 @@ async def list_fulfillment_orders(
     limit: int = 50,
     offset: int = 0,
     include_pending: bool = False,
+    from_date: Optional[date] = Query(
+        None, description="Orders created on or after this date (UTC, inclusive)."
+    ),
+    to_date: Optional[date] = Query(
+        None, description="Orders created on or before this date (UTC, inclusive)."
+    ),
     user_data: Tuple[str, str, str] = Depends(
         require_feature("fulfillment", allowed_roles=["owner", "admin", "logistics"])
     ),
@@ -18971,6 +18977,15 @@ async def list_fulfillment_orders(
     # returns nothing, but failing loud is safer than silent empty.
     if not org_id:
         raise HTTPException(status_code=403, detail="Organisation context missing")
+
+    # Guard the range. A caller who sends to_date < from_date almost
+    # always means "I picked the wrong day", not "I want zero results".
+    # 400 is the honest answer, not an empty page.
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(
+            status_code=400,
+            detail="from_date must be on or before to_date",
+        )
 
     selected_branch = await resolve_request_branch(request, user_id, org_id, role)
 
@@ -18992,6 +19007,18 @@ async def list_fulfillment_orders(
     if status:
         query = query.eq("shipping_status", status)
 
+    # ── Date filter on created_at ──
+    # created_at is TIMESTAMPTZ, so we compare against ISO-8601 strings
+    # with an explicit UTC offset. Sending a bare "2026-11-09" would be
+    # interpreted as a DATE, which Postgres would coerce — but it
+    # coerces to midnight, silently excluding the rest of to_date.
+    # Anchoring to :00:00:00 for the low bound and :23:59:59.999999 for
+    # the high bound gives an inclusive full-day range.
+    if from_date:
+        query = query.gte("created_at", f"{from_date.isoformat()}T00:00:00Z")
+    if to_date:
+        query = query.lte("created_at", f"{to_date.isoformat()}T23:59:59.999999Z")
+
     result = await run_sync_db_call(
         query.order("created_at", desc=True).range(offset, offset + limit - 1).execute
     )
@@ -19006,6 +19033,8 @@ async def list_fulfillment_orders(
         count=len(orders),
         status_filter=status,
         include_pending=include_pending,
+        from_date=from_date.isoformat() if from_date else None,
+        to_date=to_date.isoformat() if to_date else None,
     )
 
     # Enrich orders where a phone is missing on the sale but present on
