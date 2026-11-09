@@ -9,9 +9,6 @@
 # ================================================================
 # GLOBAL SECURITY HEADERS (applies to ALL pages)
 # ================================================================
-# Keeps unsafe-inline so your legacy pages (like /kdstore) 
-# continue to work without breaking.
-# ================================================================
 [[headers]]
   for = "/*"
   [headers.values]
@@ -19,41 +16,54 @@
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     X-XSS-Protection = "1; mode=block"
-
-    # ⚠️ Lenient CSP for legacy pages
     Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; font-src 'self' data: https:; connect-src 'self' https:; frame-ancestors 'none';"
-    
-    # Blocks GPS on all legacy pages
     Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=()"
-    
     Referrer-Policy = "strict-origin-when-cross-origin"
     Cross-Origin-Opener-Policy = "same-origin"
     Cross-Origin-Resource-Policy = "same-origin"
 
 # ================================================================
-# ROUTE-SPECIFIC HEADER FOR YOUR REFACTORED SANDBOX PAGE
+# ROUTE-SPECIFIC: POS TERMINAL (Offline + Scanners)
 # ================================================================
-# This overrides the global settings ONLY for /inventory-monitor*
-# 
-# 🛡️ Security Changes:
-#   - Strict CSP (no unsafe-inline, no https: wildcard)
-#   - Tight connect-src (no wildcard – only whitelisted APIs)
-# 📍 Functional Changes:
-#   - GPS enabled (geolocation=(self)) for delivery addresses
-# 🚀 Backend:
-#   - Your Hugging Face backend is explicitly whitelisted
-#   - Groq/Gemini are called via your backend, so they don't need to be here
+[[headers]]
+  for = "/kdpos*"
+  [headers.values]
+    # Allow camera for barcode scanning
+    Permissions-Policy = "camera=(self), microphone=(), geolocation=(), payment=()"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https:; img-src 'self' data: https:; font-src 'self' data: https://cdnjs.cloudflare.com; connect-src 'self' https://kevsono-kevs-digital-bos.hf.space https://*.supabase.co; frame-ancestors 'none';"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    X-XSS-Protection = "1; mode=block"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Cross-Origin-Opener-Policy = "same-origin"
+    Cross-Origin-Resource-Policy = "same-origin"
+
+# ================================================================
+# ROUTE-SPECIFIC: ADMIN INVENTORY (Online + Scanners)
+# ================================================================
+[[headers]]
+  for = "/kdadmin*"
+  [headers.values]
+    # Allow camera for barcode scanning
+    Permissions-Policy = "camera=(self), microphone=(), geolocation=(), payment=()"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https:; img-src 'self' data: https:; font-src 'self' data: https://cdnjs.cloudflare.com; connect-src 'self' https://kevsono-kevs-digital-bos.hf.space https://*.supabase.co; frame-ancestors 'none';"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    X-XSS-Protection = "1; mode=block"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Cross-Origin-Opener-Policy = "same-origin"
+    Cross-Origin-Resource-Policy = "same-origin"
+
+# ================================================================
+# ROUTE-SPECIFIC: STOREFRONT (GPS enabled)
 # ================================================================
 [[headers]]
   for = "/kdstore*"
   [headers.values]
-    # 🔒 ULTRA-STRICT CSP
     Content-Security-Policy = "default-src 'self'; script-src 'self' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https:; img-src 'self' data: https:; font-src 'self' data: https://cdnjs.cloudflare.com; connect-src 'self' https://kevsono-kevs-digital-bos.hf.space https://*.supabase.co https://api.paystack.co https://nominatim.openstreetmap.org; frame-ancestors 'none';"
-    
-    # 📍 PERMISSIONS-POLICY – GPS enabled only for this sandbox
     Permissions-Policy = "geolocation=(self), camera=(), microphone=(), payment=()"
-    
-    # All other security headers (repeated for clarity/safety)
     Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
