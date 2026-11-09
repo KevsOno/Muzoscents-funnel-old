@@ -143,13 +143,22 @@
                         <div><label class="block text-sm font-medium mb-1">Payment</label>
                             <div class="flex gap-2">
                                 <button class="payment-chip active" data-method="cash">💵 Cash</button>
-                                <button class="payment-chip" data-method="transfer">🏦 Bank</button>
-                                <button class="payment-chip" data-method="card">💳 Card</button>
+                                <button class="payment-chip" data-method="transfer">🏦 Transfer</button>
                             </div>
                         </div>
                         <div class="text-right">
                             <button id="desktop-add-customer-btn" class="text-sm text-blue-600 hover:underline mt-6"><i class="fa-solid fa-plus"></i> Add Customer</button>
                         </div>
+                    </div>
+
+                    <!-- Transfer receiving-account picker (desktop) -->
+                    <div id="desktop-transfer-account-container" class="hidden mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+                        <label class="block text-sm font-medium">Receiving Account <span class="text-red-500">*</span></label>
+                        <select id="desktop-transfer-account" class="w-full border rounded-lg p-2 bg-white mobile-input">
+                            <option value="">— Select account —</option>
+                        </select>
+                        <input id="desktop-transfer-reference" placeholder="Bank reference / transaction ID (optional but recommended)" class="w-full border rounded-lg p-2 mobile-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+                        <p class="text-xs text-amber-700"><i class="fa-solid fa-circle-info"></i> Confirm the customer's transfer actually landed in the selected account before completing the sale.</p>
                     </div>
 
                     <div id="desktop-customer-form" class="hidden mt-3 bg-gray-50 p-3 rounded-lg space-y-2">
@@ -256,8 +265,16 @@
                     <div class="flex gap-2">
                         <button class="payment-chip active" data-method="cash">💵 Cash</button>
                         <button class="payment-chip" data-method="transfer">🏦 Transfer</button>
-                        <button class="payment-chip" data-method="card">💳 Card</button>
                     </div>
+                </div>
+
+                <!-- Transfer receiving-account picker (mobile) -->
+                <div id="mobile-transfer-account-container" class="hidden bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+                    <label class="block text-sm font-medium">Receiving Account <span class="text-red-500">*</span></label>
+                    <select id="mobile-transfer-account" class="w-full border rounded-lg p-3 bg-white mobile-input">
+                        <option value="">— Select account —</option>
+                    </select>
+                    <input id="mobile-transfer-reference" placeholder="Bank reference / transaction ID (optional)" class="w-full border rounded-lg p-3 mobile-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
                 </div>
 
                 <div>
@@ -633,6 +650,95 @@
 
         const ORG_VERTICAL = localStorage.getItem('org_vertical') || 'retail';
 
+        // ── Payment accounts (bank-transfer receiving accounts) ──
+        // Populated from GET /payment-accounts on login and at startup.
+        // Cached in localStorage so offline terminals can still record
+        // which account the transfer landed in.
+        let paymentAccounts = [];
+        const PAYMENT_ACCOUNTS_CACHE_KEY = 'pos_payment_accounts';
+
+        async function loadPaymentAccounts() {
+            // Try online first
+            if (isOnline && token) {
+                try {
+                    const data = await apiCall('/payment-accounts', 'GET');
+                    paymentAccounts = data.accounts || [];
+                    try {
+                        localStorage.setItem(
+                            PAYMENT_ACCOUNTS_CACHE_KEY,
+                            JSON.stringify(paymentAccounts)
+                        );
+                    } catch (e) {}
+                    populatePaymentAccountSelects();
+                    return;
+                } catch (err) {
+                    console.warn('loadPaymentAccounts: online fetch failed, using cache:', err);
+                }
+            }
+            // Fall back to cache (offline, or fetch failed)
+            try {
+                const cached = JSON.parse(
+                    localStorage.getItem(PAYMENT_ACCOUNTS_CACHE_KEY) || '[]'
+                );
+                paymentAccounts = Array.isArray(cached) ? cached : [];
+            } catch (e) {
+                paymentAccounts = [];
+            }
+            populatePaymentAccountSelects();
+        }
+
+        function populatePaymentAccountSelects() {
+            const dSelect = document.getElementById('desktop-transfer-account');
+            const mSelect = document.getElementById('mobile-transfer-account');
+            for (const sel of [dSelect, mSelect]) {
+                if (!sel) continue;
+                const current = sel.value;
+                sel.innerHTML = '<option value="">— Select account —</option>';
+                for (const acc of paymentAccounts) {
+                    const opt = document.createElement('option');
+                    opt.value = acc.id;
+                    const provider = (acc.provider || '').toUpperCase();
+                    let label = `${acc.label} — ${provider} ${acc.account_number} (${acc.account_name})`;
+                    if (acc.is_default) label += '  ★ Default';
+                    opt.textContent = label;
+                    sel.appendChild(opt);
+                }
+                if (current) sel.value = current;
+            }
+            // Pre-select the default account so cashiers do not have to
+            // hunt for it on every transfer.
+            const defaultAcc = paymentAccounts.find(a => a.is_default);
+            if (defaultAcc) {
+                for (const sel of [dSelect, mSelect]) {
+                    if (sel && !sel.value) sel.value = defaultAcc.id;
+                }
+            }
+        }
+
+        function toggleTransferAccountUI(show) {
+            const d = document.getElementById('desktop-transfer-account-container');
+            const m = document.getElementById('mobile-transfer-account-container');
+            if (d) d.classList.toggle('hidden', !show);
+            if (m) m.classList.toggle('hidden', !show);
+            if (show && paymentAccounts.length === 0) {
+                showToast(
+                    '⚠️ No receiving accounts configured. Ask your admin to add one under Payment Accounts before taking transfers.',
+                    'error'
+                );
+            }
+        }
+
+        function getSelectedTransferAccount() {
+            const dSel = document.getElementById('desktop-transfer-account');
+            const mSel = document.getElementById('mobile-transfer-account');
+            const dRef = document.getElementById('desktop-transfer-reference');
+            const mRef = document.getElementById('mobile-transfer-reference');
+            const id = (dSel && dSel.value) || (mSel && mSel.value) || '';
+            const ref = ((dRef && dRef.value) || (mRef && mRef.value) || '').trim() || null;
+            const info = paymentAccounts.find(a => a.id === id) || null;
+            return { id: id || null, reference: ref, info };
+        }
+
         function generateUUID() {
             if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
             return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -795,6 +901,7 @@
                 document.querySelectorAll('.payment-chip').forEach(c => {
                     c.classList.toggle('active', c.dataset.method === method);
                 });
+                toggleTransferAccountUI(method === 'transfer');
             });
         });
 
@@ -1275,13 +1382,40 @@
             if (cart.length === 0) { showToast('🛒 Cart is empty.', 'error'); return; }
             const paymentMethod = state.paymentMethod;
 
+            // ── Transfer validation ──
+            // Transfers are the dominant POS flow in Nigeria. Cashier
+            // MUST confirm which of the org's accounts received the
+            // money; that is the whole audit trail.
+            let transferAccountId = null;
+            let transferReference = null;
+            let transferAccountInfo = null;
+            if (paymentMethod === 'transfer') {
+                const sel = getSelectedTransferAccount();
+                if (!sel.id) {
+                    showToast('Please select the receiving account for this transfer.', 'error');
+                    return;
+                }
+                transferAccountId = sel.id;
+                transferReference = sel.reference;
+                transferAccountInfo = sel.info;
+            }
+
             const customerName = document.getElementById('desktop-customer-name').value.trim() || document.getElementById('mobile-customer-name').value.trim() || null;
             const customerPhone = document.getElementById('desktop-customer-phone').value.trim() || document.getElementById('mobile-customer-phone').value.trim() || null;
             let customerEmail = document.getElementById('desktop-customer-email').value.trim() || document.getElementById('mobile-customer-email').value.trim() || null;
             const pointsRedeemed = state.pointsRedeemed || 0;
 
-            if (paymentMethod !== 'cash' && !customerEmail) { showToast('📧 Email is required for card/transfer payments', 'error'); return; }
-            if (!isOnline && paymentMethod !== 'cash') { showToast('⚠️ Offline: only cash is accepted', 'error'); return; }
+            // Only gateway methods (card/bank) need email. Cash and
+            // manual transfer do not — the cashier confirms the money
+            // landed in the account by looking at the banking app.
+            if (paymentMethod !== 'cash' && paymentMethod !== 'transfer' && !customerEmail) {
+                showToast('📧 Email is required for card/bank gateway payments', 'error');
+                return;
+            }
+            if (!isOnline && (paymentMethod === 'card' || paymentMethod === 'bank')) {
+                showToast('⚠️ Offline: card/bank gateway payments are not accepted. Use cash or transfer.', 'error');
+                return;
+            }
 
             const itemsPayload = cart.map(i => ({ inventory_id: i.id, quantity: i.qty }));
             const cashierId = localStorage.getItem('user_id') || 'unknown';
@@ -1298,10 +1432,25 @@
                 return { productId: item.id, name: item.name, sku: item.sku || product.sku || '', quantity: item.qty, unitPrice: item.price, subtotal: item.price * item.qty, costPrice: product.cost_price_naira || 0, handlingCategory: product.handling_category || 'standard', weightKg: product.weight_kg || 0 };
             }));
 
+            const paymentPayload = {
+                method: paymentMethod,
+                reference: null,
+            };
+            if (paymentMethod === 'transfer' && transferAccountInfo) {
+                paymentPayload.account_id = transferAccountId;
+                paymentPayload.account_label = transferAccountInfo.label || null;
+                paymentPayload.provider = transferAccountInfo.provider || null;
+                paymentPayload.account_number = transferAccountInfo.account_number || null;
+                paymentPayload.account_name = transferAccountInfo.account_name || null;
+                paymentPayload.transfer_reference = transferReference;
+            }
+
             const receiptData = {
                 receiptNumber: offlineRef, orderType: state.orderType, tableNumber: state.tableNumber,
                 customer: { name: customerName || '', phone: customerPhone || '', email: customerEmail || '', loyaltyId: state.loyaltyUserId || null, pointsBefore: state.pointsBalance || 0, pointsAfter: state.pointsBalance || 0, pointsRedeemed: pointsRedeemed },
-                items: itemDetails, subtotal, discount, tax, grandTotal, payment: { method: paymentMethod, reference: null }, cashierId, cashierName, location: orgName,
+                items: itemDetails, subtotal, discount, tax, grandTotal,
+                payment: paymentPayload,
+                cashierId, cashierName, location: orgName,
                 metadata: { softwareVersion: '1.0.0', deviceId: 'web-' + (navigator.userAgent || 'unknown'), printed: false }
             };
 
@@ -1329,7 +1478,9 @@
                 const result = await apiCall('/pos/terminal/checkout', 'POST', {
                     items: itemsPayload, payment_method: paymentMethod, customer_name: customerName, customer_phone: customerPhone, customer_email: customerEmail,
                     order_type: state.orderType, table_number: state.tableNumber,
-                    offline_meta: { reference: offlineRef, cashier_id: cashierId, created_at: order.createdAt }, receipt_data: receiptData
+                    offline_meta: { reference: offlineRef, cashier_id: cashierId, created_at: order.createdAt }, receipt_data: receiptData,
+                    transfer_account_id: transferAccountId || undefined,
+                    transfer_reference: transferReference || undefined,
                 });
                 order.status = 'synced'; order.syncedAt = new Date().toISOString();
                 order.receiptData.receiptNumber = result.receipt_number || offlineRef; order.receiptData.payment.reference = result.payment_reference || null;
@@ -1486,6 +1637,8 @@
             document.querySelectorAll('.payment-chip').forEach(c => {
                 c.classList.toggle('active', c.dataset.method === (state.paymentMethod || 'cash'));
             });
+            // Show/hide the transfer account picker based on active tab's method
+            toggleTransferAccountUI((state.paymentMethod || 'cash') === 'transfer');
 
             // Tab highlighting
             if (activeTab === 1) {
@@ -1552,11 +1705,14 @@
                     }
 
                     try {
+                        const offlinePmt = order.receiptData.payment || {};
                         const payload = {
                             items: order.receiptData.items.map(item => ({ inventory_id: item.productId, quantity: item.quantity })),
-                            payment_method: order.receiptData.payment.method, customer_name: order.receiptData.customer.name, customer_phone: order.receiptData.customer.phone, customer_email: order.receiptData.customer.email,
+                            payment_method: offlinePmt.method, customer_name: order.receiptData.customer.name, customer_phone: order.receiptData.customer.phone, customer_email: order.receiptData.customer.email,
                             order_type: order.receiptData.orderType, table_number: order.receiptData.tableNumber,
-                            offline_meta: { reference: order.offlineRef, cashier_id: order.cashierId, created_at: order.createdAt }, receipt_data: order.receiptData
+                            offline_meta: { reference: order.offlineRef, cashier_id: order.cashierId, created_at: order.createdAt }, receipt_data: order.receiptData,
+                            transfer_account_id: offlinePmt.account_id || undefined,
+                            transfer_reference: offlinePmt.transfer_reference || undefined,
                         };
                         await apiCall('/pos/terminal/checkout', 'POST', payload);
                         await DB.updateOrderByRef(order.offlineRef, { status: 'synced', syncedAt: new Date().toISOString() });
@@ -1632,11 +1788,14 @@
                     await apiCall('/pos/terminal/kitchen-ticket', 'POST', { order_ref: order.offlineRef, table_number: order.receiptData.tableNumber, items: order.receiptData.items });
                     await DB.updateOrderByRef(offlineRef, { status: 'kitchen_sent', syncedAt: new Date().toISOString(), lastError: null });
                 } else {
+                    const offlinePmt = order.receiptData.payment || {};
                     const payload = {
                         items: order.receiptData.items.map(item => ({ inventory_id: item.productId, quantity: item.quantity })),
-                        payment_method: order.receiptData.payment.method, customer_name: order.receiptData.customer.name, customer_phone: order.receiptData.customer.phone, customer_email: order.receiptData.customer.email,
+                        payment_method: offlinePmt.method, customer_name: order.receiptData.customer.name, customer_phone: order.receiptData.customer.phone, customer_email: order.receiptData.customer.email,
                         order_type: order.receiptData.orderType, table_number: order.receiptData.tableNumber,
-                        offline_meta: { reference: order.offlineRef, cashier_id: order.cashierId, created_at: order.createdAt }, receipt_data: order.receiptData
+                        offline_meta: { reference: order.offlineRef, cashier_id: order.cashierId, created_at: order.createdAt }, receipt_data: order.receiptData,
+                        transfer_account_id: offlinePmt.account_id || undefined,
+                        transfer_reference: offlinePmt.transfer_reference || undefined,
                     };
                     await apiCall('/pos/terminal/checkout', 'POST', payload);
                     await DB.updateOrderByRef(offlineRef, { status: 'synced', syncedAt: new Date().toISOString(), lastError: null });
@@ -1681,6 +1840,7 @@
                 tabState[1] = { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
                 tabState[2] = { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
                 activeTab = 1; syncUIWithActiveTab(); products = []; productContainer.innerHTML = ''; emptyMsgDiv.classList.add('hidden'); await refreshCachedCount();
+                await loadPaymentAccounts();
                 showToast('Demo login — Offline‑ready POS', 'success'); const navOrg = document.getElementById('nav-org-name'); if (navOrg) navOrg.innerText = localStorage.getItem('org_name') || 'Unknown Org';
                 await emitAuditEvent('user.login', { email: 'demo@kevsdigital.com', method: 'demo' }); maybeAutoSyncCatalog();
             } catch (err) { showToast(err.message, 'error'); } finally { btn.disabled = false; }
@@ -1700,6 +1860,7 @@
                 tabState[1] = { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
                 tabState[2] = { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
                 activeTab = 1; syncUIWithActiveTab(); products = []; productContainer.innerHTML = ''; emptyMsgDiv.classList.add('hidden'); await refreshCachedCount();
+                await loadPaymentAccounts();
                 showToast('Login successful', 'success'); const navOrg = document.getElementById('nav-org-name'); if (navOrg) navOrg.innerText = localStorage.getItem('org_name') || 'Unknown Org';
                 await emitAuditEvent('user.login', { email: email, method: 'password' }); maybeAutoSyncCatalog();
             } catch (err) { showToast(err.message, 'error'); }
@@ -1741,6 +1902,7 @@
             initTabs();
             initCustomerSearch();
             await refreshCachedCount();
+            await loadPaymentAccounts();
 
             if (token) {
                 try {
