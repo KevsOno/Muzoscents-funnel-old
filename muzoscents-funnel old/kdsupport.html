@@ -88,6 +88,20 @@
                         <i class="fas fa-plus"></i> New
                     </button>
                 </div>
+                <!-- ── NEW: date‑range filter for complaints ── -->
+                <div class="flex flex-wrap items-end gap-1 mt-2">
+                    <div>
+                        <label class="text-[10px] font-medium text-slate-500 block">From</label>
+                        <input type="date" id="ticket-filter-from" class="border rounded p-1 text-xs w-28" />
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-medium text-slate-500 block">To</label>
+                        <input type="date" id="ticket-filter-to" class="border rounded p-1 text-xs w-28" />
+                    </div>
+                    <button id="apply-ticket-date-filter" class="bg-blue-500 text-white px-2 py-1 rounded text-xs">Apply</button>
+                    <button id="clear-ticket-date-filter" class="bg-gray-400 text-white px-2 py-1 rounded text-xs">Clear</button>
+                </div>
+                <!-- ── END date‑range filter ── -->
             </div>
             <div class="border-b border-slate-200">
                 <div class="px-4 py-2 bg-emerald-50 flex items-center justify-between">
@@ -326,12 +340,24 @@
         // ---------- SUPPORT TICKETS ----------
         async function loadTickets() {
             const status = document.getElementById('queue-status-filter').value;
+            const fromDate = document.getElementById('ticket-filter-from')?.value || '';
+            const toDate   = document.getElementById('ticket-filter-to')?.value || '';
+
+            let url = `/support/tickets?status=${encodeURIComponent(status)}`;
+            if (fromDate) url += `&from_date=${encodeURIComponent(fromDate)}`;
+            if (toDate)   url += `&to_date=${encodeURIComponent(toDate)}`;
+
             try {
-                const data = await req(`/support/tickets?status=${status}`);
+                const data = await req(url);
                 const feed = document.getElementById('ticket-feed');
                 feed.innerHTML = '';
-                if (!data.tickets || data.tickets.length === 0) { feed.innerHTML =
-                    '<div class="p-8 text-center text-xs">No tickets</div>'; return; }
+                if (!data.tickets || data.tickets.length === 0) {
+                    const msg = (fromDate || toDate)
+                        ? 'No tickets in this date range.'
+                        : 'No tickets';
+                    feed.innerHTML = `<div class="p-8 text-center text-xs">${msg}</div>`;
+                    return;
+                }
                 data.tickets.forEach(t => {
                     const div = document.createElement('div');
                     div.className = `p-4 cursor-pointer hover:bg-slate-50 ${activeTicketId === t.id ? 'ticket-active' : ''}`;
@@ -573,6 +599,17 @@
                 loadTickets(); } catch (err) { showToast('Resolve failed', 'error'); }
         });
         document.getElementById('queue-status-filter')?.addEventListener('change', loadTickets);
+
+        // ── NEW: date‑filter handlers for the support tab ──
+        document.getElementById('apply-ticket-date-filter')?.addEventListener('click', () => {
+            loadTickets();
+        });
+        document.getElementById('clear-ticket-date-filter')?.addEventListener('click', () => {
+            document.getElementById('ticket-filter-from').value = '';
+            document.getElementById('ticket-filter-to').value = '';
+            loadTickets();
+        });
+        // ── END date‑filter handlers ──
 
         // Escalation
         const escalateBtn = document.getElementById('escalate-ticket-btn');
