@@ -21,9 +21,6 @@
         .status-processing { background: #3b82f620; color: #3b82f6; }
         .status-shipped { background: #8b5cf620; color: #8b5cf6; }
         .status-delivered { background: #10b98120; color: #10b981; }
-        .modal-overlay { background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); }
-        .btn-demo { transition: all 0.2s ease; }
-        .btn-demo:hover { transform: scale(1.02); box-shadow: 0 8px 20px rgba(0,0,0,0.3); }
         
         /* Leaflet Dark Mode Overrides */
         .leaflet-container { background: #1E293B; border-radius: 0.75rem; border: 1px solid #334155; }
@@ -83,9 +80,23 @@
                     <option value="delivered">Delivered</option>
                 </select>
             </div>
+            <div class="flex-1 min-w-[150px]">
+                <label class="text-xs text-slate-400 block mb-1">From date <span class="text-slate-600">(UTC)</span></label>
+                <input type="date" id="filter-from-date" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white">
+            </div>
+            <div class="flex-1 min-w-[150px]">
+                <label class="text-xs text-slate-400 block mb-1">To date <span class="text-slate-600">(UTC)</span></label>
+                <input type="date" id="filter-to-date" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white">
+            </div>
             <div class="flex items-center gap-2 pb-2">
                 <input type="checkbox" id="include-pending-checkbox" class="w-4 h-4 rounded border-slate-600 bg-slate-800">
                 <label for="include-pending-checkbox" class="text-xs text-slate-300">Show unpaid orders</label>
+            </div>
+            <div class="flex gap-1 pb-2" title="Quick ranges (relative to today, UTC)">
+                <button id="quick-today"   type="button" class="text-xs px-2 py-1.5 rounded border border-slate-600 text-slate-300 hover:bg-slate-700">Today</button>
+                <button id="quick-7d"      type="button" class="text-xs px-2 py-1.5 rounded border border-slate-600 text-slate-300 hover:bg-slate-700">7d</button>
+                <button id="quick-30d"     type="button" class="text-xs px-2 py-1.5 rounded border border-slate-600 text-slate-300 hover:bg-slate-700">30d</button>
+                <button id="quick-clear"   type="button" class="text-xs px-2 py-1.5 rounded border border-slate-600 text-slate-300 hover:bg-slate-700">Clear</button>
             </div>
             <button id="apply-filter" class="bg-blue-600 hover:bg-blue-700 px-5 py-2 rounded-lg transition">Apply</button>
         </div>
@@ -199,22 +210,6 @@
     </div>
 </div>
 
-<div id="demoAuthModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
-    <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-md w-full p-6 shadow-2xl">
-        <div class="flex justify-between items-center mb-4">
-            <h3 class="text-xl font-bold flex gap-2 items-center"><i class="fa-solid fa-key text-emerald-400"></i> Access Dashboard</h3>
-            <button id="closeAuthModalBtn" class="text-slate-400 hover:text-white text-2xl">&times;</button>
-        </div>
-        <div class="space-y-4">
-            <p class="text-sm text-slate-300">Use <strong class="text-emerald-300">Demo Access</strong> to instantly try the fulfillment dashboard with real order data.</p>
-            <button id="modalDemoLoginBtn" class="w-full bg-emerald-600 hover:bg-emerald-700 py-2.5 rounded-xl font-semibold flex items-center justify-center gap-2 transition btn-demo">
-                <i class="fa-solid fa-flask"></i> Launch Demo (Auto Login)
-            </button>
-            <p class="text-xs text-center text-slate-500 mt-2">Demo uses secure test account: <span class="font-mono">demo@kevsdigital.com</span></p>
-        </div>
-    </div>
-</div>
-
 <!-- ========== CREATE AREA MODAL ========== -->
 <div id="areaModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-max">
     <div class="bg-slate-800 rounded-2xl max-w-2xl w-full p-6 border border-slate-700 shadow-2xl">
@@ -252,11 +247,89 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 
-<!-- ========== TAB + AREAS SCRIPT ========== -->
+<!-- ========== KDS AUTH BRIDGE + TABS + AREAS SCRIPT ========== -->
 <script>
-    const API_BASE_AREAS = "https://kevsono-kevs-digital-bos.hf.space";
-    let token_areas = localStorage.getItem('access_token');
-    
+    // ==========================================================
+    // KDS AUTH BRIDGE
+    // ----------------------------------------------------------
+    // This page NO LONGER has its own login. It delegates 100%
+    // to the Kevs bOS sign-in (kdsiginin / kdsession.js).
+    //
+    // If you already have a KDS helper (e.g. window.KDSession),
+    // it is used first. Otherwise we fall back to the shared
+    // browser storage that kdsession.js populates.
+    // ==========================================================
+    const KDS_SIGNIN_URL = '/kdsiginin.html'; // ← change if your KDS sign-in route differs
+    const KDS_TOKEN_KEYS = ['access_token', 'kds_access_token', 'kds_token', 'token'];
+
+    function kdsBridge() {
+        return window.KDSession || window.KDS || window.KevsSession || null;
+    }
+
+    function getAccessToken() {
+        const s = kdsBridge();
+        if (s) {
+            const t = s.accessToken || s.access_token || s.token;
+            if (t) return t;
+        }
+        for (const key of KDS_TOKEN_KEYS) {
+            const v = localStorage.getItem(key) || sessionStorage.getItem(key);
+            if (v) return v;
+        }
+        return null;
+    }
+
+    function getRefreshToken() {
+        const s = kdsBridge();
+        if (s) {
+            const t = s.refreshToken || s.refresh_token;
+            if (t) return t;
+        }
+        return localStorage.getItem('refresh_token') || sessionStorage.getItem('refresh_token');
+    }
+
+    /**
+     * Send the user to the KDS sign-in flow.
+     * Prefers whatever API kdsession.js exposes, then falls back
+     * to a normal redirect carrying a return_to param.
+     */
+    function redirectToKdsSignin() {
+        const s = kdsBridge();
+        try {
+            if (s && typeof s.redirectToSignin === 'function') return s.redirectToSignin();
+            if (s && typeof s.requireAuth === 'function') return s.requireAuth();
+            if (s && typeof s.signIn === 'function') return s.signIn();
+        } catch (e) {
+            console.warn('KDS redirect helper failed, using fallback:', e);
+        }
+        const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
+        window.location.href = `${KDS_SIGNIN_URL}?return_to=${returnTo}`;
+    }
+
+    /**
+     * kdsession.js may hydrate the token asynchronously.
+     * Wait briefly before deciding the user is signed out.
+     */
+    async function resolveToken(maxWaitMs = 1500) {
+        let t = getAccessToken();
+        if (t) return t;
+
+        const s = kdsBridge();
+        if (s && s.ready && typeof s.ready.then === 'function') {
+            try { await s.ready; } catch (e) { /* ignore */ }
+            t = getAccessToken();
+            if (t) return t;
+        }
+
+        const deadline = Date.now() + maxWaitMs;
+        while (Date.now() < deadline) {
+            await new Promise(r => setTimeout(r, 100));
+            t = getAccessToken();
+            if (t) return t;
+        }
+        return null;
+    }
+
     // ==========================================
     // TAB SWITCHING LOGIC
     // ==========================================
@@ -308,8 +381,8 @@
     }
 
     async function loadAreas() {
-        token_areas = localStorage.getItem('access_token');
-        if (!token_areas) {
+        const sessionToken = getAccessToken();
+        if (!sessionToken) {
             clearAreaLayers();
             document.getElementById('areas-table-body').innerHTML =
                 `<tr><td colspan="3" class="p-6 text-center text-slate-500">
@@ -396,8 +469,8 @@
     }
 
     document.getElementById('add-area-btn').addEventListener('click', () => {
-        if (!localStorage.getItem('access_token')) {
-            alert("Please sign in first to add delivery areas.");
+        if (!getAccessToken()) {
+            redirectToKdsSignin();
             return;
         }
         editingAreaId = null;
@@ -457,10 +530,50 @@
     }
 </script>
 
-<!-- ========== EXISTING MAIN SCRIPT ========== -->
+<!-- ========== MAIN DASHBOARD SCRIPT ========== -->
 <script>
     const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
-    let token = localStorage.getItem('access_token');
+    let token = null;
+
+    // ── Filter state: single source of truth for what the filter bar is asking for.
+    // Every call site that triggers a list reload goes through this helper
+    // instead of reading the DOM ad hoc, so a change to the filter bar only
+    // needs updating here.
+    const FILTER_LS_KEY = 'fulfillment_filter_v1';
+
+    function getFilterState() {
+        return {
+            status:         document.getElementById('status-filter').value || '',
+            includePending: document.getElementById('include-pending-checkbox').checked,
+            fromDate:       document.getElementById('filter-from-date').value || '',
+            toDate:         document.getElementById('filter-to-date').value || '',
+        };
+    }
+
+    function applyFilterToDOM(state) {
+        document.getElementById('status-filter').value = state.status || '';
+        document.getElementById('include-pending-checkbox').checked = !!state.includePending;
+        document.getElementById('filter-from-date').value = state.fromDate || '';
+        document.getElementById('filter-to-date').value = state.toDate || '';
+    }
+
+    function persistFilterState(state) {
+        try { localStorage.setItem(FILTER_LS_KEY, JSON.stringify(state)); } catch (e) {}
+    }
+
+    function restoreFilterState() {
+        try {
+            const raw = localStorage.getItem(FILTER_LS_KEY);
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) { return null; }
+    }
+
+    function reloadOrders() {
+        const f = getFilterState();
+        persistFilterState(f);
+        return loadOrders(f.status, f.includePending, f.fromDate, f.toDate);
+    }
+
     let currentOrderId = null;
     let currentOrderStatus = null;
 
@@ -471,8 +584,11 @@
         const existing = localStorage.getItem('selected_org_id');
         if (existing) return existing;
 
+        const authToken = getAccessToken();
+        if (!authToken) throw new Error("Not signed in");
+
         const res = await fetch(`${API_BASE}/auth/my-orgs`, {
-            headers: { Authorization: `Bearer ${token}` }
+            headers: { Authorization: `Bearer ${authToken}` }
         });
         const { orgs } = await res.json();
 
@@ -494,9 +610,24 @@
         localStorage.setItem('selected_org_id', orgId);
         return orgId;
     }
-    
+
+    // ==========================================
+    // SESSION REFRESH
+    // KDS owns the session. We only ask KDS to refresh;
+    // the legacy endpoint is kept as a last-resort fallback.
+    // ==========================================
     async function refreshAccessToken() {
-        const refresh = localStorage.getItem('refresh_token');
+        const s = kdsBridge();
+        if (s && typeof s.refresh === 'function') {
+            try {
+                const fresh = await s.refresh();
+                if (fresh) { token = fresh; return true; }
+            } catch (e) {
+                console.warn("KDS refresh failed", e);
+            }
+        }
+
+        const refresh = getRefreshToken();
         if (!refresh) return false;
         try {
             const res = await fetch(`${API_BASE}/auth/refresh`, {
@@ -505,10 +636,10 @@
                 body: JSON.stringify({ refresh_token: refresh })
             });
             if (res.ok) {
-                const { access_token, refresh_token } = await res.json();
-                localStorage.setItem('access_token', access_token);
-                localStorage.setItem('refresh_token', refresh_token);
-                token = access_token;
+                const data = await res.json();
+                localStorage.setItem('access_token', data.access_token);
+                localStorage.setItem('refresh_token', data.refresh_token);
+                token = data.access_token;
                 return true;
             }
         } catch(e) { console.warn("refresh failed", e); }
@@ -516,90 +647,82 @@
     }
 
     async function apiCall(endpoint, options = {}) {
+        const authToken = getAccessToken();
+        if (!authToken) {
+            redirectToKdsSignin();
+            throw new Error("Not signed in — redirecting to sign in.");
+        }
+        token = authToken;
+
         if (!options.headers) options.headers = {};
         options.headers['Content-Type'] = 'application/json';
-        if (token) options.headers['Authorization'] = `Bearer ${token}`;
+        options.headers['Authorization'] = `Bearer ${token}`;
 
-        // NEW — send the user's selected org on every call.
-        // Without this, the backend resolves the user's default org,
-        // which may not match what the UI is showing.
+        // Send the user's selected org on every call.
         const selectedOrgId = localStorage.getItem('selected_org_id');
         if (selectedOrgId) {
             options.headers['X-Selected-Org-Id'] = selectedOrgId;
         }
         
         let res = await fetch(`${API_BASE}${endpoint}`, options);
+
         if (res.status === 401) {
             const refreshed = await refreshAccessToken();
-            if (refreshed && token) {
-                options.headers['Authorization'] = `Bearer ${token}`;
-                res = await fetch(`${API_BASE}${endpoint}`, options);
-            } else {
-                showDemoModal();
-                throw new Error("Session expired. Please use demo login again.");
+            if (!refreshed) {
+                redirectToKdsSignin();
+                throw new Error("Session expired — redirecting to sign in.");
+            }
+            token = getAccessToken() || token;
+            options.headers['Authorization'] = `Bearer ${token}`;
+            res = await fetch(`${API_BASE}${endpoint}`, options);
+            if (res.status === 401) {
+                redirectToKdsSignin();
+                throw new Error("Session expired — redirecting to sign in.");
             }
         }
+
         if (!res.ok) {
             const errData = await res.json().catch(() => ({ detail: 'Request error' }));
             throw new Error(errData.detail || `HTTP ${res.status}`);
         }
         return res.json();
     }
-    
-    async function performDemoLogin() {
-        try {
-            const res = await fetch(`${API_BASE}/auth/login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: 'demo@kevsdigital.com', password: 'KevsDemo2026!' })
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.detail || "Demo credentials invalid");
-            token = data.access_token;
-            localStorage.setItem('access_token', token);
-            localStorage.setItem('refresh_token', data.refresh_token);
-            const me = await apiCall('/auth/me');
-            const role = me.role || 'customer';
-            localStorage.setItem('user_role', role);
 
-            // NEW — ensure an org is selected after successful login
-            try {
-                await ensureOrgSelected();
-            } catch (orgErr) {
-                console.warn("Org selection failed:", orgErr);
-            }
-
-            return true;
-        } catch (err) {
-            console.error("Demo login error:", err);
-            alert("Demo login failed: " + err.message);
-            return false;
-        }
-    }
-    
-    function showDemoModal() { document.getElementById('demoAuthModal')?.classList.remove('hidden'); }
-    function hideDemoModal() { document.getElementById('demoAuthModal')?.classList.add('hidden'); }
-    
-    async function loadOrders(status = '', includePending = false) {
+    // ==========================================
+    // ORDERS
+    // ==========================================
+    function renderSigninState(message) {
         const container = document.getElementById('orders-container');
-        if (!token) {
-            container.innerHTML = `<div class="bg-slate-800/70 rounded-xl p-10 text-center border border-slate-700">
-                <i class="fa-regular fa-circle-user text-3xl mb-2 text-slate-400"></i>
-                <p>Not authenticated — click "Demo Login" to start</p>
-                <button id="trigger-demo-from-empty" class="mt-3 bg-emerald-600 px-4 py-1.5 rounded-lg text-sm">🔑 Demo Access</button>
-            </div>`;
-            const triggerBtn = document.getElementById('trigger-demo-from-empty');
-            if (triggerBtn) triggerBtn.onclick = () => showDemoModal();
+        if (!container) return;
+        container.innerHTML = `<div class="bg-slate-800/70 rounded-xl p-10 text-center border border-slate-700">
+            <i class="fa-solid fa-lock text-3xl mb-3 text-emerald-400 block"></i>
+            <p class="text-slate-300">${message || 'Redirecting you to Kevs bOS sign in…'}</p>
+            <p class="text-xs text-slate-500 mt-2">You will be returned here automatically.</p>
+        </div>`;
+    }
+
+    async function loadOrders(status = '', includePending = false, fromDate = '', toDate = '') {
+        const container = document.getElementById('orders-container');
+        if (!getAccessToken()) {
+            renderSigninState();
+            redirectToKdsSignin();
             return;
         }
         container.innerHTML = '<div class="text-center py-12"><i class="fa-solid fa-spinner fa-pulse"></i> Loading orders...</div>';
         try {
             let url = `/fulfillment/orders?limit=100&include_pending=${includePending}`;
-            if (status) url += `&status=${status}`;
+            if (status)   url += `&status=${encodeURIComponent(status)}`;
+            if (fromDate) url += `&from_date=${encodeURIComponent(fromDate)}`;
+            if (toDate)   url += `&to_date=${encodeURIComponent(toDate)}`;
+
             const data = await apiCall(url);
             const orders = data.orders || [];
             if (orders.length === 0) {
-                container.innerHTML = '<div class="bg-slate-800/50 rounded-xl p-10 text-center text-slate-400">📭 No orders found for this status.</div>';
+                const hasDateFilter = fromDate || toDate;
+                const msg = hasDateFilter
+                    ? '📭 No orders in the selected date range.'
+                    : '📭 No orders found for this status.';
+                container.innerHTML = `<div class="bg-slate-800/50 rounded-xl p-10 text-center text-slate-400">${msg}</div>`;
                 return;
             }
             container.innerHTML = orders.map(order => {
@@ -641,7 +764,7 @@
             console.error(err);
             container.innerHTML = `<div class="bg-red-500/20 border border-red-500 p-4 rounded-xl text-red-300">⚠️ Error: ${err.message}. <button id="retry-load" class="underline ml-2">Retry</button></div>`;
             const retryBtn = document.getElementById('retry-load');
-            if (retryBtn) retryBtn.onclick = () => loadOrders(document.getElementById('status-filter').value, document.getElementById('include-pending-checkbox').checked);
+            if (retryBtn) retryBtn.onclick = reloadOrders;
         }
     }
     
@@ -675,7 +798,7 @@
     }
     
     function openUpdateModal(orderId, receipt, currentStatus, paymentStatus) {
-        if (!token) { showDemoModal(); return; }
+        if (!getAccessToken()) { redirectToKdsSignin(); return; }
         currentOrderId = orderId;
         currentOrderStatus = currentStatus;
         document.getElementById('modal-order-info').innerHTML = `<strong>${receipt}</strong> - Current status: ${currentStatus || 'pending'} | Payment: ${paymentStatus === 'pending' ? '⚠️ Unpaid' : '✅ Paid'}`;
@@ -699,7 +822,7 @@
     }
     
     document.getElementById('modal-update-btn')?.addEventListener('click', async () => {
-        if (!token) { showDemoModal(); document.getElementById('updateModal').classList.add('hidden'); return; }
+        if (!getAccessToken()) { document.getElementById('updateModal').classList.add('hidden'); redirectToKdsSignin(); return; }
         const newStatus = document.getElementById('modal-status').value;
         const carrier = document.getElementById('modal-carrier').value;
         const tracking = document.getElementById('modal-tracking').value;
@@ -722,8 +845,7 @@
             });
             alert(`✅ Order status updated to ${newStatus}${confirmPayment ? ' and payment confirmed.' : '.'}`);
             document.getElementById('updateModal').classList.add('hidden');
-            const includePending = document.getElementById('include-pending-checkbox').checked;
-            loadOrders(document.getElementById('status-filter').value, includePending);
+            reloadOrders();
         } catch(err) {
             alert(`Update failed: ${err.message}`);
         }
@@ -736,16 +858,8 @@
         document.getElementById('viewModal').classList.add('hidden');
     });
     
-    document.getElementById('apply-filter')?.addEventListener('click', () => {
-        const status = document.getElementById('status-filter').value;
-        const includePending = document.getElementById('include-pending-checkbox').checked;
-        loadOrders(status, includePending);
-    });
-    document.getElementById('refresh-btn')?.addEventListener('click', () => {
-        const status = document.getElementById('status-filter').value;
-        const includePending = document.getElementById('include-pending-checkbox').checked;
-        loadOrders(status, includePending);
-    });
+    document.getElementById('apply-filter')?.addEventListener('click', reloadOrders);
+    document.getElementById('refresh-btn')?.addEventListener('click', reloadOrders);
     
     document.getElementById('modal-status')?.addEventListener('change', (e) => {
         const val = e.target.value;
@@ -756,38 +870,67 @@
             fields.classList.add('hidden');
         }
     });
-    
-    async function onDemoLoginClick() {
-        const success = await performDemoLogin();
-        if (success) {
-            hideDemoModal();
-            const includePending = document.getElementById('include-pending-checkbox').checked;
-            await loadOrders(document.getElementById('status-filter').value, includePending);
-            const toast = document.createElement('div');
-            toast.className = 'fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-emerald-600 text-white px-5 py-2 rounded-full shadow-lg text-sm z-50 flex items-center gap-2';
-            toast.innerHTML = '<i class="fa-regular fa-circle-check"></i> Demo mode active — full fulfillment access';
-            document.body.appendChild(toast);
-            setTimeout(() => toast.remove(), 3000);
-            location.reload();
-        } else {
-            alert("Demo login failed. Please ensure backend is reachable.");
-        }
-    }
-    
-    document.getElementById('modalDemoLoginBtn')?.addEventListener('click', onDemoLoginClick);
-    document.getElementById('closeAuthModalBtn')?.addEventListener('click', () => hideDemoModal());
+
+    // Quick-range buttons. All ranges are inclusive and anchored to today (UTC)
+    // — matching the "From date (UTC)" label above the inputs.
+    (function bindQuickRanges() {
+        const fromEl = document.getElementById('filter-from-date');
+        const toEl   = document.getElementById('filter-to-date');
+        if (!fromEl || !toEl) return;
+
+        const todayUTC = () => new Date().toISOString().slice(0, 10);
+        const daysAgoUTC = (n) => {
+            const d = new Date();
+            d.setUTCDate(d.getUTCDate() - n);
+            return d.toISOString().slice(0, 10);
+        };
+
+        document.getElementById('quick-today')?.addEventListener('click', () => {
+            fromEl.value = todayUTC();
+            toEl.value   = todayUTC();
+            reloadOrders();
+        });
+        document.getElementById('quick-7d')?.addEventListener('click', () => {
+            fromEl.value = daysAgoUTC(6);   // "last 7 days" = today + previous 6
+            toEl.value   = todayUTC();
+            reloadOrders();
+        });
+        document.getElementById('quick-30d')?.addEventListener('click', () => {
+            fromEl.value = daysAgoUTC(29);
+            toEl.value   = todayUTC();
+            reloadOrders();
+        });
+        document.getElementById('quick-clear')?.addEventListener('click', () => {
+            fromEl.value = '';
+            toEl.value   = '';
+            reloadOrders();
+        });
+
+        // Inline validation: if someone types a reversed range, show a
+        // toast rather than firing a request that will 400. The backend
+        // guard remains the authoritative check.
+        [fromEl, toEl].forEach(el => {
+            el.addEventListener('change', () => {
+                if (fromEl.value && toEl.value && fromEl.value > toEl.value) {
+                    // small non-modal alert; matches the rest of the page's
+                    // error handling style (alert-based)
+                    alert('⚠️ "From date" is after "To date" — results will be empty until you fix the range.');
+                }
+            });
+        });
+    })();
     
     window.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             document.getElementById('updateModal')?.classList.add('hidden');
             document.getElementById('viewModal')?.classList.add('hidden');
-            document.getElementById('demoAuthModal')?.classList.add('hidden');
+            document.getElementById('areaModal')?.classList.add('hidden');
         }
     });
     
     function escapeHtml(str) {
         if (!str) return '';
-        return str.replace(/[&<>]/g, function(m) {
+        return String(str).replace(/[&<>]/g, function(m) {
             if (m === '&') return '&amp;';
             if (m === '<') return '&lt;';
             if (m === '>') return '&gt;';
@@ -795,36 +938,42 @@
         });
     }
     
+    // ==========================================
+    // BOOT — KDS session or bust
+    // ==========================================
     async function initDashboard() {
-        if (token) {
+        token = await resolveToken();
+
+        if (!token) {
+            renderSigninState('You are not signed in. Redirecting to Kevs bOS sign in…');
+            redirectToKdsSignin();
+            return;
+        }
+
+        try {
             try {
-                // NEW — ensure org is selected before any dashboard render
-                try {
-                    await ensureOrgSelected();
-                } catch (orgErr) {
-                    console.warn("Org selection failed:", orgErr);
-                }
-                await apiCall('/fulfillment/orders?limit=1');
-                await loadOrders();
-            } catch (err) {
-                console.warn("Token invalid, clearing");
+                await ensureOrgSelected();
+            } catch (orgErr) {
+                console.warn("Org selection failed:", orgErr);
+            }
+            await apiCall('/fulfillment/orders?limit=1');
+
+            // Restore whatever filter the dispatcher last used.
+            const saved = restoreFilterState();
+            if (saved) applyFilterToDOM(saved);
+
+            await reloadOrders();
+        } catch (err) {
+            console.warn("Session invalid:", err);
+            // Only clear legacy storage when KDS isn't managing the session.
+            if (!kdsBridge()) {
                 localStorage.removeItem('access_token');
                 localStorage.removeItem('refresh_token');
-                // NEW — clear stale org selection so the next user doesn't inherit it
-                localStorage.removeItem('selected_org_id');
-                token = null;
-                showDemoModal();
-                document.getElementById('orders-container').innerHTML = `<div class="text-center py-12"><i class="fa-regular fa-clock"></i> Session expired — click Demo Login</div>`;
             }
-        } else {
-            showDemoModal();
-            document.getElementById('orders-container').innerHTML = `<div class="bg-slate-800/60 rounded-xl p-8 text-center border border-slate-700">
-                <i class="fa-solid fa-flask text-emerald-400 text-3xl mb-2 block"></i>
-                <p class="mb-3">Welcome to Fulfillment Dashboard</p>
-                <button id="initial-demo-trigger" class="bg-emerald-600 hover:bg-emerald-500 px-5 py-2 rounded-lg font-medium">🔐 Launch Demo Access</button>
-            </div>`;
-            const initDemoBtn = document.getElementById('initial-demo-trigger');
-            if (initDemoBtn) initDemoBtn.addEventListener('click', () => showDemoModal());
+            localStorage.removeItem('selected_org_id');
+            token = null;
+            renderSigninState('Your session expired. Redirecting to sign in…');
+            redirectToKdsSignin();
         }
     }
     
