@@ -530,6 +530,493 @@
         };
 
         // ================================================================
+        // BANK TRANSFERS — Payment Accounts modal
+        //
+        // Handles both create and edit. When `initial` has an id, the
+        // form pre-populates and the submit calls PATCH. Otherwise it
+        // calls POST. The `provider` select lists the Nigerian banks
+        // and fintechs most commonly used as POS receiving accounts.
+        // ================================================================
+        const RECEIVING_ACCOUNT_PROVIDERS = [
+            'opay', 'moniepoint', 'palmpay', 'kuda', 'pocketapp',
+            'gtb', 'access', 'zenith', 'uba', 'first_bank', 'union',
+            'fidelity', 'sterling', 'wema', 'polaris', 'fcmb', 'stanbic',
+            'ecobank', 'heritage', 'keystone', 'providus', 'unity', 'suntrust',
+            'other'
+        ];
+
+        const PaymentAccountModal = ({ isOpen, onClose, onConfirm, initial }) => {
+            const isEdit = Boolean(initial && initial.id);
+            const [label, setLabel] = useState('');
+            const [provider, setProvider] = useState('opay');
+            const [accountNumber, setAccountNumber] = useState('');
+            const [accountName, setAccountName] = useState('');
+            const [isDefault, setIsDefault] = useState(false);
+            const [loading, setLoading] = useState(false);
+
+            useEffect(() => {
+                if (!isOpen) return;
+                setLabel(initial?.label || '');
+                setProvider(initial?.provider || 'opay');
+                setAccountNumber(initial?.account_number || '');
+                setAccountName(initial?.account_name || '');
+                setIsDefault(initial?.is_default || false);
+            }, [isOpen, initial]);
+
+            if (!isOpen) return null;
+
+            const handleSubmit = async () => {
+                if (!label.trim() || !provider || !accountNumber.trim() || !accountName.trim()) {
+                    alert('All fields are required');
+                    return;
+                }
+                if (!/^\d{10,20}$/.test(accountNumber.trim())) {
+                    alert('Account number must be 10–20 digits');
+                    return;
+                }
+                setLoading(true);
+                try {
+                    await onConfirm({
+                        label: label.trim(),
+                        provider,
+                        account_number: accountNumber.trim(),
+                        account_name: accountName.trim(),
+                        is_default: isDefault,
+                    }, initial?.id);
+                    onClose();
+                } catch (err) {
+                    alert('Failed: ' + err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="modal-overlay" onClick={onClose}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()}>
+                        <h3>{isEdit ? 'Edit Receiving Account' : 'Add Receiving Account'}</h3>
+                        <p className="text-xs text-gray-500 mb-2">
+                            These are the accounts your customers transfer into when paying by bank transfer
+                            at the POS. Cashiers pick from this list on every transfer sale.
+                        </p>
+                        <label>Label *</label>
+                        <input type="text" value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. Main Opay, GTB Current" />
+                        <label>Provider *</label>
+                        <select value={provider} onChange={e => setProvider(e.target.value)}>
+                            {RECEIVING_ACCOUNT_PROVIDERS.map(p => (
+                                <option key={p} value={p}>{p.toUpperCase()}</option>
+                            ))}
+                        </select>
+                        <label>Account Number *</label>
+                        <input
+                            type="text"
+                            inputMode="numeric"
+                            value={accountNumber}
+                            onChange={e => setAccountNumber(e.target.value.replace(/\D/g, ''))}
+                            placeholder="10–20 digits"
+                        />
+                        <label>Account Name *</label>
+                        <input type="text" value={accountName} onChange={e => setAccountName(e.target.value)} placeholder="Name on the account" />
+                        <label className="flex items-center gap-2 mt-3">
+                            <input type="checkbox" checked={isDefault} onChange={e => setIsDefault(e.target.checked)} />
+                            <span>Set as default for POS transfers</span>
+                        </label>
+                        <div className="btn-row">
+                            <button className="btn-secondary" onClick={onClose}>Cancel</button>
+                            <button className="btn-primary" onClick={handleSubmit} disabled={loading}>
+                                {loading ? 'Saving...' : (isEdit ? 'Save Changes' : 'Create Account')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // ================================================================
+        // BANK TRANSFERS — Transfer Log
+        //
+        // The audit trail. Every POS sale with payment_method='transfer'
+        // whose cashier selected a receiving account shows up here with
+        // the receipt#, the account it landed in, the bank reference,
+        // the customer, and the cashier. Filter by account / date to
+        // reconcile against the bank statement.
+        // ================================================================
+        const TransferLogView = ({ accounts }) => {
+            const [transfers, setTransfers] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const [filter, setFilter] = useState({ account_id: '', from: '', to: '' });
+
+            const buildUrl = (f) => {
+                const p = new URLSearchParams();
+                if (f.account_id) p.set('account_id', f.account_id);
+                if (f.from) p.set('from_date', f.from);
+                if (f.to) p.set('to_date', f.to);
+                p.set('limit', '500');
+                return `/payment-accounts/transfers?${p.toString()}`;
+            };
+
+            const fetchTransfers = async (f) => {
+                setLoading(true);
+                try {
+                    const res = await apiCall(buildUrl(f));
+                    setTransfers(res.transfers || []);
+                } catch (err) {
+                    console.warn('transfers fetch failed', err);
+                    setTransfers([]);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            useEffect(() => { fetchTransfers(filter); }, []);
+
+            const handleFilterChange = (next) => {
+                setFilter(next);
+                fetchTransfers(next);
+            };
+
+            const totalAmount = useMemo(
+                () => transfers.reduce((sum, t) => sum + (Number(t.amount) || 0), 0),
+                [transfers]
+            );
+
+            return (
+                <div>
+                    <div className="flex flex-wrap gap-3 items-end mb-4 p-3 rounded-lg bg-gray-50 border border-gray-200">
+                        <div>
+                            <label className="block text-xs text-gray-600 mb-1">Receiving Account</label>
+                            <select
+                                className="border border-gray-300 rounded p-1.5 text-sm min-w-[220px]"
+                                value={filter.account_id}
+                                onChange={e => handleFilterChange({ ...filter, account_id: e.target.value })}
+                            >
+                                <option value="">All accounts</option>
+                                {accounts.map(acc => (
+                                    <option key={acc.id} value={acc.id}>
+                                        {acc.label} — {(acc.provider || '').toUpperCase()} {acc.account_number}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs text-gray-600 mb-1">From Date</label>
+                            <input type="date" className="border border-gray-300 rounded p-1.5 text-sm"
+                                   value={filter.from} onChange={e => handleFilterChange({ ...filter, from: e.target.value })} />
+                        </div>
+                        <div>
+                            <label className="block text-xs text-gray-600 mb-1">To Date</label>
+                            <input type="date" className="border border-gray-300 rounded p-1.5 text-sm"
+                                   value={filter.to} onChange={e => handleFilterChange({ ...filter, to: e.target.value })} />
+                        </div>
+                        <button
+                            onClick={() => handleFilterChange({ account_id: '', from: '', to: '' })}
+                            className="bg-gray-300 hover:bg-gray-400 text-gray-800 px-3 py-1.5 rounded text-sm"
+                            disabled={!filter.account_id && !filter.from && !filter.to}
+                        >
+                            <i className="fa-solid fa-times mr-1"></i> Clear
+                        </button>
+                        <span className="text-xs ml-auto px-2 py-1 rounded bg-gray-200 text-gray-600">
+                            {loading ? (
+                                <><i className="fa-solid fa-spinner fa-spin mr-1"></i> Loading…</>
+                            ) : (
+                                <>
+                                    {transfers.length.toLocaleString()} row{transfers.length === 1 ? '' : 's'}
+                                    {' · '}
+                                    {formatCurrency(totalAmount)} total
+                                </>
+                            )}
+                        </span>
+                    </div>
+
+                    <div className="table-scroll">
+                        <table className="min-w-full">
+                            <thead className="sticky top-0 bg-gray-200">
+                                <tr>
+                                    <th className="p-2 text-left">Date</th>
+                                    <th className="p-2 text-left">Receipt</th>
+                                    <th className="p-2 text-left">Account</th>
+                                    <th className="p-2 text-left">Amount</th>
+                                    <th className="p-2 text-left">Reference</th>
+                                    <th className="p-2 text-left">Customer</th>
+                                    <th className="p-2 text-left">Cashier</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {transfers.map(t => (
+                                    <tr key={t.sale_id} className="border-b hover:bg-gray-50">
+                                        <td className="p-2 text-xs whitespace-nowrap">
+                                            {t.created_at ? new Date(t.created_at).toLocaleString() : '-'}
+                                        </td>
+                                        <td className="p-2 text-xs font-mono">{t.receipt_number || '-'}</td>
+                                        <td className="p-2 text-xs">
+                                            {t.account ? (
+                                                <span>
+                                                    <span className="font-medium">{t.account.label}</span>
+                                                    <span className="ml-1 text-gray-500">
+                                                        {(t.account.provider || '').toUpperCase()} {t.account.account_number}
+                                                    </span>
+                                                </span>
+                                            ) : <span className="text-red-500">(deleted)</span>}
+                                        </td>
+                                        <td className="p-2 text-sm font-semibold">{formatCurrency(t.amount)}</td>
+                                        <td className="p-2 text-xs font-mono">
+                                            {t.payment_transfer_reference || <span className="text-gray-400">—</span>}
+                                        </td>
+                                        <td className="p-2 text-xs">
+                                            {t.customer_name || <span className="text-gray-400">Walk-in</span>}
+                                            {t.customer_phone && <div className="text-gray-500">{t.customer_phone}</div>}
+                                        </td>
+                                        <td className="p-2 text-xs">{t.cashier_name || <span className="text-gray-400">—</span>}</td>
+                                    </tr>
+                                ))}
+                                {transfers.length === 0 && !loading && (
+                                    <tr>
+                                        <td colSpan="7" className="text-center p-4 text-gray-400">
+                                            {(filter.account_id || filter.from || filter.to)
+                                                ? 'No transfers match these filters'
+                                                : 'No transfers recorded yet'}
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        };
+
+        // ================================================================
+        // BANK TRANSFERS — Receiving Accounts
+        //
+        // CRUD on the accounts that show up in the POS transfer dropdown.
+        // Deactivation is soft — historical sales still point at the row
+        // for audit, but the account is hidden from new sales.
+        // ================================================================
+        const ReceivingAccountsView = ({ accounts, loading, onCreate, onEdit, onDeactivate }) => {
+            const grandTotal = useMemo(
+                () => accounts.reduce((sum, a) => sum + (a.stats?.total || 0), 0),
+                [accounts]
+            );
+            const grandCount = useMemo(
+                () => accounts.reduce((sum, a) => sum + (a.stats?.count || 0), 0),
+                [accounts]
+            );
+
+            return (
+                <div>
+                    <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
+                        <div>
+                            <p className="text-sm text-gray-600">
+                                Registered receiving accounts. Cashiers pick from this list when recording a bank transfer at the POS.
+                            </p>
+                            {accounts.length > 0 && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                    <strong>{accounts.length}</strong> account{accounts.length === 1 ? '' : 's'} ·{' '}
+                                    <strong>{grandCount.toLocaleString()}</strong> transfer{grandCount === 1 ? '' : 's'} ·{' '}
+                                    <strong>{formatCurrency(grandTotal)}</strong> total received
+                                </p>
+                            )}
+                        </div>
+                        <button
+                            onClick={onCreate}
+                            className="bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700 text-sm"
+                        >
+                            <i className="fa-solid fa-plus mr-1"></i> Add Account
+                        </button>
+                    </div>
+
+                    <div className="table-scroll">
+                        <table className="min-w-full">
+                            <thead className="sticky top-0 bg-gray-200">
+                                <tr>
+                                    <th className="p-2 text-left">Label</th>
+                                    <th className="p-2 text-left">Provider</th>
+                                    <th className="p-2 text-left">Account</th>
+                                    <th className="p-2 text-left">Default</th>
+                                    <th className="p-2 text-right">Transfers</th>
+                                    <th className="p-2 text-right">Total Received</th>
+                                    <th className="p-2 text-left">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {accounts.map(acc => {
+                                    const s = acc.stats;
+                                    return (
+                                        <tr key={acc.id} className={`border-b hover:bg-gray-50 ${!acc.is_active ? 'opacity-60' : ''}`}>
+                                            <td className="p-2 font-medium">
+                                                {acc.label}
+                                                {!acc.is_active && (
+                                                    <span className="ml-2 text-[10px] uppercase bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded">Inactive</span>
+                                                )}
+                                            </td>
+                                            <td className="p-2 text-xs">{(acc.provider || '').toUpperCase()}</td>
+                                            <td className="p-2 text-xs">
+                                                <div className="font-mono">{acc.account_number}</div>
+                                                <div className="text-gray-500">{acc.account_name}</div>
+                                            </td>
+                                            <td className="p-2 text-xs">
+                                                {acc.is_default
+                                                    ? <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded">★ Default</span>
+                                                    : <span className="text-gray-400">—</span>}
+                                            </td>
+                                            <td className="p-2 text-sm text-right">{s ? s.count.toLocaleString() : '—'}</td>
+                                            <td className="p-2 text-sm text-right font-semibold">{s ? formatCurrency(s.total) : '—'}</td>
+                                            <td className="p-2 text-xs">
+                                                <button
+                                                    className="text-blue-600 hover:underline mr-3"
+                                                    onClick={() => onEdit(acc)}
+                                                >Edit</button>
+                                                {acc.is_active && (
+                                                    <button
+                                                        className="text-red-600 hover:underline"
+                                                        onClick={() => onDeactivate(acc)}
+                                                    >Deactivate</button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                                {accounts.length === 0 && !loading && (
+                                    <tr>
+                                        <td colSpan="7" className="text-center p-4 text-gray-400">
+                                            No receiving accounts yet. Add one to enable bank-transfer tracking at the POS.
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        };
+
+        // ================================================================
+        // BANK TRANSFERS TAB
+        //
+        // Parent container. Manages the account list once and passes it
+        // to both sub-views so they stay in sync — when a new account is
+        // created, the Transfer Log's filter dropdown picks it up.
+        // ================================================================
+        const BankTransfersTab = () => {
+            const [subTab, setSubTab] = useState('log'); // 'log' | 'accounts'
+            const [accounts, setAccounts] = useState([]);
+            const [accountsLoading, setAccountsLoading] = useState(false);
+            const [showAccountModal, setShowAccountModal] = useState(false);
+            const [editingAccount, setEditingAccount] = useState(null);
+
+            const fetchAccounts = async () => {
+                setAccountsLoading(true);
+                try {
+                    const res = await apiCall('/payment-accounts?include_inactive=true&include_totals=true');
+                    setAccounts(res.accounts || []);
+                } catch (err) {
+                    console.warn('accounts fetch failed', err);
+                    setAccounts([]);
+                } finally {
+                    setAccountsLoading(false);
+                }
+            };
+
+            useEffect(() => { fetchAccounts(); }, []);
+
+            const handleSaveAccount = async (payload, existingId) => {
+                if (existingId) {
+                    await apiCall(`/payment-accounts/${existingId}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify(payload),
+                    });
+                } else {
+                    await apiCall('/payment-accounts', {
+                        method: 'POST',
+                        body: JSON.stringify(payload),
+                    });
+                }
+                await fetchAccounts();
+            };
+
+            const handleDeactivate = async (acc) => {
+                if (!confirm(`Deactivate "${acc.label}"?\n\nIt will be hidden from the POS dropdown but historical transfers stay intact for audit.`)) return;
+                try {
+                    await apiCall(`/payment-accounts/${acc.id}`, { method: 'DELETE' });
+                    await fetchAccounts();
+                } catch (err) {
+                    alert('Deactivate failed: ' + err.message);
+                }
+            };
+
+            const activeAccounts = accounts.filter(a => a.is_active);
+
+            return (
+                <div className="bg-white p-4 rounded shadow">
+                    <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
+                        <h2 className="text-xl font-semibold">Bank Transfers</h2>
+                        <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
+                            <button
+                                className={`px-3 py-1 rounded text-sm font-medium transition ${subTab === 'log' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}
+                                onClick={() => setSubTab('log')}
+                            >
+                                <i className="fa-solid fa-list mr-1"></i> Transfer Log
+                            </button>
+                            <button
+                                className={`px-3 py-1 rounded text-sm font-medium transition ${subTab === 'accounts' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}
+                                onClick={() => setSubTab('accounts')}
+                            >
+                                <i className="fa-solid fa-building-columns mr-1"></i> Receiving Accounts
+                            </button>
+                        </div>
+                    </div>
+
+                    {!accountsLoading && activeAccounts.length === 0 && (
+                        <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 mb-4">
+                            <div className="flex items-start gap-2">
+                                <i className="fa-solid fa-triangle-exclamation text-amber-600 mt-0.5"></i>
+                                <div>
+                                    <p className="font-medium text-amber-900">No receiving accounts configured</p>
+                                    <p className="text-sm text-amber-800 mt-1">
+                                        The POS terminal cannot record bank transfers until at least one receiving account is registered.
+                                        {' '}
+                                        <button
+                                            className="underline font-medium"
+                                            onClick={() => setSubTab('accounts')}
+                                        >
+                                            Add one now →
+                                        </button>
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {accountsLoading ? (
+                        <div className="flex justify-center py-8"><div className="loading-spinner"></div></div>
+                    ) : (
+                        <>
+                            {subTab === 'log' && (
+                                <TransferLogView accounts={activeAccounts} />
+                            )}
+                            {subTab === 'accounts' && (
+                                <ReceivingAccountsView
+                                    accounts={accounts}
+                                    loading={accountsLoading}
+                                    onCreate={() => { setEditingAccount(null); setShowAccountModal(true); }}
+                                    onEdit={(acc) => { setEditingAccount(acc); setShowAccountModal(true); }}
+                                    onDeactivate={handleDeactivate}
+                                />
+                            )}
+                        </>
+                    )}
+
+                    <PaymentAccountModal
+                        isOpen={showAccountModal}
+                        onClose={() => { setShowAccountModal(false); setEditingAccount(null); }}
+                        onConfirm={handleSaveAccount}
+                        initial={editingAccount}
+                    />
+                </div>
+            );
+        };
+
+        // ================================================================
         // EXPENSES TAB
         //
         // Filters server-side. /expenses is served by expenses.py — see
@@ -1411,6 +1898,7 @@
                     case 'ar': return renderARTab();
                     case 'ap': return renderAPTab();
                     case 'expenses': return <ExpensesTab />;
+                    case 'bank_transfers': return <BankTransfersTab />;
                     case 'export': return renderExportTab();
                     default: return <p>Select a tab</p>;
                 }
@@ -1451,7 +1939,7 @@
                         {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>}
 
                         <div className="flex flex-wrap gap-2 border-b border-gray-300 mb-4">
-                            {['pl','coa','journal','ar','ap','expenses','export'].map(tab => (
+                            {['pl','coa','journal','ar','ap','expenses','bank_transfers','export'].map(tab => (
                                 <button
                                     key={tab}
                                     className={`px-4 py-2 rounded-t-lg font-medium transition ${activeTab === tab ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
@@ -1463,6 +1951,7 @@
                                     {tab === 'ar' && 'A/R'}
                                     {tab === 'ap' && 'A/P'}
                                     {tab === 'expenses' && 'Expenses'}
+                                    {tab === 'bank_transfers' && 'Bank Transfers'}
                                     {tab === 'export' && 'Export & Sync'}
                                 </button>
                             ))}
