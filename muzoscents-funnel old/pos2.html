@@ -30,9 +30,10 @@
         .sync-btn { background: #3b82f6; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; border: none; cursor: pointer; }
         .sync-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-        #history-modal, #sync-dashboard-modal, #camera-modal, #mobile-cart-sheet { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 50; align-items: center; justify-content: center; }
-        #history-modal.active, #sync-dashboard-modal.active, #camera-modal.active, #mobile-cart-sheet.active { display: flex; }
-        #history-modal .modal-content, #sync-dashboard-modal .modal-content, #camera-modal .modal-content { background: white; max-width: 800px; width: 90%; max-height: 80vh; overflow-y: auto; padding: 20px; border-radius: 12px; }
+        #history-modal, #sync-dashboard-modal, #camera-modal, #mobile-cart-sheet, #printer-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 50; align-items: center; justify-content: center; }
+        #history-modal.active, #sync-dashboard-modal.active, #camera-modal.active, #mobile-cart-sheet.active, #printer-modal.active { display: flex; }
+        #history-modal .modal-content, #sync-dashboard-modal .modal-content, #camera-modal .modal-content, #printer-modal .modal-content { background: white; max-width: 800px; width: 90%; max-height: 80vh; overflow-y: auto; padding: 20px; border-radius: 12px; }
+        #printer-modal .modal-content { max-width: 500px; }
 
         #mobile-cart-sheet { align-items: flex-end; }
         #mobile-cart-sheet .sheet-content { background: white; width: 100%; height: 95vh; border-radius: 20px 20px 0 0; display: flex; flex-direction: column; animation: slideUp 0.3s ease-out; }
@@ -44,7 +45,6 @@
         .dashboard-stat { display: flex; justify-content: space-between; border-bottom: 1px solid #e5e7eb; padding: 8px 0; }
         .scanner-active { border-color: #22c55e !important; box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.3) !important; }
 
-        /* ── Transfer receiving-account cards ── */
         .transfer-account-card {
             text-align: left;
             border: 2px solid #e5e7eb;
@@ -61,31 +61,35 @@
         .transfer-account-card:hover { border-color: #93c5fd; background: #f8fafc; }
         .transfer-account-card:active { transform: scale(0.98); }
         .transfer-account-card.selected { border-color: #3b82f6; background: #eff6ff; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
-        .transfer-account-card .provider-badge {
-            font-size: 0.65rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            background: #dbeafe;
-            color: #1e40af;
-            padding: 2px 6px;
-            border-radius: 4px;
-            letter-spacing: 0.03em;
-            flex-shrink: 0;
-        }
+        .transfer-account-card .provider-badge { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; background: #dbeafe; color: #1e40af; padding: 2px 6px; border-radius: 4px; letter-spacing: 0.03em; flex-shrink: 0; }
         .transfer-account-card.selected .provider-badge { background: #3b82f6; color: white; }
 
-        body.kiosk-mode #admin-controls, body.kiosk-mode #sync-dashboard-modal, body.kiosk-mode #history-modal { display: none !important; }
+        /* Printer settings modal */
+        .printer-method { display: flex; align-items: flex-start; gap: 12px; padding: 12px; border: 2px solid #e5e7eb; border-radius: 10px; cursor: pointer; transition: all 0.15s; margin-bottom: 8px; }
+        .printer-method:hover { border-color: #93c5fd; background: #f8fafc; }
+        .printer-method.selected { border-color: #3b82f6; background: #eff6ff; }
+        .printer-method.disabled { opacity: 0.4; cursor: not-allowed; }
+        .printer-method .method-icon { width: 40px; height: 40px; border-radius: 8px; background: #dbeafe; color: #1e40af; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 18px; }
+        .printer-method.selected .method-icon { background: #3b82f6; color: white; }
+
+        body.kiosk-mode #admin-controls, body.kiosk-mode #sync-dashboard-modal, body.kiosk-mode #history-modal, body.kiosk-mode #printer-modal { display: none !important; }
         body.kiosk-mode #pos-tabs-container { display: none !important; }
 
+        /* Thermal print CSS — no margins, monospace, auto page height */
         @media print {
             body * { visibility: hidden; }
             #receipt-print-area, #receipt-print-area * { visibility: visible; }
-            #receipt-print-area { position: fixed; left: 0; top: 0; width: 100%; background: white; padding: 20px; font-size: 12px; font-family: monospace; color: black; }
-            .receipt-header { text-align: center; font-weight: bold; font-size: 16px; margin-bottom: 8px; }
-            .receipt-divider { border-top: 1px dashed #333; margin: 8px 0; }
+            #receipt-print-area {
+                position: fixed; left: 0; top: 0; width: 100%;
+                background: white; padding: 0; margin: 0;
+                font-size: 11px; font-family: 'Courier New', monospace;
+                color: black; line-height: 1.35;
+            }
+            .receipt-header { text-align: center; font-weight: bold; font-size: 15px; margin-bottom: 4px; }
+            .receipt-divider { border-top: 1px dashed #333; margin: 6px 0; }
             .receipt-item { display: flex; justify-content: space-between; }
-            .receipt-total { font-weight: bold; font-size: 14px; }
-            .receipt-footer { text-align: center; margin-top: 8px; font-size: 10px; }
+            .receipt-total { font-weight: bold; font-size: 13px; }
+            .receipt-footer { text-align: center; margin-top: 6px; font-size: 10px; }
             .no-print { display: none !important; }
         }
     </style>
@@ -114,6 +118,7 @@
                 <button id="sync-now-btn" class="sync-btn"><i class="fa-solid fa-rotate"></i> Sync</button>
                 <button id="dashboard-btn" class="bg-gray-200 px-3 py-1 rounded-lg text-sm hidden sm:block"><i class="fa-solid fa-chart-simple"></i> Dashboard</button>
                 <button id="history-btn" class="bg-gray-200 px-3 py-1 rounded-lg text-sm"><i class="fa-regular fa-clock"></i> History</button>
+                <button id="printer-btn" class="bg-gray-200 px-3 py-1 rounded-lg text-sm" title="Configure receipt printer"><i class="fa-solid fa-print"></i> Printer</button>
                 <button id="kiosk-mode-btn" class="bg-gray-800 text-white px-3 py-1 rounded-lg text-sm hidden sm:block"><i class="fa-solid fa-tablet-screen-button"></i> Kiosk</button>
             </div>
         </div>
@@ -181,7 +186,6 @@
                         </div>
                     </div>
 
-                    <!-- Transfer receiving-account picker (desktop) -->
                     <div id="desktop-transfer-account-container" class="hidden mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
                         <label class="block text-sm font-medium">Receiving Account <span class="text-red-500">*</span></label>
                         <div id="desktop-transfer-account-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
@@ -296,7 +300,6 @@
                     </div>
                 </div>
 
-                <!-- Transfer receiving-account picker (mobile) -->
                 <div id="mobile-transfer-account-container" class="hidden bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
                     <label class="block text-sm font-medium">Receiving Account <span class="text-red-500">*</span></label>
                     <div id="mobile-transfer-account-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
@@ -361,6 +364,50 @@
         </div>
     </div>
 
+    <!-- ── Printer Settings Modal ── -->
+    <div id="printer-modal">
+        <div class="modal-content">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold"><i class="fa-solid fa-print"></i> Receipt Printer</h3>
+                <button id="close-printer-btn" class="text-gray-400 hover:text-gray-600 p-2"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+
+            <p class="text-xs text-gray-500 mb-3">Choose how receipts print on this terminal. The setting is saved to this device.</p>
+
+            <div id="printer-method-list">
+                <!-- Populated by JS based on capability detection -->
+            </div>
+
+            <div id="printer-bt-panel" class="hidden mt-3 bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">
+                <div class="flex items-center justify-between gap-2">
+                    <div class="min-w-0 flex-1">
+                        <p class="text-xs text-gray-600">Connected printer</p>
+                        <p id="printer-bt-device" class="text-sm font-medium text-gray-800 truncate">Not connected</p>
+                    </div>
+                    <button id="printer-bt-connect-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-sm whitespace-nowrap">
+                        <i class="fa-solid fa-link"></i> Connect
+                    </button>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-600 mb-1">Paper width</label>
+                    <select id="printer-paper-width" class="w-full border rounded-lg p-2 bg-white text-sm">
+                        <option value="32">58mm thermal (32 chars/line)</option>
+                        <option value="48">80mm thermal (48 chars/line)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="mt-4 flex gap-2">
+                <button id="printer-test-btn" class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 rounded-lg text-sm font-medium">
+                    <i class="fa-solid fa-vial"></i> Test Print
+                </button>
+                <button id="printer-save-btn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium">
+                    <i class="fa-solid fa-check"></i> Save
+                </button>
+            </div>
+        </div>
+    </div>
+
     <div id="auth-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
         <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm">
             <div class="flex justify-between items-center mb-4">
@@ -386,6 +433,9 @@
             <h3 class="text-xl font-bold text-gray-800 mb-2">Sale Complete!</h3>
             <p class="text-gray-600 mb-6 text-sm">Receipt #<span id="success-receipt-num"></span> has been processed.</p>
             <div class="space-y-3">
+                <button id="print-receipt-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-xl font-bold text-base flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-print text-xl"></i> Print Receipt
+                </button>
                 <button id="share-whatsapp-btn" class="w-full bg-[#25D366] hover:bg-[#20bd5a] text-white p-3 rounded-xl font-bold text-base flex items-center justify-center gap-2">
                     <i class="fa-brands fa-whatsapp text-xl"></i> Share via WhatsApp
                 </button>
@@ -646,6 +696,422 @@
         };
 
         // ================================================================
+        // POS PRINTER MODULE
+        //
+        // Unified receipt printing across four surfaces:
+        //   1. Android Chrome   → window.print() → system print service
+        //   2. iOS Safari       → window.print() → AirPrint sheet
+        //   3. Tauri USB/CUPS   → window.print() → OS dialog → CUPS driver
+        //   4. Bluetooth thermal → ESC/POS bytes over Web Bluetooth (PWA)
+        //                          or a Tauri BLE bridge (native)
+        //
+        // Tauri BLE integration point
+        // ───────────────────────────
+        // If your Tauri app installs a BLE printer plugin, expose this
+        // global from the Rust side (or from a bootstrap script):
+        //
+        //     window.POS_TAURI_BLE_PRINT = async (bytes) => {
+        //         // bytes: Uint8Array of ESC/POS commands
+        //         // await your_plugin.write(pairedAddress, bytes);
+        //     };
+        //     window.POS_TAURI_BLE_TEST   = async () => true;
+        //
+        // If those globals are absent, the Tauri BLE option is hidden in
+        // the UI and the cashier falls back to system print (which still
+        // works for USB/CUPS-attached thermal printers on Tauri).
+        //
+        // Preference persistence
+        // ──────────────────────
+        // Stored in localStorage under `pos_printer_pref` as:
+        //   {
+        //     method: 'browser' | 'bluetooth-web' | 'bluetooth-tauri',
+        //     deviceId: <Bluetooth device id, if applicable>,
+        //     deviceName: <display name>,
+        //     paperWidth: 32 | 48,
+        //   }
+        // ================================================================
+        const POSPrinter = (function() {
+            const LS_KEY = 'pos_printer_pref';
+
+            // ── Capability detection ──
+            const caps = (function() {
+                const out = { browser: typeof window.print === 'function', bluetoothWeb: false, bluetoothTauri: false, isTauri: !!isTauri };
+                if (typeof navigator !== 'undefined' && navigator.bluetooth && typeof navigator.bluetooth.requestDevice === 'function') {
+                    out.bluetoothWeb = true;
+                }
+                if (isTauri && typeof window.POS_TAURI_BLE_PRINT === 'function') {
+                    out.bluetoothTauri = true;
+                }
+                return out;
+            })();
+
+            // ── ESC/POS encoder ──
+            // Thermal printers want raw byte commands, not HTML. Common
+            // service/characteristic UUIDs are tried in order at connect
+            // time. Most 58mm/80mm BLE printers (Xprinter, Goojprt,
+            // Peripage, ZJ-5805, etc.) expose one of these.
+            const ESC = {
+                INIT:       [0x1B, 0x40],
+                ALIGN_L:    [0x1B, 0x61, 0x00],
+                ALIGN_C:    [0x1B, 0x61, 0x01],
+                ALIGN_R:    [0x1B, 0x61, 0x02],
+                BOLD_ON:    [0x1B, 0x45, 0x01],
+                BOLD_OFF:   [0x1B, 0x45, 0x00],
+                SIZE_DBL:   [0x1D, 0x21, 0x11],
+                SIZE_NORM:  [0x1D, 0x21, 0x00],
+                FEED:       [0x0A],
+                FEED_LINES: (n) => new Array(n).fill(0x0A),
+                CUT:        [0x1D, 0x56, 0x42, 0x00],
+                DRAWER:     [0x1B, 0x70, 0x00, 0x19, 0xFA],
+            };
+
+            function enc(parts) {
+                const out = [];
+                for (const p of parts) {
+                    if (typeof p === 'number') out.push(p);
+                    else if (Array.isArray(p)) out.push(...p);
+                    else if (typeof p === 'string') {
+                        const b = new TextEncoder().encode(p);
+                        for (let i = 0; i < b.length; i++) out.push(b[i]);
+                    }
+                }
+                return out;
+            }
+
+            function buildEscPosReceipt(receiptData, width) {
+                width = width || 32;
+                const orgName = (localStorage.getItem('org_name') || 'Kevs Digital').slice(0, width);
+                const dateStr = new Date().toLocaleString();
+                const pmt = receiptData.payment || {};
+                const cust = receiptData.customer || {};
+                const parts = [];
+
+                parts.push(ESC.INIT);
+                parts.push(ESC.ALIGN_C, ESC.BOLD_ON, ESC.SIZE_DBL, orgName, ESC.FEED, ESC.SIZE_NORM, ESC.BOLD_OFF);
+                parts.push(`Receipt #${receiptData.receiptNumber || ''}`.slice(0, width), ESC.FEED);
+                parts.push(`Cashier: ${receiptData.cashierName || 'Cashier'}`.slice(0, width), ESC.FEED);
+                parts.push(dateStr.slice(0, width), ESC.FEED);
+                parts.push(ESC.ALIGN_L);
+                parts.push('-'.repeat(width), ESC.FEED);
+
+                for (const it of (receiptData.items || [])) {
+                    const name = String(it.name || '').slice(0, width - 12);
+                    const line = `${it.quantity}x ${name}`.slice(0, width);
+                    parts.push(line, ESC.FEED);
+                    const amt = `  ₦${Number(it.subtotal || 0).toFixed(2)}`;
+                    parts.push(amt, ESC.FEED);
+                }
+
+                parts.push('-'.repeat(width), ESC.FEED);
+                const lineLR = (l, r) => {
+                    l = String(l || ''); r = String(r || '');
+                    const gap = Math.max(1, width - l.length - r.length);
+                    return l + ' '.repeat(gap) + r;
+                };
+                parts.push(lineLR('Subtotal', `₦${Number(receiptData.subtotal || 0).toFixed(2)}`), ESC.FEED);
+                if ((receiptData.discount || 0) > 0) {
+                    parts.push(lineLR('Discount', `-₦${Number(receiptData.discount).toFixed(2)}`), ESC.FEED);
+                }
+                if ((receiptData.tax || 0) > 0) {
+                    parts.push(lineLR('Tax', `₦${Number(receiptData.tax).toFixed(2)}`), ESC.FEED);
+                }
+                parts.push(ESC.BOLD_ON, lineLR('TOTAL', `₦${Number(receiptData.grandTotal || 0).toFixed(2)}`), ESC.BOLD_OFF, ESC.FEED);
+                parts.push('-'.repeat(width), ESC.FEED);
+
+                parts.push(`Payment: ${String(pmt.method || 'cash').toUpperCase()}`, ESC.FEED);
+                if (pmt.method === 'transfer' && pmt.account_number) {
+                    parts.push(`  ${pmt.account_label || ''}`.slice(0, width), ESC.FEED);
+                    parts.push(`  ${String(pmt.provider || '').toUpperCase()} ${pmt.account_number}`.slice(0, width), ESC.FEED);
+                    if (pmt.transfer_reference) {
+                        parts.push(`  Ref: ${pmt.transfer_reference}`.slice(0, width), ESC.FEED);
+                    }
+                }
+                if (cust.name) parts.push(`Customer: ${cust.name}`.slice(0, width), ESC.FEED);
+                if (cust.pointsAfter !== undefined) parts.push(`Points: ${cust.pointsAfter}`.slice(0, width), ESC.FEED);
+
+                parts.push('-'.repeat(width), ESC.FEED);
+                parts.push(ESC.ALIGN_C, 'Thank you for shopping!', ESC.FEED);
+                parts.push(ESC.FEED_LINES(3));
+                parts.push(ESC.CUT);
+
+                return new Uint8Array(enc(parts));
+            }
+
+            // ── Bluetooth (Web Bluetooth) ──
+            // Tries the service/characteristic UUIDs used by the most
+            // common BLE thermal printers. Add new pairs to this table
+            // if you have a specific model that uses others.
+            const BLE_PROFILES = [
+                { service: '000018f0-0000-1000-8000-00805f9b34fb', char: '00002af1-0000-1000-8000-00805f9b34fb' },
+                { service: '0000ff00-0000-1000-8000-00805f9b34fb', char: '0000ff02-0000-1000-8000-00805f9b34fb' },
+                { service: '0000fee7-0000-1000-8000-00805f9b34fb', char: '0000fec7-0000-1000-8000-00805f9b34fb' },
+                { service: 'e7810a71-73ae-499d-8c15-faa9aef0c3f2', char: 'bef8d6c9-9c21-4c9e-b632-bd58c1009f9f' },
+            ];
+
+            const bt = {
+                device: null,
+                characteristic: null,
+                profile: null,
+                connectedName: null,
+
+                async connect() {
+                    if (!caps.bluetoothWeb) throw new Error('Web Bluetooth not available on this device');
+                    // requestDevice shows the browser's BLE chooser. The
+                    // filter accepts any peripheral that advertises the
+                    // "printer" service, plus a broad acceptOptionalServices
+                    // so unfamiliar printers still appear.
+                    const device = await navigator.bluetooth.requestDevice({
+                        acceptAllDevices: true,
+                        optionalServices: BLE_PROFILES.map(p => p.service),
+                    });
+                    const server = await device.gatt.connect();
+                    let found = null;
+                    for (const p of BLE_PROFILES) {
+                        try {
+                            const service = await server.getPrimaryService(p.service);
+                            const ch = await service.getCharacteristic(p.char);
+                            if (ch) { found = { service, char: ch, profile: p }; break; }
+                        } catch (e) { /* try next */ }
+                    }
+                    if (!found) {
+                        try { server.disconnect(); } catch (e) {}
+                        throw new Error('Printer does not expose a known ESC/POS service. It may not be BLE-compatible or may use a proprietary UUID.');
+                    }
+                    this.device = device;
+                    this.characteristic = found.char;
+                    this.profile = found.profile;
+                    this.connectedName = device.name || 'Bluetooth printer';
+                    return { name: this.connectedName };
+                },
+
+                async disconnect() {
+                    try { if (this.device && this.device.gatt.connected) this.device.gatt.disconnect(); } catch (e) {}
+                    this.device = null;
+                    this.characteristic = null;
+                    this.profile = null;
+                    this.connectedName = null;
+                },
+
+                async reconnect() {
+                    if (!caps.bluetoothWeb || !navigator.bluetooth.getDevices) return false;
+                    const pref = loadPref();
+                    if (!pref.deviceId) return false;
+                    try {
+                        const devices = await navigator.bluetooth.getDevices();
+                        const match = devices.find(d => d.id === pref.deviceId);
+                        if (!match) return false;
+                        const server = await match.gatt.connect();
+                        for (const p of BLE_PROFILES) {
+                            try {
+                                const service = await server.getPrimaryService(p.service);
+                                const ch = await service.getCharacteristic(p.char);
+                                if (ch) {
+                                    this.device = match;
+                                    this.characteristic = ch;
+                                    this.profile = p;
+                                    this.connectedName = match.name || pref.deviceName || 'Bluetooth printer';
+                                    return true;
+                                }
+                            } catch (e) {}
+                        }
+                        try { server.disconnect(); } catch (e) {}
+                        return false;
+                    } catch (e) {
+                        console.warn('Bluetooth reconnect failed', e);
+                        return false;
+                    }
+                },
+
+                async write(bytes) {
+                    if (!this.characteristic) throw new Error('No Bluetooth printer connected');
+                    const ch = this.characteristic;
+                    // BLE packets are small (typically 20–100 bytes usable).
+                    // Write 100-byte chunks with a small delay so cheap
+                    // printers do not drop packets under burst load.
+                    const CHUNK = 100;
+                    for (let i = 0; i < bytes.length; i += CHUNK) {
+                        const chunk = bytes.slice(i, i + CHUNK);
+                        if (ch.properties && ch.properties.writeWithoutResponse && ch.writeValueWithoutResponse) {
+                            await ch.writeValueWithoutResponse(chunk);
+                        } else {
+                            await ch.writeValue(chunk);
+                        }
+                        await new Promise(r => setTimeout(r, 20));
+                    }
+                },
+            };
+
+            // ── Browser (HTML) print ──
+            const browserPrint = {
+                print(receiptData, width) {
+                    const printArea = document.getElementById('receipt-print-area');
+                    if (!printArea) return;
+                    const orgName = localStorage.getItem('org_name') || 'Kevs Digital';
+                    const dateStr = new Date().toLocaleString();
+                    const pmt = receiptData.payment || {};
+                    const cust = receiptData.customer || {};
+
+                    let itemsHtml = '';
+                    (receiptData.items || []).forEach(item => {
+                        itemsHtml += `<div class="receipt-item"><span>${escapeHtml(item.name)} x ${item.quantity}</span><span>₦${Number(item.subtotal || 0).toFixed(2)}</span></div>`;
+                    });
+
+                    let paymentLine = `Payment: ${(pmt.method || 'cash').toUpperCase()}`;
+                    if (pmt.method === 'transfer' && pmt.account_number) {
+                        paymentLine += `<br>${escapeHtml(pmt.account_label || '')} — ${escapeHtml((pmt.provider || '').toUpperCase())} ${escapeHtml(pmt.account_number)}`;
+                        if (pmt.transfer_reference) paymentLine += `<br>Ref: ${escapeHtml(pmt.transfer_reference)}`;
+                    }
+
+                    // Set @page size for thermal printers (58mm/80mm). On
+                    // ordinary desktop printers this is ignored — the OS
+                    // dialog lets the user pick paper. On Android Chrome
+                    // it makes the system print service render at the
+                    // right width.
+                    const pageMm = width === 48 ? '80mm' : '58mm';
+                    let pageStyle = document.getElementById('pos-page-size');
+                    if (!pageStyle) { pageStyle = document.createElement('style'); pageStyle.id = 'pos-page-size'; document.head.appendChild(pageStyle); }
+                    pageStyle.textContent = `@page { size: ${pageMm} auto; margin: 0; }`;
+
+                    printArea.innerHTML = `
+                        <div class="receipt-header">${escapeHtml(orgName)}</div>
+                        <div style="text-align:center;font-size:10px;">Receipt #${escapeHtml(receiptData.receiptNumber || '')}</div>
+                        <div style="text-align:center;font-size:10px;">Cashier: ${escapeHtml(receiptData.cashierName || 'Cashier')}</div>
+                        <div style="text-align:center;font-size:10px;">${escapeHtml(dateStr)}</div>
+                        <div class="receipt-divider"></div>
+                        ${itemsHtml}
+                        <div class="receipt-divider"></div>
+                        <div class="receipt-item"><span>Subtotal</span><span>₦${Number(receiptData.subtotal || 0).toFixed(2)}</span></div>
+                        ${(receiptData.discount || 0) > 0 ? `<div class="receipt-item"><span>Discount</span><span>-₦${Number(receiptData.discount).toFixed(2)}</span></div>` : ''}
+                        ${(receiptData.tax || 0) > 0 ? `<div class="receipt-item"><span>Tax</span><span>₦${Number(receiptData.tax).toFixed(2)}</span></div>` : ''}
+                        <div class="receipt-item receipt-total"><span>TOTAL</span><span>₦${Number(receiptData.grandTotal || 0).toFixed(2)}</span></div>
+                        <div class="receipt-divider"></div>
+                        <div style="text-align:center;font-size:10px;">${paymentLine}</div>
+                        ${cust.name ? `<div style="text-align:center;font-size:10px;">Customer: ${escapeHtml(cust.name)}</div>` : ''}
+                        ${cust.pointsAfter !== undefined ? `<div style="text-align:center;font-size:10px;font-weight:bold;">Loyalty Points: ${cust.pointsAfter}</div>` : ''}
+                        <div class="receipt-divider"></div>
+                        <div class="receipt-footer">Thank you for shopping with us!</div>
+                    `;
+                    printArea.style.display = 'block';
+                    try { window.print(); } finally {
+                        setTimeout(() => {
+                            printArea.style.display = 'none';
+                            printArea.innerHTML = '';
+                            // Restore default @page so subsequent non-POS
+                            // prints (e.g. cashier printing a report) are
+                            // not forced to 58mm.
+                            if (pageStyle) pageStyle.textContent = '@page { margin: 10mm; }';
+                        }, 1000);
+                    }
+                },
+            };
+
+            // ── Tauri BLE bridge ──
+            const tauriBle = {
+                async write(bytes) {
+                    if (typeof window.POS_TAURI_BLE_PRINT !== 'function') {
+                        throw new Error('Tauri BLE bridge not configured');
+                    }
+                    await window.POS_TAURI_BLE_PRINT(bytes);
+                },
+            };
+
+            // ── Preference persistence ──
+            function loadPref() {
+                try {
+                    const raw = localStorage.getItem(LS_KEY);
+                    if (!raw) return { method: 'browser', paperWidth: 32 };
+                    const p = JSON.parse(raw);
+                    if (!p.paperWidth) p.paperWidth = 32;
+                    if (!p.method) p.method = 'browser';
+                    return p;
+                } catch (e) { return { method: 'browser', paperWidth: 32 }; }
+            }
+            function savePref(p) {
+                try { localStorage.setItem(LS_KEY, JSON.stringify(p)); } catch (e) {}
+            }
+
+            // ── Unified print ──
+            // Returns { method, ok, error? }. Never throws — the caller
+            // (checkout) should not fail because a printer is offline.
+            async function print(receiptData) {
+                const pref = loadPref();
+                const width = pref.paperWidth || 32;
+
+                // Bluetooth preferred and connected?
+                if (pref.method === 'bluetooth-web') {
+                    try {
+                        if (!bt.characteristic) {
+                            await bt.reconnect();
+                        }
+                        if (bt.characteristic) {
+                            const bytes = buildEscPosReceipt(receiptData, width);
+                            await bt.write(bytes);
+                            return { method: 'bluetooth-web', ok: true };
+                        }
+                    } catch (err) {
+                        console.warn('Bluetooth print failed, falling back to browser', err);
+                    }
+                    // Fall through to browser
+                }
+
+                if (pref.method === 'bluetooth-tauri') {
+                    try {
+                        const bytes = buildEscPosReceipt(receiptData, width);
+                        await tauriBle.write(bytes);
+                        return { method: 'bluetooth-tauri', ok: true };
+                    } catch (err) {
+                        console.warn('Tauri BLE print failed, falling back to browser', err);
+                    }
+                    // Fall through to browser
+                }
+
+                // Browser fallback — always available
+                try {
+                    browserPrint.print(receiptData, width);
+                    return { method: 'browser', ok: true };
+                } catch (err) {
+                    console.error('Browser print failed', err);
+                    return { method: 'browser', ok: false, error: err.message };
+                }
+            }
+
+            // ── Test print — bypasses preference, uses the given method ──
+            async function testPrint(method, paperWidth) {
+                const sample = {
+                    receiptNumber: 'TEST-' + Date.now().toString().slice(-6),
+                    cashierName: localStorage.getItem('user_profile_display') || 'Cashier',
+                    items: [{ name: 'Test item', quantity: 1, subtotal: 100 }],
+                    subtotal: 100, discount: 0, tax: 0, grandTotal: 100,
+                    payment: { method: 'cash' },
+                    customer: { name: 'Test Customer', pointsAfter: 0 },
+                };
+                if (method === 'bluetooth-web') {
+                    if (!bt.characteristic) throw new Error('Connect a Bluetooth printer first');
+                    const bytes = buildEscPosReceipt(sample, paperWidth || 32);
+                    await bt.write(bytes);
+                    return { method, ok: true };
+                }
+                if (method === 'bluetooth-tauri') {
+                    const bytes = buildEscPosReceipt(sample, paperWidth || 32);
+                    await tauriBle.write(bytes);
+                    return { method, ok: true };
+                }
+                browserPrint.print(sample, paperWidth || 32);
+                return { method: 'browser', ok: true };
+            }
+
+            return {
+                caps,
+                loadPref,
+                savePref,
+                print,
+                testPrint,
+                bt,
+                buildEscPosReceipt,
+            };
+        })();
+
+        // ================================================================
         // POS LOGIC STARTS HERE
         // ================================================================
 
@@ -676,63 +1142,35 @@
 
         const ORG_VERTICAL = localStorage.getItem('org_vertical') || 'retail';
 
-        // ── Payment accounts (bank-transfer receiving accounts) ──
-        // Populated from GET /payment-accounts on login and at startup.
-        // Cached in localStorage so offline terminals can still record
-        // which account the transfer landed in.
+        // ── Payment accounts ──
         let paymentAccounts = [];
         const PAYMENT_ACCOUNTS_CACHE_KEY = 'pos_payment_accounts';
 
         async function loadPaymentAccounts() {
-            // Try online first
             if (isOnline && token) {
                 try {
                     const data = await apiCall('/payment-accounts', 'GET');
                     paymentAccounts = data.accounts || [];
-                    try {
-                        localStorage.setItem(
-                            PAYMENT_ACCOUNTS_CACHE_KEY,
-                            JSON.stringify(paymentAccounts)
-                        );
-                    } catch (e) {}
+                    try { localStorage.setItem(PAYMENT_ACCOUNTS_CACHE_KEY, JSON.stringify(paymentAccounts)); } catch (e) {}
                     populatePaymentAccountCards();
                     return;
                 } catch (err) {
                     console.warn('loadPaymentAccounts: online fetch failed, using cache:', err);
                 }
             }
-            // Fall back to cache (offline, or fetch failed)
             try {
-                const cached = JSON.parse(
-                    localStorage.getItem(PAYMENT_ACCOUNTS_CACHE_KEY) || '[]'
-                );
+                const cached = JSON.parse(localStorage.getItem(PAYMENT_ACCOUNTS_CACHE_KEY) || '[]');
                 paymentAccounts = Array.isArray(cached) ? cached : [];
-            } catch (e) {
-                paymentAccounts = [];
-            }
+            } catch (e) { paymentAccounts = []; }
             populatePaymentAccountCards();
         }
 
-        // Renders the receiving-account cards for BOTH desktop and mobile
-        // grids, and reflects the current tab's selection. Called on:
-        //   - initial load (after accounts fetched or restored from cache)
-        //   - tab switch (so each tab shows its own selected account)
-        //   - manual account refresh (e.g. after admin adds a new one)
-        //
-        // Selection state lives on tabState[activeTab].transferAccountId.
-        // The grid is rebuilt from scratch each time so no stale DOM leaks.
         function populatePaymentAccountCards() {
             const activeState = tabState[activeTab];
             const defaultAcc = paymentAccounts.find(a => a.is_default);
 
-            // Seed the tab with the default account if nothing is selected yet.
-            if (!activeState.transferAccountId && defaultAcc) {
-                activeState.transferAccountId = defaultAcc.id;
-            }
-            // If the stored account id no longer exists in the (possibly
-            // refreshed) list, fall back to the default, or clear.
-            if (activeState.transferAccountId
-                && !paymentAccounts.some(a => a.id === activeState.transferAccountId)) {
+            if (!activeState.transferAccountId && defaultAcc) activeState.transferAccountId = defaultAcc.id;
+            if (activeState.transferAccountId && !paymentAccounts.some(a => a.id === activeState.transferAccountId)) {
                 activeState.transferAccountId = defaultAcc ? defaultAcc.id : null;
             }
 
@@ -748,7 +1186,7 @@
                 if (paymentAccounts.length === 0) {
                     const empty = document.createElement('div');
                     empty.className = 'col-span-full text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-3';
-                    empty.innerHTML = '<i class="fa-solid fa-triangle-exclamation mr-1"></i> No receiving accounts configured. Ask your admin to add one under <strong>Accounting &rarr; Bank Transfers</strong> before taking transfer payments.';
+                    empty.innerHTML = '<i class="fa-solid fa-triangle-exclamation mr-1"></i> No receiving accounts configured. Ask your admin to add one under <strong>Accounting &rarr; Bank Transfers</strong>.';
                     grid.appendChild(empty);
                     continue;
                 }
@@ -759,23 +1197,16 @@
                     card.type = 'button';
                     card.dataset.accountId = acc.id;
                     card.className = 'transfer-account-card' + (isSelected ? ' selected' : '');
-
                     const provider = (acc.provider || '').toUpperCase();
-                    const accountNumber = acc.account_number || '';
-                    const accountName = acc.account_name || '';
-                    const label = acc.label || provider || 'Account';
-
                     let inner = `
                         <div class="flex items-center justify-between gap-2 mb-1">
-                            <span class="text-sm font-semibold truncate">${escapeHtml(label)}</span>
+                            <span class="text-sm font-semibold truncate">${escapeHtml(acc.label || provider || 'Account')}</span>
                             <span class="provider-badge">${escapeHtml(provider)}</span>
                         </div>
-                        <div class="font-mono text-sm text-gray-800 tracking-wide">${escapeHtml(accountNumber)}</div>
-                        <div class="text-xs text-gray-500 truncate">${escapeHtml(accountName)}</div>
+                        <div class="font-mono text-sm text-gray-800 tracking-wide">${escapeHtml(acc.account_number || '')}</div>
+                        <div class="text-xs text-gray-500 truncate">${escapeHtml(acc.account_name || '')}</div>
                     `;
-                    if (acc.is_default) {
-                        inner += `<div class="text-[10px] text-amber-700 font-semibold mt-1"><i class="fa-solid fa-star"></i> Default</div>`;
-                    }
+                    if (acc.is_default) inner += `<div class="text-[10px] text-amber-700 font-semibold mt-1"><i class="fa-solid fa-star"></i> Default</div>`;
                     card.innerHTML = inner;
                     card.addEventListener('click', () => selectTransferAccount(acc.id));
                     grid.appendChild(card);
@@ -783,21 +1214,13 @@
             }
         }
 
-        // Called when the cashier taps an account card. Updates the
-        // active tab's selection and syncs the visual state across BOTH
-        // grids (desktop + mobile), since both are in the DOM at once.
         function selectTransferAccount(accountId) {
-            const state = tabState[activeTab];
-            state.transferAccountId = accountId || null;
+            tabState[activeTab].transferAccountId = accountId || null;
             document.querySelectorAll('.transfer-account-card').forEach(el => {
                 el.classList.toggle('selected', el.dataset.accountId === accountId);
             });
         }
 
-        // Reads the active tab's selected account + the reference input
-        // value. The reference field is shared between desktop and mobile
-        // inputs (kept in sync by an event listener below), so reading
-        // either one is correct.
         function getSelectedTransferAccount() {
             const state = tabState[activeTab];
             const id = state.transferAccountId || null;
@@ -808,9 +1231,6 @@
             return { id, reference: ref, info };
         }
 
-        // Clears the transfer reference field (and its state) after a
-        // completed sale. The account selection is preserved because a
-        // cashier typically uses the same account all shift.
         function clearTransferReference() {
             tabState[activeTab].transferReference = '';
             const dRef = document.getElementById('desktop-transfer-reference');
@@ -825,10 +1245,7 @@
             if (d) d.classList.toggle('hidden', !show);
             if (m) m.classList.toggle('hidden', !show);
             if (show && paymentAccounts.length === 0) {
-                showToast(
-                    '⚠️ No receiving accounts configured. Ask your admin to add one under Accounting → Bank Transfers before taking transfers.',
-                    'error'
-                );
+                showToast('⚠️ No receiving accounts configured. Ask your admin to add one under Accounting → Bank Transfers.', 'error');
             }
         }
 
@@ -838,6 +1255,21 @@
                 var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
                 return v.toString(16);
             });
+        }
+
+        // ── Receipt printer: convenience wrapper used by checkout ──
+        // Delegates to POSPrinter.print and surfaces a toast on failure.
+        // Never blocks or throws — the sale has already been saved.
+        async function printReceipt(receiptData) {
+            if (!receiptData) return;
+            try {
+                const result = await POSPrinter.print(receiptData);
+                if (!result.ok) {
+                    showToast('Receipt printer error: ' + (result.error || 'unknown'), 'error');
+                }
+            } catch (err) {
+                console.warn('printReceipt failed', err);
+            }
         }
 
         // DOM Refs - Desktop
@@ -904,6 +1336,9 @@
         const sendToKitchenBtn = document.getElementById('send-to-kitchen-btn');
         const mobileKitchenBtn = document.getElementById('mobile-kitchen-btn');
         const successShareModal = document.getElementById('success-share-modal');
+        const printerBtn = document.getElementById('printer-btn');
+        const printerModal = document.getElementById('printer-modal');
+        const closePrinterBtn = document.getElementById('close-printer-btn');
 
         const tab1Btn = document.getElementById('tab1-btn');
         const tab2Btn = document.getElementById('tab2-btn');
@@ -1039,16 +1474,12 @@
                 (decodedText) => {
                     const now = Date.now();
                     if (decodedText === lastScannedCode && (now - lastScanTime) < 1500) return;
-                    lastScannedCode = decodedText;
-                    lastScanTime = now;
-
+                    lastScannedCode = decodedText; lastScanTime = now;
                     const toastDiv = document.getElementById('scan-success-toast');
                     toastDiv.classList.remove('hidden');
                     setTimeout(() => toastDiv.classList.add('hidden'), 1000);
-
                     searchInput.value = decodedText;
                     searchInput.dispatchEvent(new Event('input'));
-
                     setTimeout(() => {
                         if (products.length === 1) {
                             const p = products[0];
@@ -1067,8 +1498,7 @@
             if (html5QrCode && html5QrCode.isScanning) {
                 html5QrCode.stop().then(() => {
                     cameraModal.classList.remove('active');
-                    lastScannedCode = null;
-                    lastScanTime = 0;
+                    lastScannedCode = null; lastScanTime = 0;
                 });
             } else { cameraModal.classList.remove('active'); }
         });
@@ -1091,6 +1521,12 @@
             const receiptStr = document.getElementById('success-share-modal').dataset.receipt;
             if (receiptStr) shareReceiptWhatsApp(JSON.parse(receiptStr));
             successShareModal.classList.add('hidden');
+        });
+
+        // Manual re-print from the success modal
+        document.getElementById('print-receipt-btn').addEventListener('click', async () => {
+            const receiptStr = document.getElementById('success-share-modal').dataset.receipt;
+            if (receiptStr) await printReceipt(JSON.parse(receiptStr));
         });
 
         // ==========================================
@@ -1357,7 +1793,6 @@
             document.getElementById('desktop-customer-name').value = name;
             document.getElementById('desktop-customer-phone').value = phone;
             document.getElementById('desktop-customer-email').value = email;
-
             document.getElementById('mobile-customer-name').value = name;
             document.getElementById('mobile-customer-phone').value = phone;
             document.getElementById('mobile-customer-email').value = email;
@@ -1475,10 +1910,6 @@
             if (cart.length === 0) { showToast('🛒 Cart is empty.', 'error'); return; }
             const paymentMethod = state.paymentMethod;
 
-            // ── Transfer validation ──
-            // Transfers are the dominant POS flow in Nigeria. Cashier
-            // MUST confirm which of the org's accounts received the
-            // money; that is the whole audit trail.
             let transferAccountId = null;
             let transferReference = null;
             let transferAccountInfo = null;
@@ -1502,9 +1933,6 @@
             let customerEmail = document.getElementById('desktop-customer-email').value.trim() || document.getElementById('mobile-customer-email').value.trim() || null;
             const pointsRedeemed = state.pointsRedeemed || 0;
 
-            // Only gateway methods (card/bank) need email. Cash and
-            // manual transfer do not — the cashier confirms the money
-            // landed in the account by looking at the banking app.
             if (paymentMethod !== 'cash' && paymentMethod !== 'transfer' && !customerEmail) {
                 showToast('📧 Email is required for card/bank gateway payments', 'error');
                 return;
@@ -1529,10 +1957,7 @@
                 return { productId: item.id, name: item.name, sku: item.sku || product.sku || '', quantity: item.qty, unitPrice: item.price, subtotal: item.price * item.qty, costPrice: product.cost_price_naira || 0, handlingCategory: product.handling_category || 'standard', weightKg: product.weight_kg || 0 };
             }));
 
-            const paymentPayload = {
-                method: paymentMethod,
-                reference: null,
-            };
+            const paymentPayload = { method: paymentMethod, reference: null };
             if (paymentMethod === 'transfer' && transferAccountInfo) {
                 paymentPayload.account_id = transferAccountId;
                 paymentPayload.account_label = transferAccountInfo.label || null;
@@ -1567,6 +1992,7 @@
 
                 document.getElementById('success-receipt-num').innerText = offlineRef;
                 successShareModal.dataset.receipt = JSON.stringify(receiptData);
+                await printReceipt(receiptData);
                 successShareModal.classList.remove('hidden');
 
                 await emitAuditEvent('sale.created', { sale_id: offlineRef, total: order.receiptData.grandTotal, payment_method: paymentMethod, offline: true, reason: reason });
@@ -1603,6 +2029,7 @@
 
                 document.getElementById('success-receipt-num').innerText = result.receipt_number || offlineRef;
                 successShareModal.dataset.receipt = JSON.stringify(order.receiptData);
+                await printReceipt(order.receiptData);
                 successShareModal.classList.remove('hidden');
 
                 await emitAuditEvent('sale.created', { sale_id: result.sale_id || offlineRef, total: order.receiptData.grandTotal, payment_method: paymentMethod, online: true });
@@ -1628,30 +2055,18 @@
             const mInput = document.getElementById(`mobile-customer-${field}`);
             const stateKey = 'customer' + field.charAt(0).toUpperCase() + field.slice(1);
             if (dInput && mInput) {
-                dInput.addEventListener('input', () => {
-                    mInput.value = dInput.value;
-                    tabState[activeTab][stateKey] = dInput.value;
-                });
-                mInput.addEventListener('input', () => {
-                    dInput.value = mInput.value;
-                    tabState[activeTab][stateKey] = mInput.value;
-                });
+                dInput.addEventListener('input', () => { mInput.value = dInput.value; tabState[activeTab][stateKey] = dInput.value; });
+                mInput.addEventListener('input', () => { dInput.value = mInput.value; tabState[activeTab][stateKey] = mInput.value; });
             }
         });
 
-        // Transfer reference sync (desktop ↔ mobile + per-tab state).
+        // Transfer reference sync
         (() => {
             const dRef = document.getElementById('desktop-transfer-reference');
             const mRef = document.getElementById('mobile-transfer-reference');
             if (dRef && mRef) {
-                dRef.addEventListener('input', () => {
-                    mRef.value = dRef.value;
-                    tabState[activeTab].transferReference = dRef.value;
-                });
-                mRef.addEventListener('input', () => {
-                    dRef.value = mRef.value;
-                    tabState[activeTab].transferReference = mRef.value;
-                });
+                dRef.addEventListener('input', () => { mRef.value = dRef.value; tabState[activeTab].transferReference = dRef.value; });
+                mRef.addEventListener('input', () => { dRef.value = mRef.value; tabState[activeTab].transferReference = mRef.value; });
             }
         })();
 
@@ -1707,7 +2122,6 @@
             const state = tabState[activeTab];
             renderActiveCart();
 
-            // Order type & table
             desktopOrderTypeSelect.value = state.orderType || 'takeaway';
             mobileOrderTypeSelect.value = state.orderType || 'takeaway';
             desktopTableInput.value = state.tableNumber || '';
@@ -1718,7 +2132,6 @@
                 desktopTableContainer.classList.add('hidden'); mobileTableContainer.classList.add('hidden');
             }
 
-            // Customer inputs
             document.getElementById('desktop-customer-name').value = state.customerName || '';
             document.getElementById('desktop-customer-phone').value = state.customerPhone || '';
             document.getElementById('desktop-customer-email').value = state.customerEmail || '';
@@ -1726,7 +2139,6 @@
             document.getElementById('mobile-customer-phone').value = state.customerPhone || '';
             document.getElementById('mobile-customer-email').value = state.customerEmail || '';
 
-            // Customer info display
             if (customerInfoDiv) {
                 if (state.loyaltyUserId) {
                     customerInfoDiv.classList.remove('hidden');
@@ -1750,22 +2162,16 @@
                 }
             }
 
-            // Payment chips
             document.querySelectorAll('.payment-chip').forEach(c => {
                 c.classList.toggle('active', c.dataset.method === (state.paymentMethod || 'cash'));
             });
-            // Show/hide the transfer account picker based on active tab's method
             toggleTransferAccountUI((state.paymentMethod || 'cash') === 'transfer');
-            // Re-render account cards so this tab's selection is highlighted
-            // (each tab can have its own selected account).
             populatePaymentAccountCards();
-            // Restore this tab's transfer reference text into both inputs.
             const dRef = document.getElementById('desktop-transfer-reference');
             const mRef = document.getElementById('mobile-transfer-reference');
             if (dRef) dRef.value = state.transferReference || '';
             if (mRef) mRef.value = state.transferReference || '';
 
-            // Tab highlighting
             if (activeTab === 1) {
                 tab1Btn.classList.add('tab-active'); tab1Btn.classList.remove('tab-inactive');
                 tab2Btn.classList.add('tab-inactive'); tab2Btn.classList.remove('tab-active');
@@ -1779,15 +2185,12 @@
 
         function setActiveTab(tabId) {
             if (tabId === activeTab) return;
-            // Save current tab state from inputs
             const cur = tabState[activeTab];
             cur.orderType = desktopOrderTypeSelect.value || 'takeaway';
             cur.tableNumber = desktopTableInput.value || '';
             cur.customerName = document.getElementById('desktop-customer-name').value || '';
             cur.customerPhone = document.getElementById('desktop-customer-phone').value || '';
             cur.customerEmail = document.getElementById('desktop-customer-email').value || '';
-            // Save this tab's transfer reference (account id is already in
-            // state, set by card click).
             const dRef = document.getElementById('desktop-transfer-reference');
             const mRef = document.getElementById('mobile-transfer-reference');
             cur.transferReference = (dRef && dRef.value) || (mRef && mRef.value) || '';
@@ -1896,7 +2299,6 @@
                 const buttonClass = o.status === 'failed' ? 'text-red-600 hover:text-red-800' : 'text-blue-500 hover:text-blue-700';
                 const errorLine = (o.status === 'failed' && o.lastError) ? `<div class="text-xs text-red-500 mt-0.5" title="${escapeAttr(String(o.lastError))}"><i class="fa-solid fa-circle-exclamation"></i> ${escapeHtml(String(o.lastError).slice(0, 120))}${String(o.lastError).length > 120 ? '…' : ''}</div>` : '';
                 const orderTypeLabel = o.receiptData?.orderType === 'dine-in' ? `<span class="bg-orange-100 text-orange-700 px-1 rounded text-xs ml-1">Table ${o.receiptData.tableNumber}</span>` : `<span class="bg-blue-100 text-blue-700 px-1 rounded text-xs ml-1">Takeaway</span>`;
-
                 return `<div class="border-b py-2 flex justify-between items-center">
                     <div class="min-w-0 flex-1">
                         <div><strong>${escapeHtml(o.offlineRef)}</strong> - ${new Date(o.createdAt).toLocaleString()} ${orderTypeLabel}</div>
@@ -2003,7 +2405,148 @@
         }
 
         // ================================================================
-        // EVENT LISTENERS (previously crashing at checkoutBtn below)
+        // PRINTER SETTINGS MODAL
+        // ================================================================
+        let _printerPendingMethod = null;
+        let _printerPendingWidth = 32;
+
+        function _renderPrinterMethods() {
+            const list = document.getElementById('printer-method-list');
+            if (!list) return;
+            const pref = POSPrinter.loadPref();
+            const caps = POSPrinter.caps;
+            const options = [
+                { id: 'browser', label: 'System Print', desc: 'AirPrint · Save as PDF · USB/CUPS driver', icon: 'fa-desktop', available: caps.browser },
+                { id: 'bluetooth-web', label: 'Bluetooth (Web)', desc: 'Pair a BLE thermal printer directly', icon: 'fa-bluetooth-b', available: caps.bluetoothWeb },
+                { id: 'bluetooth-tauri', label: 'Bluetooth (Tauri)', desc: 'Native BLE via the desktop app', icon: 'fa-bluetooth-b', available: caps.bluetoothTauri },
+            ];
+            list.innerHTML = '';
+            for (const opt of options) {
+                const isSelected = _printerPendingMethod === opt.id;
+                const el = document.createElement('div');
+                el.className = 'printer-method' + (isSelected ? ' selected' : '') + (opt.available ? '' : ' disabled');
+                el.innerHTML = `
+                    <div class="method-icon"><i class="fa-solid ${opt.icon}"></i></div>
+                    <div class="flex-1 min-w-0">
+                        <div class="text-sm font-semibold text-gray-800">${escapeHtml(opt.label)}</div>
+                        <div class="text-xs text-gray-500">${escapeHtml(opt.desc)}</div>
+                        ${opt.available ? '' : '<div class="text-xs text-red-500 mt-1">Not available on this device</div>'}
+                    </div>
+                    ${isSelected ? '<i class="fa-solid fa-circle-check text-blue-600 text-lg"></i>' : ''}
+                `;
+                if (opt.available) {
+                    el.addEventListener('click', () => {
+                        _printerPendingMethod = opt.id;
+                        _renderPrinterMethods();
+                        _renderPrinterBtPanel();
+                    });
+                }
+                list.appendChild(el);
+            }
+        }
+
+        function _renderPrinterBtPanel() {
+            const panel = document.getElementById('printer-bt-panel');
+            if (!panel) return;
+            if (_printerPendingMethod === 'bluetooth-web' || _printerPendingMethod === 'bluetooth-tauri') {
+                panel.classList.remove('hidden');
+                const devEl = document.getElementById('printer-bt-device');
+                const connectBtn = document.getElementById('printer-bt-connect-btn');
+                const widthSel = document.getElementById('printer-paper-width');
+                if (widthSel) widthSel.value = String(_printerPendingWidth || 32);
+                if (_printerPendingMethod === 'bluetooth-web') {
+                    if (POSPrinter.bt.characteristic) {
+                        devEl.textContent = POSPrinter.bt.connectedName || 'Connected';
+                        devEl.className = 'text-sm font-medium text-green-700 truncate';
+                        connectBtn.innerHTML = '<i class="fa-solid fa-xmark"></i> Disconnect';
+                    } else {
+                        devEl.textContent = 'Not connected';
+                        devEl.className = 'text-sm font-medium text-gray-500 truncate';
+                        connectBtn.innerHTML = '<i class="fa-solid fa-link"></i> Connect';
+                    }
+                } else {
+                    devEl.textContent = 'Managed by the desktop app';
+                    devEl.className = 'text-sm font-medium text-gray-700 truncate';
+                    connectBtn.style.display = 'none';
+                }
+            } else {
+                panel.classList.add('hidden');
+            }
+        }
+
+        function openPrinterModal() {
+            const pref = POSPrinter.loadPref();
+            _printerPendingMethod = pref.method || 'browser';
+            _printerPendingWidth = pref.paperWidth || 32;
+            _renderPrinterMethods();
+            _renderPrinterBtPanel();
+            printerModal.classList.add('active');
+        }
+
+        function closePrinterModal() {
+            printerModal.classList.remove('active');
+        }
+
+        async function connectBtPrinter() {
+            const connectBtn = document.getElementById('printer-bt-connect-btn');
+            if (POSPrinter.bt.characteristic) {
+                await POSPrinter.bt.disconnect();
+                _renderPrinterBtPanel();
+                return;
+            }
+            if (connectBtn) { connectBtn.disabled = true; connectBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Pairing…'; }
+            try {
+                const info = await POSPrinter.bt.connect();
+                // Persist the device id immediately so reconnect works even
+                // if the user cancels the Save button.
+                const pref = POSPrinter.loadPref();
+                pref.deviceId = POSPrinter.bt.device ? POSPrinter.bt.device.id : null;
+                pref.deviceName = info.name || 'Bluetooth printer';
+                POSPrinter.savePref(pref);
+                showToast(`Connected to ${info.name || 'printer'}`, 'success');
+            } catch (err) {
+                showToast('Bluetooth pairing failed: ' + err.message, 'error');
+            } finally {
+                if (connectBtn) { connectBtn.disabled = false; }
+                _renderPrinterBtPanel();
+            }
+        }
+
+        async function testPrinter() {
+            const btn = document.getElementById('printer-test-btn');
+            if (!btn) return;
+            const orig = btn.innerHTML;
+            btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Testing…';
+            try {
+                const widthSel = document.getElementById('printer-paper-width');
+                const width = widthSel ? parseInt(widthSel.value, 10) : 32;
+                const result = await POSPrinter.testPrint(_printerPendingMethod, width);
+                if (result.ok) showToast('Test print sent', 'success');
+                else showToast('Test print failed: ' + (result.error || 'unknown'), 'error');
+            } catch (err) {
+                showToast('Test print failed: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false; btn.innerHTML = orig;
+            }
+        }
+
+        function savePrinterSettings() {
+            const widthSel = document.getElementById('printer-paper-width');
+            const width = widthSel ? parseInt(widthSel.value, 10) : 32;
+            const existing = POSPrinter.loadPref();
+            const pref = {
+                method: _printerPendingMethod || 'browser',
+                paperWidth: width,
+                deviceId: existing.deviceId || null,
+                deviceName: existing.deviceName || null,
+            };
+            POSPrinter.savePref(pref);
+            showToast('Printer settings saved', 'success');
+            closePrinterModal();
+        }
+
+        // ================================================================
+        // EVENT LISTENERS
         // ================================================================
         applyPointsBtn.addEventListener('click', applyPoints);
         document.getElementById('modal-login-btn')?.addEventListener('click', handleLogin);
@@ -2023,6 +2566,17 @@
             finally { refreshDashboardBtn.disabled = false; refreshDashboardBtn.innerHTML = original; }
         });
 
+        // Printer settings listeners
+        printerBtn.addEventListener('click', openPrinterModal);
+        closePrinterBtn.addEventListener('click', closePrinterModal);
+        printerModal.addEventListener('click', (e) => { if (e.target === printerModal) closePrinterModal(); });
+        document.getElementById('printer-bt-connect-btn').addEventListener('click', connectBtPrinter);
+        document.getElementById('printer-test-btn').addEventListener('click', testPrinter);
+        document.getElementById('printer-save-btn').addEventListener('click', savePrinterSettings);
+        document.getElementById('printer-paper-width').addEventListener('change', (e) => {
+            _printerPendingWidth = parseInt(e.target.value, 10) || 32;
+        });
+
         // ================================================================
         // INIT
         // ================================================================
@@ -2033,6 +2587,14 @@
             initCustomerSearch();
             await refreshCachedCount();
             await loadPaymentAccounts();
+
+            // Best-effort: silently reconnect to a previously-paired
+            // Bluetooth printer so the first sale of the shift can print
+            // without the cashier having to open Settings.
+            const pref = POSPrinter.loadPref();
+            if (pref.method === 'bluetooth-web' && pref.deviceId) {
+                POSPrinter.bt.reconnect().catch(() => {});
+            }
 
             if (token) {
                 try {
