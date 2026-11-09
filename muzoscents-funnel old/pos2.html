@@ -44,6 +44,36 @@
         .dashboard-stat { display: flex; justify-content: space-between; border-bottom: 1px solid #e5e7eb; padding: 8px 0; }
         .scanner-active { border-color: #22c55e !important; box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.3) !important; }
 
+        /* ── Transfer receiving-account cards ── */
+        .transfer-account-card {
+            text-align: left;
+            border: 2px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 10px 12px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            min-height: 68px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .transfer-account-card:hover { border-color: #93c5fd; background: #f8fafc; }
+        .transfer-account-card:active { transform: scale(0.98); }
+        .transfer-account-card.selected { border-color: #3b82f6; background: #eff6ff; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
+        .transfer-account-card .provider-badge {
+            font-size: 0.65rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            background: #dbeafe;
+            color: #1e40af;
+            padding: 2px 6px;
+            border-radius: 4px;
+            letter-spacing: 0.03em;
+            flex-shrink: 0;
+        }
+        .transfer-account-card.selected .provider-badge { background: #3b82f6; color: white; }
+
         body.kiosk-mode #admin-controls, body.kiosk-mode #sync-dashboard-modal, body.kiosk-mode #history-modal { display: none !important; }
         body.kiosk-mode #pos-tabs-container { display: none !important; }
 
@@ -154,11 +184,9 @@
                     <!-- Transfer receiving-account picker (desktop) -->
                     <div id="desktop-transfer-account-container" class="hidden mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
                         <label class="block text-sm font-medium">Receiving Account <span class="text-red-500">*</span></label>
-                        <select id="desktop-transfer-account" class="w-full border rounded-lg p-2 bg-white mobile-input">
-                            <option value="">— Select account —</option>
-                        </select>
+                        <div id="desktop-transfer-account-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
                         <input id="desktop-transfer-reference" placeholder="Bank reference / transaction ID (optional but recommended)" class="w-full border rounded-lg p-2 mobile-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-                        <p class="text-xs text-amber-700"><i class="fa-solid fa-circle-info"></i> Confirm the customer's transfer actually landed in the selected account before completing the sale.</p>
+                        <p class="text-xs text-amber-700"><i class="fa-solid fa-circle-info"></i> Tap the account the customer's transfer landed in, then complete the sale.</p>
                     </div>
 
                     <div id="desktop-customer-form" class="hidden mt-3 bg-gray-50 p-3 rounded-lg space-y-2">
@@ -271,9 +299,7 @@
                 <!-- Transfer receiving-account picker (mobile) -->
                 <div id="mobile-transfer-account-container" class="hidden bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
                     <label class="block text-sm font-medium">Receiving Account <span class="text-red-500">*</span></label>
-                    <select id="mobile-transfer-account" class="w-full border rounded-lg p-3 bg-white mobile-input">
-                        <option value="">— Select account —</option>
-                    </select>
+                    <div id="mobile-transfer-account-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
                     <input id="mobile-transfer-reference" placeholder="Bank reference / transaction ID (optional)" class="w-full border rounded-lg p-3 mobile-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
                 </div>
 
@@ -669,7 +695,7 @@
                             JSON.stringify(paymentAccounts)
                         );
                     } catch (e) {}
-                    populatePaymentAccountSelects();
+                    populatePaymentAccountCards();
                     return;
                 } catch (err) {
                     console.warn('loadPaymentAccounts: online fetch failed, using cache:', err);
@@ -684,35 +710,113 @@
             } catch (e) {
                 paymentAccounts = [];
             }
-            populatePaymentAccountSelects();
+            populatePaymentAccountCards();
         }
 
-        function populatePaymentAccountSelects() {
-            const dSelect = document.getElementById('desktop-transfer-account');
-            const mSelect = document.getElementById('mobile-transfer-account');
-            for (const sel of [dSelect, mSelect]) {
-                if (!sel) continue;
-                const current = sel.value;
-                sel.innerHTML = '<option value="">— Select account —</option>';
-                for (const acc of paymentAccounts) {
-                    const opt = document.createElement('option');
-                    opt.value = acc.id;
-                    const provider = (acc.provider || '').toUpperCase();
-                    let label = `${acc.label} — ${provider} ${acc.account_number} (${acc.account_name})`;
-                    if (acc.is_default) label += '  ★ Default';
-                    opt.textContent = label;
-                    sel.appendChild(opt);
-                }
-                if (current) sel.value = current;
-            }
-            // Pre-select the default account so cashiers do not have to
-            // hunt for it on every transfer.
+        // Renders the receiving-account cards for BOTH desktop and mobile
+        // grids, and reflects the current tab's selection. Called on:
+        //   - initial load (after accounts fetched or restored from cache)
+        //   - tab switch (so each tab shows its own selected account)
+        //   - manual account refresh (e.g. after admin adds a new one)
+        //
+        // Selection state lives on tabState[activeTab].transferAccountId.
+        // The grid is rebuilt from scratch each time so no stale DOM leaks.
+        function populatePaymentAccountCards() {
+            const activeState = tabState[activeTab];
             const defaultAcc = paymentAccounts.find(a => a.is_default);
-            if (defaultAcc) {
-                for (const sel of [dSelect, mSelect]) {
-                    if (sel && !sel.value) sel.value = defaultAcc.id;
+
+            // Seed the tab with the default account if nothing is selected yet.
+            if (!activeState.transferAccountId && defaultAcc) {
+                activeState.transferAccountId = defaultAcc.id;
+            }
+            // If the stored account id no longer exists in the (possibly
+            // refreshed) list, fall back to the default, or clear.
+            if (activeState.transferAccountId
+                && !paymentAccounts.some(a => a.id === activeState.transferAccountId)) {
+                activeState.transferAccountId = defaultAcc ? defaultAcc.id : null;
+            }
+
+            const grids = [
+                document.getElementById('desktop-transfer-account-grid'),
+                document.getElementById('mobile-transfer-account-grid'),
+            ];
+
+            for (const grid of grids) {
+                if (!grid) continue;
+                grid.innerHTML = '';
+
+                if (paymentAccounts.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.className = 'col-span-full text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-3';
+                    empty.innerHTML = '<i class="fa-solid fa-triangle-exclamation mr-1"></i> No receiving accounts configured. Ask your admin to add one under <strong>Accounting &rarr; Bank Transfers</strong> before taking transfer payments.';
+                    grid.appendChild(empty);
+                    continue;
+                }
+
+                for (const acc of paymentAccounts) {
+                    const isSelected = acc.id === activeState.transferAccountId;
+                    const card = document.createElement('button');
+                    card.type = 'button';
+                    card.dataset.accountId = acc.id;
+                    card.className = 'transfer-account-card' + (isSelected ? ' selected' : '');
+
+                    const provider = (acc.provider || '').toUpperCase();
+                    const accountNumber = acc.account_number || '';
+                    const accountName = acc.account_name || '';
+                    const label = acc.label || provider || 'Account';
+
+                    let inner = `
+                        <div class="flex items-center justify-between gap-2 mb-1">
+                            <span class="text-sm font-semibold truncate">${escapeHtml(label)}</span>
+                            <span class="provider-badge">${escapeHtml(provider)}</span>
+                        </div>
+                        <div class="font-mono text-sm text-gray-800 tracking-wide">${escapeHtml(accountNumber)}</div>
+                        <div class="text-xs text-gray-500 truncate">${escapeHtml(accountName)}</div>
+                    `;
+                    if (acc.is_default) {
+                        inner += `<div class="text-[10px] text-amber-700 font-semibold mt-1"><i class="fa-solid fa-star"></i> Default</div>`;
+                    }
+                    card.innerHTML = inner;
+                    card.addEventListener('click', () => selectTransferAccount(acc.id));
+                    grid.appendChild(card);
                 }
             }
+        }
+
+        // Called when the cashier taps an account card. Updates the
+        // active tab's selection and syncs the visual state across BOTH
+        // grids (desktop + mobile), since both are in the DOM at once.
+        function selectTransferAccount(accountId) {
+            const state = tabState[activeTab];
+            state.transferAccountId = accountId || null;
+            document.querySelectorAll('.transfer-account-card').forEach(el => {
+                el.classList.toggle('selected', el.dataset.accountId === accountId);
+            });
+        }
+
+        // Reads the active tab's selected account + the reference input
+        // value. The reference field is shared between desktop and mobile
+        // inputs (kept in sync by an event listener below), so reading
+        // either one is correct.
+        function getSelectedTransferAccount() {
+            const state = tabState[activeTab];
+            const id = state.transferAccountId || null;
+            const dRef = document.getElementById('desktop-transfer-reference');
+            const mRef = document.getElementById('mobile-transfer-reference');
+            const ref = ((dRef && dRef.value) || (mRef && mRef.value) || '').trim() || null;
+            const info = paymentAccounts.find(a => a.id === id) || null;
+            return { id, reference: ref, info };
+        }
+
+        // Clears the transfer reference field (and its state) after a
+        // completed sale. The account selection is preserved because a
+        // cashier typically uses the same account all shift.
+        function clearTransferReference() {
+            tabState[activeTab].transferReference = '';
+            const dRef = document.getElementById('desktop-transfer-reference');
+            const mRef = document.getElementById('mobile-transfer-reference');
+            if (dRef) dRef.value = '';
+            if (mRef) mRef.value = '';
         }
 
         function toggleTransferAccountUI(show) {
@@ -722,21 +826,10 @@
             if (m) m.classList.toggle('hidden', !show);
             if (show && paymentAccounts.length === 0) {
                 showToast(
-                    '⚠️ No receiving accounts configured. Ask your admin to add one under Payment Accounts before taking transfers.',
+                    '⚠️ No receiving accounts configured. Ask your admin to add one under Accounting → Bank Transfers before taking transfers.',
                     'error'
                 );
             }
-        }
-
-        function getSelectedTransferAccount() {
-            const dSel = document.getElementById('desktop-transfer-account');
-            const mSel = document.getElementById('mobile-transfer-account');
-            const dRef = document.getElementById('desktop-transfer-reference');
-            const mRef = document.getElementById('mobile-transfer-reference');
-            const id = (dSel && dSel.value) || (mSel && mSel.value) || '';
-            const ref = ((dRef && dRef.value) || (mRef && mRef.value) || '').trim() || null;
-            const info = paymentAccounts.find(a => a.id === id) || null;
-            return { id: id || null, reference: ref, info };
         }
 
         function generateUUID() {
@@ -819,8 +912,8 @@
         const mobileSheetCustomerLabel = document.getElementById('mobile-sheet-customer-label');
 
         const tabState = {
-            1: { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 },
-            2: { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 }
+            1: { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0, transferAccountId: null, transferReference: '' },
+            2: { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0, transferAccountId: null, transferReference: '' }
         };
 
         function showToast(msg, type = 'success') {
@@ -1392,7 +1485,11 @@
             if (paymentMethod === 'transfer') {
                 const sel = getSelectedTransferAccount();
                 if (!sel.id) {
-                    showToast('Please select the receiving account for this transfer.', 'error');
+                    if (paymentAccounts.length === 0) {
+                        showToast('No receiving accounts configured. Ask your admin to add one under Accounting → Bank Transfers.', 'error');
+                    } else {
+                        showToast('Please tap the receiving account for this transfer.', 'error');
+                    }
                     return;
                 }
                 transferAccountId = sel.id;
@@ -1464,7 +1561,9 @@
                     const product = await DB.getProduct(item.id);
                     if (product) await DB.saveProducts([{ ...product, current_qty: Math.max(0, (product.current_qty || 0) - item.qty) }]);
                 }
-                state.cart = []; state.pointsRedeemed = 0; renderActiveCart();
+                state.cart = []; state.pointsRedeemed = 0;
+                clearTransferReference();
+                renderActiveCart();
 
                 document.getElementById('success-receipt-num').innerText = offlineRef;
                 successShareModal.dataset.receipt = JSON.stringify(receiptData);
@@ -1498,7 +1597,9 @@
                     const product = await DB.getProduct(item.id);
                     if (product) await DB.saveProducts([{ ...product, current_qty: Math.max(0, (product.current_qty || 0) - item.qty) }]);
                 }
-                state.cart = []; state.pointsRedeemed = 0; renderActiveCart();
+                state.cart = []; state.pointsRedeemed = 0;
+                clearTransferReference();
+                renderActiveCart();
 
                 document.getElementById('success-receipt-num').innerText = result.receipt_number || offlineRef;
                 successShareModal.dataset.receipt = JSON.stringify(order.receiptData);
@@ -1537,6 +1638,22 @@
                 });
             }
         });
+
+        // Transfer reference sync (desktop ↔ mobile + per-tab state).
+        (() => {
+            const dRef = document.getElementById('desktop-transfer-reference');
+            const mRef = document.getElementById('mobile-transfer-reference');
+            if (dRef && mRef) {
+                dRef.addEventListener('input', () => {
+                    mRef.value = dRef.value;
+                    tabState[activeTab].transferReference = dRef.value;
+                });
+                mRef.addEventListener('input', () => {
+                    dRef.value = mRef.value;
+                    tabState[activeTab].transferReference = mRef.value;
+                });
+            }
+        })();
 
         async function processKitchenTicket() {
             const state = tabState[activeTab];
@@ -1639,6 +1756,14 @@
             });
             // Show/hide the transfer account picker based on active tab's method
             toggleTransferAccountUI((state.paymentMethod || 'cash') === 'transfer');
+            // Re-render account cards so this tab's selection is highlighted
+            // (each tab can have its own selected account).
+            populatePaymentAccountCards();
+            // Restore this tab's transfer reference text into both inputs.
+            const dRef = document.getElementById('desktop-transfer-reference');
+            const mRef = document.getElementById('mobile-transfer-reference');
+            if (dRef) dRef.value = state.transferReference || '';
+            if (mRef) mRef.value = state.transferReference || '';
 
             // Tab highlighting
             if (activeTab === 1) {
@@ -1661,6 +1786,11 @@
             cur.customerName = document.getElementById('desktop-customer-name').value || '';
             cur.customerPhone = document.getElementById('desktop-customer-phone').value || '';
             cur.customerEmail = document.getElementById('desktop-customer-email').value || '';
+            // Save this tab's transfer reference (account id is already in
+            // state, set by card click).
+            const dRef = document.getElementById('desktop-transfer-reference');
+            const mRef = document.getElementById('mobile-transfer-reference');
+            cur.transferReference = (dRef && dRef.value) || (mRef && mRef.value) || '';
 
             activeTab = tabId;
             syncUIWithActiveTab();
@@ -1837,8 +1967,8 @@
                 const orgRes = await fetch(`${BACKEND}/auth/org`, { headers: { 'Authorization': `Bearer ${token}` } });
                 if (orgRes.ok) { const orgData = await orgRes.json(); localStorage.setItem('org_name', orgData.org_name || 'Unknown Org'); }
                 await loadCustomers(); hideLoginModal();
-                tabState[1] = { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
-                tabState[2] = { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
+                tabState[1] = { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0, transferAccountId: null, transferReference: '' };
+                tabState[2] = { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0, transferAccountId: null, transferReference: '' };
                 activeTab = 1; syncUIWithActiveTab(); products = []; productContainer.innerHTML = ''; emptyMsgDiv.classList.add('hidden'); await refreshCachedCount();
                 await loadPaymentAccounts();
                 showToast('Demo login — Offline‑ready POS', 'success'); const navOrg = document.getElementById('nav-org-name'); if (navOrg) navOrg.innerText = localStorage.getItem('org_name') || 'Unknown Org';
@@ -1857,8 +1987,8 @@
                 const orgRes = await fetch(`${BACKEND}/auth/org`, { headers: { 'Authorization': `Bearer ${token}` } });
                 if (orgRes.ok) { const orgData = await orgRes.json(); localStorage.setItem('org_name', orgData.org_name || 'Unknown Org'); }
                 await loadCustomers(); hideLoginModal();
-                tabState[1] = { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
-                tabState[2] = { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
+                tabState[1] = { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0, transferAccountId: null, transferReference: '' };
+                tabState[2] = { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0, transferAccountId: null, transferReference: '' };
                 activeTab = 1; syncUIWithActiveTab(); products = []; productContainer.innerHTML = ''; emptyMsgDiv.classList.add('hidden'); await refreshCachedCount();
                 await loadPaymentAccounts();
                 showToast('Login successful', 'success'); const navOrg = document.getElementById('nav-org-name'); if (navOrg) navOrg.innerText = localStorage.getItem('org_name') || 'Unknown Org';
@@ -1908,8 +2038,8 @@
                 try {
                     await loadCustomers();
                     if (!tabState[1].cart.length && !tabState[2].cart.length) {
-                        tabState[1] = { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
-                        tabState[2] = { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 };
+                        tabState[1] = { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0, transferAccountId: null, transferReference: '' };
+                        tabState[2] = { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0, transferAccountId: null, transferReference: '' };
                     }
                     activeTab = 1; syncUIWithActiveTab(); productContainer.innerHTML = ''; emptyMsgDiv.classList.add('hidden'); maybeAutoSyncCatalog();
                 } catch (e) { token = null; showLoginModal(); }
