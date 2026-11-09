@@ -17462,21 +17462,21 @@ class POSCheckoutRequest(BaseModel):
     location_id: Optional[UUID] = None
     
     # ── Bank-transfer tracking (new) ──
-          #
-          # When payment_method='transfer', transfer_account_id is REQUIRED.
-          # The POS terminal is the authority on which of the org's receiving
-          # accounts the customer's money landed in. Without this, a transfer
-          # is indistinguishable from cash in the audit trail.
-          #
-          # transfer_reference carries the bank's own transaction reference
-          # (the customer's banking app shows it), so reconciliation against
-          # the account statement can match on it.
-          #
-          # For legacy offline-queue replays (built before this change), both
-          # fields may be absent; the endpoint will fall back to
-          # receipt_data.payment.{account_id, transfer_reference}.
-          transfer_account_id: Optional[UUID] = None
-          transfer_reference: Optional[str] = None
+    #
+    # When payment_method='transfer', transfer_account_id is REQUIRED.
+    # The POS terminal is the authority on which of the org's receiving
+    # accounts the customer's money landed in. Without this, a transfer
+    # is indistinguishable from cash in the audit trail.
+    #
+    # transfer_reference carries the bank's own transaction reference
+    # (the customer's banking app shows it), so reconciliation against
+    # the account statement can match on it.
+    #
+    # For legacy offline-queue replays (built before this change), both
+    # fields may be absent; the endpoint will fall back to
+    # receipt_data.payment.{account_id, transfer_reference}.
+    transfer_account_id: Optional[UUID] = None
+    transfer_reference: Optional[str] = None
 
 
 
