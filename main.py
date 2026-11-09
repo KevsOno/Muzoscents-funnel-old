@@ -17477,6 +17477,8 @@ class POSCheckoutRequest(BaseModel):
     # receipt_data.payment.{account_id, transfer_reference}.
     transfer_account_id: Optional[UUID] = None
     transfer_reference: Optional[str] = None
+    order_type: Optional[str] = None
+    table_number: Optional[str] = None
 
 
 
@@ -17903,6 +17905,35 @@ async def pos_terminal_checkout(
             sale_update_payload["payment_transfer_reference"] = resolved_transfer_reference
             sale_update_payload["payment_confirmed_at"] = confirmed_at
             sale_update_payload["payment_confirmed_by"] = user_id
+
+        # ── Food-vertical fulfilment fields ──
+        #
+        # Persisted only when the org's vertical is 'food'. The check
+        # is server-side so a client cannot bypass it. Non-food orgs
+        # cannot get a 'takeaway' / 'dine-in' designation into their
+        # sales rows, matching the invariant the POS frontend already
+        # enforces.
+        #
+        # If these fields are omitted (retail / pharmacy / service),
+        # this block is skipped entirely and the sale row is updated
+        # exactly as before — no behavioural change for non-food orgs.
+        if req.order_type or req.table_number:
+            org_vertical_res = await run_sync_db_call(
+                get_supabase().table("organisations")
+                .select("vertical")
+                .eq("id", org_id)
+                .maybe_single()
+                .execute()
+            )
+            org_vertical = (
+                (org_vertical_res.data or {}).get("vertical")
+                if org_vertical_res else None
+            )
+            if org_vertical == "food":
+                if req.order_type in ("takeaway", "dine-in"):
+                    sale_update_payload["fulfillment_mode"] = req.order_type
+                if req.table_number and isinstance(req.table_number, str):
+                    sale_update_payload["table_number"] = req.table_number.strip()[:50]
 
         try:
             await run_sync_db_call(
