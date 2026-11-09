@@ -200,6 +200,7 @@ def _compute_migration_suite_hash() -> str:
         "ensure_role_column",
         "ensure_org_registry_schema",
         "ensure_org_accounting_columns",
+        "ensure_org_escalation_config",
         "ensure_health_check_schema",
         "ensure_knowledge_audit_table",
         "ensure_vector_support",
@@ -6723,6 +6724,68 @@ async def ensure_org_accounting_columns():
     logger.info("organisations.accounting_webhook_url + subaccount_code installed")
 
 
+
+
+
+async def ensure_org_escalation_config():
+    """
+    Add organisations.escalation_config JSONB — the per-tenant store for
+    support-escalation contacts.
+
+    Structure (all keys optional, all values optional):
+
+        {
+          "departments": {
+            "technical_support": {"email": "...", "whatsapp": "+234..."},
+            "billing":           {"email": "...", "whatsapp": "..."},
+            "logistics":         {"email": "...", "whatsapp": "..."},
+            "sales":             {"email": "...", "whatsapp": "..."},
+            "management":        {"email": "...", "whatsapp": "..."}
+          },
+          "branches": {
+            "<branch_uuid>": {
+              "departments": {
+                "billing": {"email": "...", "whatsapp": "..."}
+              }
+            }
+          }
+        }
+
+    Resolution at escalation time:
+      1. branch-specific entry for the ticket's branch_id
+      2. org-level entry
+      3. fail with an actionable error pointing at the config endpoint
+
+    There is deliberately NO environment-variable fallback. An env var
+    applies to every tenant, which is exactly the multi-tenant leak this
+    column exists to prevent. The column default '{}' means a fresh
+    deployment has no escalation targets until an owner/admin configures
+    them — which is correct: the platform cannot know who to notify on a
+    customer's behalf.
+    """
+    sql = """
+    ALTER TABLE public.organisations
+        ADD COLUMN IF NOT EXISTS escalation_config JSONB DEFAULT '{}'::jsonb;
+    """
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"escalation_config migration failed: {resp.text}")
+        raise RuntimeError(f"escalation_config migration failed: {resp.text}")
+    logger.info("organisations.escalation_config installed (or already present)")
+
+
+
+
 async def ensure_expenses_table():
     """
     Create the expenses table and its indexes.
@@ -6910,6 +6973,7 @@ async def startup_event():
         await ensure_role_column()
         await ensure_org_registry_schema()
         await ensure_org_accounting_columns()
+        await ensure_org_escalation_config()
         await ensure_health_check_schema()
         await ensure_knowledge_audit_table()
         await ensure_vector_support()
@@ -7028,6 +7092,7 @@ async def startup_event():
         await ensure_role_column()
         await ensure_org_registry_schema()
         await ensure_org_accounting_columns()
+        await ensure_org_escalation_config()
         await ensure_health_check_schema()
         await ensure_knowledge_audit_table()
         await ensure_vector_support()
@@ -7393,10 +7458,23 @@ async def rate_limit(client_id: str, org_id: Optional[str] = None, request: Opti
         logger.error(f"Rate limit error: {e}")
 
 # ─── Brevo email sender ──────────────────────────
-async def send_sendgrid_email(to_email: str, subject: str, html_content: str):
+async def send_sendgrid_email(to_email: str, subject: str, html_content: str) -> bool:
+    """
+    Send a transactional email. Returns True on success, False on any
+    failure (missing config, HTTP error, transport error).
+
+    This function is the SINGLE provider coupling point. Moving to Amazon
+    SES, Postmark, Resend, or anything else means rewriting the body of
+    this one function. Callers do not change.
+
+    Prior to this change the function returned None and swallowed errors.
+    The return value is now meaningful so callers like the escalation
+    endpoint can report delivery status. Existing callers that ignored
+    the return value continue to work unchanged.
+    """
     if not BREVO_API_KEY or not BREVO_FROM_EMAIL:
         logger.warning(f"Brevo not configured. Would send email to {to_email}: {subject}")
-        return
+        return False
 
     url = "https://api.brevo.com/v3/smtp/email"
     headers = {
@@ -7412,12 +7490,16 @@ async def send_sendgrid_email(to_email: str, subject: str, html_content: str):
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(url, json=data, headers=headers)
-            if resp.status_code >= 400:
-                logger.error(f"Brevo error {resp.status_code}: {resp.text}")
-            else:
-                logger.info(f"Brevo email sent to {to_email}: {subject}")
+        if resp.status_code >= 400:
+            logger.error(f"Brevo error {resp.status_code}: {resp.text}")
+            return False
+        logger.info(f"Brevo email sent to {to_email}: {subject}")
+        return True
     except Exception as e:
         logger.error(f"Failed to send email via Brevo: {e}")
+        return False
+
+
 
 # ─── Order confirmation email ──────────────────────────────────
 async def send_order_confirmation_email(sale_data: dict, items: list = None):
@@ -17016,101 +17098,7 @@ async def cac_target(request: Request, req: CACRequest, user_data: Tuple[str, st
 # ------------------------------------------------------------------
 # SUPPORT TICKETS
 # ------------------------------------------------------------------
-class TicketCreate(BaseModel):
-    subject: str
-    priority: str = "normal"
-    message: str
 
-@app.post("/api/support/ticket")
-async def create_ticket(request: Request, ticket: TicketCreate, user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "support", "customer"]))):
-    await rate_limit(get_client_ip(request), user_data[1], request=request)
-    user_id, org_id, role = user_data
-    client = get_supabase()
-    ticket_data = {
-        "user_id": user_id,
-        "org_id": org_id,
-        "branch_id": await resolve_request_branch_for_write(request, user_id, org_id, role),
-        "subject": ticket.subject,
-        "priority": ticket.priority,
-        "status": "open",
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
-    res = await run_sync_db_call(client.table("support_tickets").insert(ticket_data).execute)
-    if not res.data:
-        raise HTTPException(status_code=500, detail="Failed to create ticket")
-    ticket_id = res.data[0]["id"]
-    await run_sync_db_call(
-        client.table("ticket_messages").insert({
-            "ticket_id": ticket_id,
-            "sender_type": "user",
-            "sender_id": user_id,
-            "message": ticket.message,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }).execute
-    )
-    return {"ticket_id": ticket_id, "confirmation": f"Ticket #{ticket_id[:8]} created"}
-
-@app.get("/support/tickets")
-async def get_tickets(request: Request, status: Optional[str] = None, user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "support", "customer"]))):
-    await rate_limit(get_client_ip(request), user_data[1], request=request)
-    user_id, org_id, _ = user_data
-    client = get_supabase()
-    query = client.table("support_tickets").select("*").eq("org_id", org_id).eq("user_id", user_id)
-    if status:
-        query = query.eq("status", status)
-    result = await run_sync_db_call(query.order("created_at", desc=True).execute)
-    return {"tickets": result.data}
-
-@app.get("/support/tickets/{ticket_id}")
-async def get_ticket_detail(request: Request, ticket_id: str, user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "support", "customer"]))):
-    await rate_limit(get_client_ip(request), user_data[1], request=request)
-    user_id, org_id, _ = user_data
-    client = get_supabase()
-    ticket = await run_sync_db_call(client.table("support_tickets").select("*").eq("id", ticket_id).eq("org_id", org_id).eq("user_id", user_id).maybe_single().execute)
-    if not ticket or not ticket.data:
-        raise HTTPException(status_code=404, detail="Ticket not found")
-    messages = await run_sync_db_call(client.table("ticket_messages").select("*").eq("ticket_id", ticket_id).order("created_at", desc=False).execute)
-    return {"ticket": ticket.data, "messages": messages.data}
-
-class TicketMessageReq(BaseModel):
-    message: str
-
-@app.post("/support/tickets/{ticket_id}/message")
-async def add_ticket_message(request: Request, ticket_id: str, msg: TicketMessageReq, user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "support", "customer"]))):
-    await rate_limit(get_client_ip(request), user_data[1], request=request)
-    user_id, org_id, _ = user_data
-    client = get_supabase()
-    ticket = await run_sync_db_call(client.table("support_tickets").select("id").eq("id", ticket_id).eq("org_id", org_id).eq("user_id", user_id).maybe_single().execute)
-    if not ticket or not ticket.data:
-        raise HTTPException(status_code=404, detail="Ticket not found")
-    await run_sync_db_call(
-        client.table("ticket_messages").insert({
-            "ticket_id": ticket_id,
-            "sender_type": "agent",
-            "sender_id": user_id,
-            "message": msg.message,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }).execute
-    )
-    messages = await run_sync_db_call(client.table("ticket_messages").select("*").eq("ticket_id", ticket_id).order("created_at", desc=False).execute)
-    return {"messages": messages.data}
-
-class ResolveReq(BaseModel):
-    resolution_notes: str
-
-@app.post("/support/tickets/{ticket_id}/resolve")
-async def resolve_ticket(request: Request, ticket_id: str, req: ResolveReq, user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "support"]))):
-    await rate_limit(get_client_ip(request), user_data[1], request=request)
-    user_id, org_id, _ = user_data
-    client = get_supabase()
-    await run_sync_db_call(
-        client.table("support_tickets").update({
-            "status": "resolved",
-            "resolution_notes": req.resolution_notes,
-            "resolved_at": datetime.now(timezone.utc).isoformat()
-        }).eq("id", ticket_id).eq("org_id", org_id).eq("user_id", user_id).execute
-    )
-    return {"message": "Ticket resolved"}
 
 # ------------------------------------------------------------------
 # IMMUTABLE AUDIT LOG ENDPOINTS
@@ -22813,13 +22801,15 @@ app.include_router(tracking_router)
 from expenses import router as expenses_router
 from exec_profitability import router as exec_profitability_router
 from customers import router as customers_router
-from support_chat import router as support_chat_router  
+from support_chat import router as support_chat_router
+from support_tickets import router as support_tickets_router  
 
 # 2. Register them with the FastAPI app
 app.include_router(expenses_router)
 app.include_router(exec_profitability_router)
 app.include_router(customers_router)
 app.include_router(support_chat_router)
+app.include_router(support_tickets_router)
 app.include_router(pos_transfers_router) 
 
 
