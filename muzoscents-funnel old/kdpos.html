@@ -1141,6 +1141,11 @@
         const CATALOG_TTL_MS = 15 * 60 * 1000;
 
         const ORG_VERTICAL = localStorage.getItem('org_vertical') || 'retail';
+        // Food verticals (takeaway / dine-in / kitchen tickets) are the only
+        // verticals that get order-type fields, kitchen buttons, and order-
+        // type data on receipts. Every other vertical omits them entirely so
+        // retail / pharmacy / service sales never carry a "Takeaway" badge.
+        const IS_FOOD_VERTICAL = ORG_VERTICAL === 'food';
 
         // ── Payment accounts ──
         let paymentAccounts = [];
@@ -1346,9 +1351,30 @@
         const desktopCustomerLabel = document.getElementById('desktop-customer-label');
         const mobileSheetCustomerLabel = document.getElementById('mobile-sheet-customer-label');
 
+        // ── Per-tab state factory ──
+        // orderType is only set for food verticals. For everyone else it is
+        // null and never referenced, so a retail / pharmacy / service sale
+        // can never carry a "Takeaway" value into receiptData.
+        function makeEmptyTabState() {
+            return {
+                cart: [],
+                paymentMethod: 'cash',
+                orderType: IS_FOOD_VERTICAL ? 'takeaway' : null,
+                tableNumber: '',
+                customerName: '',
+                customerPhone: '',
+                customerEmail: '',
+                loyaltyUserId: null,
+                pointsBalance: 0,
+                pointsRedeemed: 0,
+                transferAccountId: null,
+                transferReference: ''
+            };
+        }
+
         const tabState = {
-            1: { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0, transferAccountId: null, transferReference: '' },
-            2: { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0, transferAccountId: null, transferReference: '' }
+            1: makeEmptyTabState(),
+            2: makeEmptyTabState()
         };
 
         function showToast(msg, type = 'success') {
@@ -1412,7 +1438,7 @@
         window.toggleMobileCustomerForm = function() { mobileCustomerForm.classList.toggle('hidden'); };
 
         // Vertical init
-        if (ORG_VERTICAL === 'food') {
+        if (IS_FOOD_VERTICAL) {
             desktopRestaurantFields.classList.remove('hidden');
             mobileRestaurantFields.classList.remove('hidden');
             sendToKitchenBtn.classList.remove('hidden');
@@ -1968,13 +1994,22 @@
             }
 
             const receiptData = {
-                receiptNumber: offlineRef, orderType: state.orderType, tableNumber: state.tableNumber,
+                receiptNumber: offlineRef,
                 customer: { name: customerName || '', phone: customerPhone || '', email: customerEmail || '', loyaltyId: state.loyaltyUserId || null, pointsBefore: state.pointsBalance || 0, pointsAfter: state.pointsBalance || 0, pointsRedeemed: pointsRedeemed },
                 items: itemDetails, subtotal, discount, tax, grandTotal,
                 payment: paymentPayload,
                 cashierId, cashierName, location: orgName,
                 metadata: { softwareVersion: '1.0.0', deviceId: 'web-' + (navigator.userAgent || 'unknown'), printed: false }
             };
+
+            // Only food verticals carry order-type data on the receipt.
+            // Everything else explicitly omits it so downstream consumers
+            // (history, print, WhatsApp, sync) can't mistake a retail sale
+            // for a takeaway order.
+            if (IS_FOOD_VERTICAL) {
+                receiptData.orderType = state.orderType;
+                receiptData.tableNumber = state.tableNumber;
+            }
 
             const order = { offlineRef, cashierId, createdAt: new Date().toISOString(), status: 'pending', syncedAt: null, receiptData };
 
@@ -2071,6 +2106,10 @@
         })();
 
         async function processKitchenTicket() {
+            if (!IS_FOOD_VERTICAL) {
+                showToast('Kitchen tickets are only available for food businesses.', 'error');
+                return;
+            }
             const state = tabState[activeTab];
             if (state.cart.length === 0) { showToast('🛒 Cart is empty.', 'error'); return; }
             if (!state.tableNumber.trim()) { showToast('⚠️ Please enter a Table Number.', 'error'); return; }
@@ -2122,14 +2161,20 @@
             const state = tabState[activeTab];
             renderActiveCart();
 
-            desktopOrderTypeSelect.value = state.orderType || 'takeaway';
-            mobileOrderTypeSelect.value = state.orderType || 'takeaway';
-            desktopTableInput.value = state.tableNumber || '';
-            mobileTableInput.value = state.tableNumber || '';
-            if (state.orderType === 'dine-in') {
-                desktopTableContainer.classList.remove('hidden'); mobileTableContainer.classList.remove('hidden');
-            } else {
-                desktopTableContainer.classList.add('hidden'); mobileTableContainer.classList.add('hidden');
+            // Only wire the order-type controls for food verticals. For
+            // anyone else, leave the hidden selects untouched — writing
+            // 'takeaway' into them is how the value escaped into receipts
+            // in the first place.
+            if (IS_FOOD_VERTICAL) {
+                desktopOrderTypeSelect.value = state.orderType || 'takeaway';
+                mobileOrderTypeSelect.value = state.orderType || 'takeaway';
+                desktopTableInput.value = state.tableNumber || '';
+                mobileTableInput.value = state.tableNumber || '';
+                if (state.orderType === 'dine-in') {
+                    desktopTableContainer.classList.remove('hidden'); mobileTableContainer.classList.remove('hidden');
+                } else {
+                    desktopTableContainer.classList.add('hidden'); mobileTableContainer.classList.add('hidden');
+                }
             }
 
             document.getElementById('desktop-customer-name').value = state.customerName || '';
@@ -2186,8 +2231,13 @@
         function setActiveTab(tabId) {
             if (tabId === activeTab) return;
             const cur = tabState[activeTab];
-            cur.orderType = desktopOrderTypeSelect.value || 'takeaway';
-            cur.tableNumber = desktopTableInput.value || '';
+            // Only pull order-type state from the visible controls on food
+            // verticals. On other verticals those selects are hidden and
+            // would otherwise clobber a legitimately null orderType.
+            if (IS_FOOD_VERTICAL) {
+                cur.orderType = desktopOrderTypeSelect.value || 'takeaway';
+                cur.tableNumber = desktopTableInput.value || '';
+            }
             cur.customerName = document.getElementById('desktop-customer-name').value || '';
             cur.customerPhone = document.getElementById('desktop-customer-phone').value || '';
             cur.customerEmail = document.getElementById('desktop-customer-email').value || '';
@@ -2242,7 +2292,10 @@
                         const payload = {
                             items: order.receiptData.items.map(item => ({ inventory_id: item.productId, quantity: item.quantity })),
                             payment_method: offlinePmt.method, customer_name: order.receiptData.customer.name, customer_phone: order.receiptData.customer.phone, customer_email: order.receiptData.customer.email,
-                            order_type: order.receiptData.orderType, table_number: order.receiptData.tableNumber,
+                            ...(IS_FOOD_VERTICAL && {
+                                order_type: order.receiptData.orderType,
+                                table_number: order.receiptData.tableNumber,
+                            }),
                             offline_meta: { reference: order.offlineRef, cashier_id: order.cashierId, created_at: order.createdAt }, receipt_data: order.receiptData,
                             transfer_account_id: offlinePmt.account_id || undefined,
                             transfer_reference: offlinePmt.transfer_reference || undefined,
@@ -2298,7 +2351,16 @@
                 const buttonLabel = o.status === 'failed' ? '<i class="fa-solid fa-rotate-right"></i> Retry' : '<i class="fa-solid fa-rotate"></i> Sync';
                 const buttonClass = o.status === 'failed' ? 'text-red-600 hover:text-red-800' : 'text-blue-500 hover:text-blue-700';
                 const errorLine = (o.status === 'failed' && o.lastError) ? `<div class="text-xs text-red-500 mt-0.5" title="${escapeAttr(String(o.lastError))}"><i class="fa-solid fa-circle-exclamation"></i> ${escapeHtml(String(o.lastError).slice(0, 120))}${String(o.lastError).length > 120 ? '…' : ''}</div>` : '';
-                const orderTypeLabel = o.receiptData?.orderType === 'dine-in' ? `<span class="bg-orange-100 text-orange-700 px-1 rounded text-xs ml-1">Table ${o.receiptData.tableNumber}</span>` : `<span class="bg-blue-100 text-blue-700 px-1 rounded text-xs ml-1">Takeaway</span>`;
+                // Only food verticals show an order-type badge, and only when
+                // the receipt actually carries a recognised order type. Old
+                // retail rows with a leftover 'takeaway' value render nothing.
+                const isFoodOrder = IS_FOOD_VERTICAL && (o.receiptData?.orderType === 'dine-in' || o.receiptData?.orderType === 'takeaway');
+                let orderTypeLabel = '';
+                if (isFoodOrder) {
+                    orderTypeLabel = o.receiptData.orderType === 'dine-in'
+                        ? `<span class="bg-orange-100 text-orange-700 px-1 rounded text-xs ml-1">Table ${escapeHtml(o.receiptData.tableNumber || '')}</span>`
+                        : `<span class="bg-blue-100 text-blue-700 px-1 rounded text-xs ml-1">Takeaway</span>`;
+                }
                 return `<div class="border-b py-2 flex justify-between items-center">
                     <div class="min-w-0 flex-1">
                         <div><strong>${escapeHtml(o.offlineRef)}</strong> - ${new Date(o.createdAt).toLocaleString()} ${orderTypeLabel}</div>
@@ -2324,7 +2386,10 @@
                     const payload = {
                         items: order.receiptData.items.map(item => ({ inventory_id: item.productId, quantity: item.quantity })),
                         payment_method: offlinePmt.method, customer_name: order.receiptData.customer.name, customer_phone: order.receiptData.customer.phone, customer_email: order.receiptData.customer.email,
-                        order_type: order.receiptData.orderType, table_number: order.receiptData.tableNumber,
+                        ...(IS_FOOD_VERTICAL && {
+                            order_type: order.receiptData.orderType,
+                            table_number: order.receiptData.tableNumber,
+                        }),
                         offline_meta: { reference: order.offlineRef, cashier_id: order.cashierId, created_at: order.createdAt }, receipt_data: order.receiptData,
                         transfer_account_id: offlinePmt.account_id || undefined,
                         transfer_reference: offlinePmt.transfer_reference || undefined,
@@ -2369,8 +2434,8 @@
                 const orgRes = await fetch(`${BACKEND}/auth/org`, { headers: { 'Authorization': `Bearer ${token}` } });
                 if (orgRes.ok) { const orgData = await orgRes.json(); localStorage.setItem('org_name', orgData.org_name || 'Unknown Org'); }
                 await loadCustomers(); hideLoginModal();
-                tabState[1] = { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0, transferAccountId: null, transferReference: '' };
-                tabState[2] = { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0, transferAccountId: null, transferReference: '' };
+                tabState[1] = makeEmptyTabState();
+                tabState[2] = makeEmptyTabState();
                 activeTab = 1; syncUIWithActiveTab(); products = []; productContainer.innerHTML = ''; emptyMsgDiv.classList.add('hidden'); await refreshCachedCount();
                 await loadPaymentAccounts();
                 showToast('Demo login — Offline‑ready POS', 'success'); const navOrg = document.getElementById('nav-org-name'); if (navOrg) navOrg.innerText = localStorage.getItem('org_name') || 'Unknown Org';
@@ -2389,8 +2454,8 @@
                 const orgRes = await fetch(`${BACKEND}/auth/org`, { headers: { 'Authorization': `Bearer ${token}` } });
                 if (orgRes.ok) { const orgData = await orgRes.json(); localStorage.setItem('org_name', orgData.org_name || 'Unknown Org'); }
                 await loadCustomers(); hideLoginModal();
-                tabState[1] = { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0, transferAccountId: null, transferReference: '' };
-                tabState[2] = { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0, transferAccountId: null, transferReference: '' };
+                tabState[1] = makeEmptyTabState();
+                tabState[2] = makeEmptyTabState();
                 activeTab = 1; syncUIWithActiveTab(); products = []; productContainer.innerHTML = ''; emptyMsgDiv.classList.add('hidden'); await refreshCachedCount();
                 await loadPaymentAccounts();
                 showToast('Login successful', 'success'); const navOrg = document.getElementById('nav-org-name'); if (navOrg) navOrg.innerText = localStorage.getItem('org_name') || 'Unknown Org';
@@ -2600,8 +2665,8 @@
                 try {
                     await loadCustomers();
                     if (!tabState[1].cart.length && !tabState[2].cart.length) {
-                        tabState[1] = { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0, transferAccountId: null, transferReference: '' };
-                        tabState[2] = { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0, transferAccountId: null, transferReference: '' };
+                        tabState[1] = makeEmptyTabState();
+                        tabState[2] = makeEmptyTabState();
                     }
                     activeTab = 1; syncUIWithActiveTab(); productContainer.innerHTML = ''; emptyMsgDiv.classList.add('hidden'); maybeAutoSyncCatalog();
                 } catch (e) { token = null; showLoginModal(); }
