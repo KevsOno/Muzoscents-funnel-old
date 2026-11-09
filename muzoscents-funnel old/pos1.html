@@ -9,42 +9,46 @@
     <script src="/nav.js" defer></script>
     <link rel="stylesheet" href="/tailwind.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Dexie for Browser Fallback -->
     <script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js"></script>
-    <!-- HTML5 Camera Scanner -->
-    <script src="https://unpkg.com/html5-qrcode"></script>
+    <!-- Pinned HTML5 Camera Scanner -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     
     <style>
         .tab-active { background-color: #3b82f6; color: white; }
         .tab-inactive { background-color: #f3f4f6; color: #1f2937; }
         .product-card { transition: all 0.15s ease; padding: 0.5rem; min-height: 48px; min-width: 48px; }
         .product-card:active { transform: scale(0.97); }
-        .qty-btn { width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: #f3f4f6; border: 1px solid #d1d5db; cursor: pointer; }
-        .qty-input { width: 36px; text-align: center; border: 1px solid #d1d5db; border-radius: 4px; padding: 2px 0; }
+        
+        /* Mobile Touch Targets & iOS Zoom Prevention */
+        .qty-btn { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: #f3f4f6; border: 1px solid #d1d5db; cursor: pointer; }
+        @media (min-width: 1024px) { .qty-btn { width: 28px; height: 28px; } }
+        .qty-input { width: 50px; text-align: center; border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 0; font-size: 16px; }
+        @media (min-width: 1024px) { .qty-input { width: 36px; padding: 2px 0; font-size: 14px; } }
+        .mobile-input { font-size: 16px !important; }
+        
         .total-amount { font-size: 1.5rem; font-weight: 800; }
         .offline-badge { background: #f59e0b; color: #fff; padding: 2px 10px; border-radius: 20px; font-size: 0.7rem; }
         .online-badge { background: #22c55e; color: #fff; padding: 2px 10px; border-radius: 20px; font-size: 0.7rem; }
         .sync-btn { background: #3b82f6; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; border: none; cursor: pointer; }
-        .sync-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        #history-modal, #sync-dashboard-modal, #camera-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 50; align-items: center; justify-content: center; }
-        #history-modal.active, #sync-dashboard-modal.active, #camera-modal.active { display: flex; }
+        
+        #history-modal, #sync-dashboard-modal, #camera-modal, #mobile-cart-sheet { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 50; align-items: center; justify-content: center; }
+        #history-modal.active, #sync-dashboard-modal.active, #camera-modal.active, #mobile-cart-sheet.active { display: flex; }
         #history-modal .modal-content, #sync-dashboard-modal .modal-content, #camera-modal .modal-content { background: white; max-width: 800px; width: 90%; max-height: 80vh; overflow-y: auto; padding: 20px; border-radius: 12px; }
+        
+        /* Mobile Bottom Sheet for Cart */
+        #mobile-cart-sheet { align-items: flex-end; }
+        #mobile-cart-sheet .sheet-content { background: white; width: 100%; height: 95vh; border-radius: 20px 20px 0 0; display: flex; flex-direction: column; animation: slideUp 0.3s ease-out; }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        
+        .payment-chip { flex: 1; text-align: center; padding: 12px; border: 2px solid #e5e7eb; border-radius: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .payment-chip.active { border-color: #3b82f6; background: #eff6ff; color: #1d4ed8; }
+
         .dashboard-stat { display: flex; justify-content: space-between; border-bottom: 1px solid #e5e7eb; padding: 8px 0; }
-        .dashboard-stat .label { font-weight: 500; }
-        .dashboard-stat .value { font-weight: 700; }
-        .pending { color: #f59e0b; }
-        .synced { color: #22c55e; }
-        .failed { color: #ef4444; }
-
-        /* Camera Scanner Styles */
-        #reader { width: 100%; border-radius: 8px; overflow: hidden; }
         .scanner-active { border-color: #22c55e !important; box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.3) !important; }
-
-        /* Kiosk Mode / Self-Service Styles */
+        
         body.kiosk-mode #admin-controls, body.kiosk-mode #sync-dashboard-modal, body.kiosk-mode #history-modal { display: none !important; }
-        body.kiosk-mode .max-w-7xl > div:first-child { justify-content: center; text-align: center; }
         body.kiosk-mode #pos-tabs-container { display: none !important; }
-
-        @media (max-height: 820px) { body.bg-gray-100 { padding: 0.5rem; } }
 
         @media print {
             body * { visibility: hidden; }
@@ -59,46 +63,34 @@
         }
     </style>
 </head>
-<body class="bg-gray-100 p-4 font-sans">
+<body class="bg-gray-100 p-4 font-sans pb-24 lg:pb-4">
 
-    <!-- GLOBAL NAVIGATION -->
     <div id="kevs-nav-container"></div>
-
-    <!-- Toast container -->
     <div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
-
-    <!-- Hidden receipt print area -->
     <div id="receipt-print-area" style="display:none;"></div>
 
-    <!-- Main POS -->
     <div class="max-w-7xl mx-auto">
         <div class="bg-white rounded-xl shadow-md p-4 mb-4 flex flex-wrap justify-between items-center gap-3">
             <div>
                 <h1 class="text-2xl font-bold">💳 Kevs POS Terminal</h1>
                 <p class="text-xs text-gray-500">Offline‑Ready · SKU Search · Scanner · Cashier History · Audit</p>
             </div>
-            <!-- Admin Controls (Hidden in Kiosk Mode) -->
             <div id="admin-controls" class="flex items-center gap-2 flex-wrap">
                 <span id="connection-status" class="online-badge"><i class="fa-solid fa-wifi"></i> Online</span>
-                <span id="catalog-badge" class="text-xs bg-gray-100 border border-gray-200 px-3 py-1 rounded-full" title="Products cached locally for offline use">
+                <span id="catalog-badge" class="text-xs bg-gray-100 border border-gray-200 px-3 py-1 rounded-full hidden sm:inline-block">
                     <i id="catalog-badge-icon" class="fa-solid fa-database mr-1 text-gray-500"></i>
                     <span id="cached-count">0</span> / <span id="expected-count">?</span> SKUs
                 </span>
-                <button id="download-catalog-btn" class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded-lg text-sm" title="Download full catalog for offline use">
+                <button id="download-catalog-btn" class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded-lg text-sm hidden sm:block">
                     <i class="fa-solid fa-cloud-arrow-down"></i> Catalog
                 </button>
                 <button id="sync-now-btn" class="sync-btn"><i class="fa-solid fa-rotate"></i> Sync</button>
-                <button id="dashboard-btn" class="bg-gray-200 px-3 py-1 rounded-lg text-sm">
-                    <i class="fa-solid fa-chart-simple"></i> Dashboard
-                </button>
+                <button id="dashboard-btn" class="bg-gray-200 px-3 py-1 rounded-lg text-sm hidden sm:block"><i class="fa-solid fa-chart-simple"></i> Dashboard</button>
                 <button id="history-btn" class="bg-gray-200 px-3 py-1 rounded-lg text-sm"><i class="fa-regular fa-clock"></i> History</button>
-                <button id="kiosk-mode-btn" class="bg-gray-800 text-white px-3 py-1 rounded-lg text-sm" title="Toggle Customer Self-Service Mode">
-                    <i class="fa-solid fa-tablet-screen-button"></i> Kiosk Mode
-                </button>
+                <button id="kiosk-mode-btn" class="bg-gray-800 text-white px-3 py-1 rounded-lg text-sm hidden sm:block"><i class="fa-solid fa-tablet-screen-button"></i> Kiosk</button>
             </div>
         </div>
 
-        <!-- Catalog sync progress banner -->
         <div id="catalog-sync-banner" class="hidden bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
             <div class="flex justify-between items-center mb-1">
                 <span class="text-sm font-medium text-blue-800">
@@ -109,10 +101,8 @@
             <div class="w-full bg-blue-200 rounded-full h-2 overflow-hidden">
                 <div id="catalog-progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
             </div>
-            <p class="text-xs text-blue-600 mt-1">You can keep using the POS — this runs in the background.</p>
         </div>
 
-        <!-- TABS -->
         <div id="pos-tabs-container" class="flex gap-3 mb-4 border-b border-gray-200 pb-1">
             <button id="tab1-btn" data-tab="1" class="tab-active px-6 py-2.5 rounded-t-lg font-semibold text-sm transition flex items-center gap-2 shadow-sm border">
                 <i class="fa-solid fa-user"></i> Customer A
@@ -124,120 +114,193 @@
 
         <!-- MAIN LAYOUT -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- CART (LEFT) -->
-            <div class="lg:col-span-2 lg:order-first bg-white rounded-xl shadow-md p-4 flex flex-col min-h-[600px]">
+            
+            <!-- DESKTOP CART (Hidden on Mobile) -->
+            <div class="hidden lg:flex lg:col-span-2 lg:order-first bg-white rounded-xl shadow-md p-4 flex-col min-h-[600px]">
                 <div class="flex justify-between items-center border-b pb-2 mb-2">
-                    <h2 class="text-xl font-semibold"><i class="fa-solid fa-cart-shopping"></i> <span id="active-customer-label">Customer A</span> Sale</h2>
-                    <span class="text-xs bg-gray-100 px-2 py-1 rounded-full" id="tab-badge">Tab 1 active</span>
+                    <h2 class="text-xl font-semibold"><i class="fa-solid fa-cart-shopping"></i> <span id="desktop-customer-label">Customer A</span> Sale</h2>
+                    <span class="text-xs bg-gray-100 px-2 py-1 rounded-full" id="desktop-tab-badge">Tab 1 active</span>
                 </div>
 
-                <div id="cart-items" class="space-y-2 overflow-y-auto flex-1 max-h-[50vh] lg:max-h-[60vh] min-h-[200px]"></div>
+                <div id="desktop-cart-items" class="space-y-2 overflow-y-auto flex-1 max-h-[50vh] lg:max-h-[60vh] min-h-[200px]"></div>
                 
                 <div class="border-t pt-3 mt-2">
-                    <div class="flex justify-between text-lg font-bold">
+                    <div class="flex justify-between text-lg font-bold mb-3">
                         <span>Total:</span>
-                        <span id="cart-total" class="total-amount">₦0</span>
+                        <span id="desktop-cart-total" class="total-amount">₦0</span>
                     </div>
 
-                    <!-- Order Type & Table Number (New!) -->
-                    <div class="mt-3 grid grid-cols-2 gap-3">
+                    <!-- Restaurant Options (Gated by Org Vertical) -->
+                    <div id="desktop-restaurant-fields" class="hidden mt-3 grid grid-cols-2 gap-3 mb-3">
                         <div>
                             <label class="block text-sm font-medium">Order Type</label>
-                            <select id="order-type" class="w-full border rounded-lg p-2 bg-white">
+                            <select id="desktop-order-type" class="w-full border rounded-lg p-2 bg-white">
                                 <option value="takeaway">🛍️ Takeaway</option>
-                                <option value="dine-in">🍽️ Dine-in (Table)</option>
+                                <option value="dine-in">🍽️ Dine-in</option>
                             </select>
                         </div>
-                        <div id="table-number-container" class="hidden">
+                        <div id="desktop-table-container" class="hidden">
                             <label class="block text-sm font-medium">Table Number</label>
-                            <input id="table-number" class="w-full border rounded-lg p-2" placeholder="e.g. Table 5" autocomplete="off">
+                            <input id="desktop-table-number" class="w-full border rounded-lg p-2" placeholder="Table 5">
                         </div>
                     </div>
 
-                    <div class="mt-3 grid grid-cols-2 gap-3">
-                        <div><label class="block text-sm font-medium">Payment Method</label>
-                            <select id="payment-method" class="w-full border rounded-lg p-2 bg-white">
-                                <option value="cash">💵 Cash</option>
-                                <option value="card">💳 Card</option>
-                                <option value="transfer">🏦 Bank Transfer</option>
-                            </select>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div><label class="block text-sm font-medium mb-1">Payment</label>
+                            <div class="flex gap-2">
+                                <button class="payment-chip active" data-method="cash">💵 Cash</button>
+                                <button class="payment-chip" data-method="transfer">🏦 Bank</button>
+                                <button class="payment-chip" data-method="card">💳 Card</button>
+                            </div>
                         </div>
-                        <div><label class="block text-sm font-medium">Customer Name</label>
-                            <input id="customer-name" class="w-full border rounded-lg p-2" placeholder="Walk-in Customer" autocomplete="off">
-                        </div>
-                        <div><label class="block text-sm font-medium">Phone</label>
-                            <input id="customer-phone" class="w-full border rounded-lg p-2" placeholder="Optional" autocomplete="off">
-                        </div>
-                        <div><label class="block text-sm font-medium">Email</label>
-                            <input id="customer-email" type="email" class="w-full border rounded-lg p-2" placeholder="customer@example.com" autocomplete="off">
+                        <div class="text-right">
+                            <button id="desktop-add-customer-btn" class="text-sm text-blue-600 hover:underline mt-6"><i class="fa-solid fa-plus"></i> Add Customer</button>
                         </div>
                     </div>
 
-                    <!-- Customer Search & Loyalty -->
-                    <div class="bg-blue-50 p-3 rounded-lg mt-3 space-y-2">
+                    <!-- Customer Form (Collapsible) -->
+                    <div id="desktop-customer-form" class="hidden mt-3 bg-gray-50 p-3 rounded-lg space-y-2">
                         <div class="relative">
-                            <input type="text" id="customer-search" placeholder="Search customer..." autocomplete="off" class="w-full border rounded-lg p-2 text-sm pr-8">
+                            <input type="text" id="customer-search" placeholder="Search saved customer..." autocomplete="off" class="w-full border rounded-lg p-2 text-sm pr-8 mobile-input">
                             <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
                             <div id="customer-suggestions" class="absolute z-10 left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto hidden"></div>
                         </div>
-                        <div id="customer-info" class="text-xs text-gray-700 hidden">
-                            <span id="customer-name-display"></span> ·
-                            <strong>Points: <span id="customer-points">0</span></strong>
+                        <div class="grid grid-cols-2 gap-2">
+                            <input id="desktop-customer-name" class="w-full border rounded-lg p-2 text-sm mobile-input" placeholder="Name">
+                            <input id="desktop-customer-phone" class="w-full border rounded-lg p-2 text-sm mobile-input" placeholder="Phone">
                         </div>
+                        <input id="desktop-customer-email" type="email" class="w-full border rounded-lg p-2 text-sm mobile-input" placeholder="Email (required for card/transfer)">
+                        
                         <div id="points-redeem-section" class="hidden border-t border-blue-200 pt-2 mt-1">
                             <label class="text-xs font-medium">Redeem points (1 pt = ₦1)</label>
                             <div class="flex gap-2 mt-1">
-                                <input type="number" id="redeem-points-input" min="1" class="w-full border rounded-lg p-1 text-sm" placeholder="Points">
-                                <button id="apply-points-btn" class="bg-emerald-600 text-white px-3 py-1 rounded-lg text-sm hover:bg-emerald-700">Apply</button>
+                                <input type="number" id="redeem-points-input" min="1" class="w-full border rounded-lg p-2 text-sm mobile-input" placeholder="Points">
+                                <button id="apply-points-btn" class="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-emerald-700">Apply</button>
                             </div>
-                            <p id="offline-points-warning" class="text-red-500 text-xs hidden">⚠️ Points redemption requires internet.</p>
                         </div>
                     </div>
 
-                    <!-- Action Buttons -->
                     <div class="mt-4 flex gap-2">
                         <button id="send-to-kitchen-btn" class="hidden w-1/3 bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-lg font-bold transition shadow-md text-lg flex items-center justify-center gap-2">
                             <i class="fa-solid fa-fire-burner"></i> Kitchen
                         </button>
-                        <button id="checkout-btn" class="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-bold transition shadow-md text-lg">
+                        <button id="desktop-checkout-btn" class="flex-1 w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-bold transition shadow-md text-lg">
                             ✅ Complete Sale
                         </button>
                     </div>
                 </div>
             </div>
 
-            <!-- PRODUCT CATALOG (RIGHT) -->
-            <div class="lg:col-span-1 bg-white rounded-xl shadow-md p-4 flex flex-col">
+            <!-- PRODUCT CATALOG (Full width on Mobile) -->
+            <div class="lg:col-span-1 bg-white rounded-xl shadow-md p-4 flex flex-col h-[calc(100vh-200px)] lg:h-auto">
                 <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
                     <h2 class="text-lg font-semibold">📦 Products</h2>
                     <div class="relative w-full flex gap-2">
                         <div class="relative flex-1">
                             <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-                            <input type="text" id="product-search" placeholder="Search SKU or name..." autocomplete="off" class="w-full pl-9 pr-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none transition-colors">
+                            <input type="text" id="product-search" placeholder="Search SKU or name..." autocomplete="off" class="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-base focus:ring-2 focus:ring-blue-300 outline-none transition-colors mobile-input">
                             <div id="search-scanner-hint" class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-green-500 hidden"><i class="fa-solid fa-qrcode"></i></div>
                         </div>
-                        <!-- Camera Scanner Button -->
-                        <button id="camera-scan-btn" class="bg-blue-100 text-blue-700 hover:bg-blue-200 px-3 rounded-lg border border-blue-300 transition" title="Scan with Camera">
-                            <i class="fa-solid fa-camera"></i>
+                        <button id="camera-scan-btn" class="bg-blue-100 text-blue-700 hover:bg-blue-200 px-4 py-2.5 rounded-lg border border-blue-300 transition flex items-center justify-center">
+                            <i class="fa-solid fa-camera text-xl"></i>
                         </button>
                     </div>
                 </div>
-                <div id="product-list" class="grid grid-cols-2 gap-2 max-h-[70vh] overflow-y-auto flex-1"></div>
+                <div id="product-list" class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-2 gap-2 overflow-y-auto flex-1 pb-10"></div>
                 <div id="product-list-empty" class="hidden text-center py-8 text-gray-400 col-span-full">No products match your search</div>
                 <div id="loading-more" class="hidden text-center py-4 text-gray-500 text-sm"><i class="fa-solid fa-spinner fa-pulse"></i> Loading more...</div>
             </div>
         </div>
     </div>
 
+    <!-- MOBILE STICKY CHECKOUT BAR -->
+    <div id="mobile-sticky-bar" class="fixed bottom-0 left-0 right-0 bg-white border-t shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] p-3 flex justify-between items-center z-40 lg:hidden">
+        <div>
+            <p class="text-xs text-gray-500 font-medium">Total Amount</p>
+            <p id="mobile-cart-total" class="text-xl font-bold text-green-700">₦0</p>
+        </div>
+        <button onclick="openMobileCart()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg">
+            <i class="fa-solid fa-cart-shopping"></i> View Cart <span id="mobile-cart-count" class="bg-blue-500 px-2 py-0.5 rounded-full text-xs">0</span>
+        </button>
+    </div>
+
+    <!-- MOBILE FULL-SCREEN CART SHEET -->
+    <div id="mobile-cart-sheet">
+        <div class="sheet-content">
+            <div class="flex justify-between items-center p-4 border-b bg-gray-50 rounded-t-2xl">
+                <h2 class="text-lg font-bold"><i class="fa-solid fa-cart-shopping"></i> <span id="mobile-sheet-customer-label">Customer</span> Sale</h2>
+                <button onclick="closeMobileCart()" class="text-gray-500 hover:text-gray-800 p-2"><i class="fa-solid fa-xmark text-2xl"></i></button>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto p-4">
+                <div id="mobile-cart-items" class="space-y-4 mb-4"></div>
+            </div>
+
+            <div class="border-t p-4 bg-white space-y-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] pb-8">
+                <div class="flex justify-between text-xl font-bold">
+                    <span>Total:</span>
+                    <span id="mobile-sheet-total" class="text-green-700">₦0</span>
+                </div>
+
+                <!-- Restaurant Options Mobile -->
+                <div id="mobile-restaurant-fields" class="hidden grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Order Type</label>
+                        <select id="mobile-order-type" class="w-full border rounded-lg p-3 bg-white mobile-input">
+                            <option value="takeaway">🛍️ Takeaway</option>
+                            <option value="dine-in">🍽️ Dine-in</option>
+                        </select>
+                    </div>
+                    <div id="mobile-table-container" class="hidden">
+                        <label class="block text-sm font-medium mb-1">Table Number</label>
+                        <input id="mobile-table-number" class="w-full border rounded-lg p-3 mobile-input" placeholder="Table 5">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium mb-2">Payment Method</label>
+                    <div class="flex gap-2">
+                        <button class="payment-chip active" data-method="cash">💵 Cash</button>
+                        <button class="payment-chip" data-method="transfer">🏦 Transfer</button>
+                        <button class="payment-chip" data-method="card">💳 Card</button>
+                    </div>
+                </div>
+
+                <div>
+                    <button onclick="toggleMobileCustomerForm()" class="text-sm font-medium text-blue-600 flex items-center gap-1 py-2">
+                        <i class="fa-solid fa-plus"></i> Add Customer Details
+                    </button>
+                    <div id="mobile-customer-form" class="hidden space-y-2 mt-2">
+                        <input id="mobile-customer-name" class="w-full border rounded-lg p-3 mobile-input" placeholder="Customer Name">
+                        <input id="mobile-customer-phone" class="w-full border rounded-lg p-3 mobile-input" placeholder="Phone Number">
+                        <input id="mobile-customer-email" type="email" class="w-full border rounded-lg p-3 mobile-input" placeholder="Email (for receipt)">
+                    </div>
+                </div>
+
+                <div class="flex gap-2">
+                    <button id="mobile-kitchen-btn" class="hidden w-1/3 bg-orange-500 text-white py-3 rounded-xl font-bold text-lg flex items-center justify-center gap-1">
+                        <i class="fa-solid fa-fire-burner"></i>
+                    </button>
+                    <button id="mobile-checkout-btn" class="flex-1 w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl font-bold text-lg shadow-lg">
+                        Checkout
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Camera Scanner Modal -->
     <div id="camera-modal">
-        <div class="modal-content max-w-md">
+        <div class="modal-content max-w-md relative">
             <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-bold"><i class="fa-solid fa-camera"></i> Camera Scanner</h3>
-                <button id="close-camera-btn" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+                <h3 class="text-lg font-bold"><i class="fa-solid fa-camera"></i> Scan Barcode</h3>
+                <button id="close-camera-btn" class="text-gray-400 hover:text-gray-600 p-2"><i class="fa-solid fa-xmark text-2xl"></i></button>
             </div>
-            <div id="reader"></div>
-            <p class="text-center text-sm text-gray-500 mt-2">Point your camera at a barcode</p>
+            <div id="reader" class="w-full rounded-lg overflow-hidden border-2 border-dashed border-gray-300"></div>
+            <p class="text-center text-sm text-gray-500 mt-4">Point at barcode. Continuous scanning active.</p>
+            <div class="mt-4 bg-green-50 text-green-800 p-3 rounded-lg text-sm font-medium flex items-center gap-2 hidden" id="scan-success-toast">
+                <i class="fa-solid fa-check-circle"></i> Item Added!
+            </div>
         </div>
     </div>
 
@@ -246,7 +309,7 @@
         <div class="modal-content">
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-lg font-bold">📜 Cashier History</h3>
-                <button id="close-history-btn" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+                <button id="close-history-btn" class="text-gray-400 hover:text-gray-600 p-2"><i class="fa-solid fa-xmark text-xl"></i></button>
             </div>
             <div id="history-list" class="space-y-2 max-h-[60vh] overflow-y-auto"></div>
         </div>
@@ -257,12 +320,10 @@
         <div class="modal-content max-w-md">
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-lg font-bold">📊 Sync Dashboard</h3>
-                <button id="close-dashboard-btn" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+                <button id="close-dashboard-btn" class="text-gray-400 hover:text-gray-600 p-2"><i class="fa-solid fa-xmark text-xl"></i></button>
             </div>
             <div id="dashboard-content" class="space-y-2"></div>
-            <button id="refresh-dashboard-btn" class="mt-4 w-full bg-blue-600 text-white py-2 rounded-lg text-sm hover:bg-blue-700">
-                <i class="fa-solid fa-rotate"></i> Refresh
-            </button>
+            <button id="refresh-dashboard-btn" class="mt-4 w-full bg-blue-600 text-white py-2 rounded-lg text-sm hover:bg-blue-700">Refresh</button>
         </div>
     </div>
 
@@ -271,14 +332,33 @@
         <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm">
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-lg font-bold text-gray-800">🔐 Sign In to POS</h3>
-                <button id="close-modal-btn" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+                <button id="close-modal-btn" class="text-gray-400 hover:text-gray-600 p-2"><i class="fa-solid fa-xmark text-xl"></i></button>
             </div>
             <div class="space-y-3">
-                <input id="login-email" type="email" placeholder="Email" class="w-full border rounded-lg p-2 text-sm">
-                <input id="login-password" type="password" placeholder="Password" class="w-full border rounded-lg p-2 text-sm">
-                <button id="modal-login-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white p-2.5 rounded-lg text-sm font-medium">Sign In</button>
-                <button id="demo-login-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white p-2.5 rounded-lg text-sm font-medium">
+                <input id="login-email" type="email" placeholder="Email" class="w-full border rounded-lg p-3 text-base">
+                <input id="login-password" type="password" placeholder="Password" class="w-full border rounded-lg p-3 text-base">
+                <button id="modal-login-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-lg text-base font-medium">Sign In</button>
+                <button id="demo-login-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white p-3 rounded-lg text-base font-medium">
                     <i class="fa-solid fa-bolt mr-1"></i> Demo Login
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Success Modal for WhatsApp Share -->
+    <div id="success-share-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm text-center">
+            <div class="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i class="fa-solid fa-check text-3xl"></i>
+            </div>
+            <h3 class="text-xl font-bold text-gray-800 mb-2">Sale Complete!</h3>
+            <p class="text-gray-600 mb-6 text-sm">Receipt #<span id="success-receipt-num"></span> has been processed.</p>
+            <div class="space-y-3">
+                <button id="share-whatsapp-btn" class="w-full bg-[#25D366] hover:bg-[#20bd5a] text-white p-3 rounded-xl font-bold text-base flex items-center justify-center gap-2">
+                    <i class="fa-brands fa-whatsapp text-xl"></i> Share via WhatsApp
+                </button>
+                <button onclick="document.getElementById('success-share-modal').classList.add('hidden')" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 p-3 rounded-xl font-medium text-base">
+                    Close
                 </button>
             </div>
         </div>
@@ -286,7 +366,262 @@
 
     <script>
         // ================================================================
-        //  OFFLINE‑READY POS – FULL AUDIT + FULL CATALOG SYNC
+        // DB ABSTRACTION LAYER (Dexie for Web, SQLite for Tauri)
+        // ================================================================
+        const isTauri = !!window.__TAURI_INTERNALS__;
+        let sqliteDb = null;
+        let dexieDb = null;
+
+        function computeSearchTokens(product) {
+            const source = `${product.description || ''} ${product.item_code || ''} ${product.sku || ''}`.toLowerCase();
+            return Array.from(new Set(source.split(/[^\p{L}\p{N}]+/u).filter(t => t.length > 0)));
+        }
+
+        async function initDBService() {
+            if (isTauri) {
+                try {
+                    const Database = window.__TAURI__.sql.Database;
+                    sqliteDb = await Database.load('sqlite:kevs_bos.db');
+                    await sqliteDb.execute(`
+                        CREATE TABLE IF NOT EXISTS products (
+                            id INTEGER PRIMARY KEY, description TEXT, item_code TEXT, sku TEXT,
+                            price_naira REAL, current_qty INTEGER, cost_price_naira REAL,
+                            handling_category TEXT, weight_kg REAL, product_group TEXT
+                        );
+                        CREATE TABLE IF NOT EXISTS customers (
+                            id TEXT PRIMARY KEY, first_name TEXT, last_name TEXT, phone TEXT, email TEXT, loyalty_points INTEGER
+                        );
+                        CREATE TABLE IF NOT EXISTS orders (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT, offlineRef TEXT UNIQUE, cashierId TEXT,
+                            createdAt TEXT, status TEXT, syncedAt TEXT, receiptData TEXT
+                        );
+                        CREATE TABLE IF NOT EXISTS syncQueue (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT, orderId TEXT, attempts INTEGER DEFAULT 0, lastTry TEXT
+                        );
+                        CREATE TABLE IF NOT EXISTS auditQueue (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT, eventType TEXT, createdAt TEXT, retryCount INTEGER DEFAULT 0
+                        );
+                    `);
+                    console.log("✅ Native SQLite Database Initialized");
+                } catch (e) {
+                    console.error("Failed to load native SQLite, falling back to Dexie", e);
+                    initDexie();
+                }
+            } else {
+                initDexie();
+            }
+        }
+
+        function initDexie() {
+            dexieDb = new Dexie('KevsPOSOffline');
+            dexieDb.version(2).stores({
+                products: 'id, description, item_code, sku, price_naira, current_qty',
+                customers: 'id, first_name, last_name, phone, email, loyalty_points',
+                orders: '++id, offlineRef, cashierId, createdAt, status, syncedAt, receiptData',
+                syncQueue: '++id, orderId, attempts, lastTry',
+                auditQueue: '++id, eventType, createdAt, retryCount'
+            });
+            dexieDb.version(3).stores({
+                products: 'id, description, item_code, sku, price_naira, current_qty, *search_tokens',
+                customers: 'id, first_name, last_name, phone, email, loyalty_points',
+                orders: '++id, offlineRef, cashierId, createdAt, status, syncedAt, receiptData',
+                syncQueue: '++id, orderId, attempts, lastTry',
+                auditQueue: '++id, eventType, createdAt, retryCount'
+            }).upgrade(tx => {
+                return tx.table('products').toCollection().modify(product => {
+                    product.search_tokens = computeSearchTokens(product);
+                });
+            });
+            console.log("✅ Dexie Browser Database Initialized");
+        }
+
+        const DB = {
+            // Products
+            async saveProducts(products) {
+                if (sqliteDb) {
+                    for (const p of products) {
+                        await sqliteDb.execute(
+                            `INSERT OR REPLACE INTO products (id, description, item_code, sku, price_naira, current_qty, cost_price_naira, handling_category, weight_kg, product_group) 
+                             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+                            [p.id, p.description, p.item_code, p.sku, p.price_naira, p.current_qty, p.cost_price_naira, p.handling_category, p.weight_kg, p.product_group]
+                        );
+                    }
+                } else {
+                    await dexieDb.products.bulkPut(products);
+                }
+            },
+            async getProductCount() {
+                if (sqliteDb) { const res = await sqliteDb.select('SELECT COUNT(*) as count FROM products'); return res[0].count; }
+                return await dexieDb.products.count();
+            },
+            async getProduct(id) {
+                if (sqliteDb) { const res = await sqliteDb.select('SELECT * FROM products WHERE id = $1', [id]); return res[0] || null; }
+                return await dexieDb.products.get(id);
+            },
+            async deleteProducts(ids) {
+                if (sqliteDb) {
+                    if (!ids.length) return;
+                    const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
+                    await sqliteDb.execute(`DELETE FROM products WHERE id IN (${placeholders})`, ids);
+                } else {
+                    await dexieDb.products.bulkDelete(ids);
+                }
+            },
+            async getAllProducts() {
+                if (sqliteDb) { return await sqliteDb.select('SELECT * FROM products'); }
+                return await dexieDb.products.toArray();
+            },
+            async searchProducts(term, offset, limit) {
+                if (sqliteDb) {
+                    const lowerTerm = `%${term.toLowerCase()}%`;
+                    const sql = `SELECT * FROM products WHERE LOWER(description) LIKE $1 OR LOWER(item_code) LIKE $1 OR LOWER(sku) LIKE $1 LIMIT $2 OFFSET $3`;
+                    return await sqliteDb.select(sql, [lowerTerm, limit, offset]);
+                }
+                // Dexie Search Logic (Tier 1 + Tier 2)
+                const lowerTerm = term.toLowerCase();
+                let collection = dexieDb.products
+                    .where('description').startsWithIgnoreCase(term)
+                    .or('item_code').startsWithIgnoreCase(term)
+                    .or('sku').startsWithIgnoreCase(term)
+                    .or('search_tokens').startsWith(lowerTerm);
+                let total = await collection.count();
+                if (total > 0) return { items: await collection.offset(offset).limit(limit).toArray(), total, isDexie: true };
+                
+                if (term.length < 3) return { items: [], total: 0, isDexie: true };
+                let skipped = 0, matched = [], stoppedEarly = false;
+                try {
+                    await dexieDb.products.each(p => {
+                        const haystack = `${p.description || ''} ${p.item_code || ''} ${p.sku || ''}`.toLowerCase();
+                        if (!haystack.includes(lowerTerm)) return;
+                        if (skipped < offset) { skipped++; return; }
+                        matched.push(p);
+                        if (matched.length >= limit) { stoppedEarly = true; throw { _break: true }; }
+                    });
+                } catch (e) { if (!e || !e._break) throw e; }
+                return { items: matched, total: skipped + matched.length + (stoppedEarly ? 1 : 0), isDexie: true };
+            },
+
+            // Customers
+            async saveCustomer(c) {
+                if (sqliteDb) {
+                    await sqliteDb.execute(
+                        `INSERT OR REPLACE INTO customers (id, first_name, last_name, phone, email, loyalty_points) VALUES ($1, $2, $3, $4, $5, $6)`,
+                        [c.id, c.first_name, c.last_name, c.phone, c.email, c.loyalty_points]
+                    );
+                } else {
+                    await dexieDb.customers.put(c);
+                }
+            },
+            async getCustomers() {
+                if (sqliteDb) { return await sqliteDb.select('SELECT * FROM customers'); }
+                return await dexieDb.customers.toArray();
+            },
+            async updateCustomer(id, data) {
+                if (sqliteDb) {
+                    await sqliteDb.execute(`UPDATE customers SET loyalty_points = $1 WHERE id = $2`, [data.loyalty_points, id]);
+                } else {
+                    await dexieDb.customers.update(id, data);
+                }
+            },
+
+            // Orders
+            async saveOrder(order) {
+                if (sqliteDb) {
+                    const existing = await sqliteDb.select('SELECT id FROM orders WHERE offlineRef = $1', [order.offlineRef]);
+                    if (existing.length > 0) {
+                        await sqliteDb.execute(
+                            `UPDATE orders SET status = $1, syncedAt = $2, receiptData = $3 WHERE offlineRef = $4`,
+                            [order.status, order.syncedAt, JSON.stringify(order.receiptData), order.offlineRef]
+                        );
+                    } else {
+                        await sqliteDb.execute(
+                            `INSERT INTO orders (offlineRef, cashierId, createdAt, status, syncedAt, receiptData) VALUES ($1, $2, $3, $4, $5, $6)`,
+                            [order.offlineRef, order.cashierId, order.createdAt, order.status, order.syncedAt, JSON.stringify(order.receiptData)]
+                        );
+                    }
+                } else {
+                    const existing = await dexieDb.orders.where('offlineRef').equals(order.offlineRef).first();
+                    if (existing) await dexieDb.orders.update(existing.id, order);
+                    else await dexieDb.orders.add(order);
+                }
+            },
+            async getOrderByRef(ref) {
+                if (sqliteDb) {
+                    const res = await sqliteDb.select('SELECT * FROM orders WHERE offlineRef = $1', [ref]);
+                    if (res[0]) res[0].receiptData = JSON.parse(res[0].receiptData);
+                    return res[0] || null;
+                }
+                return await dexieDb.orders.where('offlineRef').equals(ref).first();
+            },
+            async updateOrderByRef(ref, data) {
+                if (sqliteDb) {
+                    const sets = [];
+                    const vals = [];
+                    let i = 1;
+                    for (const [k, v] of Object.entries(data)) { sets.push(`${k} = $${i++}`); vals.push(k === 'receiptData' ? JSON.stringify(v) : v); }
+                    vals.push(ref);
+                    await sqliteDb.execute(`UPDATE orders SET ${sets.join(', ')} WHERE offlineRef = $${i}`, vals);
+                } else {
+                    await dexieDb.orders.where('offlineRef').equals(ref).modify(data);
+                }
+            },
+            async getAllOrders() {
+                if (sqliteDb) {
+                    const res = await sqliteDb.select('SELECT * FROM orders');
+                    return res.map(o => ({ ...o, receiptData: JSON.parse(o.receiptData) }));
+                }
+                return await dexieDb.orders.toArray();
+            },
+
+            // Sync Queue
+            async queueOrder(orderId) {
+                if (sqliteDb) {
+                    await sqliteDb.execute(`INSERT INTO syncQueue (orderId, attempts) VALUES ($1, 0)`, [orderId]);
+                } else {
+                    await dexieDb.syncQueue.add({ orderId, attempts: 0, lastTry: null });
+                }
+            },
+            async getSyncQueue() {
+                if (sqliteDb) { return await sqliteDb.select('SELECT * FROM syncQueue'); }
+                return await dexieDb.syncQueue.toArray();
+            },
+            async removeFromSyncQueue(id) {
+                if (sqliteDb) { await sqliteDb.execute('DELETE FROM syncQueue WHERE id = $1', [id]); }
+                else { await dexieDb.syncQueue.delete(id); }
+            },
+            async removeFromSyncQueueByOrderId(orderId) {
+                if (sqliteDb) { await sqliteDb.execute('DELETE FROM syncQueue WHERE orderId = $1', [orderId]); }
+                else { await dexieDb.syncQueue.where('orderId').equals(orderId).delete(); }
+            },
+            async updateSyncQueueEntry(id, data) {
+                if (sqliteDb) {
+                    await sqliteDb.execute(`UPDATE syncQueue SET attempts = $1, lastTry = $2 WHERE id = $3`, [data.attempts, data.lastTry, id]);
+                } else {
+                    await dexieDb.syncQueue.update(id, data);
+                }
+            },
+
+            // Audit Queue
+            async queueAudit(event) {
+                if (sqliteDb) {
+                    await sqliteDb.execute(`INSERT INTO auditQueue (eventType, createdAt, retryCount) VALUES ($1, $2, 0)`, [event.event_type, event.local_created_at]);
+                } else {
+                    await dexieDb.auditQueue.add(event);
+                }
+            },
+            async getAuditQueue() {
+                if (sqliteDb) { return await sqliteDb.select('SELECT * FROM auditQueue'); }
+                return await dexieDb.auditQueue.toArray();
+            },
+            async clearAuditQueue() {
+                if (sqliteDb) { await sqliteDb.execute('DELETE FROM auditQueue'); }
+                else { await dexieDb.auditQueue.clear(); }
+            }
+        };
+
+
+        // ================================================================
+        // POS LOGIC STARTS HERE
         // ================================================================
 
         const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
@@ -305,13 +640,16 @@
         let syncInProgress = false;
         let catalogSyncInProgress = false;
         let html5QrCode = null;
+        let lastScannedCode = null;
+        let lastScanTime = 0;
 
-        // ---------- Catalog sync constants ----------
-        const CATALOG_PAGE_SIZE      = 500;
-        const CATALOG_LAST_SYNC_KEY  = 'catalog_last_sync';
-        const CATALOG_COUNT_KEY      = 'catalog_count';
-        const CATALOG_EXPECTED_KEY   = 'catalog_expected';
-        const CATALOG_TTL_MS         = 15 * 60 * 1000;  // 15 minutes
+        const CATALOG_PAGE_SIZE = 500;
+        const CATALOG_LAST_SYNC_KEY = 'catalog_last_sync';
+        const CATALOG_COUNT_KEY = 'catalog_count';
+        const CATALOG_EXPECTED_KEY = 'catalog_expected';
+        const CATALOG_TTL_MS = 15 * 60 * 1000;
+
+        const ORG_VERTICAL = localStorage.getItem('org_vertical') || 'retail'; 
 
         function generateUUID() {
             if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
@@ -321,67 +659,33 @@
             });
         }
 
-        function computeSearchTokens(product) {
-            const source = `${product.description || ''} ${product.item_code || ''} ${product.sku || ''}`.toLowerCase();
-            return Array.from(new Set(source.split(/[^\p{L}\p{N}]+/u).filter(t => t.length > 0)));
-        }
+        // DOM Refs - Desktop
+        const desktopCartContainer = document.getElementById('desktop-cart-items');
+        const desktopTotalSpan = document.getElementById('desktop-cart-total');
+        const desktopCheckoutBtn = document.getElementById('desktop-checkout-btn');
+        const desktopOrderTypeSelect = document.getElementById('desktop-order-type');
+        const desktopTableContainer = document.getElementById('desktop-table-container');
+        const desktopTableInput = document.getElementById('desktop-table-number');
+        const desktopRestaurantFields = document.getElementById('desktop-restaurant-fields');
+        const desktopAddCustomerBtn = document.getElementById('desktop-add-customer-btn');
+        const desktopCustomerForm = document.getElementById('desktop-customer-form');
+        
+        // DOM Refs - Mobile
+        const mobileCartContainer = document.getElementById('mobile-cart-items');
+        const mobileTotalSpan = document.getElementById('mobile-cart-total');
+        const mobileSheetTotal = document.getElementById('mobile-sheet-total');
+        const mobileCartCount = document.getElementById('mobile-cart-count');
+        const mobileCartSheet = document.getElementById('mobile-cart-sheet');
+        const mobileCheckoutBtn = document.getElementById('mobile-checkout-btn');
+        const mobileOrderTypeSelect = document.getElementById('mobile-order-type');
+        const mobileTableContainer = document.getElementById('mobile-table-container');
+        const mobileTableInput = document.getElementById('mobile-table-number');
+        const mobileRestaurantFields = document.getElementById('mobile-restaurant-fields');
+        const mobileCustomerForm = document.getElementById('mobile-customer-form');
 
-        const db = new Dexie('KevsPOSOffline');
-        db.version(2).stores({
-            products:   'id, description, item_code, sku, price_naira, current_qty',
-            customers:  'id, first_name, last_name, phone, email, loyalty_points',
-            orders:     '++id, offlineRef, cashierId, createdAt, status, syncedAt, receiptData',
-            syncQueue:  '++id, orderId, attempts, lastTry',
-            auditQueue: '++id, eventType, createdAt, retryCount'
-        });
-
-        db.version(3).stores({
-            products:   'id, description, item_code, sku, price_naira, current_qty, *search_tokens',
-            customers:  'id, first_name, last_name, phone, email, loyalty_points',
-            orders:     '++id, offlineRef, cashierId, createdAt, status, syncedAt, receiptData',
-            syncQueue:  '++id, orderId, attempts, lastTry',
-            auditQueue: '++id, eventType, createdAt, retryCount'
-        }).upgrade(tx => {
-            return tx.table('products').toCollection().modify(product => {
-                product.search_tokens = computeSearchTokens(product);
-            });
-        });
-
-        async function findOrderByRef(ref) { return await db.orders.where('offlineRef').equals(ref).first(); }
-        async function upsertOrderByRef(order) {
-            const existing = await db.orders.where('offlineRef').equals(order.offlineRef).first();
-            if (existing) await db.orders.update(existing.id, order);
-            else await db.orders.add(order);
-        }
-
-        async function ensureDBReady() {
-            try { await db.open(); await db.products.limit(1).toArray(); return true; } 
-            catch (e) {
-                try { await db.close(); } catch (_) {}
-                try { await Dexie.delete('KevsPOSOffline'); } catch (_) {}
-                try { await db.open(); return true; } catch (e2) { return false; }
-            }
-        }
-
-        // ---------- DOM refs ----------
+        // Shared DOM
         const productContainer = document.getElementById('product-list');
         const emptyMsgDiv = document.getElementById('product-list-empty');
-        const cartContainer = document.getElementById('cart-items');
-        const cartTotalSpan = document.getElementById('cart-total');
-        const paymentMethodSelect = document.getElementById('payment-method');
-        const orderTypeSelect = document.getElementById('order-type');
-        const tableNumberContainer = document.getElementById('table-number-container');
-        const tableNumberInput = document.getElementById('table-number');
-        const customerNameInput = document.getElementById('customer-name');
-        const customerPhoneInput = document.getElementById('customer-phone');
-        const customerEmailInput = document.getElementById('customer-email');
-        const activeCustomerLabel = document.getElementById('active-customer-label');
-        const tabBadge = document.getElementById('tab-badge');
-        const tab1Btn = document.getElementById('tab1-btn');
-        const tab2Btn = document.getElementById('tab2-btn');
-        const checkoutBtn = document.getElementById('checkout-btn');
-        const sendToKitchenBtn = document.getElementById('send-to-kitchen-btn');
-        const searchInput = document.getElementById('product-search');
         const customerSearchInput = document.getElementById('customer-search');
         const suggestionsDiv = document.getElementById('customer-suggestions');
         const customerInfoDiv = document.getElementById('customer-info');
@@ -390,7 +694,6 @@
         const pointsRedeemSection = document.getElementById('points-redeem-section');
         const redeemPointsInput = document.getElementById('redeem-points-input');
         const applyPointsBtn = document.getElementById('apply-points-btn');
-        const offlinePointsWarning = document.getElementById('offline-points-warning');
         const scannerHint = document.getElementById('search-scanner-hint');
         const loadingMoreDiv = document.getElementById('loading-more');
         const connectionStatus = document.getElementById('connection-status');
@@ -412,12 +715,13 @@
         const cachedCountSpan = document.getElementById('cached-count');
         const expectedCountSpan = document.getElementById('expected-count');
         const catalogBadgeIcon = document.getElementById('catalog-badge-icon');
-        
-        // New Feature DOM Refs
         const kioskModeBtn = document.getElementById('kiosk-mode-btn');
         const cameraScanBtn = document.getElementById('camera-scan-btn');
         const cameraModal = document.getElementById('camera-modal');
         const closeCameraBtn = document.getElementById('close-camera-btn');
+        const sendToKitchenBtn = document.getElementById('send-to-kitchen-btn');
+        const mobileKitchenBtn = document.getElementById('mobile-kitchen-btn');
+        const successShareModal = document.getElementById('success-share-modal');
 
         const tabState = {
             1: { cart: [], paymentMethod: 'cash', orderType: 'takeaway', tableNumber: '', customerName: '', customerPhone: '', customerEmail: '', loyaltyUserId: null, pointsBalance: 0, pointsRedeemed: 0 },
@@ -427,14 +731,13 @@
         function showToast(msg, type = 'success') {
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
-            toast.className = `px-4 py-2 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : type === 'error' ? 'bg-red-600' : 'bg-blue-600'} mb-2 text-sm flex items-center gap-2`;
+            toast.className = `px-4 py-3 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : type === 'error' ? 'bg-red-600' : 'bg-blue-600'} mb-2 text-sm flex items-center gap-2`;
             const icon = type === 'success' ? 'fa-circle-check' : type === 'error' ? 'fa-circle-exclamation' : 'fa-info-circle';
             toast.innerHTML = `<i class="fa-solid ${icon}"></i> ${msg}`;
             container.appendChild(toast);
             setTimeout(() => toast.remove(), 3800);
         }
 
-        // ---------- API Call ----------
         async function apiCall(endpoint, method = 'GET', body = null, retry = true, signal = null) {
             const headers = { 'Content-Type': 'application/json' };
             if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -478,66 +781,106 @@
         window.addEventListener('online', () => { updateConnectionStatus(); syncPendingOrders(); flushAuditQueue(); maybeAutoSyncCatalog(); });
         window.addEventListener('offline', updateConnectionStatus);
 
-        // ================================================================
-        //  NEW: KIOSK MODE (SELF-SERVICE / QUEUE BUSTING)
-        // ================================================================
+        // ==========================================
+        // MOBILE UI TOGGLES
+        // ==========================================
+        function openMobileCart() {
+            mobileCartSheet.classList.add('active');
+        }
+        function closeMobileCart() {
+            mobileCartSheet.classList.remove('active');
+        }
+        function toggleMobileCustomerForm() {
+            mobileCustomerForm.classList.toggle('hidden');
+        }
+
+        // Initialization based on Org Vertical
+        if (ORG_VERTICAL === 'food') {
+            desktopRestaurantFields.classList.remove('hidden');
+            mobileRestaurantFields.classList.remove('hidden');
+            sendToKitchenBtn.classList.remove('hidden');
+            mobileKitchenBtn.classList.remove('hidden');
+            desktopCheckoutBtn.classList.replace('w-full', 'flex-1');
+            mobileCheckoutBtn.classList.replace('w-full', 'flex-1');
+        }
+
+        // Payment Chips Logic
+        document.querySelectorAll('.payment-chip').forEach(chip => {
+            chip.addEventListener('click', (e) => {
+                const parent = e.target.closest('.flex');
+                parent.querySelectorAll('.payment-chip').forEach(c => c.classList.remove('active'));
+                e.target.classList.add('active');
+                tabState[activeTab].paymentMethod = e.target.dataset.method;
+                document.querySelectorAll(`.payment-chip[data-method="${e.target.dataset.method}"]`).forEach(c => c.classList.add('active'));
+                document.querySelectorAll(`.payment-chip:not([data-method="${e.target.dataset.method}"])`).forEach(c => c.classList.remove('active'));
+            });
+        });
+
+        // ==========================================
+        // KIOSK MODE
+        // ==========================================
         kioskModeBtn.addEventListener('click', () => {
             document.body.classList.toggle('kiosk-mode');
             const isKiosk = document.body.classList.contains('kiosk-mode');
             if (isKiosk) {
                 kioskModeBtn.innerHTML = '<i class="fa-solid fa-xmark"></i> Exit Kiosk';
                 kioskModeBtn.classList.replace('bg-gray-800', 'bg-red-600');
-                // Auto-focus search for immediate scanning
-                searchInput.focus();
-                showToast('Kiosk Mode Activated: Customer Self-Service', 'info');
+                document.getElementById('product-search').focus();
+                showToast('Kiosk Mode: Self-Service Active', 'info');
             } else {
-                kioskModeBtn.innerHTML = '<i class="fa-solid fa-tablet-screen-button"></i> Kiosk Mode';
+                kioskModeBtn.innerHTML = '<i class="fa-solid fa-tablet-screen-button"></i> Kiosk';
                 kioskModeBtn.classList.replace('bg-red-600', 'bg-gray-800');
             }
         });
 
-        // ================================================================
-        //  NEW: ORDER TYPE & TABLE NUMBER (TABLE-SIDE)
-        // ================================================================
-        orderTypeSelect.addEventListener('change', (e) => {
-            const state = tabState[activeTab];
-            state.orderType = e.target.value;
-            if (state.orderType === 'dine-in') {
-                tableNumberContainer.classList.remove('hidden');
-                sendToKitchenBtn.classList.remove('hidden');
-                checkoutBtn.classList.replace('w-full', 'flex-1');
+        // ==========================================
+        // ORDER TYPE & TABLE NUMBER
+        // ==========================================
+        function handleOrderTypeChange(val) {
+            tabState[activeTab].orderType = val;
+            if (val === 'dine-in') {
+                desktopTableContainer.classList.remove('hidden');
+                mobileTableContainer.classList.remove('hidden');
             } else {
-                tableNumberContainer.classList.add('hidden');
-                sendToKitchenBtn.classList.add('hidden');
-                checkoutBtn.classList.replace('flex-1', 'w-full');
+                desktopTableContainer.classList.add('hidden');
+                mobileTableContainer.classList.add('hidden');
             }
-        });
+        }
+        desktopOrderTypeSelect.addEventListener('change', (e) => { handleOrderTypeChange(e.target.value); mobileOrderTypeSelect.value = e.target.value; });
+        mobileOrderTypeSelect.addEventListener('change', (e) => { handleOrderTypeChange(e.target.value); desktopOrderTypeSelect.value = e.target.value; });
+        desktopTableInput.addEventListener('input', (e) => { tabState[activeTab].tableNumber = e.target.value; mobileTableInput.value = e.target.value; });
+        mobileTableInput.addEventListener('input', (e) => { tabState[activeTab].tableNumber = e.target.value; desktopTableInput.value = e.target.value; });
 
-        tableNumberInput.addEventListener('input', (e) => {
-            tabState[activeTab].tableNumber = e.target.value;
-        });
-
-        // ================================================================
-        //  NEW: CAMERA HARDWARE INTEGRATION (HTML5 QR CODE)
-        // ================================================================
+        // ==========================================
+        // CONTINUOUS CAMERA SCANNING
+        // ==========================================
         cameraScanBtn.addEventListener('click', () => {
             cameraModal.classList.add('active');
-            if (!html5QrCode) {
-                html5QrCode = new Html5Qrcode("reader");
-            }
+            if (!html5QrCode) { html5QrCode = new Html5Qrcode("reader"); }
             html5QrCode.start(
                 { facingMode: "environment" },
                 { fps: 10, qrbox: { width: 250, height: 250 } },
                 (decodedText) => {
-                    // Success
-                    html5QrCode.stop().then(() => {
-                        cameraModal.classList.remove('active');
-                        searchInput.value = decodedText;
-                        searchInput.dispatchEvent(new Event('input'));
-                        showToast(`Scanned: ${decodedText}`, 'success');
-                    }).catch(err => console.error(err));
+                    const now = Date.now();
+                    if (decodedText === lastScannedCode && (now - lastScanTime) < 1500) return;
+                    lastScannedCode = decodedText;
+                    lastScanTime = now;
+
+                    const toastDiv = document.getElementById('scan-success-toast');
+                    toastDiv.classList.remove('hidden');
+                    setTimeout(() => toastDiv.classList.add('hidden'), 1000);
+
+                    searchInput.value = decodedText;
+                    searchInput.dispatchEvent(new Event('input'));
+                    
+                    setTimeout(() => {
+                        if (products.length === 1) {
+                            const p = products[0];
+                            addToCart(p.id, p.description || 'Product', p.price_naira || 0, p.current_qty || 0, p.sku || p.item_code);
+                        }
+                    }, 500);
                 },
-                (errorMessage) => { /* ignore per-frame errors */ }
+                (errorMessage) => { }
             ).catch(err => {
                 showToast(`Camera Error: ${err}`, 'error');
                 cameraModal.classList.remove('active');
@@ -546,15 +889,39 @@
 
         closeCameraBtn.addEventListener('click', () => {
             if (html5QrCode && html5QrCode.isScanning) {
-                html5QrCode.stop().then(() => cameraModal.classList.remove('active'));
-            } else {
-                cameraModal.classList.remove('active');
-            }
+                html5QrCode.stop().then(() => {
+                    cameraModal.classList.remove('active');
+                    lastScannedCode = null;
+                    lastScanTime = 0;
+                });
+            } else { cameraModal.classList.remove('active'); }
         });
 
-        // ================================================================
-        //  CATALOG SYNC & SEARCH LOGIC
-        // ================================================================
+        // ==========================================
+        // WHATSAPP RECEIPT SHARING
+        // ==========================================
+        function shareReceiptWhatsApp(receiptData) {
+            const orgName = localStorage.getItem('org_name') || 'Kevs Digital';
+            let text = `*${orgName}*\nReceipt: ${receiptData.receiptNumber}\nDate: ${new Date().toLocaleString()}\n\n`;
+            receiptData.items.forEach(item => { text += `${item.quantity}x ${item.name} - ₦${item.subtotal.toLocaleString()}\n`; });
+            text += `\nSubtotal: ₦${receiptData.subtotal.toLocaleString()}\n`;
+            if (receiptData.discount > 0) text += `Discount: -₦${receiptData.discount.toLocaleString()}\n`;
+            text += `*TOTAL: ₦${receiptData.grandTotal.toLocaleString()}*\n\n`;
+            text += `Payment Method: ${receiptData.payment.method.toUpperCase()}\n`;
+            if (receiptData.customer.name) text += `Customer: ${receiptData.customer.name}\n`;
+            text += `\nThank you for shopping with us!`;
+            window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+        }
+
+        document.getElementById('share-whatsapp-btn').addEventListener('click', () => {
+            const receiptStr = document.getElementById('success-share-modal').dataset.receipt;
+            if (receiptStr) shareReceiptWhatsApp(JSON.parse(receiptStr));
+            successShareModal.classList.add('hidden');
+        });
+
+        // ==========================================
+        // SEARCH & CATALOG SYNC
+        // ==========================================
         function normalizeProduct(p) {
             const normalized = {
                 id: p.id, description: p.description || '', item_code: p.item_code || '', sku: p.sku || p.item_code || '',
@@ -568,7 +935,7 @@
 
         async function refreshCachedCount() {
             try {
-                const count = await db.products.count();
+                const count = await DB.getProductCount();
                 const expected = Number(localStorage.getItem(CATALOG_EXPECTED_KEY) || 0);
                 if (cachedCountSpan) cachedCountSpan.innerText = count.toLocaleString();
                 if (expectedCountSpan) expectedCountSpan.innerText = expected > 0 ? expected.toLocaleString() : '?';
@@ -602,15 +969,19 @@
                 const firstItems = (firstRes.items || []).map(normalizeProduct);
                 if (firstItems.length === 0) { showToast('Catalog is empty', 'info'); catalogSyncBanner.classList.add('hidden'); return; }
                 if (total > 0) { localStorage.setItem(CATALOG_EXPECTED_KEY, String(total)); await refreshCachedCount(); }
-                await db.products.bulkPut(firstItems);
+                await DB.saveProducts(firstItems);
                 firstItems.forEach(p => seenIds.add(p.id));
                 processed = firstItems.length;
+                catalogProgressBar.style.width = `${Math.min(100, Math.round((processed / total) * 100))}%`;
+                catalogProgressText.textContent = `${processed} / ${total}`;
+                await refreshCachedCount();
+
                 let offset = CATALOG_PAGE_SIZE;
                 while (true) {
                     let pageRes = await apiCall(`/inventory/pos?limit=${CATALOG_PAGE_SIZE}&offset=${offset}&skip_count=true`, 'GET');
                     const items = (pageRes.items || []).map(normalizeProduct);
                     if (items.length === 0) break;
-                    await db.products.bulkPut(items);
+                    await DB.saveProducts(items);
                     items.forEach(p => seenIds.add(p.id));
                     processed += items.length; offset += CATALOG_PAGE_SIZE;
                     catalogProgressBar.style.width = `${Math.min(100, Math.round((processed / total) * 100))}%`;
@@ -618,9 +989,11 @@
                     await refreshCachedCount();
                 }
                 if (total === 0 && processed > 0) { localStorage.setItem(CATALOG_EXPECTED_KEY, String(processed)); total = processed; }
-                const staleIds = [];
-                await db.products.each(p => { if (!seenIds.has(p.id)) staleIds.push(p.id); });
-                if (staleIds.length) await db.products.bulkDelete(staleIds);
+                
+                const allCached = await DB.getAllProducts();
+                const staleIds = allCached.filter(p => !seenIds.has(p.id)).map(p => p.id);
+                if (staleIds.length) await DB.deleteProducts(staleIds);
+                
                 await refreshCachedCount();
                 localStorage.setItem(CATALOG_LAST_SYNC_KEY, new Date().toISOString());
                 showToast(`✅ Catalog ready offline: ${processed.toLocaleString()} products`, 'success');
@@ -636,22 +1009,10 @@
         }
 
         async function searchOfflineCatalog(term, offset, limit) {
-            const lowerTerm = term.toLowerCase();
-            let collection = db.products.where('description').startsWithIgnoreCase(term).or('item_code').startsWithIgnoreCase(term).or('sku').startsWithIgnoreCase(term).or('search_tokens').startsWith(lowerTerm);
-            let total = await collection.count();
-            if (total > 0) return { items: await collection.offset(offset).limit(limit).toArray(), total };
-            if (term.length < 3) return { items: [], total: 0 };
-            let skipped = 0, matched = [], stoppedEarly = false;
-            try {
-                await db.products.each(p => {
-                    const haystack = `${p.description || ''} ${p.item_code || ''} ${p.sku || ''}`.toLowerCase();
-                    if (!haystack.includes(lowerTerm)) return;
-                    if (skipped < offset) { skipped++; return; }
-                    matched.push(p);
-                    if (matched.length >= limit) { stoppedEarly = true; throw { _break: true }; }
-                });
-            } catch (e) { if (!e || !e._break) throw e; }
-            return { items: matched, total: skipped + matched.length + (stoppedEarly ? 1 : 0) };
+            const result = await DB.searchProducts(term, offset, limit);
+            if (result.isDexie) return result; // Dexie returns { items, total }
+            // SQLite returns array, we need to fake total for pagination
+            return { items: result, total: result.length };
         }
 
         async function loadPOSProducts(reset = true) {
@@ -670,7 +1031,7 @@
             const offset = (posPage - 1) * POS_PAGE_SIZE;
             try {
                 let items = [], total = 0;
-                const cachedCount = await db.products.count();
+                const cachedCount = await DB.getProductCount();
                 const expectedCount = Number(localStorage.getItem(CATALOG_EXPECTED_KEY) || 0);
                 const cacheReady = expectedCount > 0 && cachedCount >= expectedCount;
                 const useLocal = cacheReady || !isOnline;
@@ -680,7 +1041,7 @@
                     const url = `/inventory/pos?limit=${POS_PAGE_SIZE}&offset=${offset}&q=${encodeURIComponent(trimmed)}`;
                     const data = await apiCall(url, 'GET', null, true, abortController.signal);
                     items = data.items || []; total = data.total || 0;
-                    if (items.length > 0) { await db.products.bulkPut(items.map(normalizeProduct)); refreshCachedCount(); }
+                    if (items.length > 0) { await DB.saveProducts(items.map(normalizeProduct)); refreshCachedCount(); }
                 }
                 posTotalItems = total; posHasMore = (offset + POS_PAGE_SIZE) < total;
                 if (reset) products = items; else products = products.concat(items);
@@ -713,8 +1074,8 @@
                 const stock = p.current_qty ?? 0; const price = p.price_naira ?? 0;
                 const descSafe = escapeHtml(p.description || 'Unnamed product');
                 const card = document.createElement('button');
-                card.className = 'product-card bg-gray-50 rounded-lg text-left hover:bg-blue-50 border border-gray-200 transition shadow-sm flex flex-col';
-                card.innerHTML = `<span class="name">${descSafe}</span><span class="sku">📟 ${escapeHtml(skuDisplay)}</span><span class="price">₦${price.toLocaleString()}</span><span class="stock">📦 ${stock} left</span>`;
+                card.className = 'product-card bg-gray-50 rounded-xl text-left hover:bg-blue-50 border border-gray-200 transition shadow-sm flex flex-col p-3';
+                card.innerHTML = `<span class="name font-bold text-sm truncate w-full">${descSafe}</span><span class="sku text-xs text-gray-500 mt-1">📟 ${escapeHtml(skuDisplay)}</span><span class="price font-bold mt-2 text-base">₦${price.toLocaleString()}</span><span class="stock text-xs text-gray-400 mt-1">📦 ${stock} left</span>`;
                 card.onclick = () => addToCart(p.id, p.description || 'Product', price, stock, skuDisplay);
                 productContainer.appendChild(card);
             });
@@ -729,7 +1090,8 @@
             observer.observe(sentinel);
         }
 
-        // ---------- Hardware Scanner (Bluetooth) ----------
+        // Search Input (Hardware Scanner)
+        const searchInput = document.getElementById('product-search');
         let scanBuffer = '', scanTimer = null, isScanning = false, lastKeyTime = 0, searchDebounceTimer = null;
 
         searchInput.addEventListener('input', function(e) {
@@ -749,9 +1111,7 @@
                 const now = Date.now(); const timeDiff = lastKeyTime ? now - lastKeyTime : 0; lastKeyTime = now;
                 if (timeDiff < 60 && timeDiff > 0) {
                     e.preventDefault();
-                    if (!isScanning) {
-                        isScanning = true; scanBuffer = ''; searchInput.classList.add('scanner-active'); scannerHint.classList.remove('hidden');
-                    }
+                    if (!isScanning) { isScanning = true; scanBuffer = ''; searchInput.classList.add('scanner-active'); scannerHint.classList.remove('hidden'); }
                     scanBuffer += e.key;
                     clearTimeout(scanTimer);
                     scanTimer = setTimeout(async () => {
@@ -787,7 +1147,7 @@
             }
         });
 
-        // ---------- Customer Search ----------
+        // Customer Search
         function filterCustomers(searchText) {
             if (!searchText.trim()) return [];
             const term = searchText.trim().toLowerCase();
@@ -803,8 +1163,8 @@
             suggestionsDiv.classList.remove('hidden');
             suggestionsDiv.innerHTML = matches.map(c => {
                 const fullName = `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'No name';
-                return `<div class="customer-suggestion px-3 py-2 border-b last:border-0 text-sm hover:bg-blue-50" data-user-id="${c.id}" data-name="${escapeAttr(fullName)}" data-phone="${escapeAttr(c.phone || '')}" data-email="${escapeAttr(c.email || '')}" data-points="${c.loyalty_points || 0}">
-                    <div class="font-medium">${escapeHtml(fullName)}</div><div class="text-xs text-gray-500">${escapeHtml(c.phone || '')} · ${escapeHtml(c.email || '')}</div></div>`;
+                return `<div class="customer-suggestion px-3 py-3 border-b last:border-0 text-sm hover:bg-blue-50" data-user-id="${c.id}" data-name="${escapeAttr(fullName)}" data-phone="${escapeAttr(c.phone || '')}" data-email="${escapeAttr(c.email || '')}" data-points="${c.loyalty_points || 0}">
+                    <div class="font-bold">${escapeHtml(fullName)}</div><div class="text-xs text-gray-500">${escapeHtml(c.phone || '')} · ${escapeHtml(c.email || '')}</div></div>`;
             }).join('');
             document.querySelectorAll('.customer-suggestion').forEach(el => {
                 el.addEventListener('click', () => {
@@ -820,12 +1180,21 @@
             const state = tabState[activeTab];
             state.loyaltyUserId = userId; state.pointsBalance = points; state.pointsRedeemed = 0;
             state.customerName = name; state.customerPhone = phone; state.customerEmail = email;
-            customerNameInput.value = name; customerPhoneInput.value = phone; customerEmailInput.value = email;
-            customerNameDisplay.innerText = name; customerPointsSpan.innerText = points; customerInfoDiv.classList.remove('hidden');
+            
+            document.getElementById('desktop-customer-name').value = name; 
+            document.getElementById('desktop-customer-phone').value = phone; 
+            document.getElementById('desktop-customer-email').value = email;
+            customerInfoDiv.classList.remove('hidden');
+            
+            document.getElementById('mobile-customer-name').value = name;
+            document.getElementById('mobile-customer-phone').value = phone;
+            document.getElementById('mobile-customer-email').value = email;
+
             if (points > 0 && isOnline) { pointsRedeemSection.classList.remove('hidden'); offlinePointsWarning.classList.add('hidden'); redeemPointsInput.max = points; redeemPointsInput.value = ''; } 
             else if (points > 0 && !isOnline) { pointsRedeemSection.classList.add('hidden'); offlinePointsWarning.classList.remove('hidden'); } 
             else { pointsRedeemSection.classList.add('hidden'); offlinePointsWarning.classList.add('hidden'); }
-            showToast(`Customer selected: ${name} (${points} points)`, 'success'); renderActiveCart();
+            showToast(`Customer selected: ${name}`, 'success'); 
+            renderActiveCart();
         }
 
         async function loadCustomers() {
@@ -833,30 +1202,30 @@
                 const data = await apiCall('/organisations/me/users');
                 allCustomers = data.users || [];
                 for (const c of allCustomers) {
-                    await db.customers.put({ id: c.id, first_name: c.first_name, last_name: c.last_name, phone: c.phone, email: c.email, loyalty_points: c.loyalty_points || 0 });
+                    await DB.saveCustomer({ id: c.id, first_name: c.first_name, last_name: c.last_name, phone: c.phone, email: c.email, loyalty_points: c.loyalty_points || 0 });
                 }
             } catch (err) {
-                try { allCustomers = await db.customers.toArray(); } catch (_) { allCustomers = []; }
+                try { allCustomers = await DB.getCustomers(); } catch (_) { allCustomers = []; }
             }
         }
 
         async function getAvailableStock(productId, fallbackStock) {
-            try { const row = await db.products.get(productId); if (row && typeof row.current_qty === 'number') return row.current_qty; } catch (e) {}
+            try { const row = await DB.getProduct(productId); if (row && typeof row.current_qty === 'number') return row.current_qty; } catch (e) {}
             return (typeof fallbackStock === 'number') ? fallbackStock : 9999;
         }
 
-        // ---------- Cart Controls ----------
+        // Cart Logic
         window.updateCartItemQty = async function(index, newQty) {
             const state = tabState[activeTab]; const cart = state.cart; if (index < 0 || index >= cart.length) return;
             newQty = parseInt(newQty, 10); if (isNaN(newQty) || newQty < 1) newQty = 1;
             const item = cart[index]; const availableStock = await getAvailableStock(item.id, item.stock);
-            if (newQty > availableStock) { showToast(`⚠️ Only ${availableStock} left for "${item.name}"`, 'error'); newQty = availableStock; }
+            if (newQty > availableStock) { showToast(`⚠️ Only ${availableStock} left`, 'error'); newQty = availableStock; }
             item.qty = newQty; renderActiveCart();
         };
         window.incrementCartItem = async function(index) {
             const state = tabState[activeTab]; const cart = state.cart; if (index < 0 || index >= cart.length) return;
             const item = cart[index]; const availableStock = await getAvailableStock(item.id, item.stock);
-            if (item.qty + 1 > availableStock) { showToast(`⚠️ Only ${availableStock} left for "${item.name}"`, 'error'); return; }
+            if (item.qty + 1 > availableStock) { showToast(`⚠️ Only ${availableStock} left`, 'error'); return; }
             item.qty++; renderActiveCart();
         };
         window.decrementCartItem = function(index) {
@@ -871,160 +1240,85 @@
             const state = tabState[activeTab]; const cart = state.cart; const existing = cart.find(i => i.id === productId);
             const availableStock = await getAvailableStock(productId, stock);
             if (existing) {
-                if (existing.qty + 1 > availableStock) { showToast(`⚠️ Only ${availableStock} left for "${productName}"`, 'error'); return; }
+                if (existing.qty + 1 > availableStock) { showToast(`⚠️ Only ${availableStock} left`, 'error'); return; }
                 existing.qty++;
             } else {
-                if (1 > availableStock) { showToast(`❌ "${productName}" out of stock`, 'error'); return; }
+                if (1 > availableStock) { showToast(`❌ Out of stock`, 'error'); return; }
                 cart.push({ id: productId, name: productName, price: price, qty: 1, sku: skuLabel, stock: availableStock });
             }
-            renderActiveCart(); showToast(`➕ Added ${productName}`, 'success');
+            renderActiveCart(); 
         };
 
         function renderActiveCart() {
             const state = tabState[activeTab]; const cart = state.cart; const pointsRedeemed = state.pointsRedeemed || 0;
-            if (!cartContainer) return; let subtotal = 0; let cartHtml = '';
+            let subtotal = 0; let cartHtml = '';
             cart.forEach((item, idx) => {
                 const itemTotal = item.price * item.qty; subtotal += itemTotal;
-                cartHtml += `<div class="flex items-center justify-between border-b pb-2 hover:bg-gray-50 px-1 rounded gap-2">
-                    <div class="flex-1 min-w-0"><div class="cart-item-name truncate">${escapeHtml(item.name)}</div><div class="cart-item-price text-gray-500">₦${item.price.toLocaleString()}</div></div>
-                    <div class="flex items-center gap-1 flex-shrink-0">
+                cartHtml += `<div class="flex items-center justify-between border-b pb-3 mb-3 hover:bg-gray-50 px-1 rounded gap-2">
+                    <div class="flex-1 min-w-0"><div class="font-bold text-sm truncate">${escapeHtml(item.name)}</div><div class="text-xs text-gray-500">₦${item.price.toLocaleString()}</div></div>
+                    <div class="flex items-center gap-2 flex-shrink-0">
                         <button onclick="decrementCartItem(${idx})" class="qty-btn">−</button>
                         <input type="number" min="1" value="${item.qty}" class="qty-input" onchange="updateCartItemQty(${idx}, this.value)" onfocus="this.select()">
                         <button onclick="incrementCartItem(${idx})" class="qty-btn">+</button>
                     </div>
-                    <div class="font-semibold text-sm ml-1 w-16 text-right flex-shrink-0">₦${itemTotal.toLocaleString()}</div>
-                    <button onclick="removeCartItem(${idx})" class="text-red-500 hover:text-red-700 text-sm w-6 h-6 rounded-full hover:bg-red-50 flex items-center justify-center flex-shrink-0"><i class="fa-regular fa-trash-can"></i></button>
+                    <div class="font-bold text-sm ml-2 w-16 text-right flex-shrink-0">₦${itemTotal.toLocaleString()}</div>
+                    <button onclick="removeCartItem(${idx})" class="text-red-500 hover:text-red-700 p-2 flex-shrink-0"><i class="fa-regular fa-trash-can"></i></button>
                 </div>`;
             });
+            
             let finalTotal = subtotal;
             if (pointsRedeemed > 0) {
                 const discount = pointsRedeemed;
                 if (discount > finalTotal) { state.pointsRedeemed = Math.min(finalTotal, pointsRedeemed); finalTotal = 0; } 
                 else { finalTotal = subtotal - discount; }
-                cartHtml += `<div class="flex justify-between items-center text-green-700 border-t pt-2 mt-1"><div class="text-sm font-medium">🎁 Points Discount (${state.pointsRedeemed} pts)</div><div class="font-semibold">-₦${discount.toLocaleString()}</div></div>`;
+                cartHtml += `<div class="flex justify-between items-center text-green-700 border-t pt-2 mt-1 px-2"><div class="text-sm font-medium">🎁 Points (-${state.pointsRedeemed} pts)</div><div class="font-bold">-₦${discount.toLocaleString()}</div></div>`;
             }
-            if (cart.length === 0) cartContainer.innerHTML = `<div class="text-center text-gray-400 py-6"><i class="fa-regular fa-receipt text-2xl"></i><p class="text-sm mt-1">Cart is empty</p></div>`;
-            else cartContainer.innerHTML = cartHtml;
-            cartTotalSpan.innerText = `₦${finalTotal.toLocaleString()}`;
-        }
-
-        function syncUIWithActiveTab() {
-            const state = tabState[activeTab];
-            renderActiveCart(); paymentMethodSelect.value = state.paymentMethod;
-            orderTypeSelect.value = state.orderType || 'takeaway';
-            tableNumberInput.value = state.tableNumber || '';
-            if (state.orderType === 'dine-in') { tableNumberContainer.classList.remove('hidden'); sendToKitchenBtn.classList.remove('hidden'); checkoutBtn.classList.replace('w-full', 'flex-1'); } 
-            else { tableNumberContainer.classList.add('hidden'); sendToKitchenBtn.classList.add('hidden'); checkoutBtn.classList.replace('flex-1', 'w-full'); }
-            customerNameInput.value = state.customerName; customerPhoneInput.value = state.customerPhone; customerEmailInput.value = state.customerEmail;
-            activeCustomerLabel.innerText = activeTab === 1 ? 'Customer A' : 'Customer B'; tabBadge.innerText = activeTab === 1 ? 'Tab 1 active' : 'Tab 2 active';
-            if (activeTab === 1) { tab1Btn.classList.add('tab-active'); tab1Btn.classList.remove('tab-inactive'); tab2Btn.classList.add('tab-inactive'); tab2Btn.classList.remove('tab-active'); } 
-            else { tab2Btn.classList.add('tab-active'); tab2Btn.classList.remove('tab-inactive'); tab1Btn.classList.add('tab-inactive'); tab1Btn.classList.remove('tab-active'); }
-            if (state.loyaltyUserId && state.pointsBalance > 0) {
-                customerInfoDiv.classList.remove('hidden'); customerNameDisplay.innerText = state.customerName || 'Customer'; customerPointsSpan.innerText = state.pointsBalance;
-                if (isOnline) { pointsRedeemSection.classList.remove('hidden'); offlinePointsWarning.classList.add('hidden'); redeemPointsInput.max = state.pointsBalance; } 
-                else { pointsRedeemSection.classList.add('hidden'); offlinePointsWarning.classList.remove('hidden'); }
-            } else { customerInfoDiv.classList.add('hidden'); pointsRedeemSection.classList.add('hidden'); offlinePointsWarning.classList.add('hidden'); }
-        }
-
-        function printReceipt(receiptData, isKitchenTicket = false) {
-            const printArea = document.getElementById('receipt-print-area');
-            const orgName = localStorage.getItem('org_name') || 'Kevs Digital';
-            const now = new Date(); const dateStr = now.toLocaleString();
-            let itemsHtml = '';
-            receiptData.items.forEach(item => { itemsHtml += `<div class="receipt-item"><span>${escapeHtml(item.name)} x ${item.quantity}</span><span>${isKitchenTicket ? '' : '₦' + item.subtotal.toFixed(2)}</span></div>`; });
             
-            let receiptHtml = '';
-            if (isKitchenTicket) {
-                receiptHtml = `<div class="receipt-header" style="font-size:20px; margin-bottom:12px;">*** KITCHEN TICKET ***</div>
-                    <div style="text-align:center; font-size:14px; font-weight:bold;">Order: ${receiptData.receiptNumber}</div>
-                    <div style="text-align:center; font-size:16px; font-weight:bold; margin-bottom:8px;">Table: ${escapeHtml(receiptData.tableNumber || 'N/A')}</div>
-                    <div class="receipt-divider" style="border-top: 2px dashed #000;"></div>
-                    ${itemsHtml}
-                    <div class="receipt-divider" style="border-top: 2px dashed #000;"></div>
-                    <div class="receipt-footer" style="font-size:12px;">Prepare Immediately</div>`;
+            if (cart.length === 0) {
+                desktopCartContainer.innerHTML = `<div class="text-center text-gray-400 py-6"><i class="fa-regular fa-receipt text-3xl mb-2"></i><p class="text-sm">Cart is empty</p></div>`;
+                mobileCartContainer.innerHTML = `<div class="text-center text-gray-400 py-10"><i class="fa-regular fa-receipt text-4xl mb-3"></i><p class="text-base">Cart is empty</p></div>`;
             } else {
-                receiptHtml = `<div class="receipt-header">${orgName}</div>
-                    <div style="text-align:center;font-size:10px;">Receipt #${receiptData.receiptNumber}</div>
-                    <div style="text-align:center;font-size:10px;">Cashier: ${escapeHtml(receiptData.cashierName || 'Cashier')}</div>
-                    ${receiptData.orderType === 'dine-in' ? `<div style="text-align:center;font-size:12px;font-weight:bold;">Dine-in: Table ${escapeHtml(receiptData.tableNumber)}</div>` : ''}
-                    <div style="text-align:center;font-size:10px;">${dateStr}</div>
-                    <div class="receipt-divider"></div>${itemsHtml}<div class="receipt-divider"></div>
-                    <div class="receipt-item"><span>Subtotal</span><span>₦${receiptData.subtotal.toFixed(2)}</span></div>
-                    ${receiptData.discount > 0 ? `<div class="receipt-item"><span>Discount</span><span>-₦${receiptData.discount.toFixed(2)}</span></div>` : ''}
-                    ${receiptData.tax > 0 ? `<div class="receipt-item"><span>Tax</span><span>₦${receiptData.tax.toFixed(2)}</span></div>` : ''}
-                    <div class="receipt-item receipt-total"><span>TOTAL</span><span>₦${receiptData.grandTotal.toFixed(2)}</span></div>
-                    <div class="receipt-divider"></div>
-                    <div style="text-align:center;font-size:10px;">Payment: ${receiptData.payment.method}</div>
-                    ${receiptData.customer.name ? `<div style="text-align:center;font-size:10px;">Customer: ${escapeHtml(receiptData.customer.name)}</div>` : ''}
-                    ${receiptData.customer.pointsAfter !== undefined ? `<div style="text-align:center;font-size:10px;font-weight:bold;">Loyalty Points: ${receiptData.customer.pointsAfter}</div>` : ''}
-                    <div class="receipt-divider"></div><div class="receipt-footer">Thank you for shopping with us!</div>`;
+                desktopCartContainer.innerHTML = cartHtml;
+                mobileCartContainer.innerHTML = cartHtml;
             }
-            printArea.innerHTML = receiptHtml; printArea.style.display = 'block'; window.print();
-            setTimeout(() => { printArea.style.display = 'none'; printArea.innerHTML = ''; }, 1000);
-        }
 
-        async function emitAuditEvent(eventType, payload, localCreatedAt = null) {
-            const event = { event_type: eventType, event_version: 1, payload: payload, local_created_at: localCreatedAt || new Date().toISOString(), retryCount: 0 };
-            if (navigator.onLine) { try { await apiCall('/api/audit/event', 'POST', event); return; } catch (e) {} }
-            try { await db.auditQueue.add(event); } catch (_) {}
-        }
-
-        async function flushAuditQueue() {
-            if (!navigator.onLine) return; let pending = [];
-            try { pending = await db.auditQueue.toArray(); } catch (_) { return; }
-            if (pending.length === 0) return;
-            const events = pending.map(e => ({ event_type: e.event_type, event_version: e.event_version, payload: e.payload, local_created_at: e.local_created_at }));
-            try { await apiCall('/api/audit/events', 'POST', { events }); await db.auditQueue.clear(); } catch (err) {}
-        }
-
-        // ================================================================
-        //  NEW: SEND TO KITCHEN (TABLE-SIDE)
-        // ================================================================
-        sendToKitchenBtn.addEventListener('click', async () => {
-            const state = tabState[activeTab];
-            if (state.cart.length === 0) { showToast('🛒 Cart is empty.', 'error'); return; }
-            if (!state.tableNumber.trim()) { showToast('⚠️ Please enter a Table Number.', 'error'); return; }
-
-            const offlineRef = generateUUID();
-            const itemDetails = await Promise.all(state.cart.map(async item => {
-                let product = {}; try { product = (await db.products.get(item.id)) || {}; } catch (e) {}
-                return { productId: item.id, name: item.name, sku: item.sku || product.sku || '', quantity: item.qty, unitPrice: item.price, subtotal: item.price * item.qty, costPrice: product.cost_price_naira || 0, handlingCategory: product.handling_category || 'standard', weightKg: product.weight_kg || 0 };
-            }));
-
-            const receiptData = {
-                receiptNumber: offlineRef, tableNumber: state.tableNumber, orderType: 'dine-in',
-                customer: { name: state.customerName || '', phone: state.customerPhone || '', email: state.customerEmail || '', loyaltyId: state.loyaltyUserId || null },
-                items: itemDetails, subtotal: state.cart.reduce((sum, i) => sum + i.price * i.qty, 0), discount: 0, tax: 0, grandTotal: 0,
-                payment: { method: 'pending', reference: null }, cashierId: localStorage.getItem('user_id') || 'unknown', cashierName: localStorage.getItem('user_profile_display') || 'Cashier', location: localStorage.getItem('org_name') || 'Kevs Digital'
-            };
-
-            const order = { offlineRef, cashierId: receiptData.cashierId, createdAt: new Date().toISOString(), status: 'kitchen_pending', syncedAt: null, receiptData };
-            await upsertOrderByRef(order);
-            await db.syncQueue.add({ orderId: offlineRef, attempts: 0, lastTry: null });
-
-            printReceipt(receiptData, true); // Print Kitchen Ticket
-            showToast(`🍳 Order sent to kitchen for Table ${state.tableNumber}!`, 'success');
+            desktopTotalSpan.innerText = `₦${finalTotal.toLocaleString()}`;
+            mobileSheetTotal.innerText = `₦${finalTotal.toLocaleString()}`;
+            mobileTotalSpan.innerText = `₦${finalTotal.toLocaleString()}`;
             
-            // We do NOT clear the cart here. The waiter will collect payment later.
-            // But we mark the items as sent to avoid duplicate kitchen tickets.
-        });
+            let totalItems = cart.reduce((sum, item) => sum + item.qty, 0);
+            mobileCartCount.innerText = totalItems;
+            
+            document.getElementById('desktop-customer-label').innerText = activeTab === 1 ? 'Customer A' : 'Customer B';
+            document.getElementById('mobile-sheet-customer-label').innerText = activeTab === 1 ? 'Customer A' : 'Customer B';
+        }
 
+        // Checkout Logic
         async function processCheckout() {
             const state = tabState[activeTab]; const cart = state.cart;
-            if (cart.length === 0) { showToast('🛒 Cart is empty. Add items first.', 'error'); return; }
-            const paymentMethod = state.paymentMethod; const customerName = state.customerName.trim() || null; const customerPhone = state.customerPhone.trim() || null;
-            let customerEmail = state.customerEmail.trim() || null; const pointsRedeemed = state.pointsRedeemed || 0;
+            if (cart.length === 0) { showToast('🛒 Cart is empty.', 'error'); return; }
+            const paymentMethod = state.paymentMethod; 
+            
+            const customerName = document.getElementById('desktop-customer-name').value.trim() || document.getElementById('mobile-customer-name').value.trim() || null;
+            const customerPhone = document.getElementById('desktop-customer-phone').value.trim() || document.getElementById('mobile-customer-phone').value.trim() || null;
+            let customerEmail = document.getElementById('desktop-customer-email').value.trim() || document.getElementById('mobile-customer-email').value.trim() || null;
+            const pointsRedeemed = state.pointsRedeemed || 0;
 
             if (paymentMethod !== 'cash' && !customerEmail) { showToast('📧 Email is required for card/transfer payments', 'error'); return; }
-            if (!isOnline && paymentMethod !== 'cash') { showToast('⚠️ Offline: only cash payments are accepted', 'error'); return; }
+            if (!isOnline && paymentMethod !== 'cash') { showToast('⚠️ Offline: only cash is accepted', 'error'); return; }
 
             const itemsPayload = cart.map(i => ({ inventory_id: i.id, quantity: i.qty }));
-            const cashierId = localStorage.getItem('user_id') || 'unknown'; const cashierName = localStorage.getItem('user_profile_display') || 'Cashier';
-            const orgName = localStorage.getItem('org_name') || 'Kevs Digital'; const offlineRef = generateUUID();
-            const subtotal = cart.reduce((sum, i) => sum + i.price * i.qty, 0); const discount = pointsRedeemed; const tax = 0; const grandTotal = Math.max(0, subtotal - discount + tax);
+            const cashierId = localStorage.getItem('user_id') || 'unknown'; 
+            const cashierName = localStorage.getItem('user_profile_display') || 'Cashier';
+            const orgName = localStorage.getItem('org_name') || 'Kevs Digital'; 
+            const offlineRef = generateUUID();
+            const subtotal = cart.reduce((sum, i) => sum + i.price * i.qty, 0); 
+            const discount = pointsRedeemed; 
+            const tax = 0; 
+            const grandTotal = Math.max(0, subtotal - discount + tax);
 
             const itemDetails = await Promise.all(cart.map(async item => {
-                let product = {}; try { product = (await db.products.get(item.id)) || {}; } catch (e) {}
+                let product = {}; try { product = (await DB.getProduct(item.id)) || {}; } catch (e) {}
                 return { productId: item.id, name: item.name, sku: item.sku || product.sku || '', quantity: item.qty, unitPrice: item.price, subtotal: item.price * item.qty, costPrice: product.cost_price_naira || 0, handlingCategory: product.handling_category || 'standard', weightKg: product.weight_kg || 0 };
             }));
 
@@ -1037,16 +1331,20 @@
 
             const order = { offlineRef, cashierId, createdAt: new Date().toISOString(), status: 'pending', syncedAt: null, receiptData };
 
-            checkoutBtn.disabled = true; checkoutBtn.innerText = 'Processing...';
+            document.querySelectorAll('button[id$="-checkout-btn"]').forEach(b => { b.disabled = true; b.innerText = 'Processing...'; });
 
             async function saveOfflineAndFinish(reason) {
-                await upsertOrderByRef(order); await db.syncQueue.add({ orderId: offlineRef, attempts: 0, lastTry: null });
+                await DB.saveOrder(order); await DB.queueOrder(offlineRef);
                 for (const item of cart) {
-                    const product = await db.products.get(item.id);
-                    if (product) await db.products.update(item.id, { current_qty: Math.max(0, (product.current_qty || 0) - item.qty) });
+                    const product = await DB.getProduct(item.id);
+                    if (product) await DB.saveProducts([{ ...product, current_qty: Math.max(0, (product.current_qty || 0) - item.qty) }]);
                 }
                 state.cart = []; state.pointsRedeemed = 0; renderActiveCart();
-                printReceipt(receiptData); showToast(`✅ Order saved offline (Ref: ${offlineRef}). Will sync when online.`, 'success');
+                
+                document.getElementById('success-receipt-num').innerText = offlineRef;
+                successShareModal.dataset.receipt = JSON.stringify(receiptData);
+                successShareModal.classList.remove('hidden');
+                
                 await emitAuditEvent('sale.created', { sale_id: offlineRef, total: order.receiptData.grandTotal, payment_method: paymentMethod, offline: true, reason: reason });
             }
 
@@ -1059,51 +1357,159 @@
                 });
                 order.status = 'synced'; order.syncedAt = new Date().toISOString();
                 order.receiptData.receiptNumber = result.receipt_number || offlineRef; order.receiptData.payment.reference = result.payment_reference || null;
+                
                 if (state.loyaltyUserId) {
                     try {
                         const balanceRes = await apiCall('/loyalty/balance'); const finalPoints = balanceRes.points || 0;
-                        state.pointsBalance = finalPoints; await db.customers.update(state.loyaltyUserId, { loyalty_points: finalPoints });
-                        customerPointsSpan.innerText = finalPoints; order.receiptData.customer.pointsAfter = finalPoints;
+                        state.pointsBalance = finalPoints; await DB.updateCustomer(state.loyaltyUserId, { loyalty_points: finalPoints });
+                        order.receiptData.customer.pointsAfter = finalPoints;
                     } catch (e) { order.receiptData.customer.pointsAfter = state.pointsBalance || 0; }
                 } else order.receiptData.customer.pointsAfter = 0;
-                await upsertOrderByRef(order);
+                
+                await DB.saveOrder(order);
                 for (const item of cart) {
-                    const product = await db.products.get(item.id);
-                    if (product) await db.products.update(item.id, { current_qty: Math.max(0, (product.current_qty || 0) - item.qty) });
+                    const product = await DB.getProduct(item.id);
+                    if (product) await DB.saveProducts([{ ...product, current_qty: Math.max(0, (product.current_qty || 0) - item.qty) }]);
                 }
                 state.cart = []; state.pointsRedeemed = 0; renderActiveCart();
-                showToast(`✅ Sale complete! Receipt: ${result.receipt_number}`, 'success'); printReceipt(order.receiptData);
+                
+                document.getElementById('success-receipt-num').innerText = result.receipt_number || offlineRef;
+                successShareModal.dataset.receipt = JSON.stringify(order.receiptData);
+                successShareModal.classList.remove('hidden');
+
                 await emitAuditEvent('sale.created', { sale_id: result.sale_id || offlineRef, total: order.receiptData.grandTotal, payment_method: paymentMethod, online: true });
             } catch (err) {
                 const is4xx = err && typeof err.status === 'number' && err.status >= 400 && err.status < 500 && err.status !== 401;
                 if (is4xx) showToast(`❌ Checkout rejected: ${err.message}`, 'error');
                 else await saveOfflineAndFinish('api_error');
-            } finally { checkoutBtn.disabled = false; checkoutBtn.innerText = '✅ Complete Sale'; }
+            } finally { 
+                document.querySelectorAll('button[id$="-checkout-btn"]').forEach(b => { b.disabled = false; b.innerText = '✅ Complete Sale'; });
+                closeMobileCart();
+            }
         }
 
-        // ---------- Sync Manager ----------
+        desktopCheckoutBtn.addEventListener('click', processCheckout);
+        mobileCheckoutBtn.addEventListener('click', processCheckout);
+
+        desktopAddCustomerBtn.addEventListener('click', () => {
+            desktopCustomerForm.classList.toggle('hidden');
+        });
+
+        ['name', 'phone', 'email'].forEach(field => {
+            const dInput = document.getElementById(`desktop-customer-${field}`);
+            const mInput = document.getElementById(`mobile-customer-${field}`);
+            if (dInput && mInput) {
+                dInput.addEventListener('input', () => { mInput.value = dInput.value; });
+                mInput.addEventListener('input', () => { dInput.value = mInput.value; });
+            }
+        });
+
+        async function processKitchenTicket() {
+            const state = tabState[activeTab];
+            if (state.cart.length === 0) { showToast('🛒 Cart is empty.', 'error'); return; }
+            if (!state.tableNumber.trim()) { showToast('⚠️ Please enter a Table Number.', 'error'); return; }
+
+            const offlineRef = generateUUID();
+            const itemDetails = await Promise.all(state.cart.map(async item => {
+                let product = {}; try { product = (await DB.getProduct(item.id)) || {}; } catch (e) {}
+                return { productId: item.id, name: item.name, sku: item.sku || product.sku || '', quantity: item.qty, unitPrice: item.price, subtotal: item.price * item.qty, costPrice: product.cost_price_naira || 0, handlingCategory: product.handling_category || 'standard', weightKg: product.weight_kg || 0 };
+            }));
+
+            const receiptData = {
+                receiptNumber: offlineRef, tableNumber: state.tableNumber, orderType: 'dine-in',
+                customer: { name: state.customerName || '', phone: state.customerPhone || '', email: state.customerEmail || '', loyaltyId: state.loyaltyUserId || null },
+                items: itemDetails, subtotal: state.cart.reduce((sum, i) => sum + i.price * i.qty, 0), discount: 0, tax: 0, grandTotal: 0,
+                payment: { method: 'pending', reference: null }, cashierId: localStorage.getItem('user_id') || 'unknown', cashierName: localStorage.getItem('user_profile_display') || 'Cashier', location: localStorage.getItem('org_name') || 'Kevs Digital'
+            };
+
+            const order = { offlineRef, cashierId: receiptData.cashierId, createdAt: new Date().toISOString(), status: 'kitchen_pending', syncedAt: null, receiptData };
+            await DB.saveOrder(order);
+            await DB.queueOrder(offlineRef);
+
+            const printArea = document.getElementById('receipt-print-area');
+            let itemsHtml = '';
+            receiptData.items.forEach(item => { itemsHtml += `<div class="receipt-item"><span>${escapeHtml(item.name)} x ${item.quantity}</span><span></span></div>`; });
+            
+            printArea.innerHTML = `<div class="receipt-header" style="font-size:20px; margin-bottom:12px;">*** KITCHEN TICKET ***</div>
+                <div style="text-align:center; font-size:14px; font-weight:bold;">Order: ${receiptData.receiptNumber}</div>
+                <div style="text-align:center; font-size:16px; font-weight:bold; margin-bottom:8px;">Table: ${escapeHtml(receiptData.tableNumber || 'N/A')}</div>
+                <div class="receipt-divider" style="border-top: 2px dashed #000;"></div>
+                ${itemsHtml}
+                <div class="receipt-divider" style="border-top: 2px dashed #000;"></div>
+                <div class="receipt-footer" style="font-size:12px;">Prepare Immediately</div>`;
+            printArea.style.display = 'block'; window.print();
+            setTimeout(() => { printArea.style.display = 'none'; printArea.innerHTML = ''; }, 1000);
+
+            showToast(`🍳 Order sent to kitchen for Table ${state.tableNumber}!`, 'success');
+            
+            state.cart = [];
+            state.tableNumber = '';
+            desktopTableInput.value = ''; mobileTableInput.value = '';
+            renderActiveCart();
+            closeMobileCart();
+        }
+
+        sendToKitchenBtn.addEventListener('click', processKitchenTicket);
+        mobileKitchenBtn.addEventListener('click', processKitchenTicket);
+
+        function syncUIWithActiveTab() {
+            const state = tabState[activeTab];
+            renderActiveCart(); 
+            desktopOrderTypeSelect.value = state.orderType || 'takeaway';
+            mobileOrderTypeSelect.value = state.orderType || 'takeaway';
+            desktopTableInput.value = state.tableNumber || '';
+            mobileTableInput.value = state.tableNumber || '';
+            if (state.orderType === 'dine-in') { 
+                desktopTableContainer.classList.remove('hidden'); mobileTableContainer.classList.remove('hidden');
+            } else { 
+                desktopTableContainer.classList.add('hidden'); mobileTableContainer.classList.add('hidden');
+            }
+            
+            if (activeTab === 1) { 
+                tab1Btn.classList.add('tab-active'); tab1Btn.classList.remove('tab-inactive'); tab2Btn.classList.add('tab-inactive'); tab2Btn.classList.remove('tab-active'); 
+                document.getElementById('desktop-tab-badge').innerText = 'Tab 1 active';
+            } else { 
+                tab2Btn.classList.add('tab-active'); tab2Btn.classList.remove('tab-inactive'); tab1Btn.classList.add('tab-inactive'); tab1Btn.classList.remove('tab-active'); 
+                document.getElementById('desktop-tab-badge').innerText = 'Tab 2 active';
+            }
+        }
+
+        async function emitAuditEvent(eventType, payload, localCreatedAt = null) {
+            const event = { event_type: eventType, event_version: 1, payload: payload, local_created_at: localCreatedAt || new Date().toISOString(), retryCount: 0 };
+            if (navigator.onLine) { try { await apiCall('/api/audit/event', 'POST', event); return; } catch (e) {} }
+            try { await DB.queueAudit(event); } catch (_) {}
+        }
+
+        async function flushAuditQueue() {
+            if (!navigator.onLine) return; let pending = [];
+            try { pending = await DB.getAuditQueue(); } catch (_) { return; }
+            if (pending.length === 0) return;
+            const events = pending.map(e => ({ event_type: e.event_type || e.eventType, event_version: e.event_version || 1, payload: e.payload, local_created_at: e.local_created_at || e.createdAt }));
+            try { await apiCall('/api/audit/events', 'POST', { events }); await DB.clearAuditQueue(); } catch (err) {}
+        }
+
         async function syncPendingOrders() {
             if (!isOnline || syncInProgress) return;
-            syncInProgress = true; syncNowBtn.disabled = true; syncNowBtn.innerHTML = '<i class="fa-solid fa-spinner fa-pulse"></i> Syncing...';
+            syncInProgress = true;
+            syncNowBtn.disabled = true;
+            syncNowBtn.innerHTML = '<i class="fa-solid fa-spinner fa-pulse"></i> Syncing...';
             try {
-                const pending = await db.syncQueue.toArray();
+                const pending = await DB.getSyncQueue();
                 for (const entry of pending) {
-                    const order = await findOrderByRef(entry.orderId);
-                    if (!order) { await db.syncQueue.delete(entry.id); continue; }
-                    if (order.status === 'synced' || order.status === 'duplicate') { await db.syncQueue.delete(entry.id); continue; }
+                    const order = await DB.getOrderByRef(entry.orderId);
+                    if (!order) { await DB.removeFromSyncQueue(entry.id); continue; }
+                    if (order.status === 'synced') { await DB.removeFromSyncQueue(entry.id); continue; }
                     
-                    // Handle Kitchen Tickets separately
                     if (order.status === 'kitchen_pending') {
                         try {
                             await apiCall('/pos/terminal/kitchen-ticket', 'POST', { order_ref: order.offlineRef, table_number: order.receiptData.tableNumber, items: order.receiptData.items });
-                            await db.orders.where('offlineRef').equals(order.offlineRef).modify({ status: 'kitchen_sent', syncedAt: new Date().toISOString() });
-                            await db.syncQueue.delete(entry.id);
+                            await DB.updateOrderByRef(order.offlineRef, { status: 'kitchen_sent', syncedAt: new Date().toISOString() });
+                            await DB.removeFromSyncQueue(entry.id);
                             showToast(`Kitchen ticket ${order.offlineRef} synced`, 'success');
-                        } catch (err) { /* retry later */ }
+                        } catch (err) { }
                         continue;
                     }
 
-                    // Regular Checkouts
                     try {
                          const payload = {
                             items: order.receiptData.items.map(item => ({ inventory_id: item.productId, quantity: item.quantity })),
@@ -1112,26 +1518,26 @@
                             offline_meta: { reference: order.offlineRef, cashier_id: order.cashierId, created_at: order.createdAt }, receipt_data: order.receiptData
                         };                        
                         await apiCall('/pos/terminal/checkout', 'POST', payload);
-                        await db.orders.where('offlineRef').equals(order.offlineRef).modify({ status: 'synced', syncedAt: new Date().toISOString() });
-                        await db.syncQueue.delete(entry.id); showToast(`Order ${order.offlineRef} synced`, 'success');
+                        await DB.updateOrderByRef(order.offlineRef, { status: 'synced', syncedAt: new Date().toISOString() });
+                        await DB.removeFromSyncQueue(entry.id); showToast(`Order ${order.offlineRef} synced`, 'success');
                     } catch (err) {
                         const msg = (err && err.message) ? err.message : '';
                         if (msg.includes('duplicate') || msg.includes('already exists')) {
-                            await db.orders.where('offlineRef').equals(order.offlineRef).modify({ status: 'duplicate' }); await db.syncQueue.delete(entry.id);
-                        } else { await db.syncQueue.update(entry.id, { attempts: entry.attempts + 1, lastTry: new Date().toISOString() }); }
+                            await DB.updateOrderByRef(order.offlineRef, { status: 'duplicate' }); await DB.removeFromSyncQueue(entry.id);
+                        } else { await DB.updateSyncQueueEntry(entry.id, { attempts: entry.attempts + 1, lastTry: new Date().toISOString() }); }
                     }
                 }
                 localStorage.setItem('last_sync_time', new Date().toLocaleString());
-                await emitAuditEvent('sync.completed', { synced_count: pending.length }); await flushAuditQueue();
+                await emitAuditEvent('sync.completed', { synced_count: pending.length });
+                await flushAuditQueue();
                 if (dashboardModal.classList.contains('active')) updateDashboard();
             } catch (e) { showToast('Sync error: ' + e.message, 'error'); } 
             finally { syncInProgress = false; syncNowBtn.disabled = false; syncNowBtn.innerHTML = '<i class="fa-solid fa-rotate"></i> Sync'; }
         }
 
-        // ---------- Dashboard & History ----------
         async function updateDashboard() {
             let pending = [], allOrders = [], catalogCount = 0;
-            try { pending = await db.syncQueue.toArray(); allOrders = await db.orders.toArray(); catalogCount = await db.products.count(); } 
+            try { pending = await DB.getSyncQueue(); allOrders = await DB.getAllOrders(); catalogCount = await DB.getProductCount(); } 
             catch (e) { dashboardContent.innerHTML = `<p class="text-red-600 text-sm">Local database unavailable: ${e.message}</p>`; return; }
             const now = new Date(); const today = now.toDateString();
             const syncedToday = allOrders.filter(o => (o.status === 'synced' || o.status === 'kitchen_sent') && new Date(o.syncedAt || o.createdAt).toDateString() === today);
@@ -1153,7 +1559,8 @@
 
         async function renderHistory() {
             const cashierId = localStorage.getItem('user_id') || 'unknown';
-            const orders = await db.orders.where('cashierId').equals(cashierId).toArray();
+            const all = await DB.getAllOrders();
+            const orders = all.filter(o => o.cashierId === cashierId);
             if (orders.length === 0) { historyList.innerHTML = '<p class="text-gray-500">No orders found.</p>'; return; }
             historyList.innerHTML = orders.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(o => {
                 const statusColor = o.status === 'synced' || o.status === 'kitchen_sent' ? 'text-green-600' : o.status === 'failed' || o.status === 'duplicate' ? 'text-red-600' : 'text-yellow-600';
@@ -1177,12 +1584,12 @@
         window.syncSingleOrder = async function(offlineRef, btnEl) {
             if (!isOnline) { showToast('Go online to sync.', 'error'); return; }
             if (btnEl) { btnEl.disabled = true; btnEl.dataset.originalHtml = btnEl.innerHTML; btnEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Syncing…'; }
-            const order = await findOrderByRef(offlineRef);
+            const order = await DB.getOrderByRef(offlineRef);
             if (!order) { showToast('Order not found locally', 'error'); if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = btnEl.dataset.originalHtml; } return; }
             try {
                 if (order.status === 'kitchen_pending') {
                     await apiCall('/pos/terminal/kitchen-ticket', 'POST', { order_ref: order.offlineRef, table_number: order.receiptData.tableNumber, items: order.receiptData.items });
-                    await db.orders.where('offlineRef').equals(offlineRef).modify({ status: 'kitchen_sent', syncedAt: new Date().toISOString(), lastError: null });
+                    await DB.updateOrderByRef(offlineRef, { status: 'kitchen_sent', syncedAt: new Date().toISOString(), lastError: null });
                 } else {
                     const payload = {
                         items: order.receiptData.items.map(item => ({ inventory_id: item.productId, quantity: item.quantity })),
@@ -1191,12 +1598,12 @@
                         offline_meta: { reference: order.offlineRef, cashier_id: order.cashierId, created_at: order.createdAt }, receipt_data: order.receiptData
                     };
                     await apiCall('/pos/terminal/checkout', 'POST', payload);
-                    await db.orders.where('offlineRef').equals(offlineRef).modify({ status: 'synced', syncedAt: new Date().toISOString(), lastError: null });
+                    await DB.updateOrderByRef(offlineRef, { status: 'synced', syncedAt: new Date().toISOString(), lastError: null });
                 }
-                await db.syncQueue.where('orderId').equals(offlineRef).delete(); showToast(`Order ${offlineRef} synced`, 'success');
+                await DB.removeFromSyncQueueByOrderId(offlineRef); showToast(`Order ${offlineRef} synced`, 'success');
             } catch (err) {
                 const is4xx = err && typeof err.status === 'number' && err.status >= 400 && err.status < 500 && err.status !== 401;
-                if (is4xx) { await db.orders.where('offlineRef').equals(offlineRef).modify({ status: 'failed', lastError: err.message }); await db.syncQueue.where('orderId').equals(offlineRef).delete(); showToast(`Order ${offlineRef} rejected: ${err.message}`, 'error'); } 
+                if (is4xx) { await DB.updateOrderByRef(offlineRef, { status: 'failed', lastError: err.message }); await DB.removeFromSyncQueueByOrderId(offlineRef); showToast(`Order ${offlineRef} rejected: ${err.message}`, 'error'); } 
                 else { showToast('Sync failed (will retry): ' + err.message, 'error'); }
             } finally {
                 if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = btnEl.dataset.originalHtml; }
@@ -1214,7 +1621,8 @@
                 await apiCall('/loyalty/redeem', 'POST', { points: pointsToRedeem });
                 state.pointsRedeemed = (state.pointsRedeemed || 0) + pointsToRedeem; state.pointsBalance -= pointsToRedeem;
                 redeemPointsInput.value = ''; renderActiveCart(); showToast(`✅ ${pointsToRedeem} points redeemed – ₦${pointsToRedeem} off this order!`, 'success');
-                syncUIWithActiveTab(); const cust = await db.customers.get(state.loyaltyUserId); if (cust) await db.customers.update(state.loyaltyUserId, { loyalty_points: state.pointsBalance });
+                syncUIWithActiveTab(); 
+                await DB.updateCustomer(state.loyaltyUserId, { loyalty_points: state.pointsBalance });
                 await emitAuditEvent('points.redeemed', { user_id: state.loyaltyUserId, points: pointsToRedeem, balance_after: state.pointsBalance });
             } catch (err) { showToast(`Redemption failed: ${err.message}`, 'error'); }
         }
@@ -1294,7 +1702,8 @@
         customerEmailInput.addEventListener('input', () => { tabState[activeTab].customerEmail = customerEmailInput.value; });
 
         (async () => {
-            await ensureDBReady(); updateConnectionStatus(); initTabs(); initCustomerSearch();
+            await initDBService();
+            updateConnectionStatus(); initTabs(); initCustomerSearch();
             if (token) {
                 try {
                     await loadCustomers();
