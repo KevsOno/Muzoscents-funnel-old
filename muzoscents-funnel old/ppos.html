@@ -1,0 +1,2755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Kevs POS Pro | Offline‑Ready + Audit</title>
+    <script src="/kdint.js"></script>
+    <script src="/kdsession.js"></script>
+    <script src="/nav.js" defer></script>
+    <link rel="stylesheet" href="/tailwind.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+    <style>
+        .tab-active { background-color: #3b82f6; color: white; }
+        .tab-inactive { background-color: #f3f4f6; color: #1f2937; }
+        .product-card { transition: all 0.15s ease; padding: 0.5rem; min-height: 48px; min-width: 48px; }
+        .product-card:active { transform: scale(0.97); }
+
+        .qty-btn { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: #f3f4f6; border: 1px solid #d1d5db; cursor: pointer; }
+        @media (min-width: 1024px) { .qty-btn { width: 28px; height: 28px; } }
+        .qty-input { width: 50px; text-align: center; border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 0; font-size: 16px; }
+        @media (min-width: 1024px) { .qty-input { width: 36px; padding: 2px 0; font-size: 14px; } }
+        .mobile-input { font-size: 16px !important; }
+
+        .total-amount { font-size: 1.5rem; font-weight: 800; }
+        .offline-badge { background: #f59e0b; color: #fff; padding: 2px 10px; border-radius: 20px; font-size: 0.7rem; }
+        .online-badge { background: #22c55e; color: #fff; padding: 2px 10px; border-radius: 20px; font-size: 0.7rem; }
+        .sync-btn { background: #3b82f6; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; border: none; cursor: pointer; }
+        .sync-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        #history-modal, #sync-dashboard-modal, #camera-modal, #mobile-cart-sheet, #printer-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 50; align-items: center; justify-content: center; }
+        #history-modal.active, #sync-dashboard-modal.active, #camera-modal.active, #mobile-cart-sheet.active, #printer-modal.active { display: flex; }
+        #history-modal .modal-content, #sync-dashboard-modal .modal-content, #camera-modal .modal-content, #printer-modal .modal-content { background: white; max-width: 800px; width: 90%; max-height: 80vh; overflow-y: auto; padding: 20px; border-radius: 12px; }
+        #printer-modal .modal-content { max-width: 500px; }
+
+        #mobile-cart-sheet { align-items: flex-end; }
+        #mobile-cart-sheet .sheet-content { background: white; width: 100%; height: 95vh; border-radius: 20px 20px 0 0; display: flex; flex-direction: column; animation: slideUp 0.3s ease-out; }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+        .payment-chip { flex: 1; text-align: center; padding: 12px; border: 2px solid #e5e7eb; border-radius: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .payment-chip.active { border-color: #3b82f6; background: #eff6ff; color: #1d4ed8; }
+
+        .dashboard-stat { display: flex; justify-content: space-between; border-bottom: 1px solid #e5e7eb; padding: 8px 0; }
+        .scanner-active { border-color: #22c55e !important; box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.3) !important; }
+
+        .transfer-account-card {
+            text-align: left;
+            border: 2px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 10px 12px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            min-height: 68px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .transfer-account-card:hover { border-color: #93c5fd; background: #f8fafc; }
+        .transfer-account-card:active { transform: scale(0.98); }
+        .transfer-account-card.selected { border-color: #3b82f6; background: #eff6ff; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
+        .transfer-account-card .provider-badge { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; background: #dbeafe; color: #1e40af; padding: 2px 6px; border-radius: 4px; letter-spacing: 0.03em; flex-shrink: 0; }
+        .transfer-account-card.selected .provider-badge { background: #3b82f6; color: white; }
+
+        /* Printer settings modal */
+        .printer-method { display: flex; align-items: flex-start; gap: 12px; padding: 12px; border: 2px solid #e5e7eb; border-radius: 10px; cursor: pointer; transition: all 0.15s; margin-bottom: 8px; }
+        .printer-method:hover { border-color: #93c5fd; background: #f8fafc; }
+        .printer-method.selected { border-color: #3b82f6; background: #eff6ff; }
+        .printer-method.disabled { opacity: 0.4; cursor: not-allowed; }
+        .printer-method .method-icon { width: 40px; height: 40px; border-radius: 8px; background: #dbeafe; color: #1e40af; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 18px; }
+        .printer-method.selected .method-icon { background: #3b82f6; color: white; }
+
+        /* Kiosk mode: hide every admin control EXCEPT the kiosk toggle.
+           The toggle must stay reachable so a cashier can exit self-
+           service without reloading the page. Previously the entire
+           #admin-controls container was hidden, which made kiosk mode
+           one-way — the button that got you in was the only way out,
+           and it was gone. */
+        body.kiosk-mode #admin-controls > *:not(#kiosk-mode-btn) { display: none !important; }
+        body.kiosk-mode #sync-dashboard-modal, body.kiosk-mode #history-modal, body.kiosk-mode #printer-modal { display: none !important; }
+        body.kiosk-mode #pos-tabs-container { display: none !important; }
+
+        /* Thermal print CSS — no margins, monospace, auto page height */
+        @media print {
+            body * { visibility: hidden; }
+            #receipt-print-area, #receipt-print-area * { visibility: visible; }
+            #receipt-print-area {
+                position: fixed; left: 0; top: 0; width: 100%;
+                background: white; padding: 0; margin: 0;
+                font-size: 11px; font-family: 'Courier New', monospace;
+                color: black; line-height: 1.35;
+            }
+            .receipt-header { text-align: center; font-weight: bold; font-size: 15px; margin-bottom: 4px; }
+            .receipt-divider { border-top: 1px dashed #333; margin: 6px 0; }
+            .receipt-item { display: flex; justify-content: space-between; }
+            .receipt-total { font-weight: bold; font-size: 13px; }
+            .receipt-footer { text-align: center; margin-top: 6px; font-size: 10px; }
+            .no-print { display: none !important; }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-4 font-sans pb-24 lg:pb-4">
+
+    <div id="kevs-nav-container"></div>
+    <div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
+    <div id="receipt-print-area" style="display:none;"></div>
+
+    <div class="max-w-7xl mx-auto">
+        <div class="bg-white rounded-xl shadow-md p-4 mb-4 flex flex-wrap justify-between items-center gap-3">
+            <div>
+                <h1 class="text-2xl font-bold">💳 Kevs POS Terminal</h1>
+                <p class="text-xs text-gray-500">Offline‑Ready · SKU Search · Scanner · Cashier History · Audit</p>
+            </div>
+            <div id="admin-controls" class="flex items-center gap-2 flex-wrap">
+                <span id="connection-status" class="online-badge"><i class="fa-solid fa-wifi"></i> Online</span>
+                <span id="catalog-badge" class="text-xs bg-gray-100 border border-gray-200 px-3 py-1 rounded-full hidden sm:inline-block">
+                    <i id="catalog-badge-icon" class="fa-solid fa-database mr-1 text-gray-500"></i>
+                    <span id="cached-count">0</span> / <span id="expected-count">?</span> SKUs
+                </span>
+                <button id="download-catalog-btn" class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded-lg text-sm hidden sm:block">
+                    <i class="fa-solid fa-cloud-arrow-down"></i> Catalog
+                </button>
+                <button id="sync-now-btn" class="sync-btn"><i class="fa-solid fa-rotate"></i> Sync</button>
+                <button id="dashboard-btn" class="bg-gray-200 px-3 py-1 rounded-lg text-sm hidden sm:block"><i class="fa-solid fa-chart-simple"></i> Dashboard</button>
+                <button id="history-btn" class="bg-gray-200 px-3 py-1 rounded-lg text-sm"><i class="fa-regular fa-clock"></i> History</button>
+                <button id="printer-btn" class="bg-gray-200 px-3 py-1 rounded-lg text-sm" title="Configure receipt printer"><i class="fa-solid fa-print"></i> Printer</button>
+                <button id="kiosk-mode-btn" class="bg-gray-800 text-white px-3 py-1 rounded-lg text-sm hidden sm:block"><i class="fa-solid fa-tablet-screen-button"></i> Kiosk</button>
+            </div>
+        </div>
+
+        <div id="catalog-sync-banner" class="hidden bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+            <div class="flex justify-between items-center mb-1">
+                <span class="text-sm font-medium text-blue-800">
+                    <i class="fa-solid fa-download"></i> <span id="catalog-sync-label">Downloading catalog for offline use…</span>
+                </span>
+                <span id="catalog-progress-text" class="text-xs text-blue-700 font-mono">0 / 0</span>
+            </div>
+            <div class="w-full bg-blue-200 rounded-full h-2 overflow-hidden">
+                <div id="catalog-progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <div id="pos-tabs-container" class="flex gap-3 mb-4 border-b border-gray-200 pb-1">
+            <button id="tab1-btn" data-tab="1" class="tab-active px-6 py-2.5 rounded-t-lg font-semibold text-sm transition flex items-center gap-2 shadow-sm border">
+                <i class="fa-solid fa-user"></i> Customer A
+            </button>
+            <button id="tab2-btn" data-tab="2" class="tab-inactive px-6 py-2.5 rounded-t-lg font-semibold text-sm transition flex items-center gap-2 border">
+                <i class="fa-solid fa-user-group"></i> Customer B
+            </button>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+            <div class="hidden lg:flex lg:col-span-2 lg:order-first bg-white rounded-xl shadow-md p-4 flex-col min-h-[600px]">
+                <div class="flex justify-between items-center border-b pb-2 mb-2">
+                    <h2 class="text-xl font-semibold"><i class="fa-solid fa-cart-shopping"></i> <span id="desktop-customer-label">Customer A</span> Sale</h2>
+                    <span class="text-xs bg-gray-100 px-2 py-1 rounded-full" id="desktop-tab-badge">Tab 1 active</span>
+                </div>
+
+                <div id="desktop-cart-items" class="space-y-2 overflow-y-auto flex-1 max-h-[50vh] lg:max-h-[60vh] min-h-[200px]"></div>
+
+                <div class="border-t pt-3 mt-2">
+                    <div class="flex justify-between text-lg font-bold mb-3">
+                        <span>Total:</span>
+                        <span id="desktop-cart-total" class="total-amount">₦0</span>
+                    </div>
+
+                    <div id="desktop-restaurant-fields" class="hidden mt-3 mb-3">
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-sm font-medium">Order Type</label>
+                                <select id="desktop-order-type" class="w-full border rounded-lg p-2 bg-white">
+                                    <option value="takeaway">🛍️ Takeaway</option>
+                                    <option value="dine-in">🍽️ Dine-in</option>
+                                </select>
+                            </div>
+                            <div id="desktop-table-container" class="hidden">
+                                <label class="block text-sm font-medium">Table Number</label>
+                                <input id="desktop-table-number" class="w-full border rounded-lg p-2" placeholder="Table 5">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div><label class="block text-sm font-medium mb-1">Payment</label>
+                            <div class="flex gap-2">
+                                <button class="payment-chip active" data-method="cash">💵 Cash</button>
+                                <button class="payment-chip" data-method="transfer">🏦 Transfer</button>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <button id="desktop-add-customer-btn" class="text-sm text-blue-600 hover:underline mt-6"><i class="fa-solid fa-plus"></i> Add Customer</button>
+                        </div>
+                    </div>
+
+                    <div id="desktop-transfer-account-container" class="hidden mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+                        <label class="block text-sm font-medium">Receiving Account <span class="text-red-500">*</span></label>
+                        <div id="desktop-transfer-account-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
+                        <input id="desktop-transfer-reference" placeholder="Bank reference / transaction ID (optional but recommended)" class="w-full border rounded-lg p-2 mobile-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+                        <p class="text-xs text-amber-700"><i class="fa-solid fa-circle-info"></i> Tap the account the customer's transfer landed in, then complete the sale.</p>
+                    </div>
+
+                    <div id="desktop-customer-form" class="hidden mt-3 bg-gray-50 p-3 rounded-lg space-y-2">
+                        <div class="relative">
+                            <input type="text" id="customer-search" placeholder="Search saved customer..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" name="pos_customer_search" class="w-full border rounded-lg p-2 text-sm pr-8 mobile-input">
+                            <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                            <div id="customer-suggestions" class="absolute z-10 left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto hidden"></div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <input id="desktop-customer-name" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" name="pos_cust_name" class="w-full border rounded-lg p-2 text-sm mobile-input" placeholder="Name">
+                            <input id="desktop-customer-phone" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" name="pos_cust_phone" class="w-full border rounded-lg p-2 text-sm mobile-input" placeholder="Phone">
+                        </div>
+                        <input id="desktop-customer-email" type="email" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" name="pos_cust_email" class="w-full border rounded-lg p-2 text-sm mobile-input" placeholder="Email (required for card/transfer)">
+
+                        <div id="customer-info" class="hidden text-xs text-gray-700 border-t border-blue-200 pt-2 mt-1">
+                            <span id="customer-name-display"></span> · <strong>Points: <span id="customer-points">0</span></strong>
+                        </div>
+                        <p id="offline-points-warning" class="text-red-500 text-xs hidden">⚠️ Points redemption requires internet.</p>
+
+                        <div id="points-redeem-section" class="hidden border-t border-blue-200 pt-2 mt-1">
+                            <label class="text-xs font-medium">Redeem points (1 pt = ₦1)</label>
+                            <div class="flex gap-2 mt-1">
+                                <input type="number" id="redeem-points-input" min="1" autocomplete="off" class="w-full border rounded-lg p-2 text-sm mobile-input" placeholder="Points">
+                                <button id="apply-points-btn" class="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-emerald-700">Apply</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 flex gap-2">
+                        <button id="send-to-kitchen-btn" class="hidden w-1/3 bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-lg font-bold transition shadow-md text-lg flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-fire-burner"></i> Kitchen
+                        </button>
+                        <button id="desktop-checkout-btn" class="flex-1 w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-bold transition shadow-md text-lg">
+                            ✅ Complete Sale
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="lg:col-span-1 bg-white rounded-xl shadow-md p-4 flex flex-col h-[calc(100vh-200px)] lg:h-auto">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
+                    <h2 class="text-lg font-semibold">📦 Products</h2>
+                    <div class="relative w-full flex gap-2">
+                        <div class="relative flex-1">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                            <input type="text" id="product-search" placeholder="Search SKU or name..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" name="pos_product_search" class="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-base focus:ring-2 focus:ring-blue-300 outline-none transition-colors mobile-input">
+                            <div id="search-scanner-hint" class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-green-500 hidden"><i class="fa-solid fa-qrcode"></i></div>
+                        </div>
+                        <button id="camera-scan-btn" class="bg-blue-100 text-blue-700 hover:bg-blue-200 px-4 py-2.5 rounded-lg border border-blue-300 transition flex items-center justify-center">
+                            <i class="fa-solid fa-camera text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="product-list" class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-2 gap-2 overflow-y-auto flex-1 pb-10"></div>
+                <div id="product-list-empty" class="hidden text-center py-8 text-gray-400 col-span-full">No products match your search</div>
+                <div id="loading-more" class="hidden text-center py-4 text-gray-500 text-sm"><i class="fa-solid fa-spinner fa-pulse"></i> Loading more...</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="mobile-sticky-bar" class="fixed bottom-0 left-0 right-0 bg-white border-t shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] p-3 flex justify-between items-center z-40 lg:hidden">
+        <div>
+            <p class="text-xs text-gray-500 font-medium">Total Amount</p>
+            <p id="mobile-cart-total" class="text-xl font-bold text-green-700">₦0</p>
+        </div>
+        <button onclick="openMobileCart()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg">
+            <i class="fa-solid fa-cart-shopping"></i> View Cart <span id="mobile-cart-count" class="bg-blue-500 px-2 py-0.5 rounded-full text-xs">0</span>
+        </button>
+    </div>
+
+    <div id="mobile-cart-sheet">
+        <div class="sheet-content">
+            <div class="flex justify-between items-center p-4 border-b bg-gray-50 rounded-t-2xl">
+                <h2 class="text-lg font-bold"><i class="fa-solid fa-cart-shopping"></i> <span id="mobile-sheet-customer-label">Customer</span> Sale</h2>
+                <button onclick="closeMobileCart()" class="text-gray-500 hover:text-gray-800 p-2"><i class="fa-solid fa-xmark text-2xl"></i></button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-4 space-y-4">
+                <div id="mobile-cart-items" class="space-y-4"></div>
+
+                <div class="border-t pt-4">
+                    <div class="flex justify-between text-xl font-bold mb-4">
+                        <span>Total:</span>
+                        <span id="mobile-sheet-total" class="text-green-700">₦0</span>
+                    </div>
+
+                    <div id="mobile-restaurant-fields" class="hidden mb-4">
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Order Type</label>
+                                <select id="mobile-order-type" class="w-full border rounded-lg p-3 bg-white mobile-input">
+                                    <option value="takeaway">🛍️ Takeaway</option>
+                                    <option value="dine-in">🍽️ Dine-in</option>
+                                </select>
+                            </div>
+                            <div id="mobile-table-container" class="hidden">
+                                <label class="block text-sm font-medium mb-1">Table Number</label>
+                                <input id="mobile-table-number" class="w-full border rounded-lg p-3 mobile-input" placeholder="Table 5">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2">Payment Method</label>
+                        <div class="flex gap-2">
+                            <button class="payment-chip active" data-method="cash">💵 Cash</button>
+                            <button class="payment-chip" data-method="transfer">🏦 Transfer</button>
+                        </div>
+                    </div>
+
+                    <div id="mobile-transfer-account-container" class="hidden bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2 mb-4">
+                        <label class="block text-sm font-medium">Receiving Account <span class="text-red-500">*</span></label>
+                        <div id="mobile-transfer-account-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
+                        <input id="mobile-transfer-reference" placeholder="Bank reference / transaction ID (optional)" class="w-full border rounded-lg p-3 mobile-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+                    </div>
+
+                    <div class="mb-4">
+                        <button onclick="toggleMobileCustomerForm()" class="text-sm font-medium text-blue-600 flex items-center gap-1 py-2">
+                            <i class="fa-solid fa-plus"></i> Add Customer Details
+                        </button>
+                        <div id="mobile-customer-form" class="hidden space-y-2 mt-2">
+                            <input id="mobile-customer-name" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" name="pos_m_cust_name" class="w-full border rounded-lg p-3 mobile-input" placeholder="Customer Name">
+                            <input id="mobile-customer-phone" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" name="pos_m_cust_phone" class="w-full border rounded-lg p-3 mobile-input" placeholder="Phone Number">
+                            <input id="mobile-customer-email" type="email" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" name="pos_m_cust_email" class="w-full border rounded-lg p-3 mobile-input" placeholder="Email (for receipt)">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="border-t p-4 bg-white shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] pb-8 flex gap-2">
+                <button id="mobile-kitchen-btn" class="hidden w-1/3 bg-orange-500 text-white py-3 rounded-xl font-bold text-lg flex items-center justify-center gap-1">
+                    <i class="fa-solid fa-fire-burner"></i>
+                </button>
+                <button id="mobile-checkout-btn" class="flex-1 w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl font-bold text-lg shadow-lg">
+                    Checkout
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="camera-modal">
+        <div class="modal-content max-w-md relative">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold"><i class="fa-solid fa-camera"></i> Scan Barcode</h3>
+                <button id="close-camera-btn" class="text-gray-400 hover:text-gray-600 p-2"><i class="fa-solid fa-xmark text-2xl"></i></button>
+            </div>
+            <div id="reader" class="w-full rounded-lg overflow-hidden border-2 border-dashed border-gray-300"></div>
+            <p class="text-center text-sm text-gray-500 mt-4">Point at barcode. Continuous scanning active.</p>
+            <div class="mt-4 bg-green-50 text-green-800 p-3 rounded-lg text-sm font-medium flex items-center gap-2 hidden" id="scan-success-toast">
+                <i class="fa-solid fa-check-circle"></i> Item Added!
+            </div>
+        </div>
+    </div>
+
+    <div id="history-modal">
+        <div class="modal-content">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold">📜 Cashier History</h3>
+                <button id="close-history-btn" class="text-gray-400 hover:text-gray-600 p-2"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <div id="history-list" class="space-y-2 max-h-[60vh] overflow-y-auto"></div>
+        </div>
+    </div>
+
+    <div id="sync-dashboard-modal">
+        <div class="modal-content max-w-md">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold">📊 Sync Dashboard</h3>
+                <button id="close-dashboard-btn" class="text-gray-400 hover:text-gray-600 p-2"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <div id="dashboard-content" class="space-y-2"></div>
+            <button id="refresh-dashboard-btn" class="mt-4 w-full bg-blue-600 text-white py-2 rounded-lg text-sm hover:bg-blue-700">Refresh</button>
+        </div>
+    </div>
+
+    <!-- ── Printer Settings Modal ── -->
+    <div id="printer-modal">
+        <div class="modal-content">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold"><i class="fa-solid fa-print"></i> Receipt Printer</h3>
+                <button id="close-printer-btn" class="text-gray-400 hover:text-gray-600 p-2"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+
+            <p class="text-xs text-gray-500 mb-3">Choose how receipts print on this terminal. The setting is saved to this device.</p>
+
+            <div id="printer-method-list">
+                <!-- Populated by JS based on capability detection -->
+            </div>
+
+            <div id="printer-bt-panel" class="hidden mt-3 bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">
+                <div class="flex items-center justify-between gap-2">
+                    <div class="min-w-0 flex-1">
+                        <p class="text-xs text-gray-600">Connected printer</p>
+                        <p id="printer-bt-device" class="text-sm font-medium text-gray-800 truncate">Not connected</p>
+                    </div>
+                    <button id="printer-bt-connect-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-sm whitespace-nowrap">
+                        <i class="fa-solid fa-link"></i> Connect
+                    </button>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-600 mb-1">Paper width</label>
+                    <select id="printer-paper-width" class="w-full border rounded-lg p-2 bg-white text-sm">
+                        <option value="32">58mm thermal (32 chars/line)</option>
+                        <option value="48">80mm thermal (48 chars/line)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="mt-4 flex gap-2">
+                <button id="printer-test-btn" class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 rounded-lg text-sm font-medium">
+                    <i class="fa-solid fa-vial"></i> Test Print
+                </button>
+                <button id="printer-save-btn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium">
+                    <i class="fa-solid fa-check"></i> Save
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="auth-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-gray-800">🔐 Sign In to POS</h3>
+                <button id="close-modal-btn" class="text-gray-400 hover:text-gray-600 p-2"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <div class="space-y-3">
+                <input id="login-email" type="email" placeholder="Email" autocomplete="username" class="w-full border rounded-lg p-3 text-base">
+                <input id="login-password" type="password" placeholder="Password" autocomplete="current-password" class="w-full border rounded-lg p-3 text-base">
+                <button id="modal-login-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-lg text-base font-medium">Sign In</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="success-share-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm text-center">
+            <div class="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i class="fa-solid fa-check text-3xl"></i>
+            </div>
+            <h3 class="text-xl font-bold text-gray-800 mb-2">Sale Complete!</h3>
+            <p class="text-gray-600 mb-6 text-sm">Receipt #<span id="success-receipt-num"></span> has been processed.</p>
+            <div class="space-y-3">
+                <button id="print-receipt-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-xl font-bold text-base flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-print text-xl"></i> Print Receipt
+                </button>
+                <button id="share-whatsapp-btn" class="w-full bg-[#25D366] hover:bg-[#20bd5a] text-white p-3 rounded-xl font-bold text-base flex items-center justify-center gap-2">
+                    <i class="fa-brands fa-whatsapp text-xl"></i> Share via WhatsApp
+                </button>
+                <button onclick="document.getElementById('success-share-modal').classList.add('hidden')" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 p-3 rounded-xl font-medium text-base">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ================================================================
+        // DB ABSTRACTION LAYER (Dexie for Web, SQLite for Tauri)
+        // ================================================================
+        const isTauri = !!window.__TAURI_INTERNALS__;
+        let sqliteDb = null;
+        let dexieDb = null;
+
+        function computeSearchTokens(product) {
+            const source = `${product.description || ''} ${product.item_code || ''} ${product.sku || ''}`.toLowerCase();
+            return Array.from(new Set(source.split(/[^\p{L}\p{N}]+/u).filter(t => t.length > 0)));
+        }
+
+        async function initDBService() {
+            if (isTauri) {
+                try {
+                    const Database = window.__TAURI__.sql.Database;
+                    sqliteDb = await Database.load('sqlite:kevs_bos.db');
+                    await sqliteDb.execute(`
+                        CREATE TABLE IF NOT EXISTS products (
+                            id INTEGER PRIMARY KEY, description TEXT, item_code TEXT, sku TEXT,
+                            price_naira REAL, current_qty INTEGER, cost_price_naira REAL,
+                            handling_category TEXT, weight_kg REAL, product_group TEXT
+                        );
+                        CREATE TABLE IF NOT EXISTS customers (
+                            id TEXT PRIMARY KEY, first_name TEXT, last_name TEXT, phone TEXT, email TEXT, loyalty_points INTEGER
+                        );
+                        CREATE TABLE IF NOT EXISTS orders (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT, offlineRef TEXT UNIQUE, cashierId TEXT,
+                            createdAt TEXT, status TEXT, syncedAt TEXT, receiptData TEXT
+                        );
+                        CREATE TABLE IF NOT EXISTS syncQueue (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT, orderId TEXT, attempts INTEGER DEFAULT 0, lastTry TEXT
+                        );
+                        CREATE TABLE IF NOT EXISTS auditQueue (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT, eventType TEXT, createdAt TEXT, retryCount INTEGER DEFAULT 0
+                        );
+                    `);
+                    console.log("✅ Native SQLite Database Initialized");
+                } catch (e) {
+                    console.error("Failed to load native SQLite, falling back to Dexie", e);
+                    initDexie();
+                }
+            } else {
+                initDexie();
+            }
+        }
+
+        function initDexie() {
+            dexieDb = new Dexie('KevsPOSOffline');
+            dexieDb.version(2).stores({
+                products: 'id, description, item_code, sku, price_naira, current_qty',
+                customers: 'id, first_name, last_name, phone, email, loyalty_points',
+                orders: '++id, offlineRef, cashierId, createdAt, status, syncedAt, receiptData',
+                syncQueue: '++id, orderId, attempts, lastTry',
+                auditQueue: '++id, eventType, createdAt, retryCount'
+            });
+            dexieDb.version(3).stores({
+                products: 'id, description, item_code, sku, price_naira, current_qty, *search_tokens',
+                customers: 'id, first_name, last_name, phone, email, loyalty_points',
+                orders: '++id, offlineRef, cashierId, createdAt, status, syncedAt, receiptData',
+                syncQueue: '++id, orderId, attempts, lastTry',
+                auditQueue: '++id, eventType, createdAt, retryCount'
+            }).upgrade(tx => {
+                return tx.table('products').toCollection().modify(product => {
+                    product.search_tokens = computeSearchTokens(product);
+                });
+            });
+            console.log("✅ Dexie Browser Database Initialized");
+        }
+
+        const DB = {
+            async saveProducts(products) {
+                if (sqliteDb) {
+                    for (const p of products) {
+                        await sqliteDb.execute(
+                            `INSERT OR REPLACE INTO products (id, description, item_code, sku, price_naira, current_qty, cost_price_naira, handling_category, weight_kg, product_group) 
+                             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+                            [p.id, p.description, p.item_code, p.sku, p.price_naira, p.current_qty, p.cost_price_naira, p.handling_category, p.weight_kg, p.product_group]
+                        );
+                    }
+                } else {
+                    await dexieDb.products.bulkPut(products);
+                }
+            },
+            async getProductCount() {
+                if (sqliteDb) { const res = await sqliteDb.select('SELECT COUNT(*) as count FROM products'); return res[0].count; }
+                return await dexieDb.products.count();
+            },
+            async getProduct(id) {
+                if (sqliteDb) { const res = await sqliteDb.select('SELECT * FROM products WHERE id = $1', [id]); return res[0] || null; }
+                return await dexieDb.products.get(id);
+            },
+            async deleteProducts(ids) {
+                if (sqliteDb) {
+                    if (!ids.length) return;
+                    const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
+                    await sqliteDb.execute(`DELETE FROM products WHERE id IN (${placeholders})`, ids);
+                } else {
+                    await dexieDb.products.bulkDelete(ids);
+                }
+            },
+            async getAllProducts() {
+                if (sqliteDb) { return await sqliteDb.select('SELECT * FROM products'); }
+                return await dexieDb.products.toArray();
+            },
+            async searchProducts(term, offset, limit) {
+                if (sqliteDb) {
+                    const lowerTerm = `%${term.toLowerCase()}%`;
+                    const sql = `SELECT * FROM products WHERE LOWER(description) LIKE $1 OR LOWER(item_code) LIKE $1 OR LOWER(sku) LIKE $1 LIMIT $2 OFFSET $3`;
+                    return await sqliteDb.select(sql, [lowerTerm, limit, offset]);
+                }
+                const lowerTerm = term.toLowerCase();
+                let collection = dexieDb.products
+                    .where('description').startsWithIgnoreCase(term)
+                    .or('item_code').startsWithIgnoreCase(term)
+                    .or('sku').startsWithIgnoreCase(term)
+                    .or('search_tokens').startsWith(lowerTerm);
+                let total = await collection.count();
+                if (total > 0) return { items: await collection.offset(offset).limit(limit).toArray(), total, isDexie: true };
+
+                if (term.length < 3) return { items: [], total: 0, isDexie: true };
+                let skipped = 0, matched = [], stoppedEarly = false;
+                try {
+                    await dexieDb.products.each(p => {
+                        const haystack = `${p.description || ''} ${p.item_code || ''} ${p.sku || ''}`.toLowerCase();
+                        if (!haystack.includes(lowerTerm)) return;
+                        if (skipped < offset) { skipped++; return; }
+                        matched.push(p);
+                        if (matched.length >= limit) { stoppedEarly = true; throw { _break: true }; }
+                    });
+                } catch (e) { if (!e || !e._break) throw e; }
+                return { items: matched, total: skipped + matched.length + (stoppedEarly ? 1 : 0), isDexie: true };
+            },
+
+            async saveCustomer(c) {
+                if (sqliteDb) {
+                    await sqliteDb.execute(
+                        `INSERT OR REPLACE INTO customers (id, first_name, last_name, phone, email, loyalty_points) VALUES ($1, $2, $3, $4, $5, $6)`,
+                        [c.id, c.first_name, c.last_name, c.phone, c.email, c.loyalty_points]
+                    );
+                } else {
+                    await dexieDb.customers.put(c);
+                }
+            },
+            async getCustomers() {
+                if (sqliteDb) { return await sqliteDb.select('SELECT * FROM customers'); }
+                return await dexieDb.customers.toArray();
+            },
+            async updateCustomer(id, data) {
+                if (sqliteDb) {
+                    await sqliteDb.execute(`UPDATE customers SET loyalty_points = $1 WHERE id = $2`, [data.loyalty_points, id]);
+                } else {
+                    await dexieDb.customers.update(id, data);
+                }
+            },
+
+            async saveOrder(order) {
+                if (sqliteDb) {
+                    const existing = await sqliteDb.select('SELECT id FROM orders WHERE offlineRef = $1', [order.offlineRef]);
+                    if (existing.length > 0) {
+                        await sqliteDb.execute(
+                            `UPDATE orders SET status = $1, syncedAt = $2, receiptData = $3 WHERE offlineRef = $4`,
+                            [order.status, order.syncedAt, JSON.stringify(order.receiptData), order.offlineRef]
+                        );
+                    } else {
+                        await sqliteDb.execute(
+                            `INSERT INTO orders (offlineRef, cashierId, createdAt, status, syncedAt, receiptData) VALUES ($1, $2, $3, $4, $5, $6)`,
+                            [order.offlineRef, order.cashierId, order.createdAt, order.status, order.syncedAt, JSON.stringify(order.receiptData)]
+                        );
+                    }
+                } else {
+                    const existing = await dexieDb.orders.where('offlineRef').equals(order.offlineRef).first();
+                    if (existing) await dexieDb.orders.update(existing.id, order);
+                    else await dexieDb.orders.add(order);
+                }
+            },
+            async getOrderByRef(ref) {
+                if (sqliteDb) {
+                    const res = await sqliteDb.select('SELECT * FROM orders WHERE offlineRef = $1', [ref]);
+                    if (res[0]) res[0].receiptData = JSON.parse(res[0].receiptData);
+                    return res[0] || null;
+                }
+                return await dexieDb.orders.where('offlineRef').equals(ref).first();
+            },
+            async updateOrderByRef(ref, data) {
+                if (sqliteDb) {
+                    const sets = [];
+                    const vals = [];
+                    let i = 1;
+                    for (const [k, v] of Object.entries(data)) { sets.push(`${k} = $${i++}`); vals.push(k === 'receiptData' ? JSON.stringify(v) : v); }
+                    vals.push(ref);
+                    await sqliteDb.execute(`UPDATE orders SET ${sets.join(', ')} WHERE offlineRef = $${i}`, vals);
+                } else {
+                    await dexieDb.orders.where('offlineRef').equals(ref).modify(data);
+                }
+            },
+            async getAllOrders() {
+                if (sqliteDb) {
+                    const res = await sqliteDb.select('SELECT * FROM orders');
+                    return res.map(o => ({ ...o, receiptData: JSON.parse(o.receiptData) }));
+                }
+                return await dexieDb.orders.toArray();
+            },
+
+            async queueOrder(orderId) {
+                if (sqliteDb) {
+                    await sqliteDb.execute(`INSERT INTO syncQueue (orderId, attempts) VALUES ($1, 0)`, [orderId]);
+                } else {
+                    await dexieDb.syncQueue.add({ orderId, attempts: 0, lastTry: null });
+                }
+            },
+            async getSyncQueue() {
+                if (sqliteDb) { return await sqliteDb.select('SELECT * FROM syncQueue'); }
+                return await dexieDb.syncQueue.toArray();
+            },
+            async removeFromSyncQueue(id) {
+                if (sqliteDb) { await sqliteDb.execute('DELETE FROM syncQueue WHERE id = $1', [id]); }
+                else { await dexieDb.syncQueue.delete(id); }
+            },
+            async removeFromSyncQueueByOrderId(orderId) {
+                if (sqliteDb) { await sqliteDb.execute('DELETE FROM syncQueue WHERE orderId = $1', [orderId]); }
+                else { await dexieDb.syncQueue.where('orderId').equals(orderId).delete(); }
+            },
+            async updateSyncQueueEntry(id, data) {
+                if (sqliteDb) {
+                    await sqliteDb.execute(`UPDATE syncQueue SET attempts = $1, lastTry = $2 WHERE id = $3`, [data.attempts, data.lastTry, id]);
+                } else {
+                    await dexieDb.syncQueue.update(id, data);
+                }
+            },
+
+            async queueAudit(event) {
+                if (sqliteDb) {
+                    await sqliteDb.execute(`INSERT INTO auditQueue (eventType, createdAt, retryCount) VALUES ($1, $2, 0)`, [event.event_type, event.local_created_at]);
+                } else {
+                    await dexieDb.auditQueue.add(event);
+                }
+            },
+            async getAuditQueue() {
+                if (sqliteDb) { return await sqliteDb.select('SELECT * FROM auditQueue'); }
+                return await dexieDb.auditQueue.toArray();
+            },
+            async clearAuditQueue() {
+                if (sqliteDb) { await sqliteDb.execute('DELETE FROM auditQueue'); }
+                else { await dexieDb.auditQueue.clear(); }
+            }
+        };
+
+        // ================================================================
+        // POS PRINTER MODULE
+        //
+        // Unified receipt printing across four surfaces:
+        //   1. Android Chrome   → window.print() → system print service
+        //   2. iOS Safari       → window.print() → AirPrint sheet
+        //   3. Tauri USB/CUPS   → window.print() → OS dialog → CUPS driver
+        //   4. Bluetooth thermal → ESC/POS bytes over Web Bluetooth (PWA)
+        //                          or a Tauri BLE bridge (native)
+        //
+        // Tauri BLE integration point
+        // ───────────────────────────
+        // If your Tauri app installs a BLE printer plugin, expose this
+        // global from the Rust side (or from a bootstrap script):
+        //
+        //     window.POS_TAURI_BLE_PRINT = async (bytes) => {
+        //         // bytes: Uint8Array of ESC/POS commands
+        //         // await your_plugin.write(pairedAddress, bytes);
+        //     };
+        //     window.POS_TAURI_BLE_TEST   = async () => true;
+        //
+        // If those globals are absent, the Tauri BLE option is hidden in
+        // the UI and the cashier falls back to system print (which still
+        // works for USB/CUPS-attached thermal printers on Tauri).
+        //
+        // Preference persistence
+        // ──────────────────────
+        // Stored in localStorage under `pos_printer_pref` as:
+        //   {
+        //     method: 'browser' | 'bluetooth-web' | 'bluetooth-tauri',
+        //     deviceId: <Bluetooth device id, if applicable>,
+        //     deviceName: <display name>,
+        //     paperWidth: 32 | 48,
+        //   }
+        // ================================================================
+        const POSPrinter = (function() {
+            const LS_KEY = 'pos_printer_pref';
+
+            // ── Capability detection ──
+            const caps = (function() {
+                const out = { browser: typeof window.print === 'function', bluetoothWeb: false, bluetoothTauri: false, isTauri: !!isTauri };
+                if (typeof navigator !== 'undefined' && navigator.bluetooth && typeof navigator.bluetooth.requestDevice === 'function') {
+                    out.bluetoothWeb = true;
+                }
+                if (isTauri && typeof window.POS_TAURI_BLE_PRINT === 'function') {
+                    out.bluetoothTauri = true;
+                }
+                return out;
+            })();
+
+            // ── ESC/POS encoder ──
+            // Thermal printers want raw byte commands, not HTML. Common
+            // service/characteristic UUIDs are tried in order at connect
+            // time. Most 58mm/80mm BLE printers (Xprinter, Goojprt,
+            // Peripage, ZJ-5805, etc.) expose one of these.
+            const ESC = {
+                INIT:       [0x1B, 0x40],
+                ALIGN_L:    [0x1B, 0x61, 0x00],
+                ALIGN_C:    [0x1B, 0x61, 0x01],
+                ALIGN_R:    [0x1B, 0x61, 0x02],
+                BOLD_ON:    [0x1B, 0x45, 0x01],
+                BOLD_OFF:   [0x1B, 0x45, 0x00],
+                SIZE_DBL:   [0x1D, 0x21, 0x11],
+                SIZE_NORM:  [0x1D, 0x21, 0x00],
+                FEED:       [0x0A],
+                FEED_LINES: (n) => new Array(n).fill(0x0A),
+                CUT:        [0x1D, 0x56, 0x42, 0x00],
+                DRAWER:     [0x1B, 0x70, 0x00, 0x19, 0xFA],
+            };
+
+            function enc(parts) {
+                const out = [];
+                for (const p of parts) {
+                    if (typeof p === 'number') out.push(p);
+                    else if (Array.isArray(p)) out.push(...p);
+                    else if (typeof p === 'string') {
+                        const b = new TextEncoder().encode(p);
+                        for (let i = 0; i < b.length; i++) out.push(b[i]);
+                    }
+                }
+                return out;
+            }
+
+            function buildEscPosReceipt(receiptData, width) {
+                width = width || 32;
+                const orgName = (localStorage.getItem('org_name') || 'Kevs Digital').slice(0, width);
+                const dateStr = new Date().toLocaleString();
+                const pmt = receiptData.payment || {};
+                const cust = receiptData.customer || {};
+                const parts = [];
+
+                parts.push(ESC.INIT);
+                parts.push(ESC.ALIGN_C, ESC.BOLD_ON, ESC.SIZE_DBL, orgName, ESC.FEED, ESC.SIZE_NORM, ESC.BOLD_OFF);
+                parts.push(`Receipt #${receiptData.receiptNumber || ''}`.slice(0, width), ESC.FEED);
+                parts.push(`Cashier: ${receiptData.cashierName || 'Cashier'}`.slice(0, width), ESC.FEED);
+                parts.push(dateStr.slice(0, width), ESC.FEED);
+                parts.push(ESC.ALIGN_L);
+                parts.push('-'.repeat(width), ESC.FEED);
+
+                for (const it of (receiptData.items || [])) {
+                    const name = String(it.name || '').slice(0, width - 12);
+                    const line = `${it.quantity}x ${name}`.slice(0, width);
+                    parts.push(line, ESC.FEED);
+                    const amt = `  ₦${Number(it.subtotal || 0).toFixed(2)}`;
+                    parts.push(amt, ESC.FEED);
+                }
+
+                parts.push('-'.repeat(width), ESC.FEED);
+                const lineLR = (l, r) => {
+                    l = String(l || ''); r = String(r || '');
+                    const gap = Math.max(1, width - l.length - r.length);
+                    return l + ' '.repeat(gap) + r;
+                };
+                parts.push(lineLR('Subtotal', `₦${Number(receiptData.subtotal || 0).toFixed(2)}`), ESC.FEED);
+                if ((receiptData.discount || 0) > 0) {
+                    parts.push(lineLR('Discount', `-₦${Number(receiptData.discount).toFixed(2)}`), ESC.FEED);
+                }
+                if ((receiptData.tax || 0) > 0) {
+                    parts.push(lineLR('Tax', `₦${Number(receiptData.tax).toFixed(2)}`), ESC.FEED);
+                }
+                parts.push(ESC.BOLD_ON, lineLR('TOTAL', `₦${Number(receiptData.grandTotal || 0).toFixed(2)}`), ESC.BOLD_OFF, ESC.FEED);
+                parts.push('-'.repeat(width), ESC.FEED);
+
+                parts.push(`Payment: ${String(pmt.method || 'cash').toUpperCase()}`, ESC.FEED);
+                if (pmt.method === 'transfer' && pmt.account_number) {
+                    parts.push(`  ${pmt.account_label || ''}`.slice(0, width), ESC.FEED);
+                    parts.push(`  ${String(pmt.provider || '').toUpperCase()} ${pmt.account_number}`.slice(0, width), ESC.FEED);
+                    if (pmt.transfer_reference) {
+                        parts.push(`  Ref: ${pmt.transfer_reference}`.slice(0, width), ESC.FEED);
+                    }
+                }
+                if (cust.name) parts.push(`Customer: ${cust.name}`.slice(0, width), ESC.FEED);
+                if (cust.pointsAfter !== undefined) parts.push(`Points: ${cust.pointsAfter}`.slice(0, width), ESC.FEED);
+
+                parts.push('-'.repeat(width), ESC.FEED);
+                parts.push(ESC.ALIGN_C, 'Thank you for shopping!', ESC.FEED);
+                parts.push(ESC.FEED_LINES(3));
+                parts.push(ESC.CUT);
+
+                return new Uint8Array(enc(parts));
+            }
+
+            // ── Bluetooth (Web Bluetooth) ──
+            // Tries the service/characteristic UUIDs used by the most
+            // common BLE thermal printers. Add new pairs to this table
+            // if you have a specific model that uses others.
+            const BLE_PROFILES = [
+                { service: '000018f0-0000-1000-8000-00805f9b34fb', char: '00002af1-0000-1000-8000-00805f9b34fb' },
+                { service: '0000ff00-0000-1000-8000-00805f9b34fb', char: '0000ff02-0000-1000-8000-00805f9b34fb' },
+                { service: '0000fee7-0000-1000-8000-00805f9b34fb', char: '0000fec7-0000-1000-8000-00805f9b34fb' },
+                { service: 'e7810a71-73ae-499d-8c15-faa9aef0c3f2', char: 'bef8d6c9-9c21-4c9e-b632-bd58c1009f9f' },
+            ];
+
+            const bt = {
+                device: null,
+                characteristic: null,
+                profile: null,
+                connectedName: null,
+
+                async connect() {
+                    if (!caps.bluetoothWeb) throw new Error('Web Bluetooth not available on this device');
+                    // requestDevice shows the browser's BLE chooser. The
+                    // filter accepts any peripheral that advertises the
+                    // "printer" service, plus a broad acceptOptionalServices
+                    // so unfamiliar printers still appear.
+                    const device = await navigator.bluetooth.requestDevice({
+                        acceptAllDevices: true,
+                        optionalServices: BLE_PROFILES.map(p => p.service),
+                    });
+                    const server = await device.gatt.connect();
+                    let found = null;
+                    for (const p of BLE_PROFILES) {
+                        try {
+                            const service = await server.getPrimaryService(p.service);
+                            const ch = await service.getCharacteristic(p.char);
+                            if (ch) { found = { service, char: ch, profile: p }; break; }
+                        } catch (e) { /* try next */ }
+                    }
+                    if (!found) {
+                        try { server.disconnect(); } catch (e) {}
+                        throw new Error('Printer does not expose a known ESC/POS service. It may not be BLE-compatible or may use a proprietary UUID.');
+                    }
+                    this.device = device;
+                    this.characteristic = found.char;
+                    this.profile = found.profile;
+                    this.connectedName = device.name || 'Bluetooth printer';
+                    return { name: this.connectedName };
+                },
+
+                async disconnect() {
+                    try { if (this.device && this.device.gatt.connected) this.device.gatt.disconnect(); } catch (e) {}
+                    this.device = null;
+                    this.characteristic = null;
+                    this.profile = null;
+                    this.connectedName = null;
+                },
+
+                async reconnect() {
+                    if (!caps.bluetoothWeb || !navigator.bluetooth.getDevices) return false;
+                    const pref = loadPref();
+                    if (!pref.deviceId) return false;
+                    try {
+                        const devices = await navigator.bluetooth.getDevices();
+                        const match = devices.find(d => d.id === pref.deviceId);
+                        if (!match) return false;
+                        const server = await match.gatt.connect();
+                        for (const p of BLE_PROFILES) {
+                            try {
+                                const service = await server.getPrimaryService(p.service);
+                                const ch = await service.getCharacteristic(p.char);
+                                if (ch) {
+                                    this.device = match;
+                                    this.characteristic = ch;
+                                    this.profile = p;
+                                    this.connectedName = match.name || pref.deviceName || 'Bluetooth printer';
+                                    return true;
+                                }
+                            } catch (e) {}
+                        }
+                        try { server.disconnect(); } catch (e) {}
+                        return false;
+                    } catch (e) {
+                        console.warn('Bluetooth reconnect failed', e);
+                        return false;
+                    }
+                },
+
+                async write(bytes) {
+                    if (!this.characteristic) throw new Error('No Bluetooth printer connected');
+                    const ch = this.characteristic;
+                    // BLE packets are small (typically 20–100 bytes usable).
+                    // Write 100-byte chunks with a small delay so cheap
+                    // printers do not drop packets under burst load.
+                    const CHUNK = 100;
+                    for (let i = 0; i < bytes.length; i += CHUNK) {
+                        const chunk = bytes.slice(i, i + CHUNK);
+                        if (ch.properties && ch.properties.writeWithoutResponse && ch.writeValueWithoutResponse) {
+                            await ch.writeValueWithoutResponse(chunk);
+                        } else {
+                            await ch.writeValue(chunk);
+                        }
+                        await new Promise(r => setTimeout(r, 20));
+                    }
+                },
+            };
+
+            // ── Browser (HTML) print ──
+            const browserPrint = {
+                print(receiptData, width) {
+                    const printArea = document.getElementById('receipt-print-area');
+                    if (!printArea) return;
+                    const orgName = localStorage.getItem('org_name') || 'Kevs Digital';
+                    const dateStr = new Date().toLocaleString();
+                    const pmt = receiptData.payment || {};
+                    const cust = receiptData.customer || {};
+
+                    let itemsHtml = '';
+                    (receiptData.items || []).forEach(item => {
+                        itemsHtml += `<div class="receipt-item"><span>${escapeHtml(item.name)} x ${item.quantity}</span><span>₦${Number(item.subtotal || 0).toFixed(2)}</span></div>`;
+                    });
+
+                    let paymentLine = `Payment: ${(pmt.method || 'cash').toUpperCase()}`;
+                    if (pmt.method === 'transfer' && pmt.account_number) {
+                        paymentLine += `<br>${escapeHtml(pmt.account_label || '')} — ${escapeHtml((pmt.provider || '').toUpperCase())} ${escapeHtml(pmt.account_number)}`;
+                        if (pmt.transfer_reference) paymentLine += `<br>Ref: ${escapeHtml(pmt.transfer_reference)}`;
+                    }
+
+                    // Set @page size for thermal printers (58mm/80mm). On
+                    // ordinary desktop printers this is ignored — the OS
+                    // dialog lets the user pick paper. On Android Chrome
+                    // it makes the system print service render at the
+                    // right width.
+                    const pageMm = width === 48 ? '80mm' : '58mm';
+                    let pageStyle = document.getElementById('pos-page-size');
+                    if (!pageStyle) { pageStyle = document.createElement('style'); pageStyle.id = 'pos-page-size'; document.head.appendChild(pageStyle); }
+                    pageStyle.textContent = `@page { size: ${pageMm} auto; margin: 0; }`;
+
+                    printArea.innerHTML = `
+                        <div class="receipt-header">${escapeHtml(orgName)}</div>
+                        <div style="text-align:center;font-size:10px;">Receipt #${escapeHtml(receiptData.receiptNumber || '')}</div>
+                        <div style="text-align:center;font-size:10px;">Cashier: ${escapeHtml(receiptData.cashierName || 'Cashier')}</div>
+                        <div style="text-align:center;font-size:10px;">${escapeHtml(dateStr)}</div>
+                        <div class="receipt-divider"></div>
+                        ${itemsHtml}
+                        <div class="receipt-divider"></div>
+                        <div class="receipt-item"><span>Subtotal</span><span>₦${Number(receiptData.subtotal || 0).toFixed(2)}</span></div>
+                        ${(receiptData.discount || 0) > 0 ? `<div class="receipt-item"><span>Discount</span><span>-₦${Number(receiptData.discount).toFixed(2)}</span></div>` : ''}
+                        ${(receiptData.tax || 0) > 0 ? `<div class="receipt-item"><span>Tax</span><span>₦${Number(receiptData.tax).toFixed(2)}</span></div>` : ''}
+                        <div class="receipt-item receipt-total"><span>TOTAL</span><span>₦${Number(receiptData.grandTotal || 0).toFixed(2)}</span></div>
+                        <div class="receipt-divider"></div>
+                        <div style="text-align:center;font-size:10px;">${paymentLine}</div>
+                        ${cust.name ? `<div style="text-align:center;font-size:10px;">Customer: ${escapeHtml(cust.name)}</div>` : ''}
+                        ${cust.pointsAfter !== undefined ? `<div style="text-align:center;font-size:10px;font-weight:bold;">Loyalty Points: ${cust.pointsAfter}</div>` : ''}
+                        <div class="receipt-divider"></div>
+                        <div class="receipt-footer">Thank you for shopping with us!</div>
+                    `;
+                    printArea.style.display = 'block';
+                    try { window.print(); } finally {
+                        setTimeout(() => {
+                            printArea.style.display = 'none';
+                            printArea.innerHTML = '';
+                            // Restore default @page so subsequent non-POS
+                            // prints (e.g. cashier printing a report) are
+                            // not forced to 58mm.
+                            if (pageStyle) pageStyle.textContent = '@page { margin: 10mm; }';
+                        }, 1000);
+                    }
+                },
+            };
+
+            // ── Tauri BLE bridge ──
+            const tauriBle = {
+                async write(bytes) {
+                    if (typeof window.POS_TAURI_BLE_PRINT !== 'function') {
+                        throw new Error('Tauri BLE bridge not configured');
+                    }
+                    await window.POS_TAURI_BLE_PRINT(bytes);
+                },
+            };
+
+            // ── Preference persistence ──
+            function loadPref() {
+                try {
+                    const raw = localStorage.getItem(LS_KEY);
+                    if (!raw) return { method: 'browser', paperWidth: 32 };
+                    const p = JSON.parse(raw);
+                    if (!p.paperWidth) p.paperWidth = 32;
+                    if (!p.method) p.method = 'browser';
+                    return p;
+                } catch (e) { return { method: 'browser', paperWidth: 32 }; }
+            }
+            function savePref(p) {
+                try { localStorage.setItem(LS_KEY, JSON.stringify(p)); } catch (e) {}
+            }
+
+            // ── Unified print ──
+            // Returns { method, ok, error? }. Never throws — the caller
+            // (checkout) should not fail because a printer is offline.
+            async function print(receiptData) {
+                const pref = loadPref();
+                const width = pref.paperWidth || 32;
+
+                // Bluetooth preferred and connected?
+                if (pref.method === 'bluetooth-web') {
+                    try {
+                        if (!bt.characteristic) {
+                            await bt.reconnect();
+                        }
+                        if (bt.characteristic) {
+                            const bytes = buildEscPosReceipt(receiptData, width);
+                            await bt.write(bytes);
+                            return { method: 'bluetooth-web', ok: true };
+                        }
+                    } catch (err) {
+                        console.warn('Bluetooth print failed, falling back to browser', err);
+                    }
+                    // Fall through to browser
+                }
+
+                if (pref.method === 'bluetooth-tauri') {
+                    try {
+                        const bytes = buildEscPosReceipt(receiptData, width);
+                        await tauriBle.write(bytes);
+                        return { method: 'bluetooth-tauri', ok: true };
+                    } catch (err) {
+                        console.warn('Tauri BLE print failed, falling back to browser', err);
+                    }
+                    // Fall through to browser
+                }
+
+                // Browser fallback — always available
+                try {
+                    browserPrint.print(receiptData, width);
+                    return { method: 'browser', ok: true };
+                } catch (err) {
+                    console.error('Browser print failed', err);
+                    return { method: 'browser', ok: false, error: err.message };
+                }
+            }
+
+            // ── Test print — bypasses preference, uses the given method ──
+            async function testPrint(method, paperWidth) {
+                const sample = {
+                    receiptNumber: 'TEST-' + Date.now().toString().slice(-6),
+                    cashierName: localStorage.getItem('user_profile_display') || 'Cashier',
+                    items: [{ name: 'Test item', quantity: 1, subtotal: 100 }],
+                    subtotal: 100, discount: 0, tax: 0, grandTotal: 100,
+                    payment: { method: 'cash' },
+                    customer: { name: 'Test Customer', pointsAfter: 0 },
+                };
+                if (method === 'bluetooth-web') {
+                    if (!bt.characteristic) throw new Error('Connect a Bluetooth printer first');
+                    const bytes = buildEscPosReceipt(sample, paperWidth || 32);
+                    await bt.write(bytes);
+                    return { method, ok: true };
+                }
+                if (method === 'bluetooth-tauri') {
+                    const bytes = buildEscPosReceipt(sample, paperWidth || 32);
+                    await tauriBle.write(bytes);
+                    return { method, ok: true };
+                }
+                browserPrint.print(sample, paperWidth || 32);
+                return { method: 'browser', ok: true };
+            }
+
+            return {
+                caps,
+                loadPref,
+                savePref,
+                print,
+                testPrint,
+                bt,
+                buildEscPosReceipt,
+            };
+        })();
+
+        // ================================================================
+        // POS LOGIC STARTS HERE
+        // ================================================================
+
+        const BACKEND = 'https://kevsono-kevs-digital-bos.hf.space';
+        let token = localStorage.getItem('access_token');
+        let products = [];
+        let allCustomers = [];
+        let posSearchTerm = '';
+        let posPage = 1;
+        const POS_PAGE_SIZE = 50;
+        let posTotalItems = 0;
+        let posIsLoading = false;
+        let posHasMore = true;
+        let activeTab = 1;
+        let abortController = null;
+        let isOnline = navigator.onLine;
+        let syncInProgress = false;
+        let catalogSyncInProgress = false;
+        let html5QrCode = null;
+
+        const CATALOG_PAGE_SIZE = 500;
+        const CATALOG_LAST_SYNC_KEY = 'catalog_last_sync';
+        const CATALOG_COUNT_KEY = 'catalog_count';
+        const CATALOG_EXPECTED_KEY = 'catalog_expected';
+        const CATALOG_TTL_MS = 15 * 60 * 1000;
+
+        const ORG_VERTICAL = localStorage.getItem('org_vertical') || 'retail';
+        // Food verticals (takeaway / dine-in / kitchen tickets) are the only
+        // verticals that get order-type fields, kitchen buttons, and order-
+        // type data on receipts. Every other vertical omits them entirely so
+        // retail / pharmacy / service sales never carry a "Takeaway" badge.
+        const IS_FOOD_VERTICAL = ORG_VERTICAL === 'food';
+
+        // ── Payment accounts ──
+        let paymentAccounts = [];
+        const PAYMENT_ACCOUNTS_CACHE_KEY = 'pos_payment_accounts';
+
+        async function loadPaymentAccounts() {
+            if (isOnline && token) {
+                try {
+                    const data = await apiCall('/payment-accounts', 'GET');
+                    paymentAccounts = data.accounts || [];
+                    try { localStorage.setItem(PAYMENT_ACCOUNTS_CACHE_KEY, JSON.stringify(paymentAccounts)); } catch (e) {}
+                    populatePaymentAccountCards();
+                    return;
+                } catch (err) {
+                    console.warn('loadPaymentAccounts: online fetch failed, using cache:', err);
+                }
+            }
+            try {
+                const cached = JSON.parse(localStorage.getItem(PAYMENT_ACCOUNTS_CACHE_KEY) || '[]');
+                paymentAccounts = Array.isArray(cached) ? cached : [];
+            } catch (e) { paymentAccounts = []; }
+            populatePaymentAccountCards();
+        }
+
+        function populatePaymentAccountCards() {
+            const activeState = tabState[activeTab];
+            const defaultAcc = paymentAccounts.find(a => a.is_default);
+
+            if (!activeState.transferAccountId && defaultAcc) activeState.transferAccountId = defaultAcc.id;
+            if (activeState.transferAccountId && !paymentAccounts.some(a => a.id === activeState.transferAccountId)) {
+                activeState.transferAccountId = defaultAcc ? defaultAcc.id : null;
+            }
+
+            const grids = [
+                document.getElementById('desktop-transfer-account-grid'),
+                document.getElementById('mobile-transfer-account-grid'),
+            ];
+
+            for (const grid of grids) {
+                if (!grid) continue;
+                grid.innerHTML = '';
+
+                if (paymentAccounts.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.className = 'col-span-full text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-3';
+                    empty.innerHTML = '<i class="fa-solid fa-triangle-exclamation mr-1"></i> No receiving accounts configured. Ask your admin to add one under <strong>Accounting &rarr; Bank Transfers</strong>.';
+                    grid.appendChild(empty);
+                    continue;
+                }
+
+                for (const acc of paymentAccounts) {
+                    const isSelected = acc.id === activeState.transferAccountId;
+                    const card = document.createElement('button');
+                    card.type = 'button';
+                    card.dataset.accountId = acc.id;
+                    card.className = 'transfer-account-card' + (isSelected ? ' selected' : '');
+                    const provider = (acc.provider || '').toUpperCase();
+                    let inner = `
+                        <div class="flex items-center justify-between gap-2 mb-1">
+                            <span class="text-sm font-semibold truncate">${escapeHtml(acc.label || provider || 'Account')}</span>
+                            <span class="provider-badge">${escapeHtml(provider)}</span>
+                        </div>
+                        <div class="font-mono text-sm text-gray-800 tracking-wide">${escapeHtml(acc.account_number || '')}</div>
+                        <div class="text-xs text-gray-500 truncate">${escapeHtml(acc.account_name || '')}</div>
+                    `;
+                    if (acc.is_default) inner += `<div class="text-[10px] text-amber-700 font-semibold mt-1"><i class="fa-solid fa-star"></i> Default</div>`;
+                    card.innerHTML = inner;
+                    card.addEventListener('click', () => selectTransferAccount(acc.id));
+                    grid.appendChild(card);
+                }
+            }
+        }
+
+        function selectTransferAccount(accountId) {
+            tabState[activeTab].transferAccountId = accountId || null;
+            document.querySelectorAll('.transfer-account-card').forEach(el => {
+                el.classList.toggle('selected', el.dataset.accountId === accountId);
+            });
+        }
+
+        function getSelectedTransferAccount() {
+            const state = tabState[activeTab];
+            const id = state.transferAccountId || null;
+            const dRef = document.getElementById('desktop-transfer-reference');
+            const mRef = document.getElementById('mobile-transfer-reference');
+            const ref = ((dRef && dRef.value) || (mRef && mRef.value) || '').trim() || null;
+            const info = paymentAccounts.find(a => a.id === id) || null;
+            return { id, reference: ref, info };
+        }
+
+        function clearTransferReference() {
+            tabState[activeTab].transferReference = '';
+            const dRef = document.getElementById('desktop-transfer-reference');
+            const mRef = document.getElementById('mobile-transfer-reference');
+            if (dRef) dRef.value = '';
+            if (mRef) mRef.value = '';
+        }
+
+        function toggleTransferAccountUI(show) {
+            const d = document.getElementById('desktop-transfer-account-container');
+            const m = document.getElementById('mobile-transfer-account-container');
+            if (d) d.classList.toggle('hidden', !show);
+            if (m) m.classList.toggle('hidden', !show);
+            if (show && paymentAccounts.length === 0) {
+                showToast('⚠️ No receiving accounts configured. Ask your admin to add one under Accounting → Bank Transfers.', 'error');
+            }
+        }
+
+        function generateUUID() {
+            if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        // ── Receipt printer: convenience wrapper used by checkout ──
+        // Delegates to POSPrinter.print and surfaces a toast on failure.
+        // Never blocks or throws — the sale has already been saved.
+        async function printReceipt(receiptData) {
+            if (!receiptData) return;
+            try {
+                const result = await POSPrinter.print(receiptData);
+                if (!result.ok) {
+                    showToast('Receipt printer error: ' + (result.error || 'unknown'), 'error');
+                }
+            } catch (err) {
+                console.warn('printReceipt failed', err);
+            }
+        }
+
+        // DOM Refs - Desktop
+        const desktopCartContainer = document.getElementById('desktop-cart-items');
+        const desktopTotalSpan = document.getElementById('desktop-cart-total');
+        const desktopCheckoutBtn = document.getElementById('desktop-checkout-btn');
+        const desktopOrderTypeSelect = document.getElementById('desktop-order-type');
+        const desktopTableContainer = document.getElementById('desktop-table-container');
+        const desktopTableInput = document.getElementById('desktop-table-number');
+        const desktopRestaurantFields = document.getElementById('desktop-restaurant-fields');
+        const desktopAddCustomerBtn = document.getElementById('desktop-add-customer-btn');
+        const desktopCustomerForm = document.getElementById('desktop-customer-form');
+
+        // DOM Refs - Mobile
+        const mobileCartContainer = document.getElementById('mobile-cart-items');
+        const mobileTotalSpan = document.getElementById('mobile-cart-total');
+        const mobileSheetTotal = document.getElementById('mobile-sheet-total');
+        const mobileCartCount = document.getElementById('mobile-cart-count');
+        const mobileCartSheet = document.getElementById('mobile-cart-sheet');
+        const mobileCheckoutBtn = document.getElementById('mobile-checkout-btn');
+        const mobileOrderTypeSelect = document.getElementById('mobile-order-type');
+        const mobileTableContainer = document.getElementById('mobile-table-container');
+        const mobileTableInput = document.getElementById('mobile-table-number');
+        const mobileRestaurantFields = document.getElementById('mobile-restaurant-fields');
+        const mobileCustomerForm = document.getElementById('mobile-customer-form');
+
+        // Shared DOM
+        const productContainer = document.getElementById('product-list');
+        const emptyMsgDiv = document.getElementById('product-list-empty');
+        const customerSearchInput = document.getElementById('customer-search');
+        const suggestionsDiv = document.getElementById('customer-suggestions');
+        const customerInfoDiv = document.getElementById('customer-info');
+        const customerNameDisplay = document.getElementById('customer-name-display');
+        const customerPointsSpan = document.getElementById('customer-points');
+        const pointsRedeemSection = document.getElementById('points-redeem-section');
+        const redeemPointsInput = document.getElementById('redeem-points-input');
+        const applyPointsBtn = document.getElementById('apply-points-btn');
+        const offlinePointsWarning = document.getElementById('offline-points-warning');
+        const scannerHint = document.getElementById('search-scanner-hint');
+        const loadingMoreDiv = document.getElementById('loading-more');
+        const connectionStatus = document.getElementById('connection-status');
+        const syncNowBtn = document.getElementById('sync-now-btn');
+        const historyBtn = document.getElementById('history-btn');
+        const historyModal = document.getElementById('history-modal');
+        const closeHistoryBtn = document.getElementById('close-history-btn');
+        const historyList = document.getElementById('history-list');
+        const dashboardBtn = document.getElementById('dashboard-btn');
+        const dashboardModal = document.getElementById('sync-dashboard-modal');
+        const closeDashboardBtn = document.getElementById('close-dashboard-btn');
+        const refreshDashboardBtn = document.getElementById('refresh-dashboard-btn');
+        const dashboardContent = document.getElementById('dashboard-content');
+        const downloadCatalogBtn = document.getElementById('download-catalog-btn');
+        const catalogSyncBanner = document.getElementById('catalog-sync-banner');
+        const catalogSyncLabel = document.getElementById('catalog-sync-label');
+        const catalogProgressBar = document.getElementById('catalog-progress-bar');
+        const catalogProgressText = document.getElementById('catalog-progress-text');
+        const cachedCountSpan = document.getElementById('cached-count');
+        const expectedCountSpan = document.getElementById('expected-count');
+        const catalogBadgeIcon = document.getElementById('catalog-badge-icon');
+        const kioskModeBtn = document.getElementById('kiosk-mode-btn');
+        const cameraScanBtn = document.getElementById('camera-scan-btn');
+        const cameraModal = document.getElementById('camera-modal');
+        const closeCameraBtn = document.getElementById('close-camera-btn');
+        const sendToKitchenBtn = document.getElementById('send-to-kitchen-btn');
+        const mobileKitchenBtn = document.getElementById('mobile-kitchen-btn');
+        const successShareModal = document.getElementById('success-share-modal');
+        const printerBtn = document.getElementById('printer-btn');
+        const printerModal = document.getElementById('printer-modal');
+        const closePrinterBtn = document.getElementById('close-printer-btn');
+
+        const tab1Btn = document.getElementById('tab1-btn');
+        const tab2Btn = document.getElementById('tab2-btn');
+        const desktopTabBadge = document.getElementById('desktop-tab-badge');
+        const desktopCustomerLabel = document.getElementById('desktop-customer-label');
+        const mobileSheetCustomerLabel = document.getElementById('mobile-sheet-customer-label');
+
+        // ── Per-tab state factory ──
+        // orderType is only set for food verticals. For everyone else it is
+        // null and never referenced, so a retail / pharmacy / service sale
+        // can never carry a "Takeaway" value into receiptData.
+        function makeEmptyTabState() {
+            return {
+                cart: [],
+                paymentMethod: 'cash',
+                orderType: IS_FOOD_VERTICAL ? 'takeaway' : null,
+                tableNumber: '',
+                customerName: '',
+                customerPhone: '',
+                customerEmail: '',
+                loyaltyUserId: null,
+                pointsBalance: 0,
+                pointsRedeemed: 0,
+                transferAccountId: null,
+                transferReference: ''
+            };
+        }
+
+        const tabState = {
+            1: makeEmptyTabState(),
+            2: makeEmptyTabState()
+        };
+
+        function showToast(msg, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `px-4 py-3 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-green-600' : type === 'error' ? 'bg-red-600' : 'bg-blue-600'} mb-2 text-sm flex items-center gap-2`;
+            const icon = type === 'success' ? 'fa-circle-check' : type === 'error' ? 'fa-circle-exclamation' : 'fa-info-circle';
+            toast.innerHTML = `<i class="fa-solid ${icon}"></i> ${msg}`;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 3800);
+        }
+
+        async function apiCall(endpoint, method = 'GET', body = null, retry = true, signal = null) {
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+            const selectedOrgId = localStorage.getItem('selected_org_id');
+            if (selectedOrgId) headers['X-Selected-Org-Id'] = selectedOrgId;
+            const options = { method, headers, signal };
+            if (body) options.body = JSON.stringify(body);
+            let res;
+            try { res = await fetch(`${BACKEND}${endpoint}`, options); } catch (netErr) {
+                const e = new Error(netErr.message || 'Network error'); e.status = 0; e.network = true; throw e;
+            }
+            if (res.status === 401 && retry) {
+                const refresh = localStorage.getItem('refresh_token');
+                if (refresh) {
+                    try {
+                        const refreshRes = await fetch(`${BACKEND}/auth/refresh`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh_token: refresh }) });
+                        if (refreshRes.ok) {
+                            const { access_token, refresh_token } = await refreshRes.json();
+                            localStorage.setItem('access_token', access_token); localStorage.setItem('refresh_token', refresh_token); token = access_token;
+                            return apiCall(endpoint, method, body, false, signal);
+                        }
+                    } catch (e) {}
+                }
+                showLoginModal(); const expired = new Error('Session expired'); expired.status = 401; throw expired;
+            }
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: 'Request error' }));
+                const e = new Error(err.detail || 'API error'); e.status = res.status; throw e;
+            }
+            return res.json();
+        }
+
+        function showLoginModal() { document.getElementById('auth-modal').classList.remove('hidden'); }
+        function hideLoginModal() { document.getElementById('auth-modal').classList.add('hidden'); }
+
+        function updateConnectionStatus() {
+            isOnline = navigator.onLine;
+            connectionStatus.innerHTML = isOnline ? '<i class="fa-solid fa-wifi"></i> Online' : '<i class="fa-solid fa-wifi-slash"></i> Offline';
+            connectionStatus.className = isOnline ? 'online-badge' : 'offline-badge';
+        }
+        window.addEventListener('online', () => { updateConnectionStatus(); syncPendingOrders(); flushAuditQueue(); maybeAutoSyncCatalog(); });
+        window.addEventListener('offline', updateConnectionStatus);
+
+        // ==========================================
+        // MOBILE UI TOGGLES
+        // ==========================================
+        window.openMobileCart = function() { mobileCartSheet.classList.add('active'); };
+        window.closeMobileCart = function() { mobileCartSheet.classList.remove('active'); };
+        window.toggleMobileCustomerForm = function() { mobileCustomerForm.classList.toggle('hidden'); };
+
+        // Vertical init
+        if (IS_FOOD_VERTICAL) {
+            desktopRestaurantFields.classList.remove('hidden');
+            mobileRestaurantFields.classList.remove('hidden');
+            sendToKitchenBtn.classList.remove('hidden');
+            mobileKitchenBtn.classList.remove('hidden');
+            desktopCheckoutBtn.classList.replace('w-full', 'flex-1');
+            mobileCheckoutBtn.classList.replace('w-full', 'flex-1');
+        } else {
+            desktopRestaurantFields.classList.add('hidden');
+            mobileRestaurantFields.classList.add('hidden');
+            sendToKitchenBtn.classList.add('hidden');
+            mobileKitchenBtn.classList.add('hidden');
+        }
+
+        // Payment Chips Logic
+        document.querySelectorAll('.payment-chip').forEach(chip => {
+            chip.addEventListener('click', (e) => {
+                const method = e.target.dataset.method;
+                tabState[activeTab].paymentMethod = method;
+                document.querySelectorAll('.payment-chip').forEach(c => {
+                    c.classList.toggle('active', c.dataset.method === method);
+                });
+                toggleTransferAccountUI(method === 'transfer');
+            });
+        });
+
+        // KIOSK MODE
+        kioskModeBtn.addEventListener('click', () => {
+            document.body.classList.toggle('kiosk-mode');
+            const isKiosk = document.body.classList.contains('kiosk-mode');
+            if (isKiosk) {
+                kioskModeBtn.innerHTML = '<i class="fa-solid fa-xmark"></i> Exit Kiosk';
+                kioskModeBtn.classList.replace('bg-gray-800', 'bg-red-600');
+                document.getElementById('product-search').focus();
+                showToast('Kiosk Mode: Self-Service Active', 'info');
+            } else {
+                kioskModeBtn.innerHTML = '<i class="fa-solid fa-tablet-screen-button"></i> Kiosk';
+                kioskModeBtn.classList.replace('bg-red-600', 'bg-gray-800');
+            }
+        });
+
+        // Escape exits kiosk mode. The toggle button is now visible in
+        // kiosk mode (see CSS), but Escape gives a keyboard shortcut so
+        // the mode is always reversible even if the button is ever
+        // obscured or the terminal is being driven without a mouse.
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            if (!document.body.classList.contains('kiosk-mode')) return;
+            document.body.classList.remove('kiosk-mode');
+            kioskModeBtn.innerHTML = '<i class="fa-solid fa-tablet-screen-button"></i> Kiosk';
+            kioskModeBtn.classList.replace('bg-red-600', 'bg-gray-800');
+            showToast('Kiosk Mode: Deactivated', 'info');
+        });
+
+        // ORDER TYPE & TABLE NUMBER
+        function handleOrderTypeChange(val) {
+            tabState[activeTab].orderType = val;
+            if (val === 'dine-in') {
+                desktopTableContainer.classList.remove('hidden');
+                mobileTableContainer.classList.remove('hidden');
+            } else {
+                desktopTableContainer.classList.add('hidden');
+                mobileTableContainer.classList.add('hidden');
+            }
+        }
+        desktopOrderTypeSelect.addEventListener('change', (e) => { handleOrderTypeChange(e.target.value); mobileOrderTypeSelect.value = e.target.value; });
+        mobileOrderTypeSelect.addEventListener('change', (e) => { handleOrderTypeChange(e.target.value); desktopOrderTypeSelect.value = e.target.value; });
+        desktopTableInput.addEventListener('input', (e) => { tabState[activeTab].tableNumber = e.target.value; mobileTableInput.value = e.target.value; });
+        mobileTableInput.addEventListener('input', (e) => { tabState[activeTab].tableNumber = e.target.value; desktopTableInput.value = e.target.value; });
+
+        // CAMERA SCANNING
+        cameraScanBtn.addEventListener('click', () => {
+            cameraModal.classList.add('active');
+            if (!html5QrCode) { html5QrCode = new Html5Qrcode("reader"); }
+            html5QrCode.start(
+                { facingMode: "environment" },
+                { fps: 20, qrbox: { width: 250, height: 250 } },
+                (decodedText) => {
+                    // Hand the code to the shared scan pipeline. It performs
+                    // the dedup (shared with the HID scanner), searches, and
+                    // auto-adds to cart when exactly one product matches.
+                    handleScannedCode(decodedText);
+                },
+                (errorMessage) => { }
+            ).catch(err => {
+                showToast(`Camera Error: ${err}`, 'error');
+                cameraModal.classList.remove('active');
+            });
+        });
+
+        closeCameraBtn.addEventListener('click', () => {
+            if (html5QrCode && html5QrCode.isScanning) {
+                html5QrCode.stop().then(() => {
+                    cameraModal.classList.remove('active');
+                });
+            } else { cameraModal.classList.remove('active'); }
+        });
+
+        // WHATSAPP RECEIPT SHARING
+        function shareReceiptWhatsApp(receiptData) {
+            const orgName = localStorage.getItem('org_name') || 'Kevs Digital';
+            let text = `*${orgName}*\nReceipt: ${receiptData.receiptNumber}\nDate: ${new Date().toLocaleString()}\n\n`;
+            receiptData.items.forEach(item => { text += `${item.quantity}x ${item.name} - ₦${item.subtotal.toLocaleString()}\n`; });
+            text += `\nSubtotal: ₦${receiptData.subtotal.toLocaleString()}\n`;
+            if (receiptData.discount > 0) text += `Discount: -₦${receiptData.discount.toLocaleString()}\n`;
+            text += `*TOTAL: ₦${receiptData.grandTotal.toLocaleString()}*\n\n`;
+            text += `Payment Method: ${receiptData.payment.method.toUpperCase()}\n`;
+            if (receiptData.customer.name) text += `Customer: ${receiptData.customer.name}\n`;
+            text += `\nThank you for shopping with us!`;
+            window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+        }
+
+        document.getElementById('share-whatsapp-btn').addEventListener('click', () => {
+            const receiptStr = document.getElementById('success-share-modal').dataset.receipt;
+            if (receiptStr) shareReceiptWhatsApp(JSON.parse(receiptStr));
+            successShareModal.classList.add('hidden');
+        });
+
+        // Manual re-print from the success modal
+        document.getElementById('print-receipt-btn').addEventListener('click', async () => {
+            const receiptStr = document.getElementById('success-share-modal').dataset.receipt;
+            if (receiptStr) await printReceipt(JSON.parse(receiptStr));
+        });
+
+        // ==========================================
+        // SEARCH & CATALOG SYNC
+        // ==========================================
+        function normalizeProduct(p) {
+            const normalized = {
+                id: p.id, description: p.description || '', item_code: p.item_code || '', sku: p.sku || p.item_code || '',
+                price_naira: Number(p.price_naira) || 0, current_qty: Number(p.current_qty) || 0,
+                cost_price_naira: Number(p.cost_price_naira) || 0, handling_category: p.handling_category || 'standard',
+                weight_kg: Number(p.weight_kg) || 0, product_group: p.product_group || ''
+            };
+            normalized.search_tokens = computeSearchTokens(normalized);
+            return normalized;
+        }
+
+        async function refreshCachedCount() {
+            try {
+                const count = await DB.getProductCount();
+                const expected = Number(localStorage.getItem(CATALOG_EXPECTED_KEY) || 0);
+                if (cachedCountSpan) cachedCountSpan.innerText = count.toLocaleString();
+                if (expectedCountSpan) expectedCountSpan.innerText = expected > 0 ? expected.toLocaleString() : '?';
+                if (catalogBadgeIcon) {
+                    if (expected > 0 && count >= expected) catalogBadgeIcon.className = 'fa-solid fa-circle-check mr-1 text-green-600';
+                    else if (expected > 0 && count > 0) catalogBadgeIcon.className = 'fa-solid fa-database mr-1 text-amber-500';
+                    else catalogBadgeIcon.className = 'fa-solid fa-database mr-1 text-gray-500';
+                }
+                localStorage.setItem(CATALOG_COUNT_KEY, String(count));
+                return count;
+            } catch (e) { return 0; }
+        }
+
+        async function syncFullCatalog(force = false) {
+            if (!isOnline) { showToast('Catalog sync requires internet', 'error'); return; }
+            if (catalogSyncInProgress) { showToast('Catalog sync already running', 'info'); return; }
+            if (!token) { showToast('Please log in first', 'error'); return; }
+            if (!force) {
+                const lastSync = localStorage.getItem(CATALOG_LAST_SYNC_KEY);
+                if (lastSync && (Date.now() - new Date(lastSync).getTime()) < CATALOG_TTL_MS) return;
+            }
+            catalogSyncInProgress = true;
+            downloadCatalogBtn.disabled = true;
+            catalogSyncBanner.classList.remove('hidden');
+            catalogProgressBar.style.width = '0%';
+            let processed = 0, total = 0;
+            const seenIds = new Set();
+            try {
+                const firstRes = await apiCall(`/inventory/pos?limit=${CATALOG_PAGE_SIZE}&offset=0`, 'GET');
+                total = Number(firstRes.total) || 0;
+                const firstItems = (firstRes.items || []).map(normalizeProduct);
+                if (firstItems.length === 0) { showToast('Catalog is empty', 'info'); catalogSyncBanner.classList.add('hidden'); return; }
+                if (total > 0) { localStorage.setItem(CATALOG_EXPECTED_KEY, String(total)); await refreshCachedCount(); }
+                await DB.saveProducts(firstItems);
+                firstItems.forEach(p => seenIds.add(p.id));
+                processed = firstItems.length;
+                catalogProgressBar.style.width = `${Math.min(100, Math.round((processed / (total || processed)) * 100))}%`;
+                catalogProgressText.textContent = `${processed} / ${total || processed}`;
+                await refreshCachedCount();
+
+                let offset = CATALOG_PAGE_SIZE;
+                while (true) {
+                    let pageRes = await apiCall(`/inventory/pos?limit=${CATALOG_PAGE_SIZE}&offset=${offset}&skip_count=true`, 'GET');
+                    const items = (pageRes.items || []).map(normalizeProduct);
+                    if (items.length === 0) break;
+                    await DB.saveProducts(items);
+                    items.forEach(p => seenIds.add(p.id));
+                    processed += items.length; offset += CATALOG_PAGE_SIZE;
+                    catalogProgressBar.style.width = `${Math.min(100, Math.round((processed / (total || processed)) * 100))}%`;
+                    catalogProgressText.textContent = `${processed} / ${total || processed}`;
+                    await refreshCachedCount();
+                }
+                if (total === 0 && processed > 0) { localStorage.setItem(CATALOG_EXPECTED_KEY, String(processed)); total = processed; }
+
+                const allCached = await DB.getAllProducts();
+                const staleIds = allCached.filter(p => !seenIds.has(p.id)).map(p => p.id);
+                if (staleIds.length) await DB.deleteProducts(staleIds);
+
+                await refreshCachedCount();
+                localStorage.setItem(CATALOG_LAST_SYNC_KEY, new Date().toISOString());
+                showToast(`✅ Catalog ready offline: ${processed.toLocaleString()} products`, 'success');
+                await emitAuditEvent('sync.completed', { type: 'catalog', product_count: processed });
+            } catch (err) { showToast('Catalog sync failed: ' + err.message, 'error'); }
+            finally { catalogSyncInProgress = false; downloadCatalogBtn.disabled = false; setTimeout(() => catalogSyncBanner.classList.add('hidden'), 1200); }
+        }
+
+        function maybeAutoSyncCatalog() {
+            if (!isOnline || !token) return;
+            const lastSync = localStorage.getItem(CATALOG_LAST_SYNC_KEY);
+            if (!lastSync || (Date.now() - new Date(lastSync).getTime()) > CATALOG_TTL_MS) setTimeout(() => syncFullCatalog(false), 1500);
+        }
+
+        async function searchOfflineCatalog(term, offset, limit) {
+            const result = await DB.searchProducts(term, offset, limit);
+            if (result.isDexie) return result;
+            return { items: result, total: result.length };
+        }
+
+        // ── In-flight load tracking ──
+        // A second reset while a search is still resolving used to wipe
+        // `products` and then early-return on `posIsLoading`, leaving the
+        // UI empty. We now serialise resets behind the current promise so
+        // the winning load always repopulates `products`.
+        let _inflightLoad = null;
+
+        async function loadPOSProducts(reset = true) {
+            const trimmed = posSearchTerm.trim();
+            if (trimmed.length < 2) {
+                products = []; productContainer.innerHTML = ''; emptyMsgDiv.classList.add('hidden'); posPage = 1; posHasMore = true; posTotalItems = 0;
+                if (abortController) abortController.abort(); return;
+            }
+            if (reset) {
+                // Abort any in-flight fetch first, then wait for the
+                // in-flight load promise to settle before we wipe state.
+                if (abortController) abortController.abort();
+                const waitFor = _inflightLoad;
+                if (waitFor) { try { await waitFor; } catch (_) {} }
+                posPage = 1; posTotalItems = 0; posHasMore = true; products = []; productContainer.innerHTML = ''; emptyMsgDiv.classList.add('hidden');
+                const oldSentinel = document.getElementById('scroll-sentinel'); if (oldSentinel) oldSentinel.remove();
+                if (observer) observer.disconnect(); abortController = new AbortController();
+            }
+            if (posIsLoading || !posHasMore) return;
+            posIsLoading = true; loadingMoreDiv.classList.remove('hidden');
+            const offset = (posPage - 1) * POS_PAGE_SIZE;
+
+            const myLoad = (async () => {
+                try {
+                    let items = [], total = 0;
+                    const cachedCount = await DB.getProductCount();
+                    const expectedCount = Number(localStorage.getItem(CATALOG_EXPECTED_KEY) || 0);
+                    const cacheReady = expectedCount > 0 && cachedCount >= expectedCount;
+                    const useLocal = cacheReady || !isOnline;
+                    if (useLocal) {
+                        const result = await searchOfflineCatalog(trimmed, offset, POS_PAGE_SIZE); items = result.items; total = result.total;
+                    } else {
+                        const url = `/inventory/pos?limit=${POS_PAGE_SIZE}&offset=${offset}&q=${encodeURIComponent(trimmed)}`;
+                        const data = await apiCall(url, 'GET', null, true, abortController.signal);
+                        items = data.items || []; total = data.total || 0;
+                        if (items.length > 0) { await DB.saveProducts(items.map(normalizeProduct)); refreshCachedCount(); }
+                    }
+                    posTotalItems = total; posHasMore = (offset + POS_PAGE_SIZE) < total;
+                    if (reset) products = items; else products = products.concat(items);
+                    appendProductCards(items); posPage++;
+                    return products;
+                } catch (err) {
+                    if (err.name === 'AbortError') return;
+                    try {
+                        const result = await searchOfflineCatalog(trimmed, offset, POS_PAGE_SIZE);
+                        posTotalItems = result.total; posHasMore = (offset + POS_PAGE_SIZE) < result.total;
+                        if (reset) products = result.items; else products = products.concat(result.items);
+                        appendProductCards(result.items); posPage++; return products;
+                    } catch (e2) { showToast('Search failed: ' + err.message, 'error'); }
+                } finally {
+                    posIsLoading = false; loadingMoreDiv.classList.add('hidden');
+                    if (posHasMore) {
+                        const sentinel = document.createElement('div'); sentinel.id = 'scroll-sentinel'; sentinel.className = 'h-4 w-full';
+                        productContainer.appendChild(sentinel); observeSentinel();
+                    } else if (products.length > 0) {
+                        const endMsg = document.createElement('div'); endMsg.className = 'col-span-full text-center py-4 text-gray-400 text-sm'; endMsg.innerText = '— End of catalog —'; productContainer.appendChild(endMsg);
+                    }
+                }
+            })();
+
+            _inflightLoad = myLoad;
+            try { return await myLoad; }
+            finally { if (_inflightLoad === myLoad) _inflightLoad = null; }
+        }
+
+        function appendProductCards(items) {
+            if (!items || items.length === 0) { if (products.length === 0) emptyMsgDiv.classList.remove('hidden'); return; }
+            emptyMsgDiv.classList.add('hidden');
+            items.forEach(p => {
+                const skuDisplay = p.sku || p.item_code || `ID:${p.id}`;
+                const stock = p.current_qty ?? 0; const price = p.price_naira ?? 0;
+                const descSafe = escapeHtml(p.description || 'Unnamed product');
+                const card = document.createElement('button');
+                card.className = 'product-card bg-gray-50 rounded-xl text-left hover:bg-blue-50 border border-gray-200 transition shadow-sm flex flex-col p-3';
+                card.innerHTML = `<span class="name font-bold text-sm truncate w-full">${descSafe}</span><span class="sku text-xs text-gray-500 mt-1">📟 ${escapeHtml(skuDisplay)}</span><span class="price font-bold mt-2 text-base">₦${price.toLocaleString()}</span><span class="stock text-xs text-gray-400 mt-1">📦 ${stock} left</span>`;
+                card.onclick = () => addToCart(p.id, p.description || 'Product', price, stock, skuDisplay);
+                productContainer.appendChild(card);
+            });
+        }
+
+        function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;'); }
+        let observer = null;
+        function observeSentinel() {
+            if (observer) observer.disconnect();
+            const sentinel = document.getElementById('scroll-sentinel'); if (!sentinel) return;
+            observer = new IntersectionObserver((entries) => { if (entries[0].isIntersecting && posHasMore && !posIsLoading) loadPOSProducts(false); }, { root: null, rootMargin: '0px 0px 100px 0px' });
+            observer.observe(sentinel);
+        }
+
+        // Search Input (Hardware Scanner)
+        const searchInput = document.getElementById('product-search');
+        let scanBuffer = '', scanTimer = null, isScanning = false, lastKeyTime = 0, searchDebounceTimer = null;
+
+        // ── Shared scan pipeline ─────────────────────────────────────────
+        // Both the camera decoder and the keyboard-wedge (HID) path feed
+        // this single function. It owns the dedup window (so a hybrid
+        // device that emits a camera decode + keystrokes for the same
+        // barcode cannot add the item twice) and it auto-adds to cart
+        // when exactly one product matches.
+        const SCAN_KEY_GAP_MS = 60;    // keys closer than this = scanner burst
+        const SCAN_IDLE_MS    = 150;   // silence after burst = scan complete
+        const SCAN_DEDUP_MS   = 600;   // same code within this window = duplicate
+        let _lastCode = '';
+        let _lastCodeAt = 0;
+
+        async function handleScannedCode(rawCode) {
+            const code = (rawCode || '').trim();
+            if (!code) return;
+
+            const now = Date.now();
+            if (code === _lastCode && (now - _lastCodeAt) < SCAN_DEDUP_MS) return;
+            _lastCode = code; _lastCodeAt = now;
+
+            searchInput.value = code;
+            posSearchTerm = code;
+
+            // Await the search so `products` is populated when we read it.
+            // (The previous camera path used a 500 ms setTimeout that raced
+            // the input-debounce, so `products` was usually still empty and
+            // the auto-add was silently skipped.)
+            await loadPOSProducts(true);
+
+            if (products.length === 1) {
+                const p = products[0];
+                await addToCart(p.id, p.description || 'Product',
+                                p.price_naira || 0, p.current_qty || 0,
+                                p.sku || p.item_code);
+                showToast(`Added: ${p.description || p.sku || code}`, 'success');
+            } else if (products.length === 0) {
+                showToast(`No product found for "${code}"`, 'error');
+            } else {
+                showToast(`${products.length} matches — tap the item to add`, 'info');
+            }
+        }
+
+        searchInput.addEventListener('input', function(e) {
+            if (isScanning) return;
+            clearTimeout(searchDebounceTimer);
+            const val = this.value.trim();
+            searchDebounceTimer = setTimeout(() => {
+                posSearchTerm = val;
+                if (val.length === 0) { products = []; productContainer.innerHTML = ''; emptyMsgDiv.classList.add('hidden'); posPage = 1; posHasMore = true; posTotalItems = 0; if (abortController) abortController.abort(); return; }
+                if (val.length >= 2) { if (abortController) abortController.abort(); loadPOSProducts(true); }
+            }, 500);
+        });
+
+        searchInput.addEventListener('keydown', function(e) {
+            // Enter finalises immediately — many USB scanners send a
+            // trailing CR/LF. We recover the full code from the scan
+            // buffer if a scan is active, otherwise from the input.
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                clearTimeout(scanTimer);
+                clearTimeout(searchDebounceTimer);
+                const code = isScanning ? scanBuffer : searchInput.value.trim();
+                isScanning = false; scanBuffer = ''; lastKeyTime = 0;
+                searchInput.classList.remove('scanner-active');
+                scannerHint.classList.add('hidden');
+                if (code.length >= 2) handleScannedCode(code);
+                return;
+            }
+
+            const isPrintable = e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey;
+            if (!isPrintable) {
+                isScanning = false; scanBuffer = ''; lastKeyTime = 0;
+                clearTimeout(scanTimer);
+                return;
+            }
+
+            const now = Date.now();
+            const gap = lastKeyTime ? now - lastKeyTime : Infinity;
+            lastKeyTime = now;
+
+            // Either we're already inside a scan, or the keystroke cadence
+            // says we're starting one. On entry we recover the first
+            // character(s) from `searchInput.value` — the old code started
+            // with an empty buffer so the first character of every scan
+            // was lost, making the search miss.
+            if (isScanning || gap < SCAN_KEY_GAP_MS) {
+                if (!isScanning) {
+                    isScanning = true;
+                    scanBuffer = searchInput.value;
+                    clearTimeout(searchDebounceTimer);
+                    searchInput.classList.add('scanner-active');
+                    scannerHint.classList.remove('hidden');
+                }
+                e.preventDefault();
+                scanBuffer += e.key;
+                searchInput.value = scanBuffer;
+                clearTimeout(scanTimer);
+                scanTimer = setTimeout(() => {
+                    const code = scanBuffer;
+                    isScanning = false; scanBuffer = ''; lastKeyTime = 0;
+                    searchInput.classList.remove('scanner-active');
+                    scannerHint.classList.add('hidden');
+                    if (code.length >= 2) handleScannedCode(code);
+                }, SCAN_IDLE_MS);
+                return;
+            }
+            // Slow typing → fall through to the 500 ms input debounce above.
+        });
+
+        // Customer Search
+        function filterCustomers(searchText) {
+            if (!searchText.trim()) return [];
+            const term = searchText.trim().toLowerCase();
+            return allCustomers.filter(c => {
+                const name = `${c.first_name || ''} ${c.last_name || ''}`.toLowerCase();
+                return name.includes(term) || (c.phone || '').toLowerCase().includes(term) || (c.email || '').toLowerCase().includes(term);
+            });
+        }
+
+        function renderSuggestions() {
+            const searchVal = customerSearchInput.value; const matches = filterCustomers(searchVal);
+            if (matches.length === 0 || !searchVal.trim()) { suggestionsDiv.classList.add('hidden'); return; }
+            suggestionsDiv.classList.remove('hidden');
+            suggestionsDiv.innerHTML = matches.map(c => {
+                const fullName = `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'No name';
+                return `<div class="customer-suggestion px-3 py-3 border-b last:border-0 text-sm hover:bg-blue-50" data-user-id="${c.id}" data-name="${escapeAttr(fullName)}" data-phone="${escapeAttr(c.phone || '')}" data-email="${escapeAttr(c.email || '')}" data-points="${c.loyalty_points || 0}">
+                    <div class="font-bold">${escapeHtml(fullName)}</div><div class="text-xs text-gray-500">${escapeHtml(c.phone || '')} · ${escapeHtml(c.email || '')}</div></div>`;
+            }).join('');
+            document.querySelectorAll('.customer-suggestion').forEach(el => {
+                el.addEventListener('click', () => {
+                    selectCustomer(el.dataset.userId, el.dataset.name, el.dataset.phone, el.dataset.email, parseInt(el.dataset.points, 10));
+                    suggestionsDiv.classList.add('hidden'); customerSearchInput.value = el.dataset.name;
+                });
+            });
+        }
+
+        function escapeAttr(str) { if (!str) return ''; return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+
+        function selectCustomer(userId, name, phone, email, points) {
+            const state = tabState[activeTab];
+            state.loyaltyUserId = userId; state.pointsBalance = points; state.pointsRedeemed = 0;
+            state.customerName = name; state.customerPhone = phone; state.customerEmail = email;
+
+            document.getElementById('desktop-customer-name').value = name;
+            document.getElementById('desktop-customer-phone').value = phone;
+            document.getElementById('desktop-customer-email').value = email;
+            document.getElementById('mobile-customer-name').value = name;
+            document.getElementById('mobile-customer-phone').value = phone;
+            document.getElementById('mobile-customer-email').value = email;
+
+            if (customerInfoDiv) customerInfoDiv.classList.remove('hidden');
+            if (customerNameDisplay) customerNameDisplay.innerText = name;
+            if (customerPointsSpan) customerPointsSpan.innerText = points;
+
+            if (points > 0 && isOnline) { pointsRedeemSection.classList.remove('hidden'); if (offlinePointsWarning) offlinePointsWarning.classList.add('hidden'); redeemPointsInput.max = points; redeemPointsInput.value = ''; }
+            else if (points > 0 && !isOnline) { pointsRedeemSection.classList.add('hidden'); if (offlinePointsWarning) offlinePointsWarning.classList.remove('hidden'); }
+            else { pointsRedeemSection.classList.add('hidden'); if (offlinePointsWarning) offlinePointsWarning.classList.add('hidden'); }
+            showToast(`Customer selected: ${name}`, 'success');
+            renderActiveCart();
+        }
+
+        async function loadCustomers() {
+            try {
+                const data = await apiCall('/organisations/me/users');
+                allCustomers = data.users || [];
+                for (const c of allCustomers) {
+                    await DB.saveCustomer({ id: c.id, first_name: c.first_name, last_name: c.last_name, phone: c.phone, email: c.email, loyalty_points: c.loyalty_points || 0 });
+                }
+            } catch (err) {
+                try { allCustomers = await DB.getCustomers(); } catch (_) { allCustomers = []; }
+            }
+        }
+
+        async function getAvailableStock(productId, fallbackStock) {
+            try { const row = await DB.getProduct(productId); if (row && typeof row.current_qty === 'number') return row.current_qty; } catch (e) {}
+            return (typeof fallbackStock === 'number') ? fallbackStock : 9999;
+        }
+
+        // Cart Logic
+        window.updateCartItemQty = async function(index, newQty) {
+            const state = tabState[activeTab]; const cart = state.cart; if (index < 0 || index >= cart.length) return;
+            newQty = parseInt(newQty, 10); if (isNaN(newQty) || newQty < 1) newQty = 1;
+            const item = cart[index]; const availableStock = await getAvailableStock(item.id, item.stock);
+            if (newQty > availableStock) { showToast(`⚠️ Only ${availableStock} left`, 'error'); newQty = availableStock; }
+            item.qty = newQty; renderActiveCart();
+        };
+        window.incrementCartItem = async function(index) {
+            const state = tabState[activeTab]; const cart = state.cart; if (index < 0 || index >= cart.length) return;
+            const item = cart[index]; const availableStock = await getAvailableStock(item.id, item.stock);
+            if (item.qty + 1 > availableStock) { showToast(`⚠️ Only ${availableStock} left`, 'error'); return; }
+            item.qty++; renderActiveCart();
+        };
+        window.decrementCartItem = function(index) {
+            const state = tabState[activeTab]; const cart = state.cart; if (index < 0 || index >= cart.length) return;
+            if (cart[index].qty > 1) { cart[index].qty--; renderActiveCart(); } else { cart.splice(index, 1); renderActiveCart(); }
+        };
+        window.removeCartItem = function(index) {
+            const state = tabState[activeTab]; const cart = state.cart;
+            if (index >= 0 && index < cart.length) { cart.splice(index, 1); renderActiveCart(); }
+        };
+        window.addToCart = async function(productId, productName, price, stock, skuLabel) {
+            const state = tabState[activeTab]; const cart = state.cart; const existing = cart.find(i => i.id === productId);
+            const availableStock = await getAvailableStock(productId, stock);
+            if (existing) {
+                if (existing.qty + 1 > availableStock) { showToast(`⚠️ Only ${availableStock} left`, 'error'); return; }
+                existing.qty++;
+            } else {
+                if (1 > availableStock) { showToast(`❌ Out of stock`, 'error'); return; }
+                cart.push({ id: productId, name: productName, price: price, qty: 1, sku: skuLabel, stock: availableStock });
+            }
+            renderActiveCart();
+        };
+
+        function renderActiveCart() {
+            const state = tabState[activeTab]; const cart = state.cart; const pointsRedeemed = state.pointsRedeemed || 0;
+            let subtotal = 0; let cartHtml = '';
+            cart.forEach((item, idx) => {
+                const itemTotal = item.price * item.qty; subtotal += itemTotal;
+                cartHtml += `<div class="flex items-center justify-between border-b pb-3 mb-3 hover:bg-gray-50 px-1 rounded gap-2">
+                    <div class="flex-1 min-w-0"><div class="font-bold text-sm truncate">${escapeHtml(item.name)}</div><div class="text-xs text-gray-500">₦${item.price.toLocaleString()}</div></div>
+                    <div class="flex items-center gap-2 flex-shrink-0">
+                        <button onclick="decrementCartItem(${idx})" class="qty-btn">−</button>
+                        <input type="number" min="1" value="${item.qty}" class="qty-input" onchange="updateCartItemQty(${idx}, this.value)" onfocus="this.select()">
+                        <button onclick="incrementCartItem(${idx})" class="qty-btn">+</button>
+                    </div>
+                    <div class="font-bold text-sm ml-2 w-16 text-right flex-shrink-0">₦${itemTotal.toLocaleString()}</div>
+                    <button onclick="removeCartItem(${idx})" class="text-red-500 hover:text-red-700 p-2 flex-shrink-0"><i class="fa-regular fa-trash-can"></i></button>
+                </div>`;
+            });
+
+            let finalTotal = subtotal;
+            if (pointsRedeemed > 0) {
+                const discount = pointsRedeemed;
+                if (discount > finalTotal) { state.pointsRedeemed = Math.min(finalTotal, pointsRedeemed); finalTotal = 0; }
+                else { finalTotal = subtotal - discount; }
+                cartHtml += `<div class="flex justify-between items-center text-green-700 border-t pt-2 mt-1 px-2"><div class="text-sm font-medium">🎁 Points (-${state.pointsRedeemed} pts)</div><div class="font-bold">-₦${discount.toLocaleString()}</div></div>`;
+            }
+
+            if (cart.length === 0) {
+                desktopCartContainer.innerHTML = `<div class="text-center text-gray-400 py-6"><i class="fa-regular fa-receipt text-3xl mb-2"></i><p class="text-sm">Cart is empty</p></div>`;
+                mobileCartContainer.innerHTML = `<div class="text-center text-gray-400 py-10"><i class="fa-regular fa-receipt text-4xl mb-3"></i><p class="text-base">Cart is empty</p></div>`;
+            } else {
+                desktopCartContainer.innerHTML = cartHtml;
+                mobileCartContainer.innerHTML = cartHtml;
+            }
+
+            desktopTotalSpan.innerText = `₦${finalTotal.toLocaleString()}`;
+            mobileSheetTotal.innerText = `₦${finalTotal.toLocaleString()}`;
+            mobileTotalSpan.innerText = `₦${finalTotal.toLocaleString()}`;
+
+            let totalItems = cart.reduce((sum, item) => sum + item.qty, 0);
+            mobileCartCount.innerText = totalItems;
+
+            if (desktopCustomerLabel) desktopCustomerLabel.innerText = activeTab === 1 ? 'Customer A' : 'Customer B';
+            if (mobileSheetCustomerLabel) mobileSheetCustomerLabel.innerText = activeTab === 1 ? 'Customer A' : 'Customer B';
+        }
+
+        // Checkout Logic
+        async function processCheckout() {
+            const state = tabState[activeTab]; const cart = state.cart;
+            if (cart.length === 0) { showToast('🛒 Cart is empty.', 'error'); return; }
+            const paymentMethod = state.paymentMethod;
+
+            let transferAccountId = null;
+            let transferReference = null;
+            let transferAccountInfo = null;
+            if (paymentMethod === 'transfer') {
+                const sel = getSelectedTransferAccount();
+                if (!sel.id) {
+                    if (paymentAccounts.length === 0) {
+                        showToast('No receiving accounts configured. Ask your admin to add one under Accounting → Bank Transfers.', 'error');
+                    } else {
+                        showToast('Please tap the receiving account for this transfer.', 'error');
+                    }
+                    return;
+                }
+                transferAccountId = sel.id;
+                transferReference = sel.reference;
+                transferAccountInfo = sel.info;
+            }
+
+            const customerName = document.getElementById('desktop-customer-name').value.trim() || document.getElementById('mobile-customer-name').value.trim() || null;
+            const customerPhone = document.getElementById('desktop-customer-phone').value.trim() || document.getElementById('mobile-customer-phone').value.trim() || null;
+            let customerEmail = document.getElementById('desktop-customer-email').value.trim() || document.getElementById('mobile-customer-email').value.trim() || null;
+            const pointsRedeemed = state.pointsRedeemed || 0;
+
+            if (paymentMethod !== 'cash' && paymentMethod !== 'transfer' && !customerEmail) {
+                showToast('📧 Email is required for card/bank gateway payments', 'error');
+                return;
+            }
+            if (!isOnline && (paymentMethod === 'card' || paymentMethod === 'bank')) {
+                showToast('⚠️ Offline: card/bank gateway payments are not accepted. Use cash or transfer.', 'error');
+                return;
+            }
+
+            const itemsPayload = cart.map(i => ({ inventory_id: i.id, quantity: i.qty }));
+            const cashierId = localStorage.getItem('user_id') || 'unknown';
+            const cashierName = localStorage.getItem('user_profile_display') || 'Cashier';
+            const orgName = localStorage.getItem('org_name') || 'Kevs Digital';
+            const offlineRef = generateUUID();
+            const subtotal = cart.reduce((sum, i) => sum + i.price * i.qty, 0);
+            const discount = pointsRedeemed;
+            const tax = 0;
+            const grandTotal = Math.max(0, subtotal - discount + tax);
+
+            const itemDetails = await Promise.all(cart.map(async item => {
+                let product = {}; try { product = (await DB.getProduct(item.id)) || {}; } catch (e) {}
+                return { productId: item.id, name: item.name, sku: item.sku || product.sku || '', quantity: item.qty, unitPrice: item.price, subtotal: item.price * item.qty, costPrice: product.cost_price_naira || 0, handlingCategory: product.handling_category || 'standard', weightKg: product.weight_kg || 0 };
+            }));
+
+            const paymentPayload = { method: paymentMethod, reference: null };
+            if (paymentMethod === 'transfer' && transferAccountInfo) {
+                paymentPayload.account_id = transferAccountId;
+                paymentPayload.account_label = transferAccountInfo.label || null;
+                paymentPayload.provider = transferAccountInfo.provider || null;
+                paymentPayload.account_number = transferAccountInfo.account_number || null;
+                paymentPayload.account_name = transferAccountInfo.account_name || null;
+                paymentPayload.transfer_reference = transferReference;
+            }
+
+            const receiptData = {
+                receiptNumber: offlineRef,
+                customer: { name: customerName || '', phone: customerPhone || '', email: customerEmail || '', loyaltyId: state.loyaltyUserId || null, pointsBefore: state.pointsBalance || 0, pointsAfter: state.pointsBalance || 0, pointsRedeemed: pointsRedeemed },
+                items: itemDetails, subtotal, discount, tax, grandTotal,
+                payment: paymentPayload,
+                cashierId, cashierName, location: orgName,
+                metadata: { softwareVersion: '1.0.0', deviceId: 'web-' + (navigator.userAgent || 'unknown'), printed: false }
+            };
+
+            // Only food verticals carry order-type data on the receipt.
+            // Everything else explicitly omits it so downstream consumers
+            // (history, print, WhatsApp, sync) can't mistake a retail sale
+            // for a takeaway order.
+            if (IS_FOOD_VERTICAL) {
+                receiptData.orderType = state.orderType;
+                receiptData.tableNumber = state.tableNumber;
+            }
+
+            const order = { offlineRef, cashierId, createdAt: new Date().toISOString(), status: 'pending', syncedAt: null, receiptData };
+
+            document.querySelectorAll('button[id$="-checkout-btn"]').forEach(b => { b.disabled = true; b.innerText = 'Processing...'; });
+
+            async function saveOfflineAndFinish(reason) {
+                await DB.saveOrder(order); await DB.queueOrder(offlineRef);
+                for (const item of cart) {
+                    const product = await DB.getProduct(item.id);
+                    if (product) await DB.saveProducts([{ ...product, current_qty: Math.max(0, (product.current_qty || 0) - item.qty) }]);
+                }
+                state.cart = []; state.pointsRedeemed = 0;
+                clearTransferReference();
+                renderActiveCart();
+
+                document.getElementById('success-receipt-num').innerText = offlineRef;
+                successShareModal.dataset.receipt = JSON.stringify(receiptData);
+                await printReceipt(receiptData);
+                successShareModal.classList.remove('hidden');
+
+                await emitAuditEvent('sale.created', { sale_id: offlineRef, total: order.receiptData.grandTotal, payment_method: paymentMethod, offline: true, reason: reason });
+            }
+
+            try {
+                if (!isOnline) { await saveOfflineAndFinish('offline'); return; }
+                const result = await apiCall('/pos/terminal/checkout', 'POST', {
+                    items: itemsPayload, payment_method: paymentMethod, customer_name: customerName, customer_phone: customerPhone, customer_email: customerEmail,
+                    // Only food verticals send fulfilment fields. The backend
+                    // also gates on org.vertical === 'food' as defence in depth,
+                    // but matching the gate here keeps all four outbound paths
+                    // (online checkout + the two sync paths + kitchen ticket)
+                    // consistent and avoids polluting the wire payload with
+                    // null/empty keys the server would just drop.
+                    ...(IS_FOOD_VERTICAL && {
+                        order_type: state.orderType,
+                        table_number: state.tableNumber,
+                    }),
+                    offline_meta: { reference: offlineRef, cashier_id: cashierId, created_at: order.createdAt }, receipt_data: receiptData,
+                    transfer_account_id: transferAccountId || undefined,
+                    transfer_reference: transferReference || undefined,
+                });
+                order.status = 'synced'; order.syncedAt = new Date().toISOString();
+                order.receiptData.receiptNumber = result.receipt_number || offlineRef; order.receiptData.payment.reference = result.payment_reference || null;
+
+                if (state.loyaltyUserId) {
+                    try {
+                        const balanceRes = await apiCall('/loyalty/balance'); const finalPoints = balanceRes.points || 0;
+                        state.pointsBalance = finalPoints; await DB.updateCustomer(state.loyaltyUserId, { loyalty_points: finalPoints });
+                        order.receiptData.customer.pointsAfter = finalPoints;
+                    } catch (e) { order.receiptData.customer.pointsAfter = state.pointsBalance || 0; }
+                } else order.receiptData.customer.pointsAfter = 0;
+
+                await DB.saveOrder(order);
+                for (const item of cart) {
+                    const product = await DB.getProduct(item.id);
+                    if (product) await DB.saveProducts([{ ...product, current_qty: Math.max(0, (product.current_qty || 0) - item.qty) }]);
+                }
+                state.cart = []; state.pointsRedeemed = 0;
+                clearTransferReference();
+                renderActiveCart();
+
+                document.getElementById('success-receipt-num').innerText = result.receipt_number || offlineRef;
+                successShareModal.dataset.receipt = JSON.stringify(order.receiptData);
+                await printReceipt(order.receiptData);
+                successShareModal.classList.remove('hidden');
+
+                await emitAuditEvent('sale.created', { sale_id: result.sale_id || offlineRef, total: order.receiptData.grandTotal, payment_method: paymentMethod, online: true });
+            } catch (err) {
+                const is4xx = err && typeof err.status === 'number' && err.status >= 400 && err.status < 500 && err.status !== 401;
+                if (is4xx) showToast(`❌ Checkout rejected: ${err.message}`, 'error');
+                else await saveOfflineAndFinish('api_error');
+            } finally {
+                document.querySelectorAll('button[id$="-checkout-btn"]').forEach(b => { b.disabled = false; b.innerText = '✅ Complete Sale'; });
+                closeMobileCart();
+            }
+        }
+
+        desktopCheckoutBtn.addEventListener('click', processCheckout);
+        mobileCheckoutBtn.addEventListener('click', processCheckout);
+
+        desktopAddCustomerBtn.addEventListener('click', () => {
+            desktopCustomerForm.classList.toggle('hidden');
+        });
+
+        ['name', 'phone', 'email'].forEach(field => {
+            const dInput = document.getElementById(`desktop-customer-${field}`);
+            const mInput = document.getElementById(`mobile-customer-${field}`);
+            const stateKey = 'customer' + field.charAt(0).toUpperCase() + field.slice(1);
+            if (dInput && mInput) {
+                dInput.addEventListener('input', () => { mInput.value = dInput.value; tabState[activeTab][stateKey] = dInput.value; });
+                mInput.addEventListener('input', () => { dInput.value = mInput.value; tabState[activeTab][stateKey] = mInput.value; });
+            }
+        });
+
+        // Transfer reference sync
+        (() => {
+            const dRef = document.getElementById('desktop-transfer-reference');
+            const mRef = document.getElementById('mobile-transfer-reference');
+            if (dRef && mRef) {
+                dRef.addEventListener('input', () => { mRef.value = dRef.value; tabState[activeTab].transferReference = dRef.value; });
+                mRef.addEventListener('input', () => { dRef.value = mRef.value; tabState[activeTab].transferReference = mRef.value; });
+            }
+        })();
+
+        async function processKitchenTicket() {
+            if (!IS_FOOD_VERTICAL) {
+                showToast('Kitchen tickets are only available for food businesses.', 'error');
+                return;
+            }
+            const state = tabState[activeTab];
+            if (state.cart.length === 0) { showToast('🛒 Cart is empty.', 'error'); return; }
+            if (!state.tableNumber.trim()) { showToast('⚠️ Please enter a Table Number.', 'error'); return; }
+
+            const offlineRef = generateUUID();
+            const itemDetails = await Promise.all(state.cart.map(async item => {
+                let product = {}; try { product = (await DB.getProduct(item.id)) || {}; } catch (e) {}
+                return { productId: item.id, name: item.name, sku: item.sku || product.sku || '', quantity: item.qty, unitPrice: item.price, subtotal: item.price * item.qty, costPrice: product.cost_price_naira || 0, handlingCategory: product.handling_category || 'standard', weightKg: product.weight_kg || 0 };
+            }));
+
+            const receiptData = {
+                receiptNumber: offlineRef, tableNumber: state.tableNumber, orderType: 'dine-in',
+                customer: { name: state.customerName || '', phone: state.customerPhone || '', email: state.customerEmail || '', loyaltyId: state.loyaltyUserId || null },
+                items: itemDetails, subtotal: state.cart.reduce((sum, i) => sum + i.price * i.qty, 0), discount: 0, tax: 0, grandTotal: 0,
+                payment: { method: 'pending', reference: null }, cashierId: localStorage.getItem('user_id') || 'unknown', cashierName: localStorage.getItem('user_profile_display') || 'Cashier', location: localStorage.getItem('org_name') || 'Kevs Digital'
+            };
+
+            const order = { offlineRef, cashierId: receiptData.cashierId, createdAt: new Date().toISOString(), status: 'kitchen_pending', syncedAt: null, receiptData };
+            await DB.saveOrder(order);
+            await DB.queueOrder(offlineRef);
+
+            const printArea = document.getElementById('receipt-print-area');
+            let itemsHtml = '';
+            receiptData.items.forEach(item => { itemsHtml += `<div class="receipt-item"><span>${escapeHtml(item.name)} x ${item.quantity}</span><span></span></div>`; });
+
+            printArea.innerHTML = `<div class="receipt-header" style="font-size:20px; margin-bottom:12px;">*** KITCHEN TICKET ***</div>
+                <div style="text-align:center; font-size:14px; font-weight:bold;">Order: ${receiptData.receiptNumber}</div>
+                <div style="text-align:center; font-size:16px; font-weight:bold; margin-bottom:8px;">Table: ${escapeHtml(receiptData.tableNumber || 'N/A')}</div>
+                <div class="receipt-divider" style="border-top: 2px dashed #000;"></div>
+                ${itemsHtml}
+                <div class="receipt-divider" style="border-top: 2px dashed #000;"></div>
+                <div class="receipt-footer" style="font-size:12px;">Prepare Immediately</div>`;
+            printArea.style.display = 'block'; window.print();
+            setTimeout(() => { printArea.style.display = 'none'; printArea.innerHTML = ''; }, 1000);
+
+            showToast(`🍳 Order sent to kitchen for Table ${state.tableNumber}!`, 'success');
+
+            state.cart = [];
+            state.tableNumber = '';
+            desktopTableInput.value = ''; mobileTableInput.value = '';
+            renderActiveCart();
+            closeMobileCart();
+        }
+
+        sendToKitchenBtn.addEventListener('click', processKitchenTicket);
+        mobileKitchenBtn.addEventListener('click', processKitchenTicket);
+
+        function syncUIWithActiveTab() {
+            const state = tabState[activeTab];
+            renderActiveCart();
+
+            // Only wire the order-type controls for food verticals. For
+            // anyone else, leave the hidden selects untouched — writing
+            // 'takeaway' into them is how the value escaped into receipts
+            // in the first place.
+            if (IS_FOOD_VERTICAL) {
+                desktopOrderTypeSelect.value = state.orderType || 'takeaway';
+                mobileOrderTypeSelect.value = state.orderType || 'takeaway';
+                desktopTableInput.value = state.tableNumber || '';
+                mobileTableInput.value = state.tableNumber || '';
+                if (state.orderType === 'dine-in') {
+                    desktopTableContainer.classList.remove('hidden'); mobileTableContainer.classList.remove('hidden');
+                } else {
+                    desktopTableContainer.classList.add('hidden'); mobileTableContainer.classList.add('hidden');
+                }
+            }
+
+            document.getElementById('desktop-customer-name').value = state.customerName || '';
+            document.getElementById('desktop-customer-phone').value = state.customerPhone || '';
+            document.getElementById('desktop-customer-email').value = state.customerEmail || '';
+            document.getElementById('mobile-customer-name').value = state.customerName || '';
+            document.getElementById('mobile-customer-phone').value = state.customerPhone || '';
+            document.getElementById('mobile-customer-email').value = state.customerEmail || '';
+
+            if (customerInfoDiv) {
+                if (state.loyaltyUserId) {
+                    customerInfoDiv.classList.remove('hidden');
+                    if (customerNameDisplay) customerNameDisplay.innerText = state.customerName || 'Customer';
+                    if (customerPointsSpan) customerPointsSpan.innerText = state.pointsBalance || 0;
+                    if (state.pointsBalance > 0 && isOnline) {
+                        pointsRedeemSection.classList.remove('hidden');
+                        if (offlinePointsWarning) offlinePointsWarning.classList.add('hidden');
+                        redeemPointsInput.max = state.pointsBalance;
+                    } else if (state.pointsBalance > 0 && !isOnline) {
+                        pointsRedeemSection.classList.add('hidden');
+                        if (offlinePointsWarning) offlinePointsWarning.classList.remove('hidden');
+                    } else {
+                        pointsRedeemSection.classList.add('hidden');
+                        if (offlinePointsWarning) offlinePointsWarning.classList.add('hidden');
+                    }
+                } else {
+                    customerInfoDiv.classList.add('hidden');
+                    pointsRedeemSection.classList.add('hidden');
+                    if (offlinePointsWarning) offlinePointsWarning.classList.add('hidden');
+                }
+            }
+
+            document.querySelectorAll('.payment-chip').forEach(c => {
+                c.classList.toggle('active', c.dataset.method === (state.paymentMethod || 'cash'));
+            });
+            toggleTransferAccountUI((state.paymentMethod || 'cash') === 'transfer');
+            populatePaymentAccountCards();
+            const dRef = document.getElementById('desktop-transfer-reference');
+            const mRef = document.getElementById('mobile-transfer-reference');
+            if (dRef) dRef.value = state.transferReference || '';
+            if (mRef) mRef.value = state.transferReference || '';
+
+            if (activeTab === 1) {
+                tab1Btn.classList.add('tab-active'); tab1Btn.classList.remove('tab-inactive');
+                tab2Btn.classList.add('tab-inactive'); tab2Btn.classList.remove('tab-active');
+                if (desktopTabBadge) desktopTabBadge.innerText = 'Tab 1 active';
+            } else {
+                tab2Btn.classList.add('tab-active'); tab2Btn.classList.remove('tab-inactive');
+                tab1Btn.classList.add('tab-inactive'); tab1Btn.classList.remove('tab-active');
+                if (desktopTabBadge) desktopTabBadge.innerText = 'Tab 2 active';
+            }
+        }
+
+        function setActiveTab(tabId) {
+            if (tabId === activeTab) return;
+            const cur = tabState[activeTab];
+            // Only pull order-type state from the visible controls on food
+            // verticals. On other verticals those selects are hidden and
+            // would otherwise clobber a legitimately null orderType.
+            if (IS_FOOD_VERTICAL) {
+                cur.orderType = desktopOrderTypeSelect.value || 'takeaway';
+                cur.tableNumber = desktopTableInput.value || '';
+            }
+            cur.customerName = document.getElementById('desktop-customer-name').value || '';
+            cur.customerPhone = document.getElementById('desktop-customer-phone').value || '';
+            cur.customerEmail = document.getElementById('desktop-customer-email').value || '';
+            const dRef = document.getElementById('desktop-transfer-reference');
+            const mRef = document.getElementById('mobile-transfer-reference');
+            cur.transferReference = (dRef && dRef.value) || (mRef && mRef.value) || '';
+
+            activeTab = tabId;
+            syncUIWithActiveTab();
+            customerSearchInput.value = '';
+            suggestionsDiv.classList.add('hidden');
+        }
+
+        async function emitAuditEvent(eventType, payload, localCreatedAt = null) {
+            const event = { event_type: eventType, event_version: 1, payload: payload, local_created_at: localCreatedAt || new Date().toISOString(), retryCount: 0 };
+            if (navigator.onLine) { try { await apiCall('/api/audit/event', 'POST', event); return; } catch (e) {} }
+            try { await DB.queueAudit(event); } catch (_) {}
+        }
+
+        async function flushAuditQueue() {
+            if (!navigator.onLine) return; let pending = [];
+            try { pending = await DB.getAuditQueue(); } catch (_) { return; }
+            if (pending.length === 0) return;
+            const events = pending.map(e => ({ event_type: e.event_type || e.eventType, event_version: e.event_version || 1, payload: e.payload, local_created_at: e.local_created_at || e.createdAt }));
+            try { await apiCall('/api/audit/events', 'POST', { events }); await DB.clearAuditQueue(); } catch (err) {}
+        }
+
+        async function syncPendingOrders() {
+            if (!isOnline || syncInProgress) return;
+            syncInProgress = true;
+            syncNowBtn.disabled = true;
+            syncNowBtn.innerHTML = '<i class="fa-solid fa-spinner fa-pulse"></i> Syncing...';
+            try {
+                const pending = await DB.getSyncQueue();
+                for (const entry of pending) {
+                    const order = await DB.getOrderByRef(entry.orderId);
+                    if (!order) { await DB.removeFromSyncQueue(entry.id); continue; }
+                    if (order.status === 'synced') { await DB.removeFromSyncQueue(entry.id); continue; }
+
+                    if (order.status === 'kitchen_pending') {
+                        try {
+                            await apiCall('/pos/terminal/kitchen-ticket', 'POST', { order_ref: order.offlineRef, table_number: order.receiptData.tableNumber, items: order.receiptData.items });
+                            await DB.updateOrderByRef(order.offlineRef, { status: 'kitchen_sent', syncedAt: new Date().toISOString() });
+                            await DB.removeFromSyncQueue(entry.id);
+                            showToast(`Kitchen ticket ${order.offlineRef} synced`, 'success');
+                        } catch (err) { }
+                        continue;
+                    }
+
+                    try {
+                        const offlinePmt = order.receiptData.payment || {};
+                        const payload = {
+                            items: order.receiptData.items.map(item => ({ inventory_id: item.productId, quantity: item.quantity })),
+                            payment_method: offlinePmt.method, customer_name: order.receiptData.customer.name, customer_phone: order.receiptData.customer.phone, customer_email: order.receiptData.customer.email,
+                            ...(IS_FOOD_VERTICAL && {
+                                order_type: order.receiptData.orderType,
+                                table_number: order.receiptData.tableNumber,
+                            }),
+                            offline_meta: { reference: order.offlineRef, cashier_id: order.cashierId, created_at: order.createdAt }, receipt_data: order.receiptData,
+                            transfer_account_id: offlinePmt.account_id || undefined,
+                            transfer_reference: offlinePmt.transfer_reference || undefined,
+                        };
+                        await apiCall('/pos/terminal/checkout', 'POST', payload);
+                        await DB.updateOrderByRef(order.offlineRef, { status: 'synced', syncedAt: new Date().toISOString() });
+                        await DB.removeFromSyncQueue(entry.id); showToast(`Order ${order.offlineRef} synced`, 'success');
+                    } catch (err) {
+                        const msg = (err && err.message) ? err.message : '';
+                        if (msg.includes('duplicate') || msg.includes('already exists')) {
+                            await DB.updateOrderByRef(order.offlineRef, { status: 'duplicate' }); await DB.removeFromSyncQueue(entry.id);
+                        } else { await DB.updateSyncQueueEntry(entry.id, { attempts: entry.attempts + 1, lastTry: new Date().toISOString() }); }
+                    }
+                }
+                localStorage.setItem('last_sync_time', new Date().toLocaleString());
+                await emitAuditEvent('sync.completed', { synced_count: pending.length });
+                await flushAuditQueue();
+                if (dashboardModal.classList.contains('active')) updateDashboard();
+            } catch (e) { showToast('Sync error: ' + e.message, 'error'); }
+            finally { syncInProgress = false; syncNowBtn.disabled = false; syncNowBtn.innerHTML = '<i class="fa-solid fa-rotate"></i> Sync'; }
+        }
+
+        async function updateDashboard() {
+            let pending = [], allOrders = [], catalogCount = 0;
+            try { pending = await DB.getSyncQueue(); allOrders = await DB.getAllOrders(); catalogCount = await DB.getProductCount(); }
+            catch (e) { dashboardContent.innerHTML = `<p class="text-red-600 text-sm">Local database unavailable: ${e.message}</p>`; return; }
+            const now = new Date(); const today = now.toDateString();
+            const syncedToday = allOrders.filter(o => (o.status === 'synced' || o.status === 'kitchen_sent') && new Date(o.syncedAt || o.createdAt).toDateString() === today);
+            const failed = allOrders.filter(o => o.status === 'duplicate');
+            const lastSync = localStorage.getItem('last_sync_time') || 'Never';
+            const catalogExpected = Number(localStorage.getItem(CATALOG_EXPECTED_KEY) || 0);
+            const catalogPct = catalogExpected > 0 ? Math.min(100, Math.round((catalogCount / catalogExpected) * 100)) : 0;
+            const lastCatalogSync = localStorage.getItem(CATALOG_LAST_SYNC_KEY);
+            dashboardContent.innerHTML = `
+                <div class="dashboard-stat"><span class="label"><i class="fa-regular fa-clock text-yellow-500"></i> Pending Sync</span><span class="value pending">${pending.length}</span></div>
+                <div class="dashboard-stat"><span class="label"><i class="fa-regular fa-circle-check text-green-500"></i> Synced Today</span><span class="value synced">${syncedToday.length}</span></div>
+                <div class="dashboard-stat"><span class="label"><i class="fa-regular fa-circle-xmark text-red-500"></i> Failed Orders</span><span class="value failed">${failed.length}</span></div>
+                <div class="dashboard-stat"><span class="label"><i class="fa-regular fa-clock"></i> Last Sync</span><span class="value">${lastSync}</span></div>
+                <div class="dashboard-stat"><span class="label"><i class="fa-regular fa-hard-drive"></i> Total Orders</span><span class="value">${allOrders.length}</span></div>
+                <div class="dashboard-stat"><span class="label"><i class="fa-solid fa-database"></i> Cached Products</span><span class="value">${catalogCount.toLocaleString()} / ${catalogExpected > 0 ? catalogExpected.toLocaleString() : '?'} ${catalogExpected > 0 ? `<span style="font-weight:400;color:#6b7280;font-size:0.8rem;">(${catalogPct}%)</span>` : ''}</span></div>
+                <div class="dashboard-stat"><span class="label"><i class="fa-regular fa-calendar"></i> Catalog Synced</span><span class="value">${lastCatalogSync ? new Date(lastCatalogSync).toLocaleString() : 'Never'}</span></div>
+                <div class="mt-2 text-xs text-gray-500">${isOnline ? '🟢 Online' : '🔴 Offline'} · ${syncInProgress ? '⏳ Syncing orders…' : (catalogSyncInProgress ? '📥 Downloading catalog…' : '✅ Idle')}</div>`;
+        }
+
+        async function renderHistory() {
+            const cashierId = localStorage.getItem('user_id') || 'unknown';
+            const all = await DB.getAllOrders();
+            const orders = all.filter(o => o.cashierId === cashierId);
+            if (orders.length === 0) { historyList.innerHTML = '<p class="text-gray-500">No orders found.</p>'; return; }
+            historyList.innerHTML = orders.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(o => {
+                const statusColor = o.status === 'synced' || o.status === 'kitchen_sent' ? 'text-green-600' : o.status === 'failed' || o.status === 'duplicate' ? 'text-red-600' : 'text-yellow-600';
+                const canSync = (o.status === 'pending' || o.status === 'failed' || o.status === 'kitchen_pending');
+                const buttonLabel = o.status === 'failed' ? '<i class="fa-solid fa-rotate-right"></i> Retry' : '<i class="fa-solid fa-rotate"></i> Sync';
+                const buttonClass = o.status === 'failed' ? 'text-red-600 hover:text-red-800' : 'text-blue-500 hover:text-blue-700';
+                const errorLine = (o.status === 'failed' && o.lastError) ? `<div class="text-xs text-red-500 mt-0.5" title="${escapeAttr(String(o.lastError))}"><i class="fa-solid fa-circle-exclamation"></i> ${escapeHtml(String(o.lastError).slice(0, 120))}${String(o.lastError).length > 120 ? '…' : ''}</div>` : '';
+                // Only food verticals show an order-type badge, and only when
+                // the receipt actually carries a recognised order type. Old
+                // retail rows with a leftover 'takeaway' value render nothing.
+                const isFoodOrder = IS_FOOD_VERTICAL && (o.receiptData?.orderType === 'dine-in' || o.receiptData?.orderType === 'takeaway');
+                let orderTypeLabel = '';
+                if (isFoodOrder) {
+                    orderTypeLabel = o.receiptData.orderType === 'dine-in'
+                        ? `<span class="bg-orange-100 text-orange-700 px-1 rounded text-xs ml-1">Table ${escapeHtml(o.receiptData.tableNumber || '')}</span>`
+                        : `<span class="bg-blue-100 text-blue-700 px-1 rounded text-xs ml-1">Takeaway</span>`;
+                }
+                return `<div class="border-b py-2 flex justify-between items-center">
+                    <div class="min-w-0 flex-1">
+                        <div><strong>${escapeHtml(o.offlineRef)}</strong> - ${new Date(o.createdAt).toLocaleString()} ${orderTypeLabel}</div>
+                        <div class="text-sm">Status: <span class="${statusColor}">${escapeHtml(String(o.status))}</span> | Total: ₦${o.receiptData?.grandTotal || 0}</div>
+                        <div class="text-xs text-gray-500">Items: ${o.receiptData?.items?.length || 0}</div>${errorLine}
+                    </div>
+                    ${canSync ? `<button onclick="syncSingleOrder('${escapeAttr(String(o.offlineRef))}', this)" class="${buttonClass} text-sm flex-shrink-0 ml-2">${buttonLabel}</button>` : ''}
+                </div>`;
+            }).join('');
+        }
+
+        window.syncSingleOrder = async function(offlineRef, btnEl) {
+            if (!isOnline) { showToast('Go online to sync.', 'error'); return; }
+            if (btnEl) { btnEl.disabled = true; btnEl.dataset.originalHtml = btnEl.innerHTML; btnEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Syncing…'; }
+            const order = await DB.getOrderByRef(offlineRef);
+            if (!order) { showToast('Order not found locally', 'error'); if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = btnEl.dataset.originalHtml; } return; }
+            try {
+                if (order.status === 'kitchen_pending') {
+                    await apiCall('/pos/terminal/kitchen-ticket', 'POST', { order_ref: order.offlineRef, table_number: order.receiptData.tableNumber, items: order.receiptData.items });
+                    await DB.updateOrderByRef(offlineRef, { status: 'kitchen_sent', syncedAt: new Date().toISOString(), lastError: null });
+                } else {
+                    const offlinePmt = order.receiptData.payment || {};
+                    const payload = {
+                        items: order.receiptData.items.map(item => ({ inventory_id: item.productId, quantity: item.quantity })),
+                        payment_method: offlinePmt.method, customer_name: order.receiptData.customer.name, customer_phone: order.receiptData.customer.phone, customer_email: order.receiptData.customer.email,
+                        ...(IS_FOOD_VERTICAL && {
+                            order_type: order.receiptData.orderType,
+                            table_number: order.receiptData.tableNumber,
+                        }),
+                        offline_meta: { reference: order.offlineRef, cashier_id: order.cashierId, created_at: order.createdAt }, receipt_data: order.receiptData,
+                        transfer_account_id: offlinePmt.account_id || undefined,
+                        transfer_reference: offlinePmt.transfer_reference || undefined,
+                    };
+                    await apiCall('/pos/terminal/checkout', 'POST', payload);
+                    await DB.updateOrderByRef(offlineRef, { status: 'synced', syncedAt: new Date().toISOString(), lastError: null });
+                }
+                await DB.removeFromSyncQueueByOrderId(offlineRef); showToast(`Order ${offlineRef} synced`, 'success');
+            } catch (err) {
+                const is4xx = err && typeof err.status === 'number' && err.status >= 400 && err.status < 500 && err.status !== 401;
+                if (is4xx) { await DB.updateOrderByRef(offlineRef, { status: 'failed', lastError: err.message }); await DB.removeFromSyncQueueByOrderId(offlineRef); showToast(`Order ${offlineRef} rejected: ${err.message}`, 'error'); }
+                else { showToast('Sync failed (will retry): ' + err.message, 'error'); }
+            } finally {
+                if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = btnEl.dataset.originalHtml; }
+                await renderHistory();
+            }
+        };
+
+        async function applyPoints() {
+            if (!isOnline) { showToast('⚠️ Points redemption requires internet.', 'error'); return; }
+            const state = tabState[activeTab]; if (!state.loyaltyUserId) { showToast('Please search and select a customer first', 'error'); return; }
+            let pointsToRedeem = parseInt(redeemPointsInput.value, 10);
+            if (isNaN(pointsToRedeem) || pointsToRedeem <= 0) { showToast('Enter a valid number of points', 'error'); return; }
+            if (pointsToRedeem > state.pointsBalance) { showToast(`You only have ${state.pointsBalance} points`, 'error'); return; }
+            try {
+                await apiCall('/loyalty/redeem', 'POST', { points: pointsToRedeem });
+                state.pointsRedeemed = (state.pointsRedeemed || 0) + pointsToRedeem; state.pointsBalance -= pointsToRedeem;
+                redeemPointsInput.value = ''; renderActiveCart(); showToast(`✅ ${pointsToRedeem} points redeemed – ₦${pointsToRedeem} off this order!`, 'success');
+                syncUIWithActiveTab();
+                await DB.updateCustomer(state.loyaltyUserId, { loyalty_points: state.pointsBalance });
+                await emitAuditEvent('points.redeemed', { user_id: state.loyaltyUserId, points: pointsToRedeem, balance_after: state.pointsBalance });
+            } catch (err) { showToast(`Redemption failed: ${err.message}`, 'error'); }
+        }
+
+        async function handleLogin() {
+            const email = document.getElementById('login-email').value.trim(); const pwd = document.getElementById('login-password').value.trim();
+            if (!email || !pwd) { showToast('Enter email and password', 'error'); return; }
+            try {
+                const res = await fetch(`${BACKEND}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: pwd }) });
+                const data = await res.json(); if (!res.ok) throw new Error(data.detail);
+                token = data.access_token; localStorage.setItem('access_token', token); localStorage.setItem('refresh_token', data.refresh_token); localStorage.removeItem('selected_org_id');
+                const me = await apiCall('/auth/me'); localStorage.setItem('user_id', me.user_id); localStorage.setItem('user_role', me.role || 'customer');
+                const orgRes = await fetch(`${BACKEND}/auth/org`, { headers: { 'Authorization': `Bearer ${token}` } });
+                if (orgRes.ok) { const orgData = await orgRes.json(); localStorage.setItem('org_name', orgData.org_name || 'Unknown Org'); }
+                await loadCustomers(); hideLoginModal();
+                tabState[1] = makeEmptyTabState();
+                tabState[2] = makeEmptyTabState();
+                activeTab = 1; syncUIWithActiveTab(); products = []; productContainer.innerHTML = ''; emptyMsgDiv.classList.add('hidden'); await refreshCachedCount();
+                await loadPaymentAccounts();
+                showToast('Login successful', 'success'); const navOrg = document.getElementById('nav-org-name'); if (navOrg) navOrg.innerText = localStorage.getItem('org_name') || 'Unknown Org';
+                await emitAuditEvent('user.login', { email: email, method: 'password' }); maybeAutoSyncCatalog();
+            } catch (err) { showToast(err.message, 'error'); }
+        }
+
+        function initTabs() { tab1Btn.onclick = () => setActiveTab(1); tab2Btn.onclick = () => setActiveTab(2); }
+        function initCustomerSearch() {
+            customerSearchInput.addEventListener('input', renderSuggestions);
+            document.addEventListener('click', (e) => { if (!customerSearchInput.contains(e.target) && !suggestionsDiv.contains(e.target)) suggestionsDiv.classList.add('hidden'); });
+        }
+
+        // ================================================================
+        // PRINTER SETTINGS MODAL
+        // ================================================================
+        let _printerPendingMethod = null;
+        let _printerPendingWidth = 32;
+
+        function _renderPrinterMethods() {
+            const list = document.getElementById('printer-method-list');
+            if (!list) return;
+            const pref = POSPrinter.loadPref();
+            const caps = POSPrinter.caps;
+            const options = [
+                { id: 'browser', label: 'System Print', desc: 'AirPrint · Save as PDF · USB/CUPS driver', icon: 'fa-desktop', available: caps.browser },
+                { id: 'bluetooth-web', label: 'Bluetooth (Web)', desc: 'Pair a BLE thermal printer directly', icon: 'fa-bluetooth-b', available: caps.bluetoothWeb },
+                { id: 'bluetooth-tauri', label: 'Bluetooth (Tauri)', desc: 'Native BLE via the desktop app', icon: 'fa-bluetooth-b', available: caps.bluetoothTauri },
+            ];
+            list.innerHTML = '';
+            for (const opt of options) {
+                const isSelected = _printerPendingMethod === opt.id;
+                const el = document.createElement('div');
+                el.className = 'printer-method' + (isSelected ? ' selected' : '') + (opt.available ? '' : ' disabled');
+                el.innerHTML = `
+                    <div class="method-icon"><i class="fa-solid ${opt.icon}"></i></div>
+                    <div class="flex-1 min-w-0">
+                        <div class="text-sm font-semibold text-gray-800">${escapeHtml(opt.label)}</div>
+                        <div class="text-xs text-gray-500">${escapeHtml(opt.desc)}</div>
+                        ${opt.available ? '' : '<div class="text-xs text-red-500 mt-1">Not available on this device</div>'}
+                    </div>
+                    ${isSelected ? '<i class="fa-solid fa-circle-check text-blue-600 text-lg"></i>' : ''}
+                `;
+                if (opt.available) {
+                    el.addEventListener('click', () => {
+                        _printerPendingMethod = opt.id;
+                        _renderPrinterMethods();
+                        _renderPrinterBtPanel();
+                    });
+                }
+                list.appendChild(el);
+            }
+        }
+
+        function _renderPrinterBtPanel() {
+            const panel = document.getElementById('printer-bt-panel');
+            if (!panel) return;
+            if (_printerPendingMethod === 'bluetooth-web' || _printerPendingMethod === 'bluetooth-tauri') {
+                panel.classList.remove('hidden');
+                const devEl = document.getElementById('printer-bt-device');
+                const connectBtn = document.getElementById('printer-bt-connect-btn');
+                const widthSel = document.getElementById('printer-paper-width');
+                if (widthSel) widthSel.value = String(_printerPendingWidth || 32);
+                if (_printerPendingMethod === 'bluetooth-web') {
+                    if (POSPrinter.bt.characteristic) {
+                        devEl.textContent = POSPrinter.bt.connectedName || 'Connected';
+                        devEl.className = 'text-sm font-medium text-green-700 truncate';
+                        connectBtn.innerHTML = '<i class="fa-solid fa-xmark"></i> Disconnect';
+                    } else {
+                        devEl.textContent = 'Not connected';
+                        devEl.className = 'text-sm font-medium text-gray-500 truncate';
+                        connectBtn.innerHTML = '<i class="fa-solid fa-link"></i> Connect';
+                    }
+                } else {
+                    devEl.textContent = 'Managed by the desktop app';
+                    devEl.className = 'text-sm font-medium text-gray-700 truncate';
+                    connectBtn.style.display = 'none';
+                }
+            } else {
+                panel.classList.add('hidden');
+            }
+        }
+
+        function openPrinterModal() {
+            const pref = POSPrinter.loadPref();
+            _printerPendingMethod = pref.method || 'browser';
+            _printerPendingWidth = pref.paperWidth || 32;
+            _renderPrinterMethods();
+            _renderPrinterBtPanel();
+            printerModal.classList.add('active');
+        }
+
+        function closePrinterModal() {
+            printerModal.classList.remove('active');
+        }
+
+        async function connectBtPrinter() {
+            const connectBtn = document.getElementById('printer-bt-connect-btn');
+            if (POSPrinter.bt.characteristic) {
+                await POSPrinter.bt.disconnect();
+                _renderPrinterBtPanel();
+                return;
+            }
+            if (connectBtn) { connectBtn.disabled = true; connectBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Pairing…'; }
+            try {
+                const info = await POSPrinter.bt.connect();
+                // Persist the device id immediately so reconnect works even
+                // if the user cancels the Save button.
+                const pref = POSPrinter.loadPref();
+                pref.deviceId = POSPrinter.bt.device ? POSPrinter.bt.device.id : null;
+                pref.deviceName = info.name || 'Bluetooth printer';
+                POSPrinter.savePref(pref);
+                showToast(`Connected to ${info.name || 'printer'}`, 'success');
+            } catch (err) {
+                showToast('Bluetooth pairing failed: ' + err.message, 'error');
+            } finally {
+                if (connectBtn) { connectBtn.disabled = false; }
+                _renderPrinterBtPanel();
+            }
+        }
+
+        async function testPrinter() {
+            const btn = document.getElementById('printer-test-btn');
+            if (!btn) return;
+            const orig = btn.innerHTML;
+            btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Testing…';
+            try {
+                const widthSel = document.getElementById('printer-paper-width');
+                const width = widthSel ? parseInt(widthSel.value, 10) : 32;
+                const result = await POSPrinter.testPrint(_printerPendingMethod, width);
+                if (result.ok) showToast('Test print sent', 'success');
+                else showToast('Test print failed: ' + (result.error || 'unknown'), 'error');
+            } catch (err) {
+                showToast('Test print failed: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false; btn.innerHTML = orig;
+            }
+        }
+
+        function savePrinterSettings() {
+            const widthSel = document.getElementById('printer-paper-width');
+            const width = widthSel ? parseInt(widthSel.value, 10) : 32;
+            const existing = POSPrinter.loadPref();
+            const pref = {
+                method: _printerPendingMethod || 'browser',
+                paperWidth: width,
+                deviceId: existing.deviceId || null,
+                deviceName: existing.deviceName || null,
+            };
+            POSPrinter.savePref(pref);
+            showToast('Printer settings saved', 'success');
+            closePrinterModal();
+        }
+
+        // ================================================================
+        // EVENT LISTENERS
+        // ================================================================
+        applyPointsBtn.addEventListener('click', applyPoints);
+        document.getElementById('modal-login-btn')?.addEventListener('click', handleLogin);
+        document.getElementById('close-modal-btn')?.addEventListener('click', hideLoginModal);
+        syncNowBtn.addEventListener('click', syncPendingOrders);
+        downloadCatalogBtn.addEventListener('click', () => syncFullCatalog(true));
+        historyBtn.addEventListener('click', async () => { historyModal.classList.add('active'); await renderHistory(); });
+        closeHistoryBtn.addEventListener('click', () => historyModal.classList.remove('active'));
+        historyModal.addEventListener('click', (e) => { if (e.target === historyModal) historyModal.classList.remove('active'); });
+        dashboardBtn.addEventListener('click', async () => { dashboardModal.classList.add('active'); await updateDashboard(); });
+        closeDashboardBtn.addEventListener('click', () => dashboardModal.classList.remove('active'));
+        dashboardModal.addEventListener('click', (e) => { if (e.target === dashboardModal) dashboardModal.classList.remove('active'); });
+        refreshDashboardBtn.addEventListener('click', async () => {
+            const original = refreshDashboardBtn.innerHTML; refreshDashboardBtn.disabled = true; refreshDashboardBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Refreshing…';
+            try { await updateDashboard(); } catch (e) { dashboardContent.innerHTML = `<p class="text-red-600 text-sm">Dashboard refresh failed: ${e.message}</p>`; }
+            finally { refreshDashboardBtn.disabled = false; refreshDashboardBtn.innerHTML = original; }
+        });
+
+        // Printer settings listeners
+        printerBtn.addEventListener('click', openPrinterModal);
+        closePrinterBtn.addEventListener('click', closePrinterModal);
+        printerModal.addEventListener('click', (e) => { if (e.target === printerModal) closePrinterModal(); });
+        document.getElementById('printer-bt-connect-btn').addEventListener('click', connectBtPrinter);
+        document.getElementById('printer-test-btn').addEventListener('click', testPrinter);
+        document.getElementById('printer-save-btn').addEventListener('click', savePrinterSettings);
+        document.getElementById('printer-paper-width').addEventListener('change', (e) => {
+            _printerPendingWidth = parseInt(e.target.value, 10) || 32;
+        });
+
+        // ================================================================
+        // INIT
+        // ================================================================
+        (async () => {
+            await initDBService();
+            updateConnectionStatus();
+            initTabs();
+            initCustomerSearch();
+            await refreshCachedCount();
+            await loadPaymentAccounts();
+
+            // Best-effort: silently reconnect to a previously-paired
+            // Bluetooth printer so the first sale of the shift can print
+            // without the cashier having to open Settings.
+            const pref = POSPrinter.loadPref();
+            if (pref.method === 'bluetooth-web' && pref.deviceId) {
+                POSPrinter.bt.reconnect().catch(() => {});
+            }
+
+            if (token) {
+                try {
+                    await loadCustomers();
+                    if (!tabState[1].cart.length && !tabState[2].cart.length) {
+                        tabState[1] = makeEmptyTabState();
+                        tabState[2] = makeEmptyTabState();
+                    }
+                    activeTab = 1; syncUIWithActiveTab(); productContainer.innerHTML = ''; emptyMsgDiv.classList.add('hidden'); maybeAutoSyncCatalog();
+                } catch (e) { token = null; showLoginModal(); }
+            } else { showLoginModal(); }
+            if (isOnline) { await syncPendingOrders(); await flushAuditQueue(); }
+        })();
+    </script>
+</body>
+</html>
