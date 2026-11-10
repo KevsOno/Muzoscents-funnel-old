@@ -467,16 +467,62 @@
             return Array.from(new Set(source.split(/[^\p{L}\p{N}]+/u).filter(t => t.length > 0)));
         }
 
-               async function initDBService() {
+                      async function initDBService() {
             if (isTauri) {
                 try {
-                    const Database = window.__TAURI__.sql.Database;
-                    sqliteDb = await Database.load('sqlite:kevs_bos.db');
-                    // tauri-plugin-sql's `execute` maps to `sqlx::query()` on
-                    // the SQLite backend, which accepts a single statement per
-                    // call. A batched `CREATE TABLE ...; CREATE TABLE ...;`
-                    // string is rejected with "Only one statement allowed in
-                    // query", so every DDL is issued separately.
+                    // ── Why we don't use window.__TAURI__.sql.Database ──
+                    // This POS page runs on a REMOTE origin
+                    // (mzfunnels.netlify.app). Tauri v2's `withGlobalTauri`
+                    // injects `__TAURI_INTERNALS__.invoke` everywhere, but
+                    // only inlines PLUGIN JS bindings (`__TAURI__.sql.Database`)
+                    // for LOCAL tauri:// pages. On remote origins the plugin
+                    // class is `undefined`, so `Database.load()` used to
+                    // throw silently and we always fell back to Dexie.
+                    //
+                    // The plugin's IPC commands work regardless of origin as
+                    // long as the plugin is registered in Rust (it is — see
+                    // lib.rs) and the ACL permits it (see remote-bos.json).
+                    // So we call them directly, exactly like the BLE bridge.
+                    const internals = window.__TAURI_INTERNALS__;
+                    const invoke =
+                        (internals && typeof internals.invoke === 'function')
+                            ? (cmd, args) => internals.invoke(cmd, args)
+                            : (window.__TAURI__ && typeof window.__TAURI__.invoke === 'function')
+                                ? (cmd, args) => window.__TAURI__.invoke(cmd, args)
+                                : null;
+
+                    if (!invoke) throw new Error('Tauri IPC bridge unavailable');
+
+                    const dbPath = 'sqlite:kevs_bos.db';
+
+                    // Open (or create) the database. `plugin:sql|load` is
+                    // the plugin's connect command; it resolves once the file
+                    // handle is open. Wrapped in a timeout so a silent
+                    // hang can't wedge the whole POS boot.
+                    await Promise.race([
+                        invoke('plugin:sql|load', { db: dbPath }),
+                        new Promise((_, rej) =>
+                            setTimeout(() => rej(new Error('SQLite load timeout after 8s')), 8000)
+                        ),
+                    ]);
+
+                    // Wrap the plugin's IPC commands in the same shape the
+                    // rest of the POS code expects from @tauri-apps/plugin-sql:
+                    // `.execute(query, values)`, `.select(query, values)`,
+                    // `.close()`.
+                    sqliteDb = {
+                        __isIpcBridge: true,
+                        dbPath,
+                        execute: (query, values) =>
+                            invoke('plugin:sql|execute', { db: dbPath, query, values: values || [] }),
+                        select: (query, values) =>
+                            invoke('plugin:sql|select', { db: dbPath, query, values: values || [] }),
+                        close: () => invoke('plugin:sql|close', { db: dbPath }).catch(() => {}),
+                    };
+
+                    // DDL — tauri-plugin-sql's `execute` maps to sqlx::query()
+                    // which accepts one statement per call. Batch DDL is
+                    // rejected with "Only one statement allowed in query".
                     const ddl = [
                         `CREATE TABLE IF NOT EXISTS products (
                             id INTEGER PRIMARY KEY, description TEXT, item_code TEXT, sku TEXT,
@@ -484,25 +530,31 @@
                             handling_category TEXT, weight_kg REAL, product_group TEXT
                         )`,
                         `CREATE TABLE IF NOT EXISTS customers (
-                            id TEXT PRIMARY KEY, first_name TEXT, last_name TEXT, phone TEXT, email TEXT, loyalty_points INTEGER
+                            id TEXT PRIMARY KEY, first_name TEXT, last_name TEXT, phone TEXT,
+                            email TEXT, loyalty_points INTEGER
                         )`,
                         `CREATE TABLE IF NOT EXISTS orders (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT, offlineRef TEXT UNIQUE, cashierId TEXT,
-                            createdAt TEXT, status TEXT, syncedAt TEXT, receiptData TEXT
+                            id INTEGER PRIMARY KEY AUTOINCREMENT, offlineRef TEXT UNIQUE,
+                            cashierId TEXT, createdAt TEXT, status TEXT, syncedAt TEXT,
+                            receiptData TEXT
                         )`,
                         `CREATE TABLE IF NOT EXISTS syncQueue (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT, orderId TEXT, attempts INTEGER DEFAULT 0, lastTry TEXT
+                            id INTEGER PRIMARY KEY AUTOINCREMENT, orderId TEXT,
+                            attempts INTEGER DEFAULT 0, lastTry TEXT
                         )`,
                         `CREATE TABLE IF NOT EXISTS auditQueue (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT, eventType TEXT, createdAt TEXT, retryCount INTEGER DEFAULT 0
+                            id INTEGER PRIMARY KEY AUTOINCREMENT, eventType TEXT,
+                            createdAt TEXT, retryCount INTEGER DEFAULT 0
                         )`,
                     ];
                     for (const stmt of ddl) {
                         await sqliteDb.execute(stmt);
                     }
-                    console.log("✅ Native SQLite Database Initialized");
+
+                    console.log('✅ Native SQLite Database Initialized (IPC bridge)');
                 } catch (e) {
-                    console.error("Failed to load native SQLite, falling back to Dexie", e);
+                    console.error('Failed to load native SQLite, falling back to Dexie', e);
+                    sqliteDb = null;
                     initDexie();
                 }
             } else {
