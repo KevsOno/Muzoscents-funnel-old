@@ -455,29 +455,51 @@
     </div>
 
     <script>
+        // ── ON-SCREEN ERROR REPORTING (temporary debug) ──
+        // Tauri release builds have no devtools, so any error in the POS
+        // script is invisible. These handlers surface every failure as a
+        // red banner pinned to the bottom of the page. Remove before
+        // shipping the final build.
+        (function() {
+            function banner(text, color) {
+                const el = document.createElement('div');
+                el.style.cssText =
+                    'position:fixed;left:0;right:0;bottom:0;padding:10px 14px;' +
+                    'font:12px/1.4 monospace;color:#fff;z-index:2147483647;' +
+                    'background:' + color + ';white-space:pre-wrap;' +
+                    'max-height:50vh;overflow:auto;border-top:3px solid #000;';
+                el.textContent = text;
+                el.onclick = () => el.remove();
+                (document.body || document.documentElement).appendChild(el);
+            }
+            window.addEventListener('error', e => {
+                if (e.error) banner('ERROR: ' + (e.error.stack || e.error.message || e.error), '#c0392b');
+                else banner('SCRIPT LOAD ERROR: ' + (e.target && e.target.src || e.message || 'unknown'), '#c0392b');
+            }, true);
+            window.addEventListener('unhandledrejection', e => {
+                const r = e.reason || {};
+                banner('PROMISE REJECTED: ' + (r.stack || r.message || String(r)), '#d35400');
+            });
+            console.log('%c[POS boot] error handlers installed at ' + new Date().toISOString(), 'color:#0a0');
+        })();
+
         // ================================================================
         // DB ABSTRACTION LAYER (Dexie only — web + Tauri)
-        //
-        // Tauri v2 renders this remote POS origin in the system WebView:
-        //   Windows → WebView2 (Chromium)   macOS → WKWebView
-        //   Linux   → WebKitGTK
-        // All three ship IndexedDB, so Dexie runs identically in the
-        // browser and in the desktop build. Data written here (products,
-        // orders, syncQueue, auditQueue) persists across app restarts.
-        //
-        // The previous SQLite path was removed:
-        //   - window.__TAURI__.sql.Database is only injected for LOCAL
-        //     tauri:// pages, not remote origins.
-        //   - The IPC fallback (plugin:sql|*) depended on ACL entries in
-        //     remote-bos.json that are fragile across Tauri CLI versions.
-        //   - Dexie/IndexedDB covers the POS data shape with zero native
-        //     dependencies and no plugin registration.
-        //
-        // SQLite registration in lib.rs / Cargo.toml is left in place but
-        // unused at runtime; it can be removed from those files later
-        // without touching this page.
         // ================================================================
         const isTauri = !!window.__TAURI_INTERNALS__;
+        let dexieDb = null;
+        // ... (everything else unchanged)
+
+    
+    <script>
+
+
+        
+        // ================================================================
+        // DB ABSTRACTION LAYER (Dexie for Web, SQLite for Tauri)
+        // ================================================================
+        const isTauri = !!window.__TAURI_INTERNALS__;
+        let sqliteDb = null;
         let dexieDb = null;
 
         function computeSearchTokens(product) {
@@ -485,13 +507,100 @@
             return Array.from(new Set(source.split(/[^\p{L}\p{N}]+/u).filter(t => t.length > 0)));
         }
 
-        async function initDBService() {
-            // Dexie-only. Cannot fail: IndexedDB is always present in
-            // every WebView Tauri v2 ships on. Any failure surfaces as
-            // an IndexedDB quota/security error, not a silent hang.
-            initDexie();
-        }
+                      async function initDBService() {
+            if (isTauri) {
+                try {
+                    // ── Why we don't use window.__TAURI__.sql.Database ──
+                    // This POS page runs on a REMOTE origin
+                    // (mzfunnels.netlify.app). Tauri v2's `withGlobalTauri`
+                    // injects `__TAURI_INTERNALS__.invoke` everywhere, but
+                    // only inlines PLUGIN JS bindings (`__TAURI__.sql.Database`)
+                    // for LOCAL tauri:// pages. On remote origins the plugin
+                    // class is `undefined`, so `Database.load()` used to
+                    // throw silently and we always fell back to Dexie.
+                    //
+                    // The plugin's IPC commands work regardless of origin as
+                    // long as the plugin is registered in Rust (it is — see
+                    // lib.rs) and the ACL permits it (see remote-bos.json).
+                    // So we call them directly, exactly like the BLE bridge.
+                    const internals = window.__TAURI_INTERNALS__;
+                    const invoke =
+                        (internals && typeof internals.invoke === 'function')
+                            ? (cmd, args) => internals.invoke(cmd, args)
+                            : (window.__TAURI__ && typeof window.__TAURI__.invoke === 'function')
+                                ? (cmd, args) => window.__TAURI__.invoke(cmd, args)
+                                : null;
 
+                    if (!invoke) throw new Error('Tauri IPC bridge unavailable');
+
+                    const dbPath = 'sqlite:kevs_bos.db';
+
+                    // Open (or create) the database. `plugin:sql|load` is
+                    // the plugin's connect command; it resolves once the file
+                    // handle is open. Wrapped in a timeout so a silent
+                    // hang can't wedge the whole POS boot.
+                    await Promise.race([
+                        invoke('plugin:sql|load', { db: dbPath }),
+                        new Promise((_, rej) =>
+                            setTimeout(() => rej(new Error('SQLite load timeout after 8s')), 8000)
+                        ),
+                    ]);
+
+                    // Wrap the plugin's IPC commands in the same shape the
+                    // rest of the POS code expects from @tauri-apps/plugin-sql:
+                    // `.execute(query, values)`, `.select(query, values)`,
+                    // `.close()`.
+                    sqliteDb = {
+                        __isIpcBridge: true,
+                        dbPath,
+                        execute: (query, values) =>
+                            invoke('plugin:sql|execute', { db: dbPath, query, values: values || [] }),
+                        select: (query, values) =>
+                            invoke('plugin:sql|select', { db: dbPath, query, values: values || [] }),
+                        close: () => invoke('plugin:sql|close', { db: dbPath }).catch(() => {}),
+                    };
+
+                    // DDL — tauri-plugin-sql's `execute` maps to sqlx::query()
+                    // which accepts one statement per call. Batch DDL is
+                    // rejected with "Only one statement allowed in query".
+                    const ddl = [
+                        `CREATE TABLE IF NOT EXISTS products (
+                            id INTEGER PRIMARY KEY, description TEXT, item_code TEXT, sku TEXT,
+                            price_naira REAL, current_qty INTEGER, cost_price_naira REAL,
+                            handling_category TEXT, weight_kg REAL, product_group TEXT
+                        )`,
+                        `CREATE TABLE IF NOT EXISTS customers (
+                            id TEXT PRIMARY KEY, first_name TEXT, last_name TEXT, phone TEXT,
+                            email TEXT, loyalty_points INTEGER
+                        )`,
+                        `CREATE TABLE IF NOT EXISTS orders (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT, offlineRef TEXT UNIQUE,
+                            cashierId TEXT, createdAt TEXT, status TEXT, syncedAt TEXT,
+                            receiptData TEXT
+                        )`,
+                        `CREATE TABLE IF NOT EXISTS syncQueue (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT, orderId TEXT,
+                            attempts INTEGER DEFAULT 0, lastTry TEXT
+                        )`,
+                        `CREATE TABLE IF NOT EXISTS auditQueue (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT, eventType TEXT,
+                            createdAt TEXT, retryCount INTEGER DEFAULT 0
+                        )`,
+                    ];
+                    for (const stmt of ddl) {
+                        await sqliteDb.execute(stmt);
+                    }
+
+                    console.log('✅ Native SQLite Database Initialized (IPC bridge)');
+                } catch (e) {
+                    console.error('Failed to load native SQLite, falling back to Dexie', e);
+                    sqliteDb = null;
+                    initDexie();
+                }
+            } else {
+                initDexie();
+            }
+        }
         function initDexie() {
             dexieDb = new Dexie('KevsPOSOffline');
             dexieDb.version(2).stores({
@@ -517,21 +626,45 @@
 
         const DB = {
             async saveProducts(products) {
-                await dexieDb.products.bulkPut(products);
+                if (sqliteDb) {
+                    for (const p of products) {
+                        await sqliteDb.execute(
+                            `INSERT OR REPLACE INTO products (id, description, item_code, sku, price_naira, current_qty, cost_price_naira, handling_category, weight_kg, product_group) 
+                             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+                            [p.id, p.description, p.item_code, p.sku, p.price_naira, p.current_qty, p.cost_price_naira, p.handling_category, p.weight_kg, p.product_group]
+                        );
+                    }
+                } else {
+                    await dexieDb.products.bulkPut(products);
+                }
             },
             async getProductCount() {
+                if (sqliteDb) { const res = await sqliteDb.select('SELECT COUNT(*) as count FROM products'); return res[0].count; }
                 return await dexieDb.products.count();
             },
             async getProduct(id) {
+                if (sqliteDb) { const res = await sqliteDb.select('SELECT * FROM products WHERE id = $1', [id]); return res[0] || null; }
                 return await dexieDb.products.get(id);
             },
             async deleteProducts(ids) {
-                await dexieDb.products.bulkDelete(ids);
+                if (sqliteDb) {
+                    if (!ids.length) return;
+                    const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
+                    await sqliteDb.execute(`DELETE FROM products WHERE id IN (${placeholders})`, ids);
+                } else {
+                    await dexieDb.products.bulkDelete(ids);
+                }
             },
             async getAllProducts() {
+                if (sqliteDb) { return await sqliteDb.select('SELECT * FROM products'); }
                 return await dexieDb.products.toArray();
             },
             async searchProducts(term, offset, limit) {
+                if (sqliteDb) {
+                    const lowerTerm = `%${term.toLowerCase()}%`;
+                    const sql = `SELECT * FROM products WHERE LOWER(description) LIKE $1 OR LOWER(item_code) LIKE $1 OR LOWER(sku) LIKE $1 LIMIT $2 OFFSET $3`;
+                    return await sqliteDb.select(sql, [lowerTerm, limit, offset]);
+                }
                 const lowerTerm = term.toLowerCase();
                 let collection = dexieDb.products
                     .where('description').startsWithIgnoreCase(term)
@@ -556,54 +689,116 @@
             },
 
             async saveCustomer(c) {
-                await dexieDb.customers.put(c);
+                if (sqliteDb) {
+                    await sqliteDb.execute(
+                        `INSERT OR REPLACE INTO customers (id, first_name, last_name, phone, email, loyalty_points) VALUES ($1, $2, $3, $4, $5, $6)`,
+                        [c.id, c.first_name, c.last_name, c.phone, c.email, c.loyalty_points]
+                    );
+                } else {
+                    await dexieDb.customers.put(c);
+                }
             },
             async getCustomers() {
+                if (sqliteDb) { return await sqliteDb.select('SELECT * FROM customers'); }
                 return await dexieDb.customers.toArray();
             },
             async updateCustomer(id, data) {
-                await dexieDb.customers.update(id, data);
+                if (sqliteDb) {
+                    await sqliteDb.execute(`UPDATE customers SET loyalty_points = $1 WHERE id = $2`, [data.loyalty_points, id]);
+                } else {
+                    await dexieDb.customers.update(id, data);
+                }
             },
 
             async saveOrder(order) {
-                const existing = await dexieDb.orders.where('offlineRef').equals(order.offlineRef).first();
-                if (existing) await dexieDb.orders.update(existing.id, order);
-                else await dexieDb.orders.add(order);
+                if (sqliteDb) {
+                    const existing = await sqliteDb.select('SELECT id FROM orders WHERE offlineRef = $1', [order.offlineRef]);
+                    if (existing.length > 0) {
+                        await sqliteDb.execute(
+                            `UPDATE orders SET status = $1, syncedAt = $2, receiptData = $3 WHERE offlineRef = $4`,
+                            [order.status, order.syncedAt, JSON.stringify(order.receiptData), order.offlineRef]
+                        );
+                    } else {
+                        await sqliteDb.execute(
+                            `INSERT INTO orders (offlineRef, cashierId, createdAt, status, syncedAt, receiptData) VALUES ($1, $2, $3, $4, $5, $6)`,
+                            [order.offlineRef, order.cashierId, order.createdAt, order.status, order.syncedAt, JSON.stringify(order.receiptData)]
+                        );
+                    }
+                } else {
+                    const existing = await dexieDb.orders.where('offlineRef').equals(order.offlineRef).first();
+                    if (existing) await dexieDb.orders.update(existing.id, order);
+                    else await dexieDb.orders.add(order);
+                }
             },
             async getOrderByRef(ref) {
+                if (sqliteDb) {
+                    const res = await sqliteDb.select('SELECT * FROM orders WHERE offlineRef = $1', [ref]);
+                    if (res[0]) res[0].receiptData = JSON.parse(res[0].receiptData);
+                    return res[0] || null;
+                }
                 return await dexieDb.orders.where('offlineRef').equals(ref).first();
             },
             async updateOrderByRef(ref, data) {
-                await dexieDb.orders.where('offlineRef').equals(ref).modify(data);
+                if (sqliteDb) {
+                    const sets = [];
+                    const vals = [];
+                    let i = 1;
+                    for (const [k, v] of Object.entries(data)) { sets.push(`${k} = $${i++}`); vals.push(k === 'receiptData' ? JSON.stringify(v) : v); }
+                    vals.push(ref);
+                    await sqliteDb.execute(`UPDATE orders SET ${sets.join(', ')} WHERE offlineRef = $${i}`, vals);
+                } else {
+                    await dexieDb.orders.where('offlineRef').equals(ref).modify(data);
+                }
             },
             async getAllOrders() {
+                if (sqliteDb) {
+                    const res = await sqliteDb.select('SELECT * FROM orders');
+                    return res.map(o => ({ ...o, receiptData: JSON.parse(o.receiptData) }));
+                }
                 return await dexieDb.orders.toArray();
             },
 
             async queueOrder(orderId) {
-                await dexieDb.syncQueue.add({ orderId, attempts: 0, lastTry: null });
+                if (sqliteDb) {
+                    await sqliteDb.execute(`INSERT INTO syncQueue (orderId, attempts) VALUES ($1, 0)`, [orderId]);
+                } else {
+                    await dexieDb.syncQueue.add({ orderId, attempts: 0, lastTry: null });
+                }
             },
             async getSyncQueue() {
+                if (sqliteDb) { return await sqliteDb.select('SELECT * FROM syncQueue'); }
                 return await dexieDb.syncQueue.toArray();
             },
             async removeFromSyncQueue(id) {
-                await dexieDb.syncQueue.delete(id);
+                if (sqliteDb) { await sqliteDb.execute('DELETE FROM syncQueue WHERE id = $1', [id]); }
+                else { await dexieDb.syncQueue.delete(id); }
             },
             async removeFromSyncQueueByOrderId(orderId) {
-                await dexieDb.syncQueue.where('orderId').equals(orderId).delete();
+                if (sqliteDb) { await sqliteDb.execute('DELETE FROM syncQueue WHERE orderId = $1', [orderId]); }
+                else { await dexieDb.syncQueue.where('orderId').equals(orderId).delete(); }
             },
             async updateSyncQueueEntry(id, data) {
-                await dexieDb.syncQueue.update(id, data);
+                if (sqliteDb) {
+                    await sqliteDb.execute(`UPDATE syncQueue SET attempts = $1, lastTry = $2 WHERE id = $3`, [data.attempts, data.lastTry, id]);
+                } else {
+                    await dexieDb.syncQueue.update(id, data);
+                }
             },
 
             async queueAudit(event) {
-                await dexieDb.auditQueue.add(event);
+                if (sqliteDb) {
+                    await sqliteDb.execute(`INSERT INTO auditQueue (eventType, createdAt, retryCount) VALUES ($1, $2, 0)`, [event.event_type, event.local_created_at]);
+                } else {
+                    await dexieDb.auditQueue.add(event);
+                }
             },
             async getAuditQueue() {
+                if (sqliteDb) { return await sqliteDb.select('SELECT * FROM auditQueue'); }
                 return await dexieDb.auditQueue.toArray();
             },
             async clearAuditQueue() {
-                await dexieDb.auditQueue.clear();
+                if (sqliteDb) { await sqliteDb.execute('DELETE FROM auditQueue'); }
+                else { await dexieDb.auditQueue.clear(); }
             }
         };
 
