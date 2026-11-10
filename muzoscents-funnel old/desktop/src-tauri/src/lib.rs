@@ -1,25 +1,18 @@
 // =====================================================================
 // Tauri v2 library entry point.
 //
-// `main.rs` calls `kevs_digital_bos_lib::run()`. Everything below is what
-// actually boots the desktop app: the Builder, the plugins, and the
-// custom commands exposed to the webview.
+// Existing plugins:
+//   - tauri-plugin-single-instance
+//   - tauri-plugin-opener
 //
-// Existing plugins (unchanged):
-//   - tauri-plugin-single-instance  → focuses the running window on
-//                                     second launch instead of spawning
-//                                     a duplicate process
-//   - tauri-plugin-opener           → open-in-browser helper
+// New:
+//   - ble_print  → raw ESC/POS write to a Bluetooth thermal printer
+//   - tauri-plugin-sql → SQLite offline store
 //
-// New in this build:
-//   - `ble_print` — raw ESC/POS write to a Bluetooth thermal printer.
-//     The POS HTML calls it via window.POS_TAURI_BLE_PRINT (installed
-//     by tauri.conf.json's initializationScript). On the browser, the
-//     bridge doesn't exist, so the POS falls back to window.print().
-//   - `tauri-plugin-sql` — powers the SQLite-backed offline store in
-//     the POS HTML. Without registration the plugin's IPC commands
-//     don't exist and `Database.load('sqlite:...')` rejects, silently
-//     dropping the POS back to the Dexie fallback in Tauri.
+// IMPORTANT: `initializationScript` is NOT a valid window key in the
+// Tauri v2 schema. The BLE bridge is injected here instead via
+// `append_invoke_initialization_script`, which runs on every page load
+// (including the remote origin) and preserves the same global.
 // =====================================================================
 
 use btleplug::api::{
@@ -30,34 +23,12 @@ use std::time::Duration;
 use tokio::time::sleep;
 use tauri::Manager;
 
-// ─────────────────────────────────────────────────────────────────────
-// BLE printer discovery + write
-//
-// Called from the webview via:
-//   window.POS_TAURI_BLE_PRINT = async (bytes) => {
-//       await window.__TAURI_INTERNALS__.invoke('ble_print', {
-//           bytes: Array.from(bytes),
-//       });
-//   };
-//
-// The POS HTML builds a Uint8Array of ESC/POS bytes and passes it here.
-// Tauri deserialises it into Vec<u8>.
-//
-// Flow:
-//   1. Grab the first available BLE adapter.
-//   2. Scan for 3 seconds.
-//   3. Find the first peripheral whose name looks like a thermal printer.
-//   4. Connect, discover services, find the writable characteristic.
-//   5. Write in 100-byte chunks (BLE MTU-safe across common printers).
-// ─────────────────────────────────────────────────────────────────────
-
 #[tauri::command]
 async fn ble_print(bytes: Vec<u8>) -> Result<(), String> {
     if bytes.is_empty() {
         return Err("Empty byte array — nothing to print".into());
     }
 
-    // ── 1. BLE adapter ──
     let manager = Manager::new()
         .await
         .map_err(|e| format!("BLE manager init failed: {e}"))?;
@@ -70,7 +41,6 @@ async fn ble_print(bytes: Vec<u8>) -> Result<(), String> {
         .next()
         .ok_or("No Bluetooth adapter found on this machine")?;
 
-    // ── 2. Scan ──
     central
         .start_scan(ScanFilter::default())
         .await
@@ -81,7 +51,6 @@ async fn ble_print(bytes: Vec<u8>) -> Result<(), String> {
         .await
         .map_err(|e| format!("Scan stop failed: {e}"))?;
 
-    // ── 3. Filter for printer-looking devices ──
     let peripherals = central
         .peripherals()
         .await
@@ -117,7 +86,6 @@ async fn ble_print(bytes: Vec<u8>) -> Result<(), String> {
         "No printer found nearby. Power on the Bluetooth printer and try again.".to_string()
     })?;
 
-    // ── 4. Connect + discover services ──
     if !printer
         .is_connected()
         .await
@@ -135,14 +103,11 @@ async fn ble_print(bytes: Vec<u8>) -> Result<(), String> {
 
     let chars = printer.characteristics();
 
-    // Known ESC/POS write characteristic UUIDs across common BLE thermal
-    // printers. Add new UUIDs here if you deploy a model whose
-    // characteristic isn't caught by the property fallback below.
     let known_write_uuids = [
-        "00002af1-0000-1000-8000-00805f9b34fb", // Standard BLE printer
-        "0000ff02-0000-1000-8000-00805f9b34fb", // Chinese thermal printers
-        "0000fec7-0000-1000-8000-00805f9b34fb", // Alternative
-        "bef8d6c9-9c21-4c9e-b632-bd58c1009f9f", // Some Xprinter models
+        "00002af1-0000-1000-8000-00805f9b34fb",
+        "0000ff02-0000-1000-8000-00805f9b34fb",
+        "0000fec7-0000-1000-8000-00805f9b34fb",
+        "bef8d6c9-9c21-4c9e-b632-bd58c1009f9f",
     ];
 
     let write_char = chars
@@ -164,10 +129,6 @@ async fn ble_print(bytes: Vec<u8>) -> Result<(), String> {
                 .to_string()
         })?;
 
-    // ── 5. Write in chunks ──
-    // 100-byte chunks stay under the negotiated MTU on every common BLE
-    // thermal printer. A 20ms inter-chunk delay prevents buffer overflow
-    // on cheap controllers (Goojprt, generic 58mm).
     const CHUNK_SIZE: usize = 100;
     const INTER_CHUNK_DELAY_MS: u64 = 20;
 
@@ -182,26 +143,28 @@ async fn ble_print(bytes: Vec<u8>) -> Result<(), String> {
     Ok(())
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// App entry point — this is what `main.rs` calls.
-// ─────────────────────────────────────────────────────────────────────
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        // Single-instance MUST be registered first, before other plugins.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
-                // show() is needed in case the window was minimized/hidden.
                 let _ = window.show();
                 let _ = window.unminimize();
                 let _ = window.set_focus();
             }
         }))
         .plugin(tauri_plugin_opener::init())
-        // ── SQL plugin: powers the SQLite offline store on the POS ──
         .plugin(tauri_plugin_sql::Builder::default().build())
-        // ── Expose ble_print to the webview ──
+        // ── BLE bridge: replaces the now-invalid window.initializationScript ──
+        .append_invoke_initialization_script(
+            r#"
+            if (window.__TAURI_INTERNALS__ && typeof window.__TAURI_INTERNALS__.invoke === 'function') {
+                window.POS_TAURI_BLE_PRINT = async (bytes) => {
+                    await window.__TAURI_INTERNALS__.invoke('ble_print', { bytes: Array.from(bytes) });
+                };
+            }
+            "#,
+        )
         .invoke_handler(tauri::generate_handler![ble_print])
         .run(tauri::generate_context!())
         .expect("error while running Kevs Digital bOS");
