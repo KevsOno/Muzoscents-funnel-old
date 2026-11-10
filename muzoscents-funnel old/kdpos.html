@@ -485,8 +485,18 @@
 
         // ================================================================
         // DB ABSTRACTION LAYER (Dexie for Web, SQLite for Tauri)
+        //
+        // NOTE: This variable used to be named `isTauri`, but that name
+        // is already declared at the top level of /kdint.js (or
+        // /kdsession.js) on the current deploy. Two top-level `const`s
+        // with the same name throw "Identifier has already been declared"
+        // at parse time, which rejects this ENTIRE <script> block before
+        // any listener attaches. That is what made every button on this
+        // page appear dead in Tauri while the web version (serving a
+        // cached older copy of the same scripts) worked. Renamed to
+        // POS_IS_TAURI to avoid the collision.
         // ================================================================
-        const isTauri = !!window.__TAURI_INTERNALS__;
+        const POS_IS_TAURI = !!window.__TAURI_INTERNALS__;
         let sqliteDb = null;
         let dexieDb = null;
 
@@ -496,7 +506,7 @@
         }
 
                       async function initDBService() {
-            if (isTauri) {
+            if (POS_IS_TAURI) {
                 try {
                     // ── Why we don't use window.__TAURI__.sql.Database ──
                     // This POS page runs on a REMOTE origin
@@ -830,11 +840,11 @@
 
             // ── Capability detection ──
             const caps = (function() {
-                const out = { browser: typeof window.print === 'function', bluetoothWeb: false, bluetoothTauri: false, isTauri: !!isTauri };
+                const out = { browser: typeof window.print === 'function', bluetoothWeb: false, bluetoothTauri: false, isTauri: !!POS_IS_TAURI };
                 if (typeof navigator !== 'undefined' && navigator.bluetooth && typeof navigator.bluetooth.requestDevice === 'function') {
                     out.bluetoothWeb = true;
                 }
-                if (isTauri && typeof window.POS_TAURI_BLE_PRINT === 'function') {
+                if (POS_IS_TAURI && typeof window.POS_TAURI_BLE_PRINT === 'function') {
                     out.bluetoothTauri = true;
                 }
                 return out;
