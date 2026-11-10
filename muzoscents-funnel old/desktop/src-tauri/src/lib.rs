@@ -13,6 +13,13 @@
 // Tauri v2 schema. The BLE bridge is injected here instead via
 // `append_invoke_initialization_script`, which runs on every page load
 // (including the remote origin) and preserves the same global.
+//
+// `use tauri::Manager as _;` — imported anonymously. tauri::Manager is
+// a trait that provides `get_webview_window`; btleplug::platform::Manager
+// is a struct we call `::new()` on. Importing both under the same name
+// is a duplicate-definition error, and importing only btleplug would
+// lose the tauri trait methods. The `as _` form keeps the trait in
+// scope for method resolution without occupying the `Manager` name.
 // =====================================================================
 
 use btleplug::api::{
@@ -21,7 +28,7 @@ use btleplug::api::{
 use btleplug::platform::Manager;
 use std::time::Duration;
 use tokio::time::sleep;
-use tauri::Manager;
+use tauri::Manager as _;
 
 #[tauri::command]
 async fn ble_print(bytes: Vec<u8>) -> Result<(), String> {
@@ -155,7 +162,6 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
-        // ── BLE bridge: replaces the now-invalid window.initializationScript ──
         .append_invoke_initialization_script(
             r#"
             if (window.__TAURI_INTERNALS__ && typeof window.__TAURI_INTERNALS__.invoke === 'function') {
