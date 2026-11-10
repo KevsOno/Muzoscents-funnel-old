@@ -16,6 +16,10 @@
 //     The POS HTML calls it via window.POS_TAURI_BLE_PRINT (installed
 //     by tauri.conf.json's initializationScript). On the browser, the
 //     bridge doesn't exist, so the POS falls back to window.print().
+//   - `tauri-plugin-sql` — powers the SQLite-backed offline store in
+//     the POS HTML. Without registration the plugin's IPC commands
+//     don't exist and `Database.load('sqlite:...')` rejects, silently
+//     dropping the POS back to the Dexie fallback in Tauri.
 // =====================================================================
 
 use btleplug::api::{
@@ -45,11 +49,6 @@ use tauri::Manager;
 //   3. Find the first peripheral whose name looks like a thermal printer.
 //   4. Connect, discover services, find the writable characteristic.
 //   5. Write in 100-byte chunks (BLE MTU-safe across common printers).
-//
-// No connection caching in v1. A receipt is ~1–3 KB, so a 3-second scan
-// before each print is noticeable but acceptable. Caching the connected
-// `Peripheral` in a Tauri state handle is the natural next optimisation
-// once the printer-per-terminal assumption holds.
 // ─────────────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -200,7 +199,9 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_opener::init())
-        // ── New: expose ble_print to the webview ──
+        // ── SQL plugin: powers the SQLite offline store on the POS ──
+        .plugin(tauri_plugin_sql::Builder::default().build())
+        // ── Expose ble_print to the webview ──
         .invoke_handler(tauri::generate_handler![ble_print])
         .run(tauri::generate_context!())
         .expect("error while running Kevs Digital bOS");
