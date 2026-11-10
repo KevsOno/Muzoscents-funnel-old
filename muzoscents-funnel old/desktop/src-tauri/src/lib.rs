@@ -20,14 +20,6 @@
 // is a duplicate-definition error, and importing only btleplug would
 // lose the tauri trait methods. The `as _` form keeps the trait in
 // scope for method resolution without occupying the `Manager` name.
-//
-// DEBUG BUILD (TEMPORARY):
-// The `.setup(...)` block below opens the WebView inspector at startup
-// for RELEASE builds so we can see load errors, script errors, network
-// failures, and DOM/CSS state on a remote origin where devtools is
-// otherwise unavailable. The `devtools` feature in Cargo.toml makes
-// `open_devtools()` callable outside debug builds. Remove both when
-// done debugging.
 // =====================================================================
 
 use btleplug::api::{
@@ -180,19 +172,6 @@ pub fn run() {
             "#,
         )
         .invoke_handler(tauri::generate_handler![ble_print])
-        // ── DEBUG ONLY: open the inspector on release builds ──
-        // The `devtools` feature in Cargo.toml makes this available
-        // outside debug builds. Remove this block (and the feature)
-        // before shipping a production build.
-        .setup(|app| {
-            #[cfg(not(debug_assertions))]
-            {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.open_devtools();
-                }
-            }
-            Ok(())
-        })
         .run(tauri::generate_context!())
         .expect("error while running Kevs Digital bOS");
 }
