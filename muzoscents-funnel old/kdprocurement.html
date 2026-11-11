@@ -1016,6 +1016,15 @@
         }
 
         async function initOrganisation() {
+            const userRole = localStorage.getItem('user_role');
+            const allowedRoles = ['owner', 'admin', 'inventory_manager'];
+            
+            // Hide Restock Hub if role is not allowed
+            if (!allowedRoles.includes(userRole)) {
+                const restockTabBtn = document.querySelector('.tab-btn[data-tab="restock-hub"]');
+                if (restockTabBtn) restockTabBtn.style.display = 'none';
+            }
+
             const savedOrgId = localStorage.getItem('selected_org_id');
             if (savedOrgId) {
                 const orgs = await fetchUserOrganisations();
@@ -2028,11 +2037,27 @@
             tbody.innerHTML = '<tr><td colspan="7" class="text-center p-8 text-slate-400"><i class="fa-solid fa-spinner fa-pulse mr-2"></i> Aggregating data...</td></tr>';
 
             try {
-                // Fetch stock limits (contains demand and reorder points)
+                // 1. Fetch stock limits
                 const limitsData = await apiCall('/stock-limits?limit=1000');
                 const limits = limitsData.stock_limits || [];
 
-                // Group by inventory_id to aggregate across locations
+                // 2. Fetch active OUT_OF_STOCK alerts to calculate "Days Out"
+                const alertsRes = await apiCall('/alerts?status=Active&alert_type=OUT_OF_STOCK&limit=1000');
+                const activeAlerts = alertsRes.alerts || [];
+                
+                // Map inventory_id to the date it went out of stock
+                const outSinceMap = {};
+                activeAlerts.forEach(a => {
+                    if (a.inventory_id) {
+                        const alertDate = new Date(a.created_at);
+                        // Keep the oldest alert for this item
+                        if (!outSinceMap[a.inventory_id] || alertDate < outSinceMap[a.inventory_id]) {
+                            outSinceMap[a.inventory_id] = alertDate;
+                        }
+                    }
+                });
+
+                // 3. Aggregate by inventory_id
                 const aggregated = {};
                 limits.forEach(l => {
                     if (!l.inventory_id) return;
@@ -2045,7 +2070,6 @@
                             total_reorder: 0,
                             total_max: 0,
                             total_demand: 0,
-                            cost: 0 // We don't have cost here, but we can estimate if needed
                         };
                     }
                     aggregated[l.inventory_id].current_qty += parseInt(l.current_qty || 0);
@@ -2054,37 +2078,51 @@
                     aggregated[l.inventory_id].total_demand += parseFloat(l.avg_daily_demand || 0);
                 });
 
-                // Filter for items that need restocking (Current <= Reorder OR Current <= 0)
+                // 4. Filter for items needing restock
                 const restockItems = Object.values(aggregated).filter(item => {
                     return item.current_qty <= item.total_reorder || item.current_qty <= 0;
                 }).sort((a, b) => a.current_qty - b.current_qty); // Out of stock first
 
-                // Update Metrics
+                // 5. Update Metrics
                 const outOfStockCount = restockItems.filter(i => i.current_qty <= 0).length;
                 const lowStockCount = restockItems.filter(i => i.current_qty > 0).length;
                 
                 document.getElementById('restock-out-of-stock').innerText = outOfStockCount;
                 document.getElementById('restock-low-stock').innerText = lowStockCount;
-                document.getElementById('restock-est-value').innerText = '₦0'; // Placeholder if cost isn't readily available
+                document.getElementById('restock-est-value').innerText = '₦0';
 
                 if (restockItems.length === 0) {
                     tbody.innerHTML = '<tr><td colspan="7" class="text-center p-8 text-green-400 font-medium">✅ All stock levels are healthy! No procurement needed right now.</td></tr>';
                     return;
                 }
 
-                // Render Table
+                // 6. Render Table
                 tbody.innerHTML = restockItems.map(item => {
-                    // Calculate Days Left
-                    let daysLeft = '∞';
-                    if (item.total_demand > 0) {
-                        daysLeft = Math.round(item.current_qty / item.total_demand);
+                    let daysLeftHtml = '';
+                    
+                    if (item.current_qty <= 0) {
+                        // ITEM IS OUT OF STOCK - Count days since it hit zero
+                        const outSince = outSinceMap[item.id];
+                        if (outSince) {
+                            const diffTime = Math.abs(new Date() - outSince);
+                            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                            daysLeftHtml = `<span class="text-red-500 font-bold whitespace-nowrap"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Out for ${diffDays} days</span>`;
+                        } else {
+                            daysLeftHtml = `<span class="text-red-500 font-bold">Out of stock</span>`;
+                        }
+                    } else if (item.total_demand > 0) {
+                        // ITEM IS LOW STOCK - Calculate days until it hits zero
+                        const days = Math.round(item.current_qty / item.total_demand);
+                        const colorClass = days <= 3 ? 'text-amber-500 font-bold' : 'text-slate-300';
+                        daysLeftHtml = `<span class="${colorClass}">${days} days</span>`;
+                    } else {
+                        daysLeftHtml = `<span class="text-slate-500">∞</span>`;
                     }
                     
                     const isOutOfStock = item.current_qty <= 0;
                     const statusColor = isOutOfStock ? 'text-red-400 font-bold' : 'text-amber-400 font-bold';
                     const rowBg = isOutOfStock ? 'bg-red-900/10' : 'bg-amber-900/10';
                     
-                    // Suggest restock amount to reach Max Stock
                     const suggestOrder = item.total_max > 0 ? (item.total_max - item.current_qty) : 10;
 
                     return `
@@ -2094,7 +2132,7 @@
                             <td class="p-3 text-right ${statusColor}">${item.current_qty}</td>
                             <td class="p-3 text-right text-slate-300">${item.total_reorder}</td>
                             <td class="p-3 text-right text-slate-500">${item.total_max}</td>
-                            <td class="p-3 text-right ${statusColor}">${daysLeft} days</td>
+                            <td class="p-3 text-right">${daysLeftHtml}</td>
                             <td class="p-3 text-center">
                                 <a href="/kdprocurement?add_item=${item.id}&qty=${suggestOrder}" 
                                    target="_blank"
@@ -2108,7 +2146,16 @@
 
             } catch (err) {
                 console.error('Failed to load Restock Hub:', err);
-                tbody.innerHTML = `<tr><td colspan="7" class="text-center p-8 text-red-400">❌ Failed to load data: ${escapeHtml(err.message)}</td></tr>`;
+                // Handle Feature Gate Errors gracefully
+                if (err.message.includes('not enabled') || err.message.includes('suspended')) {
+                    tbody.innerHTML = `
+                        <tr><td colspan="7" class="text-center p-8 text-red-400">
+                            <i class="fa-solid fa-lock text-2xl mb-2"></i><br>
+                            ${escapeHtml(err.message)}
+                        </td></tr>`;
+                } else {
+                    tbody.innerHTML = `<tr><td colspan="7" class="text-center p-8 text-red-400">❌ Failed to load data: ${escapeHtml(err.message)}</td></tr>`;
+                }
             }
         }
 
