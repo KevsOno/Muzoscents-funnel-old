@@ -1739,25 +1739,33 @@
                         `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] ${badgeClass}"><i class="fa-regular fa-calendar"></i> ${badgeText}</span>`;
                 }
 
-                let stockHtml = '';
+                                let stockHtml = '';
                 const locationNames = {};
                 allLocations.forEach(loc => { locationNames[loc.id] = loc.name; });
+
+                // Helper function to color-code stock quantities
+                const getStockClass = (qty) => {
+                    const num = parseInt(qty) || 0;
+                    if (num <= 0) return 'text-red-400 font-bold'; // Out of stock
+                    if (num <= 10) return 'text-amber-400 font-bold'; // Low stock (adjust threshold as needed)
+                    return 'font-mono text-slate-300';
+                };
 
                 if (p.location_stocks && p.location_stocks.length > 0) {
                     const stockItems = p.location_stocks.map(s => {
                         const locId = s.location_id || s.id;
                         const locName = locationNames[locId] || s.location_name || `Location ${locId}`;
-                        return `<div class="flex justify-between"><span class="loc-badge"><i class="fa-solid fa-location-dot"></i> <span class="loc-name">${escapeHtml(locName)}</span></span><span class="font-mono">${s.quantity}</span></div>`;
+                        return `<div class="flex justify-between"><span class="loc-badge"><i class="fa-solid fa-location-dot"></i> <span class="loc-name">${escapeHtml(locName)}</span></span><span class="${getStockClass(s.quantity)}">${s.quantity}</span></div>`;
                     }).join('');
                     stockHtml = `<div class="text-xs text-slate-400 mt-1 space-y-0.5">${stockItems}</div>`;
                 } else if (p.location_id) {
                     const locName = locationNames[p.location_id] || `Location ${p.location_id}`;
                     stockHtml =
-                        `<div class="text-xs text-slate-400 mt-1"><span class="loc-badge"><i class="fa-solid fa-location-dot"></i> <span class="loc-name">${escapeHtml(locName)}</span></span> <span class="font-mono">${p.current_qty || 0}</span></div>`;
+                        `<div class="text-xs text-slate-400 mt-1"><span class="loc-badge"><i class="fa-solid fa-location-dot"></i> <span class="loc-name">${escapeHtml(locName)}</span></span> <span class="${getStockClass(p.current_qty)}">${p.current_qty || 0}</span></div>`;
                 } else if (p.current_qty !== undefined) {
-                    stockHtml = `<div class="mt-1"><span class="text-xs text-slate-400">Stock: ${p.current_qty || 0}</span></div>`;
+                    stockHtml = `<div class="mt-1"><span class="text-xs ${getStockClass(p.current_qty).replace('font-bold', '')}">Stock: <span class="${getStockClass(p.current_qty)}">${p.current_qty || 0}</span></span></div>`;
                 } else {
-                    stockHtml = `<div class="mt-1"><span class="text-xs text-slate-400">Stock: 0</span></div>`;
+                    stockHtml = `<div class="mt-1"><span class="text-xs text-red-400 font-bold">Stock: 0</span></div>`;
                 }
 
                 card.innerHTML = `
