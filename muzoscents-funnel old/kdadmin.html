@@ -846,11 +846,17 @@
                         <span class="text-sm font-medium">Products</span>
                         <span class="text-xs text-slate-500" id="transfer-count">0 lines</span>
                     </div>
-                    <div class="relative mb-3">
-                        <input id="transfer-product-search" type="text" placeholder="Search a product to add…" autocomplete="off"
-                               class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 pl-9 text-sm" />
-                        <i class="fa-solid fa-search absolute left-3 top-3 text-slate-500 text-xs"></i>
-                        <div id="transfer-product-results" class="hidden absolute left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-lg max-h-60 overflow-y-auto shadow-2xl z-10"></div>
+                    <div class="flex gap-2 mb-3">
+                        <button id="transfer-add-item-btn" type="button"
+                                class="bg-indigo-600 hover:bg-indigo-700 text-sm px-4 py-2 rounded-lg whitespace-nowrap font-medium flex items-center gap-1">
+                            <i class="fa-solid fa-plus"></i> Add Item
+                        </button>
+                        <div class="relative flex-1">
+                            <input id="transfer-product-search" type="text" placeholder="Search a product to add…" autocomplete="off"
+                                   class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 pl-9 text-sm" />
+                            <i class="fa-solid fa-search absolute left-3 top-3 text-slate-500 text-xs"></i>
+                            <div id="transfer-product-results" class="hidden absolute left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-lg max-h-60 overflow-y-auto shadow-2xl z-10"></div>
+                        </div>
                     </div>
                     <div id="transfer-items" class="space-y-2"></div>
                 </div>
@@ -2344,7 +2350,9 @@
             const c = document.getElementById('transfer-items');
             if (!c) return;
             if (!transferItems.length) {
-                c.innerHTML = '<div class="text-xs text-slate-500 italic text-center py-3">No products added yet. Use the search box above.</div>';
+                c.innerHTML = '<div class="text-xs text-slate-500 italic text-center py-3">'
+                    + 'No products added yet. Click <strong class="text-indigo-400">+ Add Item</strong> '
+                    + 'or type in the search box to add products. You can add as many lines as you need.</div>';
             } else {
                 c.innerHTML = transferItems.map((it, idx) => `
                     <div class="flex items-center gap-3 bg-slate-900/60 border border-slate-700 rounded-lg p-2">
@@ -2420,8 +2428,12 @@
                                 quantity:     1,
                             });
                             renderTransferItems();
-                            document.getElementById('transfer-product-search').value = '';
+
+                            // ── Reset + refocus so the officer can add the next line immediately
+                            const searchInput = document.getElementById('transfer-product-search');
+                            searchInput.value = '';
                             box.classList.add('hidden');
+                            searchInput.focus();
                         });
                     });
                 }
@@ -2445,6 +2457,15 @@
             if (!e.target.closest('#transfer-product-search') && !e.target.closest('#transfer-product-results')) {
                 document.getElementById('transfer-product-results')?.classList.add('hidden');
             }
+        });
+
+        // "+ Add Item" — focus the search box so the officer can add another line
+        document.getElementById('transfer-add-item-btn')?.addEventListener('click', function() {
+            const input = document.getElementById('transfer-product-search');
+            if (!input) return;
+            input.focus();
+            const q = input.value.trim();
+            if (q.length >= 2) performTransferProductSearch(q);
         });
 
         function showTransferModal() {
