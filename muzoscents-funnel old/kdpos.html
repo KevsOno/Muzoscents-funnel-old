@@ -197,7 +197,39 @@
                 padding-bottom: 10px;
             }
             .desktop-checkout-panel > .mt-4.flex.gap-2 { margin-top: 10px; }
+
+            /* v2: product results as readable rows with guaranteed space */
+            .desktop-product-results { min-height: 260px; }
+            .desktop-product-results #product-list {
+                grid-template-columns: 1fr;
+                gap: 6px;
+                padding-right: 4px;
+            }
+            .desktop-product-results #product-list .product-card {
+                flex-direction: row;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                padding: 10px 12px;
+                min-height: 56px;
+            }
+            .desktop-product-results #product-list .product-card:hover { border-color: #3b82f6; }
+            .desktop-product-results #product-list .p-info { flex: 1; min-width: 0; }
+            .desktop-product-results #product-list .p-meta { text-align: right; flex-shrink: 0; }
         }
+        .product-card .p-info { display: flex; flex-direction: column; min-width: 0; }
+        .product-card .p-name {
+            font-weight: 700; font-size: 0.875rem; line-height: 1.2;
+            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+            word-break: break-word;
+        }
+        .product-card .p-sku { font-size: 0.72rem; color: #6b7280; margin-top: 2px; }
+        .product-card .p-meta { display: flex; flex-direction: column; margin-top: 6px; }
+        .product-card .p-price { font-weight: 700; font-size: 1rem; }
+        .product-card .p-stock { font-size: 0.72rem; margin-top: 1px; }
+        .product-card .p-stock.ok  { color: #16a34a; }
+        .product-card .p-stock.low { color: #d97706; }
+        .product-card .p-stock.out { color: #dc2626; }
 
         @media (min-width: 1024px) and (max-height: 800px) {
             .desktop-checkout-panel { max-height: 64%; }
@@ -1951,7 +1983,9 @@
                 const descSafe = escapeHtml(p.description || 'Unnamed product');
                 const card = document.createElement('button');
                 card.className = 'product-card bg-gray-50 rounded-xl text-left hover:bg-blue-50 border border-gray-200 transition shadow-sm flex flex-col p-3';
-                card.innerHTML = `<span class="name font-bold text-sm truncate w-full">${descSafe}</span><span class="sku text-xs text-gray-500 mt-1">📟 ${escapeHtml(skuDisplay)}</span><span class="price font-bold mt-2 text-base">₦${price.toLocaleString()}</span><span class="stock text-xs text-gray-400 mt-1">📦 ${stock} left</span>`;
+                const stockCls = stock <= 0 ? 'out' : (stock <= 5 ? 'low' : 'ok');
+                const stockTxt = stock <= 0 ? 'Out of stock' : `${stock} in stock`;
+                card.innerHTML = `<span class="p-info"><span class="p-name name">${descSafe}</span><span class="p-sku sku">📟 ${escapeHtml(String(skuDisplay))}</span></span><span class="p-meta"><span class="p-price price">₦${price.toLocaleString()}</span><span class="p-stock stock ${stockCls}">${stockTxt}</span></span>`;
                 card.onclick = () => addToCart(p.id, p.description || 'Product', price, stock, skuDisplay);
                 productContainer.appendChild(card);
             });
@@ -2976,7 +3010,7 @@
                     }
                     const top = grid.getBoundingClientRect().top;
                     const available = Math.floor(window.innerHeight - top - 16);
-                    grid.style.setProperty('--desktop-pos-height', `${Math.max(280, available)}px`);
+                    grid.style.setProperty('--desktop-pos-height', `${Math.max(640, available)}px`);
                 });
             };
             window.addEventListener('resize', fitDesktopWorkspace, { passive: true });
