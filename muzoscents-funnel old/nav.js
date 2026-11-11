@@ -12,6 +12,11 @@
 //   - auto-logouts after 15 min idle (60s warning)
 //
 // In a normal browser none of the lockdown runs. Add ?lockdown=1 to test it.
+//
+// NAVBAR LAYOUT (v2): on desktop (md+) the bar is a single slim row (~44px).
+// Only the current page shows its label; the other items are icon-only and
+// reveal their name in a tooltip on hover/focus. On mobile the original
+// scrollable icon+label strip is kept.
 (function () {
     'use strict';
 
@@ -56,29 +61,57 @@
         catch (e) { return 'customer'; }
     }
 
+    // Small stylesheet for the compact desktop nav (tooltips need pseudo-elements,
+    // which Tailwind utility classes can't express). Injected once.
+    function injectNavStyles() {
+        if (document.getElementById('kevs-nav-style')) return;
+        const st = document.createElement('style');
+        st.id = 'kevs-nav-style';
+        st.textContent =
+            '.kn-link{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;' +
+                'height:36px;min-width:36px;padding:0 10px;border-radius:8px;font-size:14px;font-weight:500;' +
+                'color:rgba(255,255,255,.8);transition:background .15s,color .15s;white-space:nowrap;text-decoration:none;}' +
+            '.kn-link:hover,.kn-link:focus-visible{background:rgba(255,255,255,.12);color:#fff;outline:none;}' +
+            '.kn-link.kn-active{background:rgba(255,255,255,.2);color:#fff;}' +
+            '.kn-link:not(.kn-active) .kn-label{display:none;}' +
+            '.kn-link:not(.kn-active)::after{content:attr(data-label);position:absolute;top:100%;left:50%;' +
+                'transform:translateX(-50%);margin-top:8px;background:#0f172a;color:#fff;font-size:12px;' +
+                'line-height:1;padding:6px 9px;border-radius:6px;white-space:nowrap;opacity:0;' +
+                'pointer-events:none;transition:opacity .12s;z-index:60;box-shadow:0 4px 12px rgba(0,0,0,.3);}' +
+            '.kn-link:not(.kn-active):hover::after,.kn-link:not(.kn-active):focus-visible::after{opacity:1;}';
+        document.head.appendChild(st);
+    }
+
     function buildNavbar() {
         const currentPath = window.location.pathname;
-        let linksHtml = '';
+        const role = getUserRole();
+        let desktopLinks = '';
+        let mobileLinks = '';
         navItems.forEach(item => {
-            if (!item.roles.includes(getUserRole())) return;
+            if (!item.roles.includes(role)) return;
             const isActive = currentPath === item.path;
-            const activeClass = isActive
-                ? 'bg-white/20 text-white'
-                : 'text-white/80 hover:bg-white/10';
-            linksHtml += `<a href="${item.path}" title="${esc(item.title)}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${activeClass}"><i class="fa-solid ${item.icon} w-4"></i> ${item.name}</a>`;
+
+            // Desktop: compact — label only on the active page, tooltip for the rest.
+            desktopLinks += `<a href="${item.path}" data-label="${esc(item.name)}" aria-label="${esc(item.name)}"` +
+                ` class="kn-link${isActive ? ' kn-active' : ''}"${isActive ? ' aria-current="page"' : ''}>` +
+                `<i class="fa-solid ${item.icon}"></i><span class="kn-label">${item.name}</span></a>`;
+
+            // Mobile: original scrollable strip with icon + label.
+            const activeClass = isActive ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10';
+            mobileLinks += `<a href="${item.path}" title="${esc(item.title)}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${activeClass}"><i class="fa-solid ${item.icon} w-4"></i> ${item.name}</a>`;
         });
         let userName = 'User';
         try { userName = localStorage.getItem('user_profile_display') || 'User'; } catch (e) {}
         return `<div class="bg-[#1E3A5F] text-white shadow-md sticky top-0 z-40">
-            <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-                <a href="/kdbi" class="flex items-center gap-2"><i class="fa-solid fa-chart-pie text-orange-400 text-xl"></i><span class="text-xl font-bold">${APP_NAME}</span></a>
-                <div class="hidden md:flex items-center gap-1 flex-wrap">${linksHtml}</div>
-                <div class="flex items-center gap-3">
+            <div class="max-w-7xl mx-auto px-4 py-1.5 flex items-center justify-between gap-3">
+                <a href="/kdbi" class="flex items-center gap-2 shrink-0"><i class="fa-solid fa-chart-pie text-orange-400 text-lg"></i><span class="text-lg font-bold">${APP_NAME}</span></a>
+                <div class="hidden md:flex items-center gap-1">${desktopLinks}</div>
+                <div class="flex items-center gap-2 shrink-0">
                     <span class="text-xs bg-white/10 px-3 py-1.5 rounded-full"><i class="fa-regular fa-user mr-1"></i> ${esc(userName)}</span>
-                    <button id="global-logout-btn" class="bg-red-500/80 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition"><i class="fa-solid fa-sign-out-alt"></i></button>
+                    <button id="global-logout-btn" title="Log out" class="bg-red-500/80 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition"><i class="fa-solid fa-sign-out-alt"></i></button>
                 </div>
             </div>
-            <div class="md:hidden flex overflow-x-auto pb-2 px-4 gap-1">${linksHtml}</div>
+            <div class="md:hidden flex overflow-x-auto pb-2 px-4 gap-1">${mobileLinks}</div>
         </div>`;
     }
 
@@ -258,6 +291,7 @@
     async function mount() {
         const container = document.getElementById('kevs-nav-container');
         if (!container) return;
+        injectNavStyles();
         await hydrateRoleIfMissing();
         container.innerHTML = buildNavbar();
         document.getElementById('global-logout-btn')?.addEventListener('click', globalLogout);
