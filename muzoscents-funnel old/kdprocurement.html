@@ -10,7 +10,6 @@
     <link rel="stylesheet" href="/tailwind.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
-        /* (same CSS as before – unchanged) */
         body {
             background: #0F172A;
             font-family: 'Inter', system-ui;
@@ -991,11 +990,10 @@
         }
 
         // ========================================================================
-        // ORGANISATION SELECTION – FIXED (no more /auth/user-organisations)
+        // ORGANISATION SELECTION
         // ========================================================================
         async function fetchUserOrganisations() {
             try {
-                // Use /auth/me to get the user's organisations
                 const me = await apiCall('/auth/me');
                 if (!me.org_id) {
                     console.warn('No org_id in /auth/me response:', me);
@@ -1019,7 +1017,7 @@
             const userRole = localStorage.getItem('user_role');
             const allowedRoles = ['owner', 'admin', 'inventory_manager'];
             
-            // Hide Restock Hub if role is not allowed
+            // 1. Hide Restock Hub if role is not allowed
             if (!allowedRoles.includes(userRole)) {
                 const restockTabBtn = document.querySelector('.tab-btn[data-tab="restock-hub"]');
                 if (restockTabBtn) restockTabBtn.style.display = 'none';
@@ -1035,6 +1033,26 @@
                     document.getElementById('current-org-banner').classList.remove('hidden');
                     document.getElementById('auth-check-placeholder').classList.add('hidden');
                     document.getElementById('procurement-tabs').classList.remove('hidden');
+                    
+                    // 2. Feature Gate Check (Test if /suppliers API returns 402)
+                    let hasProcurementFeature = false;
+                    try {
+                        await apiCall('/suppliers?limit=1');
+                        hasProcurementFeature = true;
+                    } catch (err) {
+                        // If the API rejects it because the feature is disabled, hide the Restock Hub.
+                        if (err.message.includes('not enabled') || err.message.includes('suspended')) {
+                            hasProcurementFeature = false;
+                        } else {
+                            hasProcurementFeature = true; // Assume true if it's just a network glitch
+                        }
+                    }
+
+                    if (!hasProcurementFeature) {
+                        const restockTabBtn = document.querySelector('.tab-btn[data-tab="restock-hub"]');
+                        if (restockTabBtn) restockTabBtn.style.display = 'none';
+                    }
+
                     await loadSuppliers();
                     await loadPurchaseOrders();
                     await loadGRNs();
@@ -1053,6 +1071,25 @@
             document.getElementById('current-org-banner').classList.remove('hidden');
             document.getElementById('auth-check-placeholder').classList.add('hidden');
             document.getElementById('procurement-tabs').classList.remove('hidden');
+
+            // 2. Feature Gate Check
+            let hasProcurementFeature2 = false;
+            try {
+                await apiCall('/suppliers?limit=1');
+                hasProcurementFeature2 = true;
+            } catch (err) {
+                if (err.message.includes('not enabled') || err.message.includes('suspended')) {
+                    hasProcurementFeature2 = false;
+                } else {
+                    hasProcurementFeature2 = true;
+                }
+            }
+
+            if (!hasProcurementFeature2) {
+                const restockTabBtn = document.querySelector('.tab-btn[data-tab="restock-hub"]');
+                if (restockTabBtn) restockTabBtn.style.display = 'none';
+            }
+
             await loadSuppliers();
             await loadPurchaseOrders();
             await loadGRNs();
@@ -1611,7 +1648,7 @@
         };
 
         // ========================================================================
-        // GOODS RECEIVED NOTES (GRN) – FIXED
+        // GOODS RECEIVED NOTES (GRN)
         // ========================================================================
         async function loadGRNs(page = 1) {
             const status = document.getElementById('grn-status-filter').value;
@@ -1666,7 +1703,6 @@
             document.getElementById('grn-modal-title').innerText = grnId ? 'Edit GRN' : 'Create GRN';
 
             const poSelect = document.getElementById('grn-po-select');
-            // Always populate the PO dropdown
             poSelect.innerHTML = '<option value="">Select PO...</option>';
             try {
                 const pos = await apiCall('/purchase-orders?status=sent,partially_received');
@@ -1683,7 +1719,6 @@
 
             populateLocationSelects();
 
-            // Set onchange to load PO items when user selects a PO
             poSelect.onchange = async function() {
                 const poId = this.value;
                 const container = document.getElementById('grn-items-container');
@@ -1735,9 +1770,6 @@
                         document.getElementById('grn-post-btn').classList.remove('hidden');
                         document.getElementById('grn-post-btn').dataset.grnId = grn.id;
                     }
-
-                    // NOTE: do NOT dispatch 'change' here — it would overwrite the freshly loaded
-                    // grn_items with the PO's ordered quantities.
                 } catch (err) {
                     showToast(`Error loading GRN: ${err.message}`, 'error');
                     return;
@@ -2146,16 +2178,7 @@
 
             } catch (err) {
                 console.error('Failed to load Restock Hub:', err);
-                // Handle Feature Gate Errors gracefully
-                if (err.message.includes('not enabled') || err.message.includes('suspended')) {
-                    tbody.innerHTML = `
-                        <tr><td colspan="7" class="text-center p-8 text-red-400">
-                            <i class="fa-solid fa-lock text-2xl mb-2"></i><br>
-                            ${escapeHtml(err.message)}
-                        </td></tr>`;
-                } else {
-                    tbody.innerHTML = `<tr><td colspan="7" class="text-center p-8 text-red-400">❌ Failed to load data: ${escapeHtml(err.message)}</td></tr>`;
-                }
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center p-8 text-red-400">❌ Failed to load data: ${escapeHtml(err.message)}</td></tr>`;
             }
         }
 
