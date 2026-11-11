@@ -217,6 +217,30 @@
             .desktop-product-results #product-list .p-info { flex: 1; min-width: 0; }
             .desktop-product-results #product-list .p-meta { text-align: right; flex-shrink: 0; }
         }
+        /* v2: desktop nav collapses into an overlay menu so it never eats vertical space */
+        #nav-toggle-btn { display: none; }
+        #nav-backdrop { display: none; }
+        @media (min-width: 1024px) {
+            #nav-toggle-btn { display: inline-flex; align-items: center; gap: 6px; }
+            #kevs-nav-container {
+                display: none;
+                position: fixed !important;
+                top: 12px; left: 50%;
+                transform: translateX(-50%);
+                width: min(1100px, calc(100vw - 32px));
+                max-height: calc(100vh - 24px);
+                overflow-y: auto;
+                z-index: 90;
+                border-radius: 14px;
+                box-shadow: 0 20px 50px rgba(15, 23, 42, .45);
+            }
+            body.nav-open #kevs-nav-container { display: block; }
+            body.nav-open #nav-backdrop {
+                display: block; position: fixed; inset: 0; z-index: 85;
+                background: rgba(15, 23, 42, .35);
+            }
+            body { padding-top: 12px; }
+        }
         .product-card .p-info { display: flex; flex-direction: column; min-width: 0; }
         .product-card .p-name {
             font-weight: 700; font-size: 0.875rem; line-height: 1.2;
@@ -242,6 +266,7 @@
 </head>
 <body class="bg-gray-100 p-4 font-sans pb-24 lg:pb-4">
 
+    <div id="nav-backdrop"></div>
     <div id="kevs-nav-container"></div>
     <div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2 w-80"></div>
     <div id="receipt-print-area" style="display:none;"></div>
@@ -253,6 +278,7 @@
                 <p class="text-xs text-gray-500">Offline‑Ready · SKU Search · Scanner · Cashier History · Audit</p>
             </div>
             <div id="admin-controls" class="flex items-center gap-2 flex-wrap">
+                <button id="nav-toggle-btn" type="button" class="bg-blue-900 text-white px-3 py-1 rounded-lg text-sm" title="Open menu"><i class="fa-solid fa-bars"></i> Menu</button>
                 <span id="connection-status" class="online-badge"><i class="fa-solid fa-wifi"></i> Online</span>
                 <span id="catalog-badge" class="text-xs bg-gray-100 border border-gray-200 px-3 py-1 rounded-full hidden sm:inline-block">
                     <i id="catalog-badge-icon" class="fa-solid fa-database mr-1 text-gray-500"></i>
@@ -3010,7 +3036,7 @@
                     }
                     const top = grid.getBoundingClientRect().top;
                     const available = Math.floor(window.innerHeight - top - 16);
-                    grid.style.setProperty('--desktop-pos-height', `${Math.max(640, available)}px`);
+                    grid.style.setProperty('--desktop-pos-height', `${Math.max(280, available)}px`);
                 });
             };
             window.addEventListener('resize', fitDesktopWorkspace, { passive: true });
@@ -3029,5 +3055,16 @@
         })();
     </script>
 
+    <script>
+        (() => {
+            const btn = document.getElementById('nav-toggle-btn');
+            const bd = document.getElementById('nav-backdrop');
+            if (!btn || !bd) return;
+            const setOpen = o => document.body.classList.toggle('nav-open', o);
+            btn.addEventListener('click', () => setOpen(!document.body.classList.contains('nav-open')));
+            bd.addEventListener('click', () => setOpen(false));
+            document.addEventListener('keydown', e => { if (e.key === 'Escape') setOpen(false); });
+        })();
+    </script>
 </body>
 </html>
