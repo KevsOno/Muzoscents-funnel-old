@@ -10456,15 +10456,18 @@ async def me(
         logger.warning(f"Could not read branch_scope from token: {e}")
 
     org_status = "active"
+    features: Dict[str, bool] = {}
     try:
         org_row = await run_sync_db_call(
-            client.table("organisations").select("status")
+            client.table("organisations")
+            .select("status, plan_tier, feature_overrides")
             .eq("id", org_id).maybe_single().execute
         )
         if org_row and org_row.data:
             org_status = org_row.data.get("status") or "active"
+            features = effective_features(org_row.data)
     except Exception as e:
-        logger.warning(f"Could not read org status: {e}")
+        logger.warning(f"Could not read org status/features: {e}")
 
     return {
         "user_id": user_id,
@@ -10483,6 +10486,7 @@ async def me(
             not is_owner and len(branches) > 1 and current_branch_id is None
         ),
         "org_status": org_status,
+        "features": features,
     }
 
 @app.get("/auth/my-orgs")
@@ -20685,7 +20689,9 @@ async def get_alerts(
     alert_type: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
+    user_data: Tuple[str, str, str] = Depends(
+        require_feature("procurement", allowed_roles=["owner", "admin", "inventory_manager"])
+    )
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -20698,7 +20704,7 @@ async def get_alerts(
                 "id, alert_type, details, created_at, action_taken, action_date, "
                 "batch, item_code, description"
             )
-            .eq("org_id", org_id)          # ← the missing line
+            .eq("org_id", org_id)
         )
         if alert_type:
             query = query.eq("alert_type", alert_type)
@@ -20747,7 +20753,9 @@ async def get_alerts(
 @app.get("/alerts/dashboard")
 async def get_alert_dashboard(
     request: Request,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
+    user_data: Tuple[str, str, str] = Depends(
+        require_feature("procurement", allowed_roles=["owner", "admin", "inventory_manager"])
+    )
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
@@ -20757,7 +20765,7 @@ async def get_alert_dashboard(
         alerts = await run_sync_db_call(
             client.table("alert_log")
             .select("alert_type, action_taken")
-            .eq("org_id", org_id)          # ← the missing line
+            .eq("org_id", org_id)
             .execute
         )
         alerts_data = alerts.data or []
@@ -20796,14 +20804,13 @@ async def resolve_alert(
     alert_id: int,
     action_data: dict,
     user_data: Tuple[str, str, str] = Depends(
-        require_role(["owner", "admin", "inventory_manager"])
+        require_feature("procurement", allowed_roles=["owner", "admin", "inventory_manager"])
     ),
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     user_id, org_id, _ = user_data
     client = get_supabase()
 
-    # Ownership check first, using the admin-free read so RLS doesn't hide it.
     existing = await run_sync_db_call(
         client.table("alert_log")
         .select("id, action_taken")
@@ -20832,14 +20839,6 @@ async def resolve_alert(
             detail="TRANSFER requires dest_location_id",
         )
 
-    # ── Call the RPC. ──
-    #
-    # postgrest-py treats any RPC response body containing a `message`
-    # key as an API error, regardless of other fields. Our resolve_alert
-    # RPC returns `{success: true, alert_id, action, message: "Alert
-    # resolved successfully", ...}`, so postgrest-py raises APIError on
-    # every successful resolve. We catch it, inspect the payload, and
-    # treat `success: true` as success.
     result: dict = {}
     try:
         rpc_resp = await run_sync_db_call(
@@ -20854,10 +20853,6 @@ async def resolve_alert(
         )
         result = rpc_resp.data or {}
     except Exception as e:
-        # postgrest-py wraps the RPC body in APIError. e.args[0] is the
-        # original JSON payload. If that payload has `success: true`,
-        # the RPC actually succeeded — we only landed here because of
-        # the `message` key.
         payload = getattr(e, "args", [None])[0]
         if isinstance(payload, dict) and payload.get("success") is True:
             result = payload
@@ -21054,21 +21049,15 @@ async def get_stock_limits(
     request: Request,
     limit: int = 100,
     offset: int = 0,
-    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "inventory_manager"]))
+    user_data: Tuple[str, str, str] = Depends(
+        require_feature("procurement", allowed_roles=["owner", "admin", "inventory_manager"])
+    )
 ):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
     _, org_id, _ = user_data
     client = get_supabase()
 
     try:
-        # org_id scoping is the only boundary. The service-role client
-        # bypasses RLS, so without this filter a fresh org would see
-        # every stock_limits row in the platform.
-        #
-        # Selected columns are the ones that actually exist on
-        # stock_limits (verified 2026-10-13 via information_schema).
-        # The previous shape returned branch_id and product_id, neither
-        # of which exists on this table — they were always null.
         query = (
             client.table("stock_limits")
             .select(
@@ -21081,13 +21070,6 @@ async def get_stock_limits(
         result = await run_sync_db_call(query.range(offset, offset + limit - 1).execute)
         rows = result.data or []
 
-        # ── Enrich with product + location display fields. ──
-
-        # Inventory: both sides are INTEGER (stock_limits.inventory_id
-        # and inventory.id), so a bounded .in_() lookup is safe and
-        # cheap. Scoped to the org for defence in depth — a stray
-        # inventory_id pointing at another tenant's row cannot leak
-        # that row's description.
         inventory_ids = list({r["inventory_id"] for r in rows if r.get("inventory_id")})
         inv_map: Dict[int, Dict] = {}
         if inventory_ids:
@@ -21100,12 +21082,6 @@ async def get_stock_limits(
             )
             inv_map = {p["id"]: p for p in (inv_res.data or [])}
 
-        # Locations: locations.id type has been inconsistent across
-        # this codebase's migrations (INTEGER in some, UUID in others).
-        # Rather than bet on one, pull the org's locations once and
-        # match on str() for both sides. An org has a handful of
-        # locations, so the full pull is cheap and safe regardless of
-        # which type is live.
         loc_map: Dict[str, str] = {}
         loc_res = await run_sync_db_call(
             client.table("locations")
@@ -21125,14 +21101,10 @@ async def get_stock_limits(
                 "org_id":           row.get("org_id"),
                 "inventory_id":     row.get("inventory_id"),
                 "location_id":      row.get("location_id"),
-
-                # Enriched display fields. null when the FK points at
-                # a missing or foreign inventory/location row.
                 "product_name":     inv.get("description"),
                 "sku":              inv.get("item_code"),
                 "current_qty":      inv.get("current_qty"),
                 "location_name":    loc_name,
-
                 "avg_daily_demand": float(row.get("avg_daily_demand") or 0),
                 "safety_stock":     int(row.get("safety_stock") or 0),
                 "reorder_point":    int(row.get("reorder_point") or 0),
