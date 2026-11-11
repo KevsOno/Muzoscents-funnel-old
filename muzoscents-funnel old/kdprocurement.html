@@ -575,6 +575,7 @@
             <button class="tab-btn px-4 py-2 text-sm font-medium tab-active" data-tab="suppliers">🏢 Suppliers</button>
             <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="purchase-orders">📋 Purchase Orders</button>
             <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="grn">📦 Goods Received</button>
+            <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="restock-hub">📊 Restock Hub</button>
         </div>
 
         <!-- ===== TAB: SUPPLIERS ===== -->
@@ -663,6 +664,61 @@
                     <div class="text-center py-8 text-slate-400">Loading GRNs...</div>
                 </div>
                 <div id="grn-pagination" class="flex items-center justify-between mt-4 pt-4 border-t border-slate-700"></div>
+            </div>
+        </div>
+
+        <!-- ========================================================== -->
+        <!-- TAB: RESTOCK HUB (Procurement Intelligence)                 -->
+        <!-- ========================================================== -->
+        <div id="tab-restock-hub" class="tab-content hidden">
+            <div class="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
+                <div class="flex flex-wrap justify-between items-center mb-6">
+                    <div>
+                        <h2 class="text-xl font-bold flex items-center gap-2">
+                            <i class="fa-solid fa-truck-fast text-indigo-400"></i> Restock Hub
+                        </h2>
+                        <p class="text-xs text-slate-400 mt-1">Aggregated procurement intelligence. Items below their reorder point across all locations.</p>
+                    </div>
+                    <button onclick="loadRestockHub()" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm transition">
+                        <i class="fa-solid fa-refresh mr-1"></i> Refresh
+                    </button>
+                </div>
+
+                <!-- Restock Metrics -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div class="bg-red-900/30 rounded-xl p-4 border border-red-700">
+                        <div class="text-2xl font-bold text-red-400" id="restock-out-of-stock">0</div>
+                        <div class="text-xs text-slate-400">Out of Stock</div>
+                    </div>
+                    <div class="bg-amber-900/30 rounded-xl p-4 border border-amber-700">
+                        <div class="text-2xl font-bold text-amber-400" id="restock-low-stock">0</div>
+                        <div class="text-xs text-slate-400">Low Stock</div>
+                    </div>
+                    <div class="bg-indigo-900/30 rounded-xl p-4 border border-indigo-700">
+                        <div class="text-2xl font-bold text-indigo-400" id="restock-est-value">₦0</div>
+                        <div class="text-xs text-slate-400">Est. Restock Value</div>
+                    </div>
+                </div>
+
+                <!-- Restock Table -->
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-900/50">
+                            <tr class="border-b border-slate-700">
+                                <th class="text-left p-3">Product</th>
+                                <th class="text-left p-3">SKU</th>
+                                <th class="text-right p-3">Current Total</th>
+                                <th class="text-right p-3">Reorder Point</th>
+                                <th class="text-right p-3">Max Stock</th>
+                                <th class="text-right p-3">Days Left</th>
+                                <th class="text-center p-3">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="restock-hub-table">
+                            <tr><td colspan="7" class="text-center p-8 text-slate-400"><i class="fa-solid fa-spinner fa-pulse mr-2"></i> Loading intelligence...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
@@ -1963,6 +2019,99 @@
             }
         };
 
+        // ================================================================
+        // RESTOCK HUB (Procurement Intelligence)
+        // ================================================================
+        async function loadRestockHub() {
+            const tbody = document.getElementById('restock-hub-table');
+            if (!tbody) return;
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center p-8 text-slate-400"><i class="fa-solid fa-spinner fa-pulse mr-2"></i> Aggregating data...</td></tr>';
+
+            try {
+                // Fetch stock limits (contains demand and reorder points)
+                const limitsData = await apiCall('/stock-limits?limit=1000');
+                const limits = limitsData.stock_limits || [];
+
+                // Group by inventory_id to aggregate across locations
+                const aggregated = {};
+                limits.forEach(l => {
+                    if (!l.inventory_id) return;
+                    if (!aggregated[l.inventory_id]) {
+                        aggregated[l.inventory_id] = {
+                            id: l.inventory_id,
+                            name: l.product_name || 'Unknown',
+                            sku: l.sku || 'N/A',
+                            current_qty: 0,
+                            total_reorder: 0,
+                            total_max: 0,
+                            total_demand: 0,
+                            cost: 0 // We don't have cost here, but we can estimate if needed
+                        };
+                    }
+                    aggregated[l.inventory_id].current_qty += parseInt(l.current_qty || 0);
+                    aggregated[l.inventory_id].total_reorder += parseInt(l.reorder_point || 0);
+                    aggregated[l.inventory_id].total_max += parseInt(l.max_stock || 0);
+                    aggregated[l.inventory_id].total_demand += parseFloat(l.avg_daily_demand || 0);
+                });
+
+                // Filter for items that need restocking (Current <= Reorder OR Current <= 0)
+                const restockItems = Object.values(aggregated).filter(item => {
+                    return item.current_qty <= item.total_reorder || item.current_qty <= 0;
+                }).sort((a, b) => a.current_qty - b.current_qty); // Out of stock first
+
+                // Update Metrics
+                const outOfStockCount = restockItems.filter(i => i.current_qty <= 0).length;
+                const lowStockCount = restockItems.filter(i => i.current_qty > 0).length;
+                
+                document.getElementById('restock-out-of-stock').innerText = outOfStockCount;
+                document.getElementById('restock-low-stock').innerText = lowStockCount;
+                document.getElementById('restock-est-value').innerText = '₦0'; // Placeholder if cost isn't readily available
+
+                if (restockItems.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center p-8 text-green-400 font-medium">✅ All stock levels are healthy! No procurement needed right now.</td></tr>';
+                    return;
+                }
+
+                // Render Table
+                tbody.innerHTML = restockItems.map(item => {
+                    // Calculate Days Left
+                    let daysLeft = '∞';
+                    if (item.total_demand > 0) {
+                        daysLeft = Math.round(item.current_qty / item.total_demand);
+                    }
+                    
+                    const isOutOfStock = item.current_qty <= 0;
+                    const statusColor = isOutOfStock ? 'text-red-400 font-bold' : 'text-amber-400 font-bold';
+                    const rowBg = isOutOfStock ? 'bg-red-900/10' : 'bg-amber-900/10';
+                    
+                    // Suggest restock amount to reach Max Stock
+                    const suggestOrder = item.total_max > 0 ? (item.total_max - item.current_qty) : 10;
+
+                    return `
+                        <tr class="border-b border-slate-700 hover:bg-slate-800/50 transition ${rowBg}">
+                            <td class="p-3 font-medium text-white">${escapeHtml(item.name)}</td>
+                            <td class="p-3 text-xs font-mono text-slate-400">${escapeHtml(item.sku)}</td>
+                            <td class="p-3 text-right ${statusColor}">${item.current_qty}</td>
+                            <td class="p-3 text-right text-slate-300">${item.total_reorder}</td>
+                            <td class="p-3 text-right text-slate-500">${item.total_max}</td>
+                            <td class="p-3 text-right ${statusColor}">${daysLeft} days</td>
+                            <td class="p-3 text-center">
+                                <a href="/kdprocurement?add_item=${item.id}&qty=${suggestOrder}" 
+                                   target="_blank"
+                                   class="inline-flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-3 py-1.5 rounded-lg transition shadow-md">
+                                    <i class="fa-solid fa-file-invoice"></i> Draft PO
+                                </a>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+
+            } catch (err) {
+                console.error('Failed to load Restock Hub:', err);
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center p-8 text-red-400">❌ Failed to load data: ${escapeHtml(err.message)}</td></tr>`;
+            }
+        }
+
         // ========================================================================
         // PAGINATION
         // ========================================================================
@@ -2011,6 +2160,7 @@
                 if (tab === 'suppliers') loadSuppliers(currentSupplierPage);
                 else if (tab === 'purchase-orders') loadPurchaseOrders(currentPOPage);
                 else if (tab === 'grn') loadGRNs(currentGRNPage);
+                else if (tab === 'restock-hub') loadRestockHub();
             });
         });
         document.querySelector('.tab-btn[data-tab="suppliers"]')?.click();
