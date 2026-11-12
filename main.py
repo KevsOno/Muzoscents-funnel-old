@@ -78,6 +78,10 @@ from deps import (
     _admin_set_app_metadata,
     # FastAPI dependencies
     require_role, require_feature, require_feature_any,
+    resolve_default_branch, ensure_default_branch,
+    get_user_branches, is_user_in_branch,
+    resolve_request_branch, resolve_request_branch_for_write,
+    get_visible_user_ids,
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
