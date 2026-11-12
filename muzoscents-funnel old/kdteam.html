@@ -322,9 +322,6 @@
                         ${hasHr ? `<a href="/hr/employees/${user.employee_id}"
                             class="text-gray-500 hover:text-gray-800 mr-2 transition"
                             title="View HR record"><i class="fas fa-id-card"></i></a>` : ''}
-                        <button class="reset-pwd-btn text-blue-600 hover:text-blue-800 mr-2 transition"
-                                data-email="${escapeHtml(user.email || '')}"
-                                title="Send password reset"><i class="fas fa-key"></i></button>
                         <button class="remove-user-btn text-red-600 hover:text-red-800 transition"
                                 data-user-id="${escapeHtml(user.id || '')}"
                                 data-user-role="${escapeHtml((user.role || '').toLowerCase())}"
@@ -334,26 +331,12 @@
                 </tr>`;
         }).join('');
 
-        tbody.querySelectorAll('.reset-pwd-btn').forEach(btn => {
-            btn.addEventListener('click', e => { e.preventDefault(); resetUserPassword(btn.dataset.email); });
-        });
         tbody.querySelectorAll('.remove-user-btn').forEach(btn => {
             btn.addEventListener('click', e => {
                 e.preventDefault();
                 removeUser(btn.dataset.userId, btn.dataset.userRole, btn.dataset.userName);
             });
         });
-    }
-
-    async function resetUserPassword(email) {
-        if (!email) return;
-        if (!confirm(`Send a password reset email to ${email}?`)) return;
-        try {
-            await apiFetch(`/auth/admin-reset-password?email=${encodeURIComponent(email)}`, { method: 'POST' });
-            showToast(`Password reset email sent to ${email}`, 'success');
-        } catch (err) {
-            showToast(err.message, 'error');
-        }
     }
 
     async function removeUser(userId, role, name) {
