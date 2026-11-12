@@ -72,17 +72,12 @@
         .printer-method .method-icon { width: 40px; height: 40px; border-radius: 8px; background: #dbeafe; color: #1e40af; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 18px; }
         .printer-method.selected .method-icon { background: #3b82f6; color: white; }
 
-        /* Kiosk mode: hide every admin control EXCEPT the kiosk toggle.
-           The toggle must stay reachable so a cashier can exit self-
-           service without reloading the page. Previously the entire
-           #admin-controls container was hidden, which made kiosk mode
-           one-way — the button that got you in was the only way out,
-           and it was gone. */
+        /* Kiosk mode */
         body.kiosk-mode #admin-controls > *:not(#kiosk-mode-btn) { display: none !important; }
         body.kiosk-mode #sync-dashboard-modal, body.kiosk-mode #history-modal, body.kiosk-mode #printer-modal { display: none !important; }
         body.kiosk-mode #pos-tabs-container { display: none !important; }
 
-        /* Thermal print CSS — no margins, monospace, auto page height */
+        /* Thermal print CSS */
         @media print {
             body * { visibility: hidden; }
             #receipt-print-area, #receipt-print-area * { visibility: visible; }
@@ -100,8 +95,7 @@
             .no-print { display: none !important; }
         }
 
-        /* Desktop POS redesign: cart on the left; product discovery and checkout on the right.
-           Mobile markup and layout are deliberately not changed. */
+        /* Desktop POS redesign */
         @media (min-width: 1024px) {
             html, body { height: 100%; }
             body { overflow-x: hidden; }
@@ -193,7 +187,6 @@
             }
             .desktop-checkout-panel > .mt-4.flex.gap-2 { margin-top: 10px; }
 
-            /* v2: product results as readable rows with guaranteed space */
             .desktop-product-results { min-height: 140px; }
             .desktop-product-results #product-list {
                 grid-template-columns: 1fr;
@@ -226,8 +219,6 @@
         .product-card .p-stock.low { color: #d97706; }
         .product-card .p-stock.out { color: #dc2626; }
 
-
-        /* v2: transfer drawer (desktop). Below 1024px the account list simply stays inline, as before. */
         .transfer-summary { display: none; }
         #desktop-transfer-account-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
         .transfer-drawer-host .td-header, .transfer-drawer-host .td-footer { display: none; }
@@ -270,7 +261,6 @@
             .td-total-amount { font-weight: 800; font-size: 1.3rem; line-height: 1.1; }
 
             .transfer-drawer-host .td-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px; overscroll-behavior: contain; }
-            /* the container is toggled with .hidden for the <1024px inline layout; inside the drawer it is always visible */
             .td-body #desktop-transfer-account-container.hidden { display: block !important; }
             .td-body .transfer-account-card { position: relative; min-height: 84px; padding: 12px 14px; }
             .td-body .transfer-account-card.selected::after {
@@ -677,10 +667,6 @@
 
     <script>
         // ── ON-SCREEN ERROR REPORTING (temporary debug) ──
-        // Tauri release builds have no devtools, so any error in the POS
-        // script is invisible. These handlers surface every failure as a
-        // red banner pinned to the bottom of the page. Remove before
-        // shipping the final build.
         (function() {
             function banner(text, color) {
                 const el = document.createElement('div');
@@ -706,16 +692,6 @@
 
         // ================================================================
         // DB ABSTRACTION LAYER (Dexie for Web, SQLite for Tauri)
-        //
-        // NOTE: This variable used to be named `isTauri`, but that name
-        // is already declared at the top level of /kdint.js (or
-        // /kdsession.js) on the current deploy. Two top-level `const`s
-        // with the same name throw "Identifier has already been declared"
-        // at parse time, which rejects this ENTIRE <script> block before
-        // any listener attaches. That is what made every button on this
-        // page appear dead in Tauri while the web version (serving a
-        // cached older copy of the same scripts) worked. Renamed to
-        // POS_IS_TAURI to avoid the collision.
         // ================================================================
         const POS_IS_TAURI = !!window.__TAURI_INTERNALS__;
         let sqliteDb = null;
@@ -726,22 +702,9 @@
             return Array.from(new Set(source.split(/[^\p{L}\p{N}]+/u).filter(t => t.length > 0)));
         }
 
-                      async function initDBService() {
+        async function initDBService() {
             if (POS_IS_TAURI) {
                 try {
-                    // ── Why we don't use window.__TAURI__.sql.Database ──
-                    // This POS page runs on a REMOTE origin
-                    // (kevsbos.netlify.app). Tauri v2's `withGlobalTauri`
-                    // injects `__TAURI_INTERNALS__.invoke` everywhere, but
-                    // only inlines PLUGIN JS bindings (`__TAURI__.sql.Database`)
-                    // for LOCAL tauri:// pages. On remote origins the plugin
-                    // class is `undefined`, so `Database.load()` used to
-                    // throw silently and we always fell back to Dexie.
-                    //
-                    // The plugin's IPC commands work regardless of origin as
-                    // long as the plugin is registered in Rust (it is — see
-                    // lib.rs) and the ACL permits it (see remote-bos.json).
-                    // So we call them directly, exactly like the BLE bridge.
                     const internals = window.__TAURI_INTERNALS__;
                     const invoke =
                         (internals && typeof internals.invoke === 'function')
@@ -754,10 +717,6 @@
 
                     const dbPath = 'sqlite:kevs_bos.db';
 
-                    // Open (or create) the database. `plugin:sql|load` is
-                    // the plugin's connect command; it resolves once the file
-                    // handle is open. Wrapped in a timeout so a silent
-                    // hang can't wedge the whole POS boot.
                     await Promise.race([
                         invoke('plugin:sql|load', { db: dbPath }),
                         new Promise((_, rej) =>
@@ -765,10 +724,6 @@
                         ),
                     ]);
 
-                    // Wrap the plugin's IPC commands in the same shape the
-                    // rest of the POS code expects from @tauri-apps/plugin-sql:
-                    // `.execute(query, values)`, `.select(query, values)`,
-                    // `.close()`.
                     sqliteDb = {
                         __isIpcBridge: true,
                         dbPath,
@@ -779,9 +734,6 @@
                         close: () => invoke('plugin:sql|close', { db: dbPath }).catch(() => {}),
                     };
 
-                    // DDL — tauri-plugin-sql's `execute` maps to sqlx::query()
-                    // which accepts one statement per call. Batch DDL is
-                    // rejected with "Only one statement allowed in query".
                     const ddl = [
                         `CREATE TABLE IF NOT EXISTS products (
                             id INTEGER PRIMARY KEY, description TEXT, item_code TEXT, sku TEXT,
@@ -1023,43 +975,9 @@
 
         // ================================================================
         // POS PRINTER MODULE
-        //
-        // Unified receipt printing across four surfaces:
-        //   1. Android Chrome   → window.print() → system print service
-        //   2. iOS Safari       → window.print() → AirPrint sheet
-        //   3. Tauri USB/CUPS   → window.print() → OS dialog → CUPS driver
-        //   4. Bluetooth thermal → ESC/POS bytes over Web Bluetooth (PWA)
-        //                          or a Tauri BLE bridge (native)
-        //
-        // Tauri BLE integration point
-        // ───────────────────────────
-        // If your Tauri app installs a BLE printer plugin, expose this
-        // global from the Rust side (or from a bootstrap script):
-        //
-        //     window.POS_TAURI_BLE_PRINT = async (bytes) => {
-        //         // bytes: Uint8Array of ESC/POS commands
-        //         // await your_plugin.write(pairedAddress, bytes);
-        //     };
-        //     window.POS_TAURI_BLE_TEST   = async () => true;
-        //
-        // If those globals are absent, the Tauri BLE option is hidden in
-        // the UI and the cashier falls back to system print (which still
-        // works for USB/CUPS-attached thermal printers on Tauri).
-        //
-        // Preference persistence
-        // ──────────────────────
-        // Stored in localStorage under `pos_printer_pref` as:
-        //   {
-        //     method: 'browser' | 'bluetooth-web' | 'bluetooth-tauri',
-        //     deviceId: <Bluetooth device id, if applicable>,
-        //     deviceName: <display name>,
-        //     paperWidth: 32 | 48,
-        //   }
         // ================================================================
         const POSPrinter = (function() {
             const LS_KEY = 'pos_printer_pref';
-
-            // ── Capability detection ──
             const caps = (function() {
                 const out = { browser: typeof window.print === 'function', bluetoothWeb: false, bluetoothTauri: false, isTauri: !!POS_IS_TAURI };
                 if (typeof navigator !== 'undefined' && navigator.bluetooth && typeof navigator.bluetooth.requestDevice === 'function') {
@@ -1071,11 +989,6 @@
                 return out;
             })();
 
-            // ── ESC/POS encoder ──
-            // Thermal printers want raw byte commands, not HTML. Common
-            // service/characteristic UUIDs are tried in order at connect
-            // time. Most 58mm/80mm BLE printers (Xprinter, Goojprt,
-            // Peripage, ZJ-5805, etc.) expose one of these.
             const ESC = {
                 INIT:       [0x1B, 0x40],
                 ALIGN_L:    [0x1B, 0x61, 0x00],
@@ -1163,10 +1076,6 @@
                 return new Uint8Array(enc(parts));
             }
 
-            // ── Bluetooth (Web Bluetooth) ──
-            // Tries the service/characteristic UUIDs used by the most
-            // common BLE thermal printers. Add new pairs to this table
-            // if you have a specific model that uses others.
             const BLE_PROFILES = [
                 { service: '000018f0-0000-1000-8000-00805f9b34fb', char: '00002af1-0000-1000-8000-00805f9b34fb' },
                 { service: '0000ff00-0000-1000-8000-00805f9b34fb', char: '0000ff02-0000-1000-8000-00805f9b34fb' },
@@ -1182,10 +1091,6 @@
 
                 async connect() {
                     if (!caps.bluetoothWeb) throw new Error('Web Bluetooth not available on this device');
-                    // requestDevice shows the browser's BLE chooser. The
-                    // filter accepts any peripheral that advertises the
-                    // "printer" service, plus a broad acceptOptionalServices
-                    // so unfamiliar printers still appear.
                     const device = await navigator.bluetooth.requestDevice({
                         acceptAllDevices: true,
                         optionalServices: BLE_PROFILES.map(p => p.service),
@@ -1251,9 +1156,6 @@
                 async write(bytes) {
                     if (!this.characteristic) throw new Error('No Bluetooth printer connected');
                     const ch = this.characteristic;
-                    // BLE packets are small (typically 20–100 bytes usable).
-                    // Write 100-byte chunks with a small delay so cheap
-                    // printers do not drop packets under burst load.
                     const CHUNK = 100;
                     for (let i = 0; i < bytes.length; i += CHUNK) {
                         const chunk = bytes.slice(i, i + CHUNK);
@@ -1267,7 +1169,6 @@
                 },
             };
 
-            // ── Browser (HTML) print ──
             const browserPrint = {
                 print(receiptData, width) {
                     const printArea = document.getElementById('receipt-print-area');
@@ -1288,11 +1189,6 @@
                         if (pmt.transfer_reference) paymentLine += `<br>Ref: ${escapeHtml(pmt.transfer_reference)}`;
                     }
 
-                    // Set @page size for thermal printers (58mm/80mm). On
-                    // ordinary desktop printers this is ignored — the OS
-                    // dialog lets the user pick paper. On Android Chrome
-                    // it makes the system print service render at the
-                    // right width.
                     const pageMm = width === 48 ? '80mm' : '58mm';
                     let pageStyle = document.getElementById('pos-page-size');
                     if (!pageStyle) { pageStyle = document.createElement('style'); pageStyle.id = 'pos-page-size'; document.head.appendChild(pageStyle); }
@@ -1322,16 +1218,12 @@
                         setTimeout(() => {
                             printArea.style.display = 'none';
                             printArea.innerHTML = '';
-                            // Restore default @page so subsequent non-POS
-                            // prints (e.g. cashier printing a report) are
-                            // not forced to 58mm.
                             if (pageStyle) pageStyle.textContent = '@page { margin: 10mm; }';
                         }, 1000);
                     }
                 },
             };
 
-            // ── Tauri BLE bridge ──
             const tauriBle = {
                 async write(bytes) {
                     if (typeof window.POS_TAURI_BLE_PRINT !== 'function') {
@@ -1341,7 +1233,6 @@
                 },
             };
 
-            // ── Preference persistence ──
             function loadPref() {
                 try {
                     const raw = localStorage.getItem(LS_KEY);
@@ -1356,14 +1247,10 @@
                 try { localStorage.setItem(LS_KEY, JSON.stringify(p)); } catch (e) {}
             }
 
-            // ── Unified print ──
-            // Returns { method, ok, error? }. Never throws — the caller
-            // (checkout) should not fail because a printer is offline.
             async function print(receiptData) {
                 const pref = loadPref();
                 const width = pref.paperWidth || 32;
 
-                // Bluetooth preferred and connected?
                 if (pref.method === 'bluetooth-web') {
                     try {
                         if (!bt.characteristic) {
@@ -1377,7 +1264,6 @@
                     } catch (err) {
                         console.warn('Bluetooth print failed, falling back to browser', err);
                     }
-                    // Fall through to browser
                 }
 
                 if (pref.method === 'bluetooth-tauri') {
@@ -1388,10 +1274,8 @@
                     } catch (err) {
                         console.warn('Tauri BLE print failed, falling back to browser', err);
                     }
-                    // Fall through to browser
                 }
 
-                // Browser fallback — always available
                 try {
                     browserPrint.print(receiptData, width);
                     return { method: 'browser', ok: true };
@@ -1401,7 +1285,6 @@
                 }
             }
 
-            // ── Test print — bypasses preference, uses the given method ──
             async function testPrint(method, paperWidth) {
                 const sample = {
                     receiptNumber: 'TEST-' + Date.now().toString().slice(-6),
@@ -1465,15 +1348,48 @@
         const CATALOG_TTL_MS = 15 * 60 * 1000;
 
         const ORG_VERTICAL = localStorage.getItem('org_vertical') || 'retail';
-        // Food verticals (takeaway / dine-in / kitchen tickets) are the only
-        // verticals that get order-type fields, kitchen buttons, and order-
-        // type data on receipts. Every other vertical omits them entirely so
-        // retail / pharmacy / service sales never carry a "Takeaway" badge.
         const IS_FOOD_VERTICAL = ORG_VERTICAL === 'food';
 
         // ── Payment accounts ──
         let paymentAccounts = [];
         const PAYMENT_ACCOUNTS_CACHE_KEY = 'pos_payment_accounts';
+
+        // ── Audio & Haptic Feedback ──
+        function playBeep(type = 'success') {
+            try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (!AudioContext) return;
+                const ctx = new AudioContext();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+
+                if (type === 'success') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(1000, ctx.currentTime); // High pitch for success
+                    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 0.1);
+                } else {
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(300, ctx.currentTime); // Low buzz for error
+                    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 0.2);
+                }
+
+                osc.start();
+                osc.stop(ctx.currentTime + (type === 'success' ? 0.1 : 0.2));
+            } catch (e) {
+                console.warn('Audio beep failed', e);
+            }
+        }
+
+        function vibrateDevice(type = 'success') {
+            if ('vibrate' in navigator) {
+                if (type === 'success') navigator.vibrate(50);
+                else navigator.vibrate([100, 50, 100]); // Double buzz for error
+            }
+        }
 
         async function loadPaymentAccounts() {
             if (isOnline && token) {
@@ -1573,7 +1489,6 @@
             setTransferDrawer(false);
         }
 
-        // ── Transfer drawer (desktop ≥1024px) ──
         const isDesktopLayout = () => window.matchMedia('(min-width: 1024px)').matches;
 
         function selectedTransferAccountInfo() {
@@ -1647,9 +1562,6 @@
             });
         }
 
-        // ── Receipt printer: convenience wrapper used by checkout ──
-        // Delegates to POSPrinter.print and surfaces a toast on failure.
-        // Never blocks or throws — the sale has already been saved.
         async function printReceipt(receiptData) {
             if (!receiptData) return;
             try {
@@ -1736,10 +1648,6 @@
         const desktopCustomerLabel = document.getElementById('desktop-customer-label');
         const mobileSheetCustomerLabel = document.getElementById('mobile-sheet-customer-label');
 
-        // ── Per-tab state factory ──
-        // orderType is only set for food verticals. For everyone else it is
-        // null and never referenced, so a retail / pharmacy / service sale
-        // can never carry a "Takeaway" value into receiptData.
         function makeEmptyTabState() {
             return {
                 cart: [],
@@ -1885,10 +1793,6 @@
             }
         });
 
-        // Escape exits kiosk mode. The toggle button is now visible in
-        // kiosk mode (see CSS), but Escape gives a keyboard shortcut so
-        // the mode is always reversible even if the button is ever
-        // obscured or the terminal is being driven without a mouse.
         document.addEventListener('keydown', (e) => {
             if (e.key !== 'Escape') return;
             if (!document.body.classList.contains('kiosk-mode')) return;
@@ -2063,11 +1967,6 @@
             return { items: result, total: result.length };
         }
 
-        // ── In-flight load tracking ──
-        // A second reset while a search is still resolving used to wipe
-        // `products` and then early-return on `posIsLoading`, leaving the
-        // UI empty. We now serialise resets behind the current promise so
-        // the winning load always repopulates `products`.
         let _inflightLoad = null;
 
         async function loadPOSProducts(reset = true) {
@@ -2077,8 +1976,6 @@
                 if (abortController) abortController.abort(); return;
             }
             if (reset) {
-                // Abort any in-flight fetch first, then wait for the
-                // in-flight load promise to settle before we wipe state.
                 if (abortController) abortController.abort();
                 const waitFor = _inflightLoad;
                 if (waitFor) { try { await waitFor; } catch (_) {} }
@@ -2164,14 +2061,9 @@
         let scanBuffer = '', scanTimer = null, isScanning = false, lastKeyTime = 0, searchDebounceTimer = null;
 
         // ── Shared scan pipeline ─────────────────────────────────────────
-        // Both the camera decoder and the keyboard-wedge (HID) path feed
-        // this single function. It owns the dedup window (so a hybrid
-        // device that emits a camera decode + keystrokes for the same
-        // barcode cannot add the item twice) and it auto-adds to cart
-        // when exactly one product matches.
-        const SCAN_KEY_GAP_MS = 60;    // keys closer than this = scanner burst
-        const SCAN_IDLE_MS    = 150;   // silence after burst = scan complete
-        const SCAN_DEDUP_MS   = 600;   // same code within this window = duplicate
+        const SCAN_KEY_GAP_MS = 60;
+        const SCAN_IDLE_MS    = 150;
+        const SCAN_DEDUP_MS   = 600;
         let _lastCode = '';
         let _lastCodeAt = 0;
 
@@ -2186,10 +2078,6 @@
             searchInput.value = code;
             posSearchTerm = code;
 
-            // Await the search so `products` is populated when we read it.
-            // (The previous camera path used a 500 ms setTimeout that raced
-            // the input-debounce, so `products` was usually still empty and
-            // the auto-add was silently skipped.)
             await loadPOSProducts(true);
 
             if (products.length === 1) {
@@ -2197,10 +2085,15 @@
                 await addToCart(p.id, p.description || 'Product',
                                 p.price_naira || 0, p.current_qty || 0,
                                 p.sku || p.item_code);
+                playBeep('success');
+                vibrateDevice('success');
                 showToast(`Added: ${p.description || p.sku || code}`, 'success');
             } else if (products.length === 0) {
+                playBeep('error');
+                vibrateDevice('error');
                 showToast(`No product found for "${code}"`, 'error');
             } else {
+                playBeep('success'); // Or a different tone, but positive feedback for finding matches
                 showToast(`${products.length} matches — tap the item to add`, 'info');
             }
         }
@@ -2217,9 +2110,6 @@
         });
 
         searchInput.addEventListener('keydown', function(e) {
-            // Enter finalises immediately — many USB scanners send a
-            // trailing CR/LF. We recover the full code from the scan
-            // buffer if a scan is active, otherwise from the input.
             if (e.key === 'Enter') {
                 e.preventDefault();
                 clearTimeout(scanTimer);
@@ -2243,11 +2133,6 @@
             const gap = lastKeyTime ? now - lastKeyTime : Infinity;
             lastKeyTime = now;
 
-            // Either we're already inside a scan, or the keystroke cadence
-            // says we're starting one. On entry we recover the first
-            // character(s) from `searchInput.value` — the old code started
-            // with an empty buffer so the first character of every scan
-            // was lost, making the search miss.
             if (isScanning || gap < SCAN_KEY_GAP_MS) {
                 if (!isScanning) {
                     isScanning = true;
@@ -2269,7 +2154,6 @@
                 }, SCAN_IDLE_MS);
                 return;
             }
-            // Slow typing → fall through to the 500 ms input debounce above.
         });
 
         // Customer Search
@@ -2492,10 +2376,6 @@
                 metadata: { softwareVersion: '1.0.0', deviceId: 'web-' + (navigator.userAgent || 'unknown'), printed: false }
             };
 
-            // Only food verticals carry order-type data on the receipt.
-            // Everything else explicitly omits it so downstream consumers
-            // (history, print, WhatsApp, sync) can't mistake a retail sale
-            // for a takeaway order.
             if (IS_FOOD_VERTICAL) {
                 receiptData.orderType = state.orderType;
                 receiptData.tableNumber = state.tableNumber;
@@ -2527,12 +2407,6 @@
                 if (!isOnline) { await saveOfflineAndFinish('offline'); return; }
                 const result = await apiCall('/pos/terminal/checkout', 'POST', {
                     items: itemsPayload, payment_method: paymentMethod, customer_name: customerName, customer_phone: customerPhone, customer_email: customerEmail,
-                    // Only food verticals send fulfilment fields. The backend
-                    // also gates on org.vertical === 'food' as defence in depth,
-                    // but matching the gate here keeps all four outbound paths
-                    // (online checkout + the two sync paths + kitchen ticket)
-                    // consistent and avoids polluting the wire payload with
-                    // null/empty keys the server would just drop.
                     ...(IS_FOOD_VERTICAL && {
                         order_type: state.orderType,
                         table_number: state.tableNumber,
@@ -2660,10 +2534,6 @@
             const state = tabState[activeTab];
             renderActiveCart();
 
-            // Only wire the order-type controls for food verticals. For
-            // anyone else, leave the hidden selects untouched — writing
-            // 'takeaway' into them is how the value escaped into receipts
-            // in the first place.
             if (IS_FOOD_VERTICAL) {
                 desktopOrderTypeSelect.value = state.orderType || 'takeaway';
                 mobileOrderTypeSelect.value = state.orderType || 'takeaway';
@@ -2730,9 +2600,6 @@
         function setActiveTab(tabId) {
             if (tabId === activeTab) return;
             const cur = tabState[activeTab];
-            // Only pull order-type state from the visible controls on food
-            // verticals. On other verticals those selects are hidden and
-            // would otherwise clobber a legitimately null orderType.
             if (IS_FOOD_VERTICAL) {
                 cur.orderType = desktopOrderTypeSelect.value || 'takeaway';
                 cur.tableNumber = desktopTableInput.value || '';
@@ -2850,9 +2717,6 @@
                 const buttonLabel = o.status === 'failed' ? '<i class="fa-solid fa-rotate-right"></i> Retry' : '<i class="fa-solid fa-rotate"></i> Sync';
                 const buttonClass = o.status === 'failed' ? 'text-red-600 hover:text-red-800' : 'text-blue-500 hover:text-blue-700';
                 const errorLine = (o.status === 'failed' && o.lastError) ? `<div class="text-xs text-red-500 mt-0.5" title="${escapeAttr(String(o.lastError))}"><i class="fa-solid fa-circle-exclamation"></i> ${escapeHtml(String(o.lastError).slice(0, 120))}${String(o.lastError).length > 120 ? '…' : ''}</div>` : '';
-                // Only food verticals show an order-type badge, and only when
-                // the receipt actually carries a recognised order type. Old
-                // retail rows with a leftover 'takeaway' value render nothing.
                 const isFoodOrder = IS_FOOD_VERTICAL && (o.receiptData?.orderType === 'dine-in' || o.receiptData?.orderType === 'takeaway');
                 let orderTypeLabel = '';
                 if (isFoodOrder) {
@@ -3042,8 +2906,6 @@
             if (connectBtn) { connectBtn.disabled = true; connectBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Pairing…'; }
             try {
                 const info = await POSPrinter.bt.connect();
-                // Persist the device id immediately so reconnect works even
-                // if the user cancels the Save button.
                 const pref = POSPrinter.loadPref();
                 pref.deviceId = POSPrinter.bt.device ? POSPrinter.bt.device.id : null;
                 pref.deviceName = info.name || 'Bluetooth printer';
@@ -3132,9 +2994,6 @@
             await refreshCachedCount();
             await loadPaymentAccounts();
 
-            // Best-effort: silently reconnect to a previously-paired
-            // Bluetooth printer so the first sale of the shift can print
-            // without the cashier having to open Settings.
             const pref = POSPrinter.loadPref();
             if (pref.method === 'bluetooth-web' && pref.deviceId) {
                 POSPrinter.bt.reconnect().catch(() => {});
