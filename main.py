@@ -5521,6 +5521,82 @@ async def ensure_hr_tables():
         created_at TIMESTAMPTZ DEFAULT now()
     );
     CREATE INDEX IF NOT EXISTS idx_hr_payroll_emp ON public.hr_payroll(employee_id);
+
+    -- 1. HR Tasks Table
+    CREATE TABLE IF NOT EXISTS public.hr_tasks (
+        id SERIAL PRIMARY KEY,
+        org_id UUID REFERENCES public.organisations(id) ON DELETE CASCADE,
+        employee_id INTEGER REFERENCES public.hr_employees(id) ON DELETE CASCADE,
+        assigned_by UUID REFERENCES public.profiles(id),
+        title VARCHAR(200) NOT NULL,
+        description TEXT,
+        status VARCHAR(20) DEFAULT 'Pending',
+        priority VARCHAR(20) DEFAULT 'Normal',
+        due_date DATE,
+        created_at TIMESTAMPTZ DEFAULT now()
+    );
+
+    -- 2. HR Notifications Table
+    CREATE TABLE IF NOT EXISTS public.hr_notifications (
+        id SERIAL PRIMARY KEY,
+        org_id UUID REFERENCES public.organisations(id) ON DELETE CASCADE,
+        employee_id INTEGER REFERENCES public.hr_employees(id) ON DELETE CASCADE,
+        type VARCHAR(50),
+        title VARCHAR(200),
+        message TEXT,
+        is_read BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMPTZ DEFAULT now()
+    );
+
+    -- 3. The Intelligent Alert Engine (PostgreSQL Function)
+    CREATE OR REPLACE FUNCTION generate_hr_alerts() RETURNS void AS $$
+    BEGIN
+        -- A. Overdue Tasks
+        INSERT INTO hr_notifications (org_id, employee_id, type, title, message)
+        SELECT t.org_id, t.employee_id, 'task_overdue', 'Overdue Task: ' || t.title, 'This task was due on ' || t.due_date
+        FROM hr_tasks t
+        WHERE t.status != 'Completed' AND t.due_date < CURRENT_DATE
+        AND NOT EXISTS (
+            SELECT 1 FROM hr_notifications n 
+            WHERE n.employee_id = t.employee_id AND n.type = 'task_overdue' 
+            AND n.title = 'Overdue Task: ' || t.title AND n.created_at::date = CURRENT_DATE
+        );
+
+        -- B. Pending Leave Requests (Starting within 7 days)
+        INSERT INTO hr_notifications (org_id, employee_id, type, title, message)
+        SELECT l.org_id, l.employee_id, 'leave_pending', 'Leave Approval Needed', 'Leave request starting ' || l.start_date || ' is still pending.'
+        FROM hr_leave_requests l
+        WHERE l.status = 'pending' AND l.start_date <= CURRENT_DATE + INTERVAL '7 days'
+        AND NOT EXISTS (
+            SELECT 1 FROM hr_notifications n 
+            WHERE n.employee_id = l.employee_id AND n.type = 'leave_pending' 
+            AND n.created_at::date = CURRENT_DATE
+        );
+
+        -- C. Probation Ending (Hired ~3 months ago, ending in next 14 days)
+        INSERT INTO hr_notifications (org_id, employee_id, type, title, message)
+        SELECT e.org_id, e.id, 'probation_ending', 'Probation Ending Soon', 'Probation for ' || e.first_name || ' ' || e.last_name || ' ends in 14 days.'
+        FROM hr_employees e
+        WHERE e.status = 'active' 
+        AND e.hire_date + INTERVAL '3 months' BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '14 days'
+        AND NOT EXISTS (
+            SELECT 1 FROM hr_notifications n 
+            WHERE n.employee_id = e.id AND n.type = 'probation_ending' 
+            AND n.created_at::date = CURRENT_DATE
+        );
+    END;
+    $$ LANGUAGE plpgsql;
+
+    -- 4. Attempt to schedule with pg_cron (Requires pg_cron extension enabled in Supabase Dashboard)
+    DO $$
+    BEGIN
+        IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+            PERFORM cron.schedule('hr-daily-alerts', '0 8 * * *', 'SELECT generate_hr_alerts();');
+        END IF;
+    EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE 'Could not schedule pg_cron. Please enable pg_cron in Supabase Extensions.';
+    END $$;
+    
     CREATE INDEX IF NOT EXISTS idx_hr_payroll_month_year ON public.hr_payroll(month, year);
     """
     async with httpx.AsyncClient() as client:

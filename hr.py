@@ -725,3 +725,117 @@ async def list_payroll(
     return {"payroll": rows, "total": len(rows)}
 
 # ===================== INCLUDE ROUTERS =====================
+
+
+# ===================== HR TASKS & NOTIFICATIONS =====================
+class TaskCreate(BaseModel):
+    employee_id: int
+    title: str = Field(..., min_length=1, max_length=200)
+    description: Optional[str] = None
+    priority: Literal["Low", "Normal", "High"] = "Normal"
+    due_date: Optional[date] = None
+
+class TaskUpdate(BaseModel):
+    status: Literal["Pending", "In Progress", "Completed"]
+
+@hr_router.get("/tasks")
+async def list_tasks(
+    request: Request,
+    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "hr", "employee"]))
+):
+    await rate_limit(get_client_ip(request), user_data[1], request=request)
+    user_id, org_id, role = user_data
+    client = get_supabase()
+
+    query = client.table("hr_tasks").select("*, hr_employees(first_name, last_name)").eq("org_id", org_id)
+    
+    if role == "employee":
+        emp = await get_employee_by_user_id(user_id, org_id)
+        if not emp:
+            return {"tasks": []}
+        query = query.eq("employee_id", emp["id"])
+
+    result = await run_sync_db_call(query.order("created_at", desc=True).execute)
+    return {"tasks": result.data or []}
+
+@hr_router.post("/tasks")
+async def create_task(
+    request: Request,
+    task: TaskCreate,
+    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "hr"]))
+):
+    await rate_limit(get_client_ip(request), user_data[1], request=request)
+    user_id, org_id, _ = user_data
+    client = get_supabase()
+
+    data = task.dict()
+    if data.get("due_date"):
+        data["due_date"] = data["due_date"].isoformat()
+    
+    data["org_id"] = org_id
+    data["assigned_by"] = user_id
+    
+    result = await run_sync_db_call(client.table("hr_tasks").insert(data).execute)
+    if not result.data:
+        raise HTTPException(status_code=500, detail="Failed to create task")
+    return result.data[0]
+
+@hr_router.put("/tasks/{task_id}")
+async def update_task_status(
+    request: Request,
+    task_id: int,
+    update: TaskUpdate,
+    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "hr", "employee"]))
+):
+    await rate_limit(get_client_ip(request), user_data[1], request=request)
+    user_id, org_id, role = user_data
+    client = get_supabase()
+
+    query = client.table("hr_tasks").update({"status": update.status}).eq("id", task_id).eq("org_id", org_id)
+    
+    if role == "employee":
+        emp = await get_employee_by_user_id(user_id, org_id)
+        if not emp:
+            raise HTTPException(403, "Unauthorized")
+        query = query.eq("employee_id", emp["id"])
+
+    result = await run_sync_db_call(query.execute)
+    if not result.data:
+        raise HTTPException(404, "Task not found or unauthorized")
+    return result.data[0]
+
+@hr_router.get("/notifications")
+async def get_notifications(
+    request: Request,
+    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "hr", "employee"]))
+):
+    await rate_limit(get_client_ip(request), user_data[1], request=request)
+    user_id, org_id, role = user_data
+    client = get_supabase()
+
+    query = client.table("hr_notifications").select("*").eq("org_id", org_id).eq("is_read", False)
+    
+    if role == "employee":
+        emp = await get_employee_by_user_id(user_id, org_id)
+        if not emp:
+            return {"notifications": [], "count": 0}
+        query = query.eq("employee_id", emp["id"])
+
+    result = await run_sync_db_call(query.order("created_at", desc=True).execute)
+    return {"notifications": result.data or [], "count": len(result.data or [])}
+
+@hr_router.put("/notifications/{notification_id}/read")
+async def mark_notification_read(
+    request: Request,
+    notification_id: int,
+    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "hr", "employee"]))
+):
+    await rate_limit(get_client_ip(request), user_data[1], request=request)
+    _, org_id, _ = user_data
+    client = get_supabase()
+
+    result = await run_sync_db_call(
+        client.table("hr_notifications").update({"is_read": True})
+        .eq("id", notification_id).eq("org_id", org_id).execute
+    )
+    return {"success": True}
