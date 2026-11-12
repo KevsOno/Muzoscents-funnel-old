@@ -32,15 +32,14 @@
         .status-pending { background: #f59e0b; color: #0f172a; }
         .status-approved { background: #22c55e; color: #0f172a; }
         .status-rejected { background: #dc2626; color: white; }
+        .badge-dot { position: absolute; top: -5px; right: -5px; height: 12px; width: 12px; background-color: #ef4444; border-radius: 50%; border: 2px solid #0F172A; display: none; }
     </style>
 </head>
 <body class="text-slate-200">
 
-    <!-- Global navigation -->
     <div id="kevs-nav-container"></div>
 
     <div class="max-w-7xl mx-auto p-4 md:p-6">
-        <!-- Org banner -->
         <div id="current-org-banner" class="hidden mb-4 p-3 bg-blue-900/30 rounded-lg border border-blue-700 flex items-center justify-between">
             <div class="flex items-center gap-3">
                 <i class="fa-solid fa-building text-blue-400"></i>
@@ -54,12 +53,18 @@
             </button>
         </div>
 
-        <h1 class="text-2xl font-bold mb-6">👥 Human Resources</h1>
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-2xl font-bold">👥 Human Resources</h1>
+        </div>
 
         <!-- Tabs -->
         <div class="flex flex-wrap gap-2 border-b border-slate-700 mb-6">
             <button class="tab-btn px-4 py-2 text-sm font-medium tab-active" data-tab="employees">👤 Employees</button>
             <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="departments">🏢 Departments</button>
+            <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="tasks">📋 Tasks</button>
+            <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive relative" data-tab="notifications">
+                🔔 Alerts <span id="notif-badge" class="badge-dot"></span>
+            </button>
             <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="attendance">⏱️ Attendance</button>
             <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="leaves">📅 Leaves</button>
             <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="payroll">💰 Payroll</button>
@@ -93,6 +98,29 @@
                     <button onclick="openDepartmentModal()" class="btn-primary"><i class="fa-solid fa-plus mr-1"></i> Add Department</button>
                 </div>
                 <div id="departments-list" class="overflow-x-auto">
+                    <p class="text-center py-8 text-slate-400">Loading...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== TAB: TASKS ===== -->
+        <div id="tab-tasks" class="tab-content hidden">
+            <div class="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">Task Board</h2>
+                    <button onclick="openTaskModal()" class="btn-primary"><i class="fa-solid fa-plus mr-1"></i> Assign Task</button>
+                </div>
+                <div id="tasks-list" class="overflow-x-auto">
+                    <p class="text-center py-8 text-slate-400">Loading...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== TAB: NOTIFICATIONS ===== -->
+        <div id="tab-notifications" class="tab-content hidden">
+            <div class="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
+                <h2 class="text-xl font-bold mb-4">System Alerts</h2>
+                <div id="notifications-list" class="space-y-3">
                     <p class="text-center py-8 text-slate-400">Loading...</p>
                 </div>
             </div>
@@ -171,7 +199,6 @@
     </div>
 
     <!-- ===== MODALS ===== -->
-    <!-- Employee Modal -->
     <div id="employee-modal" class="modal-overlay">
         <div class="modal-content">
             <button class="modal-close" onclick="closeModal('employee-modal')">&times;</button>
@@ -202,7 +229,6 @@
         </div>
     </div>
 
-    <!-- Department Modal -->
     <div id="department-modal" class="modal-overlay">
         <div class="modal-content">
             <button class="modal-close" onclick="closeModal('department-modal')">&times;</button>
@@ -219,7 +245,30 @@
         </div>
     </div>
 
-    <!-- Leave Request Modal -->
+    <div id="task-modal" class="modal-overlay">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('task-modal')">&times;</button>
+            <h3 class="text-xl font-bold mb-4">Assign Task</h3>
+            <form id="task-form" class="grid grid-cols-1 gap-4">
+                <div><label class="form-label">Employee *</label>
+                    <select id="task-emp" class="form-input" required><option value="">Select Employee</option></select>
+                </div>
+                <div><label class="form-label">Task Title *</label><input type="text" id="task-title" class="form-input" required></div>
+                <div><label class="form-label">Description</label><textarea id="task-desc" class="form-input" rows="2"></textarea></div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div><label class="form-label">Priority</label>
+                        <select id="task-priority" class="form-input"><option value="Normal">Normal</option><option value="High">High</option><option value="Low">Low</option></select>
+                    </div>
+                    <div><label class="form-label">Due Date</label><input type="date" id="task-due" class="form-input"></div>
+                </div>
+                <div class="flex gap-3">
+                    <button type="submit" class="btn-primary">Assign Task</button>
+                    <button type="button" onclick="closeModal('task-modal')" class="btn-secondary">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div id="leave-modal" class="modal-overlay">
         <div class="modal-content">
             <button class="modal-close" onclick="closeModal('leave-modal')">&times;</button>
@@ -240,23 +289,18 @@
         </div>
     </div>
 
-    <!-- Toast -->
     <div id="toast" class="fixed bottom-4 right-4 z-50 hidden px-4 py-2 rounded-lg text-white text-sm shadow-lg"></div>
 
     <script>
-        // ================================================================
-        // HR FRONTEND – full CRUD
-        // ================================================================
-
         const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
         let token = localStorage.getItem('access_token');
         let selectedOrganisation = null;
         let allEmployees = [];
         let allDepartments = [];
+        let allTasks = [];
         let currentEmpPage = 1;
         const PAGE_SIZE = 20;
 
-        // ---------- Utilities ----------
         function showToast(msg, type = 'info') {
             const toast = document.getElementById('toast');
             toast.className = `fixed bottom-4 right-4 z-50 px-4 py-2 rounded-lg text-white text-sm shadow-lg ${type === 'success' ? 'bg-green-600' : type === 'error' ? 'bg-red-600' : 'bg-blue-600'}`;
@@ -267,12 +311,9 @@
         }
 
         function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' } [m])); }
-
         function closeModal(id) { document.getElementById(id).classList.remove('active'); }
-
         function openModal(id) { document.getElementById(id).classList.add('active'); }
 
-        // ---------- API ----------
         async function apiCall(endpoint, options = {}, retry = true) {
             const headers = { 'Content-Type': 'application/json' };
             if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -307,7 +348,6 @@
             return res.json();
         }
 
-        // ---------- Organisation ----------
         async function initOrganisation() {
             const savedOrgId = localStorage.getItem('selected_org_id');
             if (savedOrgId) {
@@ -316,13 +356,14 @@
                     selectedOrganisation = { id: me.org_id, name: (await apiCall('/auth/org')).org_name };
                     document.getElementById('current-org-name').innerText = selectedOrganisation.name;
                     document.getElementById('current-org-banner').classList.remove('hidden');
+                    
                     await loadDepartments();
                     await loadEmployees();
                     await loadAttendanceSelects();
+                    await fetchNotifications(); // Check for alerts on load
                     return;
                 } catch (e) {}
             }
-            // fallback: show switch
             document.getElementById('current-org-banner').classList.add('hidden');
             showToast('Please select an organisation', 'error');
         }
@@ -332,13 +373,13 @@
             window.location.reload();
         });
 
-        // ---------- Departments ----------
+        // ==================== DEPARTMENTS ====================
         async function loadDepartments() {
             try {
                 const data = await apiCall('/hr/departments');
                 allDepartments = data.departments || [];
                 renderDepartments();
-                // populate dropdowns
+                
                 const selects = ['emp-dept', 'emp-dept-filter'];
                 selects.forEach(id => {
                     const sel = document.getElementById(id);
@@ -353,9 +394,7 @@
                     });
                     if (current) sel.value = current;
                 });
-            } catch (err) {
-                console.warn('Failed to load departments', err);
-            }
+            } catch (err) { console.warn('Failed to load departments', err); }
         }
 
         function renderDepartments() {
@@ -415,9 +454,7 @@
                 }
                 closeModal('department-modal');
                 loadDepartments();
-            } catch (err) {
-                showToast(`Error: ${err.message}`, 'error');
-            }
+            } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
         });
 
         window.deleteDepartment = async function(id) {
@@ -426,13 +463,161 @@
                 await apiCall(`/hr/departments/${id}`, { method: 'DELETE' });
                 showToast('Department deleted', 'success');
                 loadDepartments();
-                loadEmployees(currentEmpPage); // Refresh employees in case they were unassigned
-            } catch (err) {
-                showToast(`Error: ${err.message}`, 'error');
-            }
+                loadEmployees(currentEmpPage);
+            } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
         };
 
-        // ---------- Employees ----------
+        // ==================== TASKS ====================
+        async function loadTasks() {
+            try {
+                const data = await apiCall('/hr/tasks');
+                allTasks = data.tasks || [];
+                renderTasks();
+                
+                // Populate task assign select
+                const sel = document.getElementById('task-emp');
+                sel.innerHTML = '<option value="">Select Employee</option>';
+                allEmployees.forEach(e => {
+                    const opt = document.createElement('option');
+                    opt.value = e.id;
+                    opt.textContent = `${e.first_name} ${e.last_name}`;
+                    sel.appendChild(opt);
+                });
+            } catch (err) {
+                document.getElementById('tasks-list').innerHTML = `<p class="text-red-400">Error: ${escapeHtml(err.message)}</p>`;
+            }
+        }
+
+        function renderTasks() {
+            const container = document.getElementById('tasks-list');
+            if (!container) return;
+            if (allTasks.length === 0) {
+                container.innerHTML = '<p class="text-center py-8 text-slate-400">No tasks assigned yet.</p>';
+                return;
+            }
+            let html = `<table class="min-w-full"><thead><tr><th class="text-left p-2">Task</th><th>Assigned To</th><th>Due Date</th><th>Priority</th><th>Status</th><th>Actions</th></tr></thead><tbody>`;
+            allTasks.forEach(t => {
+                const emp = t.hr_employees;
+                const empName = emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown';
+                const isOverdue = t.due_date && new Date(t.due_date) < new Date() && t.status !== 'Completed';
+                const statusClass = t.status === 'Completed' ? 'status-active' : t.status === 'In Progress' ? 'status-pending' : 'status-inactive';
+                
+                html += `
+                    <tr class="${isOverdue ? 'bg-red-900/20' : ''}">
+                        <td class="p-2">
+                            <div class="font-semibold">${escapeHtml(t.title)}</div>
+                            <div class="text-xs text-slate-400">${escapeHtml(t.description || '')}</div>
+                        </td>
+                        <td class="p-2">${escapeHtml(empName)}</td>
+                        <td class="p-2">${t.due_date || '—'}</td>
+                        <td class="p-2"><span class="text-xs font-bold ${t.priority === 'High' ? 'text-red-400' : 'text-blue-400'}">${t.priority}</span></td>
+                        <td class="p-2"><span class="status-badge ${statusClass}">${t.status}</span></td>
+                        <td class="p-2">
+                            ${t.status !== 'Completed' ? `
+                                <button onclick="updateTaskStatus(${t.id}, 'Completed')" class="text-green-400 hover:text-green-300" title="Mark Completed"><i class="fa-solid fa-check-circle"></i></button>
+                            ` : ''}
+                            ${t.status === 'Pending' ? `
+                                <button onclick="updateTaskStatus(${t.id}, 'In Progress')" class="text-yellow-400 hover:text-yellow-300 ml-2" title="Start Working"><i class="fa-solid fa-play"></i></button>
+                            ` : ''}
+                        </td>
+                    </tr>
+                `;
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        function openTaskModal() {
+            document.getElementById('task-form').reset();
+            loadEmployees(); // ensure list is fresh
+            openModal('task-modal');
+        }
+
+        document.getElementById('task-form')?.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const payload = {
+                employee_id: parseInt(document.getElementById('task-emp').value),
+                title: document.getElementById('task-title').value.trim(),
+                description: document.getElementById('task-desc').value.trim() || null,
+                priority: document.getElementById('task-priority').value,
+                due_date: document.getElementById('task-due').value || null
+            };
+            try {
+                await apiCall('/hr/tasks', { method: 'POST', body: JSON.stringify(payload) });
+                showToast('Task assigned successfully', 'success');
+                closeModal('task-modal');
+                loadTasks();
+            } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
+        });
+
+        window.updateTaskStatus = async function(id, status) {
+            try {
+                await apiCall(`/hr/tasks/${id}`, { method: 'PUT', body: JSON.stringify({ status }) });
+                showToast(`Task marked as ${status}`, 'success');
+                loadTasks();
+            } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
+        };
+
+        // ==================== NOTIFICATIONS ====================
+        async function fetchNotifications() {
+            try {
+                const data = await apiCall('/hr/notifications');
+                const notifs = data.notifications || [];
+                
+                const badge = document.getElementById('notif-badge');
+                if (data.count > 0) {
+                    badge.style.display = 'block';
+                } else {
+                    badge.style.display = 'none';
+                }
+
+                const container = document.getElementById('notifications-list');
+                if (notifs.length === 0) {
+                    container.innerHTML = '<p class="text-center py-8 text-slate-400">No unread alerts. You are all caught up!</p>';
+                    return;
+                }
+
+                let html = '';
+                notifs.forEach(n => {
+                    let icon = 'fa-bell';
+                    let color = 'text-blue-400';
+                    if (n.type === 'task_overdue') { icon = 'fa-exclamation-triangle'; color = 'text-red-400'; }
+                    if (n.type === 'leave_pending') { icon = 'fa-clock'; color = 'text-yellow-400'; }
+                    if (n.type === 'probation_ending') { icon = 'fa-user-clock'; color = 'text-purple-400'; }
+                    
+                    html += `
+                        <div class="p-4 bg-slate-900/50 border border-slate-700 rounded-lg flex items-start gap-4" id="notif-${n.id}">
+                            <div class="${color} text-xl mt-1"><i class="fa-solid ${icon}"></i></div>
+                            <div class="flex-1">
+                                <h4 class="font-bold text-white">${escapeHtml(n.title)}</h4>
+                                <p class="text-sm text-slate-300">${escapeHtml(n.message)}</p>
+                                <p class="text-xs text-slate-500 mt-1">${new Date(n.created_at).toLocaleDateString()}</p>
+                            </div>
+                            <button onclick="markNotifRead(${n.id})" class="text-slate-400 hover:text-white transition" title="Dismiss">
+                                <i class="fa-solid fa-check"></i>
+                            </button>
+                        </div>
+                    `;
+                });
+                container.innerHTML = html;
+            } catch (err) { console.warn('Failed to fetch notifications', err); }
+        }
+
+        window.markNotifRead = async function(id) {
+            try {
+                await apiCall(`/hr/notifications/${id}/read`, { method: 'PUT' });
+                document.getElementById(`notif-${id}`).remove();
+                const container = document.getElementById('notifications-list');
+                if (container.children.length === 0) {
+                    container.innerHTML = '<p class="text-center py-8 text-slate-400">No unread alerts. You are all caught up!</p>';
+                }
+                // Recalculate badge
+                const res = await apiCall('/hr/notifications');
+                if (res.count === 0) document.getElementById('notif-badge').style.display = 'none';
+            } catch (err) { showToast('Failed to dismiss alert', 'error'); }
+        };
+
+        // ==================== EMPLOYEES ====================
         async function loadEmployees(page = 1) {
             const dept = document.getElementById('emp-dept-filter').value;
             const status = document.getElementById('emp-status-filter').value;
@@ -476,9 +661,7 @@
             container.innerHTML = html;
         }
 
-        // Employee CRUD
         function openEmployeeModal(empId = null) {
-            const modal = document.getElementById('employee-modal');
             const form = document.getElementById('employee-form');
             form.reset();
             document.getElementById('emp-id').value = '';
@@ -527,9 +710,7 @@
                 }
                 closeModal('employee-modal');
                 loadEmployees(currentEmpPage);
-            } catch (err) {
-                showToast(`Error: ${err.message}`, 'error');
-            }
+            } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
         });
 
         window.editEmployee = function(id) { openEmployeeModal(id); };
@@ -540,12 +721,10 @@
                 await apiCall(`/hr/employees/${id}`, { method: 'DELETE' });
                 showToast('Employee deleted', 'success');
                 loadEmployees(currentEmpPage);
-            } catch (err) {
-                showToast(`Error: ${err.message}`, 'error');
-            }
+            } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
         };
 
-        // ---------- Attendance ----------
+        // ==================== ATTENDANCE ====================
         async function loadAttendanceSelects() {
             try {
                 const data = await apiCall('/hr/employees?limit=1000');
@@ -593,12 +772,10 @@
                 }
                 html += '</tbody></table>';
                 container.innerHTML = html;
-            } catch (err) {
-                showToast(`Error: ${err.message}`, 'error');
-            }
+            } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
         }
 
-        // ---------- Leave ----------
+        // ==================== LEAVES ====================
         async function loadLeaveRequests() {
             const status = document.getElementById('leave-status-filter').value;
             let url = '/hr/leave-requests?limit=100';
@@ -615,8 +792,7 @@
                 for (const req of requests) {
                     const empObj = allEmployees.find(e => e.id === req.employee_id);
                     const name = empObj ? `${empObj.first_name} ${empObj.last_name}` : `ID ${req.employee_id}`;
-                    const statusClass = req.status === 'pending' ? 'status-pending' : req.status === 'approved' ? 'status-approved' :
-                        'status-rejected';
+                    const statusClass = req.status === 'pending' ? 'status-pending' : req.status === 'approved' ? 'status-approved' : 'status-rejected';
                     html += `
                         <tr>
                             <td class="p-2">${escapeHtml(name)}</td>
@@ -635,14 +811,11 @@
                 }
                 html += '</tbody></table>';
                 container.innerHTML = html;
-            } catch (err) {
-                showToast(`Error: ${err.message}`, 'error');
-            }
+            } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
         }
 
         function openLeaveModal() {
             openModal('leave-modal');
-            // Pre-populate employee ID from my profile if possible
             const empId = document.getElementById('my-profile-content')?.dataset?.employeeId;
             if (empId) document.getElementById('leave-emp-id').value = empId;
         }
@@ -666,9 +839,7 @@
                 showToast('Leave request submitted', 'success');
                 closeModal('leave-modal');
                 loadLeaveRequests();
-            } catch (err) {
-                showToast(`Error: ${err.message}`, 'error');
-            }
+            } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
         });
 
         window.approveLeave = async function(id) {
@@ -687,21 +858,16 @@
             } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
         };
 
-        // ---------- Payroll ----------
+        // ==================== PAYROLL ====================
         async function generatePayroll() {
             const month = parseInt(document.getElementById('pay-month').value);
             const year = parseInt(document.getElementById('pay-year').value);
-            if (!month || !year) {
-                showToast('Select month and year', 'error');
-                return;
-            }
+            if (!month || !year) { showToast('Select month and year', 'error'); return; }
             try {
                 const result = await apiCall('/hr/payroll/generate', { method: 'POST', body: JSON.stringify({ month, year }) });
                 showToast(result.message || 'Payroll generated', 'success');
                 loadPayroll();
-            } catch (err) {
-                showToast(`Error: ${err.message}`, 'error');
-            }
+            } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
         }
 
         async function loadPayroll() {
@@ -735,12 +901,10 @@
                 }
                 html += '</tbody></table>';
                 container.innerHTML = html;
-            } catch (err) {
-                showToast(`Error: ${err.message}`, 'error');
-            }
+            } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
         }
 
-        // ---------- My Profile ----------
+        // ==================== MY PROFILE ====================
         async function loadMyProfile() {
             try {
                 const emp = await apiCall('/hr/me');
@@ -762,7 +926,6 @@
             }
         }
 
-        // ---------- Clock In/Out ----------
         async function clockIn() {
             const empId = document.getElementById('my-profile-content')?.dataset?.employeeId;
             if (!empId) { showToast('No employee profile found', 'error'); return; }
@@ -783,7 +946,7 @@
             } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
         }
 
-        // ---------- Pagination helper ----------
+        // ==================== PAGINATION & TABS ====================
         function renderPagination(containerId, currentPage, totalPages, loadFn) {
             const container = document.getElementById(containerId);
             if (!container) return;
@@ -804,19 +967,19 @@
             loadFn(page);
         };
 
-        // ---------- Tab switching ----------
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', function() {
-                document.querySelectorAll('.tab-btn').forEach(b => { b.classList.remove('tab-active');
-                    b.classList.add('tab-inactive'); });
+                document.querySelectorAll('.tab-btn').forEach(b => { b.classList.remove('tab-active'); b.classList.add('tab-inactive'); });
                 this.classList.remove('tab-inactive');
                 this.classList.add('tab-active');
                 document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
                 const tabId = this.dataset.tab;
                 document.getElementById(`tab-${tabId}`).classList.remove('hidden');
-                // load data on switch
+                
                 if (tabId === 'employees') loadEmployees(currentEmpPage);
                 else if (tabId === 'departments') loadDepartments();
+                else if (tabId === 'tasks') loadTasks();
+                else if (tabId === 'notifications') fetchNotifications();
                 else if (tabId === 'attendance') loadAttendance();
                 else if (tabId === 'leaves') loadLeaveRequests();
                 else if (tabId === 'payroll') loadPayroll();
@@ -824,25 +987,16 @@
             });
         });
 
-        // ---------- Filters ----------
         document.getElementById('emp-dept-filter')?.addEventListener('change', () => loadEmployees(1));
         document.getElementById('emp-status-filter')?.addEventListener('change', () => loadEmployees(1));
         document.getElementById('leave-status-filter')?.addEventListener('change', loadLeaveRequests);
 
-        // ---------- Init ----------
         (async function init() {
-            if (!token) {
-                window.location.href = '/kdsiginin';
-                return;
-            }
+            if (!token) { window.location.href = '/kdsiginin'; return; }
             try {
                 await initOrganisation();
-                // show default tab (employees)
                 document.querySelector('.tab-btn[data-tab="employees"]')?.click();
-            } catch (err) {
-                console.error(err);
-                showToast('Init error: ' + err.message, 'error');
-            }
+            } catch (err) { console.error(err); showToast('Init error: ' + err.message, 'error'); }
         })();
     </script>
 </body>
