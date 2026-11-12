@@ -4,7 +4,7 @@ from typing import Tuple, Optional
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 from main import get_supabase, run_sync_db_call, rate_limit, get_client_ip
-from deps import require_role
+from deps import require_role, get_user_branches, get_visible_user_ids, resolve_request_branch_for_write, resolve_request_branch, resolve_default_branch, is_user_in_branch, ensure_default_branch
 
 router = APIRouter(prefix="/chat", tags=["Live Chat"])
 

@@ -40,13 +40,11 @@ from main import (
     run_sync_db_call,
     rate_limit,
     get_client_ip,
-    resolve_request_branch_for_write,
-    get_user_branches,
     send_sendgrid_email,
     send_whatsapp_message_with_retry,
     logger,
 )
-from deps import require_role
+from deps import require_role, get_user_branches, get_visible_user_ids, resolve_request_branch_for_write, resolve_request_branch, resolve_default_branch, is_user_in_branch, ensure_default_branch
 
 
 router = APIRouter(tags=["Support Tickets"])

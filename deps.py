@@ -836,3 +836,163 @@ async def _admin_set_app_metadata(user_id: str, metadata: dict) -> bool:
     except Exception as e:
         logger.error("_admin_set_app_metadata exception", user_id=user_id, error=str(e))
         return False
+
+
+# ============================================================
+# BRANCH RESOLUTION
+# ============================================================
+async def resolve_default_branch(org_id: str) -> Optional[str]:
+    if not org_id:
+        return None
+    client = get_admin_supabase()
+    default_res = await run_sync_db_call(
+        client.table("branches").select("id")
+        .eq("org_id", org_id).eq("is_default", True).limit(1).execute
+    )
+    if default_res.data:
+        return default_res.data[0]["id"]
+    oldest_res = await run_sync_db_call(
+        client.table("branches").select("id")
+        .eq("org_id", org_id).order("created_at", desc=False).limit(1).execute
+    )
+    return oldest_res.data[0]["id"] if oldest_res.data else None
+
+
+async def ensure_default_branch(org_id: str) -> Optional[str]:
+    if not org_id:
+        return None
+    existing = await resolve_default_branch(org_id)
+    if existing:
+        return existing
+    client = get_admin_supabase()
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        ins = await run_sync_db_call(
+            client.table("branches").insert({
+                "org_id": org_id, "name": "Main", "code": "MAIN",
+                "is_default": True, "created_at": now, "updated_at": now,
+            }).execute
+        )
+        if ins.data:
+            return ins.data[0]["id"]
+    except Exception as e:
+        logger.warning("ensure_default_branch: insert lost race", org_id=org_id, error=str(e)[:200])
+    return await resolve_default_branch(org_id)
+
+
+async def get_user_branches(user_id: str, org_id: str) -> List[Dict]:
+    client = get_supabase()
+    role_res = await run_sync_db_call(
+        client.table("org_members").select("role")
+        .eq("user_id", user_id).eq("org_id", org_id).limit(1).execute
+    )
+    role = role_res.data[0].get("role") if role_res.data else "customer"
+    if role == "owner":
+        branches_res = await run_sync_db_call(
+            client.table("branches").select("id, name, code, is_default")
+            .eq("org_id", org_id).order("is_default", desc=True).order("name").execute
+        )
+        return [
+            {"id": b["id"], "name": b.get("name"), "code": b.get("code"),
+             "is_default": bool(b.get("is_default"))}
+            for b in (branches_res.data or [])
+        ]
+    mem_res = await run_sync_db_call(
+        client.table("branch_members")
+        .select("branch_id, branches(id, name, code, is_default)")
+        .eq("org_id", org_id).eq("user_id", user_id).execute
+    )
+    branches = []
+    for row in (mem_res.data or []):
+        b = row.get("branches") or {}
+        if b:
+            branches.append({
+                "id": b.get("id"), "name": b.get("name"), "code": b.get("code"),
+                "is_default": bool(b.get("is_default")),
+            })
+    branches.sort(key=lambda x: (not x["is_default"], (x["name"] or "").lower()))
+    return branches
+
+
+async def is_user_in_branch(user_id: str, org_id: str, branch_id: str) -> bool:
+    if not branch_id or not org_id or not user_id:
+        return False
+    client = get_admin_supabase()
+    role_res = await run_sync_db_call(
+        client.table("org_members").select("role")
+        .eq("user_id", user_id).eq("org_id", org_id).limit(1).execute
+    )
+    role = role_res.data[0].get("role") if role_res.data else None
+    if role == "owner":
+        branch_res = await run_sync_db_call(
+            client.table("branches").select("id")
+            .eq("id", branch_id).eq("org_id", org_id).limit(1).execute
+        )
+        return bool(branch_res.data)
+    mem_res = await run_sync_db_call(
+        client.table("branch_members").select("id")
+        .eq("org_id", org_id).eq("user_id", user_id).eq("branch_id", branch_id).limit(1).execute
+    )
+    return bool(mem_res.data)
+
+
+async def resolve_request_branch(request: Request, user_id: str, org_id: str, role: str) -> Optional[str]:
+    header_branch = (request.headers.get("X-Selected-Branch-Id") or "").strip()
+    if header_branch:
+        if not await is_user_in_branch(user_id, org_id, header_branch):
+            raise HTTPException(403, "You are not a member of the selected branch")
+        return header_branch
+    try:
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header.split(" ", 1)[1]
+            auth_client = get_user_supabase()
+            user_resp = await run_sync_db_call(auth_client.auth.get_user, token)
+            if user_resp and user_resp.user:
+                app_meta = getattr(user_resp.user, "app_metadata", None) or {}
+                meta_branch = app_meta.get("branch_scope")
+                if meta_branch and await is_user_in_branch(user_id, org_id, meta_branch):
+                    return meta_branch
+    except Exception as e:
+        logger.warning(f"resolve_request_branch: app_metadata read failed: {e}")
+    if role == "owner":
+        return None
+    branches = await get_user_branches(user_id, org_id)
+    if len(branches) == 1:
+        return branches[0]["id"]
+    if len(branches) == 0:
+        default_id = await ensure_default_branch(org_id)
+        if default_id:
+            return default_id
+        raise HTTPException(400, "No branch assigned. Contact your administrator.")
+    raise HTTPException(400, "Multiple branches available. Send X-Selected-Branch-Id header.")
+
+
+async def resolve_request_branch_for_write(request: Request, user_id: str, org_id: str, role: str) -> str:
+    branch = await resolve_request_branch(request, user_id, org_id, role)
+    if branch:
+        return branch
+    default_id = await ensure_default_branch(org_id)
+    if not default_id:
+        raise HTTPException(500, "No default branch for this organisation")
+    return default_id
+
+
+async def get_visible_user_ids(user_id: str, org_id: str, role: str) -> Optional[set]:
+    if role == "owner":
+        return None
+    client = get_supabase()
+    my_branches_res = await run_sync_db_call(
+        client.table("branch_members").select("branch_id")
+        .eq("user_id", user_id).eq("org_id", org_id).execute
+    )
+    branch_ids = [r["branch_id"] for r in (my_branches_res.data or []) if r.get("branch_id")]
+    if not branch_ids:
+        return {user_id}
+    members_res = await run_sync_db_call(
+        client.table("branch_members").select("user_id")
+        .eq("org_id", org_id).in_("branch_id", branch_ids).execute
+    )
+    visible = {r["user_id"] for r in (members_res.data or []) if r.get("user_id")}
+    visible.add(user_id)
+    return visible

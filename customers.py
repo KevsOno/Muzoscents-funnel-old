@@ -10,7 +10,7 @@ from main import (
     SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, PRODUCTION_HOST,
     send_sendgrid_email, escape_html
 )
-from deps import require_role
+from deps import require_role, get_user_branches, get_visible_user_ids, resolve_request_branch_for_write, resolve_request_branch, resolve_default_branch, is_user_in_branch, ensure_default_branch
 
 router = APIRouter(prefix="/customers", tags=["Customers"])
 
