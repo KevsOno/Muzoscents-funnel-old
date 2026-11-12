@@ -59,6 +59,7 @@
         <!-- Tabs -->
         <div class="flex flex-wrap gap-2 border-b border-slate-700 mb-6">
             <button class="tab-btn px-4 py-2 text-sm font-medium tab-active" data-tab="employees">👤 Employees</button>
+            <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="departments">🏢 Departments</button>
             <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="attendance">⏱️ Attendance</button>
             <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="leaves">📅 Leaves</button>
             <button class="tab-btn px-4 py-2 text-sm font-medium tab-inactive" data-tab="payroll">💰 Payroll</button>
@@ -81,6 +82,19 @@
                     <p class="text-center py-8 text-slate-400">Loading...</p>
                 </div>
                 <div id="emp-pagination" class="flex items-center justify-between mt-4 pt-4 border-t border-slate-700"></div>
+            </div>
+        </div>
+
+        <!-- ===== TAB: DEPARTMENTS ===== -->
+        <div id="tab-departments" class="tab-content hidden">
+            <div class="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">Departments</h2>
+                    <button onclick="openDepartmentModal()" class="btn-primary"><i class="fa-solid fa-plus mr-1"></i> Add Department</button>
+                </div>
+                <div id="departments-list" class="overflow-x-auto">
+                    <p class="text-center py-8 text-slate-400">Loading...</p>
+                </div>
             </div>
         </div>
 
@@ -183,6 +197,23 @@
                 <div class="md:col-span-2 flex gap-3">
                     <button type="submit" class="btn-primary">💾 Save</button>
                     <button type="button" onclick="closeModal('employee-modal')" class="btn-secondary">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Department Modal -->
+    <div id="department-modal" class="modal-overlay">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('department-modal')">&times;</button>
+            <h3 id="dept-modal-title" class="text-xl font-bold mb-4">Add Department</h3>
+            <form id="department-form" class="grid grid-cols-1 gap-4">
+                <input type="hidden" id="dept-id">
+                <div><label class="form-label">Name *</label><input type="text" id="dept-name" class="form-input" required></div>
+                <div><label class="form-label">Description</label><textarea id="dept-desc" class="form-input" rows="2"></textarea></div>
+                <div class="flex gap-3">
+                    <button type="submit" class="btn-primary">💾 Save</button>
+                    <button type="button" onclick="closeModal('department-modal')" class="btn-secondary">Cancel</button>
                 </div>
             </form>
         </div>
@@ -306,6 +337,7 @@
             try {
                 const data = await apiCall('/hr/departments');
                 allDepartments = data.departments || [];
+                renderDepartments();
                 // populate dropdowns
                 const selects = ['emp-dept', 'emp-dept-filter'];
                 selects.forEach(id => {
@@ -325,6 +357,80 @@
                 console.warn('Failed to load departments', err);
             }
         }
+
+        function renderDepartments() {
+            const container = document.getElementById('departments-list');
+            if (!container) return;
+            if (allDepartments.length === 0) {
+                container.innerHTML = '<p class="text-center py-8 text-slate-400">No departments found. Add one to get started.</p>';
+                return;
+            }
+            let html = `<table class="min-w-full"><thead><tr><th class="text-left p-2">Name</th><th class="text-left p-2">Description</th><th class="text-right p-2">Actions</th></tr></thead><tbody>`;
+            allDepartments.forEach(d => {
+                html += `
+                    <tr>
+                        <td class="p-2">${escapeHtml(d.name)}</td>
+                        <td class="p-2">${escapeHtml(d.description || '—')}</td>
+                        <td class="p-2 text-right">
+                            <button onclick="openDepartmentModal(${d.id})" class="text-blue-400 hover:text-blue-300 mr-2"><i class="fa-regular fa-pen-to-square"></i></button>
+                            <button onclick="deleteDepartment(${d.id})" class="text-red-400 hover:text-red-300"><i class="fa-regular fa-trash-can"></i></button>
+                        </td>
+                    </tr>
+                `;
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        function openDepartmentModal(deptId = null) {
+            const form = document.getElementById('department-form');
+            form.reset();
+            document.getElementById('dept-id').value = '';
+            document.getElementById('dept-modal-title').innerText = deptId ? 'Edit Department' : 'Add Department';
+            if (deptId) {
+                const dept = allDepartments.find(d => d.id === deptId);
+                if (dept) {
+                    document.getElementById('dept-id').value = dept.id;
+                    document.getElementById('dept-name').value = dept.name || '';
+                    document.getElementById('dept-desc').value = dept.description || '';
+                }
+            }
+            openModal('department-modal');
+        }
+
+        document.getElementById('department-form')?.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const id = document.getElementById('dept-id').value;
+            const payload = {
+                name: document.getElementById('dept-name').value.trim(),
+                description: document.getElementById('dept-desc').value.trim() || null
+            };
+            try {
+                if (id) {
+                    await apiCall(`/hr/departments/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+                    showToast('Department updated', 'success');
+                } else {
+                    await apiCall('/hr/departments', { method: 'POST', body: JSON.stringify(payload) });
+                    showToast('Department added', 'success');
+                }
+                closeModal('department-modal');
+                loadDepartments();
+            } catch (err) {
+                showToast(`Error: ${err.message}`, 'error');
+            }
+        });
+
+        window.deleteDepartment = async function(id) {
+            if (!confirm('Delete this department? Employees assigned to it will become unassigned.')) return;
+            try {
+                await apiCall(`/hr/departments/${id}`, { method: 'DELETE' });
+                showToast('Department deleted', 'success');
+                loadDepartments();
+                loadEmployees(currentEmpPage); // Refresh employees in case they were unassigned
+            } catch (err) {
+                showToast(`Error: ${err.message}`, 'error');
+            }
+        };
 
         // ---------- Employees ----------
         async function loadEmployees(page = 1) {
@@ -710,6 +816,7 @@
                 document.getElementById(`tab-${tabId}`).classList.remove('hidden');
                 // load data on switch
                 if (tabId === 'employees') loadEmployees(currentEmpPage);
+                else if (tabId === 'departments') loadDepartments();
                 else if (tabId === 'attendance') loadAttendance();
                 else if (tabId === 'leaves') loadLeaveRequests();
                 else if (tabId === 'payroll') loadPayroll();
