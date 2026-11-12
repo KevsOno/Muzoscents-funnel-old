@@ -18,11 +18,10 @@ from main import (           # noqa: E402
     rate_limit,
     get_client_ip,
     resolve_branch_for_write,
-    resolve_request_branch,
     create_journal_entry,
     _log_audit_event,
 )
-from deps import require_feature, require_role
+from deps import require_feature, require_role, resolve_request_branch
 
 router = APIRouter(prefix="/expenses", tags=["Expenses"])
 
