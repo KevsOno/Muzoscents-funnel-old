@@ -9901,14 +9901,30 @@ async def admin_reset_password(
     if not membership.data:
         raise HTTPException(status_code=403, detail="User not in your organisation")
 
+    url = f"{SUPABASE_URL}/auth/v1/recover"
+    headers = {
+        "apikey": SUPABASE_ANON_KEY or SUPABASE_SERVICE_ROLE_KEY,
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "email": email,
+        "redirect_to": f"{PRODUCTION_HOST}/kdsiginl"
+    }
     try:
-        # Auth operation — must run on a throwaway anon client so the
-        # shared service-role client never picks up a session.
-        auth_client = get_user_supabase()
-        await run_sync_db_call(auth_client.auth.reset_password_for_email, email)
-        return {"message": f"Password reset email sent to {email}"}
+        async with httpx.AsyncClient(timeout=10.0) as http:
+            resp = await http.post(url, json=payload, headers=headers)
+            if resp.status_code == 200:
+                return {"message": f"Password reset email sent to {email}"}
+            elif resp.status_code == 429:
+                raise HTTPException(status_code=429, detail="Too many requests. Wait a few minutes.")
+            else:
+                logger.error(f"Supabase admin recover error: {resp.text}")
+                raise HTTPException(status_code=400, detail="Failed to send reset email.")
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Admin reset error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post("/auth/reset-password")
