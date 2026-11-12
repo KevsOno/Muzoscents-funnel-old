@@ -82,7 +82,7 @@ async def get_employee_by_user_id(user_id: str, org_id: str) -> Optional[Dict]:
         .select("*")
         .eq("user_id", user_id)
         .eq("org_id", org_id)
-        .limit(1)  # FIXED: was .maybe_single()
+        .limit(1)  # FIXED: was .limit(1)
         .execute
     )
     return result.data[0] if result.data else None
@@ -94,7 +94,7 @@ async def get_employee_by_id(employee_id: int, org_id: str) -> Optional[Dict]:
         .select("*")
         .eq("id", employee_id)
         .eq("org_id", org_id)
-        .limit(1)  # FIXED: was .maybe_single()
+        .limit(1)  # FIXED: was .limit(1)
         .execute
     )
     return result.data[0] if result.data else None
@@ -150,7 +150,7 @@ async def update_department(
         .select("id")
         .eq("id", dept_id)
         .eq("org_id", org_id)
-        .maybe_single()
+        .limit(1)
         .execute
     )
     if not existing.data:
@@ -250,7 +250,7 @@ async def create_employee(
             .select("user_id")
             .eq("user_id", emp.user_id)
             .eq("org_id", org_id)
-            .maybe_single()
+            .limit(1)
             .execute
         )
         if not member_check.data:
@@ -260,7 +260,7 @@ async def create_employee(
         .select("id")
         .eq("email", emp.email)
         .eq("org_id", org_id)
-        .maybe_single()
+        .limit(1)
         .execute
     )
     if email_check.data:
@@ -294,7 +294,7 @@ async def get_employee(
         .select("*")
         .eq("id", employee_id)
         .eq("org_id", org_id)
-        .maybe_single()
+        .limit(1)
         .execute
     )
     if not result.data:
@@ -379,7 +379,7 @@ async def clock_in(
         .eq("employee_id", clock.employee_id)
         .eq("date", today)
         .is_("clock_out", "null")
-        .maybe_single()
+        .limit(1)
         .execute
     )
     if existing.data:
@@ -414,7 +414,7 @@ async def clock_out(
         .eq("employee_id", clock.employee_id)
         .eq("date", today)
         .is_("clock_out", "null")
-        .maybe_single()
+        .limit(1)
         .execute
     )
     if not record.data:
@@ -426,7 +426,7 @@ async def clock_out(
     result = await run_sync_db_call(
         client.table("hr_attendance")
         .update(update_data)
-        .eq("id", record.data["id"])
+        .eq("id", record.data[0]["id"])
         .execute
     )
     if not result.data:
@@ -567,7 +567,7 @@ async def update_leave_request(
         .select("*")
         .eq("id", request_id)
         .eq("org_id", org_id)
-        .maybe_single()
+        .limit(1)
         .execute
     )
     if not req.data:
@@ -643,7 +643,7 @@ async def generate_payroll(
             .eq("month", month)
             .eq("year", year)
             .eq("org_id", org_id)
-            .maybe_single()
+            .limit(1)
             .execute
         )
         if existing.data:
