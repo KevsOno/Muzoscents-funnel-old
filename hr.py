@@ -1,5 +1,5 @@
 from datetime import datetime, timezone, date
-from typing import Optional, Tuple, List, Dict
+from typing import Optional, Tuple, List, Dict, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
