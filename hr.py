@@ -267,6 +267,8 @@ async def create_employee(
         raise HTTPException(status_code=400, detail="Employee with this email already exists")
 
     data = emp.dict()
+    if data.get("hire_date"):
+        data["hire_date"] = data["hire_date"].isoformat()
     data["org_id"] = org_id
     data["branch_id"] = await resolve_request_branch_for_write(request, user_id, org_id, role)
     data["created_at"] = datetime.now(timezone.utc).isoformat()
@@ -315,6 +317,8 @@ async def update_employee(
     if not existing:
         raise HTTPException(status_code=404, detail="Employee not found")
     update_data = {k: v for k, v in emp.dict().items() if v is not None}
+    if update_data.get("hire_date"):
+        update_data["hire_date"] = update_data["hire_date"].isoformat()
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
     result = await run_sync_db_call(
         client.table("hr_employees")
@@ -496,6 +500,8 @@ async def create_leave_request(
         raise HTTPException(status_code=400, detail="Start date must be before end date")
     client = get_supabase()
     data = leave.dict()
+    if data.get("start_date"): data["start_date"] = data["start_date"].isoformat()
+    if data.get("end_date"): data["end_date"] = data["end_date"].isoformat()
     data["org_id"] = org_id
     data["branch_id"] = (emp.get("branch_id") if emp else None) or await resolve_request_branch_for_write(request, user_id, org_id, role)
     data["status"] = "pending"
