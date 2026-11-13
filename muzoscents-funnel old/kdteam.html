@@ -297,6 +297,7 @@
             const department = user.department_name || user.position || '—';
             const roleDisplay = formatRole(user.role || '');
             const joined = formatDate(user.joined_at);
+            const isOwner = (user.role || '').toLowerCase() === 'owner';
 
             return `
                 <tr class="border-b hover:bg-gray-50 transition">
@@ -319,7 +320,13 @@
                     <td class="px-6 py-3 text-gray-600 text-sm">${escapeHtml(department)}</td>
                     <td class="px-6 py-3 text-gray-500 text-sm">${escapeHtml(joined)}</td>
                     <td class="px-6 py-3 text-right whitespace-nowrap">
-                       
+                        ${!isOwner ? `
+                        <button class="edit-role-btn text-blue-600 hover:text-blue-800 mr-3 transition"
+                                data-user-id="${escapeHtml(user.id || '')}"
+                                data-user-role="${escapeHtml((user.role || '').toLowerCase())}"
+                                data-user-name="${escapeHtml(fullName)}"
+                                title="Change Role"><i class="fas fa-user-pen"></i></button>
+                        ` : ''}
                         <button class="remove-user-btn text-red-600 hover:text-red-800 transition"
                                 data-user-id="${escapeHtml(user.id || '')}"
                                 data-user-role="${escapeHtml((user.role || '').toLowerCase())}"
@@ -329,12 +336,52 @@
                 </tr>`;
         }).join('');
 
+        // Attach listeners for Revoke button
         tbody.querySelectorAll('.remove-user-btn').forEach(btn => {
             btn.addEventListener('click', e => {
                 e.preventDefault();
                 removeUser(btn.dataset.userId, btn.dataset.userRole, btn.dataset.userName);
             });
         });
+
+        // Attach listeners for Edit Role button
+        tbody.querySelectorAll('.edit-role-btn').forEach(btn => {
+            btn.addEventListener('click', e => {
+                e.preventDefault();
+                editUserRole(btn.dataset.userId, btn.dataset.userRole, btn.dataset.userName);
+            });
+        });
+    }
+
+    // ========== EDIT ROLE LOGIC ==========
+    async function editUserRole(userId, currentRole, name) {
+        if (!userId) return;
+        
+        const newRole = prompt(
+            `Change role for ${name}.\n\n` +
+            `Current role: ${formatRole(currentRole)}\n\n` +
+            `Enter new role (admin, inventory_manager, sales_rep, finance, logistics, support):`,
+            currentRole
+        );
+        
+        if (!newRole) return; // User cancelled
+        const cleanRole = newRole.trim().toLowerCase();
+        
+        if (cleanRole === currentRole) {
+            showToast('Role is unchanged.', 'info');
+            return;
+        }
+
+        try {
+            await apiFetch(`/organisations/me/users/${userId}/role`, {
+                method: 'PUT',
+                body: JSON.stringify({ role: cleanRole })
+            });
+            showToast(`Role updated to ${formatRole(cleanRole)}.`, 'success');
+            await Promise.all([loadTeam(), loadAvailableStaff()]);
+        } catch (err) {
+            showToast(err.message, 'error');
+        }
     }
 
     async function removeUser(userId, role, name) {
