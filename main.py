@@ -9919,6 +9919,43 @@ async def create_staff_member(
     }
 
 
+
+class UpdateStaffRoleRequest(BaseModel):
+    role: str
+
+@app.put("/organisations/me/users/{target_user_id}/role")
+async def update_staff_role(
+    request: Request,
+    target_user_id: str,
+    payload: UpdateStaffRoleRequest,
+    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin"]))
+):
+    await rate_limit(get_client_ip(request), user_data[1], request=request)
+    current_user_id, org_id, current_role = user_data
+    new_role = payload.role.lower()
+    
+    client = get_supabase()
+    target_res = await run_sync_db_call(
+        client.table("org_members").select("role")
+        .eq("user_id", target_user_id).eq("org_id", org_id).limit(1).execute
+    )
+    if not target_res.data:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    target_role = target_res.data[0]["role"]
+    if target_role == "owner" and current_role != "owner":
+        raise HTTPException(status_code=403, detail="Only an owner can change an owner's role")
+
+    await run_sync_db_call(
+        client.table("org_members").update({"role": new_role})
+        .eq("user_id", target_user_id).eq("org_id", org_id).execute
+    )
+    await _admin_set_app_metadata(target_user_id, {
+        "org_id": org_id, "role": new_role, "branch_scope": None,
+    })
+    return {"message": f"Role updated to {new_role}"}
+
+
 @app.delete("/organisations/me/users/{target_user_id}")
 async def remove_staff_member(
     request: Request,
