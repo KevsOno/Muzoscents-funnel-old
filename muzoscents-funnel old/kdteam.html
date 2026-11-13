@@ -147,6 +147,40 @@
     </div>
 </div>
 
+<!-- ========== EDIT ROLE MODAL ========== -->
+<div id="edit-role-modal" class="fixed inset-0 bg-black/50 hidden z-50 items-center justify-center">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-semibold text-gray-800">Update User Role</h3>
+            <button id="close-role-modal" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times text-xl"></i>
+            </button>
+        </div>
+        <p class="text-sm text-gray-600 mb-4" id="edit-role-user-name">Updating role for...</p>
+        
+        <input type="hidden" id="edit-role-user-id">
+        
+        <div class="mb-6">
+            <label class="block text-xs font-medium text-gray-600 mb-1">Select Role</label>
+            <select id="edit-role-select" class="w-full border rounded-lg p-2 focus:ring-2 focus:ring-orange-300 outline-none">
+                <option value="admin">Admin</option>
+                <option value="inventory_manager">Inventory Manager</option>
+                <option value="sales_rep">Sales Representative</option>
+                <option value="finance">Finance</option>
+                <option value="logistics">Logistics</option>
+                <option value="support">Support</option>
+            </select>
+        </div>
+        
+        <div class="flex justify-end gap-3">
+            <button id="cancel-role-btn" class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition">Cancel</button>
+            <button id="save-role-btn" class="px-4 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition flex items-center gap-2">
+                <i class="fas fa-save"></i> Save Changes
+            </button>
+        </div>
+    </div>
+</div>
+
 <script>
     const BACKEND_URL = "https://kevsono-kevs-digital-bos.hf.space";
     const LOGIN_REDIRECT = '/kdsiginin';
@@ -348,42 +382,60 @@
         tbody.querySelectorAll('.edit-role-btn').forEach(btn => {
             btn.addEventListener('click', e => {
                 e.preventDefault();
-                editUserRole(btn.dataset.userId, btn.dataset.userRole, btn.dataset.userName);
+                openEditRoleModal(btn.dataset.userId, btn.dataset.userRole, btn.dataset.userName);
             });
         });
     }
 
-    // ========== EDIT ROLE LOGIC ==========
-    async function editUserRole(userId, currentRole, name) {
+    // ========== MODAL LOGIC ==========
+    function openEditRoleModal(userId, currentRole, name) {
+        document.getElementById('edit-role-user-id').value = userId;
+        document.getElementById('edit-role-user-name').innerText = `Updating role for ${name}`;
+        document.getElementById('edit-role-select').value = currentRole;
+        
+        const modal = document.getElementById('edit-role-modal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
+
+    function closeEditRoleModal() {
+        const modal = document.getElementById('edit-role-modal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+
+    document.getElementById('close-role-modal')?.addEventListener('click', closeEditRoleModal);
+    document.getElementById('cancel-role-btn')?.addEventListener('click', closeEditRoleModal);
+
+    document.getElementById('save-role-btn')?.addEventListener('click', async () => {
+        const userId = document.getElementById('edit-role-user-id').value;
+        const newRole = document.getElementById('edit-role-select').value;
+        const btn = document.getElementById('save-role-btn');
+        
         if (!userId) return;
-        
-        const newRole = prompt(
-            `Change role for ${name}.\n\n` +
-            `Current role: ${formatRole(currentRole)}\n\n` +
-            `Enter new role (admin, inventory_manager, sales_rep, finance, logistics, support):`,
-            currentRole
-        );
-        
-        if (!newRole) return; // User cancelled
-        const cleanRole = newRole.trim().toLowerCase();
-        
-        if (cleanRole === currentRole) {
-            showToast('Role is unchanged.', 'info');
-            return;
-        }
+
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<div class="loading-spinner-sm inline-block mr-1" style="width:14px;height:14px;border-width:2px;"></div> Saving…';
+        btn.disabled = true;
 
         try {
             await apiFetch(`/organisations/me/users/${userId}/role`, {
                 method: 'PUT',
-                body: JSON.stringify({ role: cleanRole })
+                body: JSON.stringify({ role: newRole })
             });
-            showToast(`Role updated to ${formatRole(cleanRole)}.`, 'success');
+            
+            showToast(`Role updated to ${formatRole(newRole)}.`, 'success');
+            closeEditRoleModal();
             await Promise.all([loadTeam(), loadAvailableStaff()]);
         } catch (err) {
             showToast(err.message, 'error');
+        } finally {
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
         }
-    }
+    });
 
+    // ========== REMOVE USER LOGIC ==========
     async function removeUser(userId, role, name) {
         if (!userId) return;
         const isOwner = role === 'owner';
