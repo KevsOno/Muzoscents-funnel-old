@@ -20,7 +20,7 @@
 (function () {
     'use strict';
 
-    const APP_NAME   = 'kdbos';
+    const APP_NAME   = 'Kd<span class="text-orange-500">bOS</span>';
     const LOGIN_URL  = '/kdsiginin';
     const API_BASE   = 'https://kevsono-kevs-digital-bos.hf.space';
 
