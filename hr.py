@@ -36,6 +36,7 @@ class EmployeeCreate(BaseModel):
     department_id: Optional[int] = None
     position: Optional[str] = None
     hire_date: date
+    date_of_birth: Optional[date] = None
     salary: float = 0.0
     status: str = "active"
 
@@ -47,6 +48,7 @@ class EmployeeUpdate(BaseModel):
     department_id: Optional[int] = None
     position: Optional[str] = None
     hire_date: Optional[date] = None
+    date_of_birth: Optional[date] = None
     salary: Optional[float] = None
     status: Optional[str] = None
 
@@ -269,6 +271,8 @@ async def create_employee(
     data = emp.dict()
     if data.get("hire_date"):
         data["hire_date"] = data["hire_date"].isoformat()
+    if data.get("date_of_birth"):
+        data["date_of_birth"] = data["date_of_birth"].isoformat()
     data["org_id"] = org_id
     data["branch_id"] = await resolve_request_branch_for_write(request, user_id, org_id, role)
     data["created_at"] = datetime.now(timezone.utc).isoformat()
@@ -319,6 +323,8 @@ async def update_employee(
     update_data = {k: v for k, v in emp.dict().items() if v is not None}
     if update_data.get("hire_date"):
         update_data["hire_date"] = update_data["hire_date"].isoformat()
+    if update_data.get("date_of_birth"):
+        update_data["date_of_birth"] = update_data["date_of_birth"].isoformat()
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
     result = await run_sync_db_call(
         client.table("hr_employees")

@@ -5521,6 +5521,8 @@ async def ensure_hr_tables():
         created_at TIMESTAMPTZ DEFAULT now()
     );
     CREATE INDEX IF NOT EXISTS idx_hr_payroll_emp ON public.hr_payroll(employee_id);
+    ALTER TABLE public.hr_employees ADD COLUMN IF NOT EXISTS date_of_birth DATE;
+
 
     -- 1. HR Tasks Table
     CREATE TABLE IF NOT EXISTS public.hr_tasks (
@@ -5572,6 +5574,20 @@ async def ensure_hr_tables():
             WHERE n.employee_id = l.employee_id AND n.type = 'leave_pending' 
             AND n.created_at::date = CURRENT_DATE
         );
+
+        -- D. Birthdays Today
+        INSERT INTO hr_notifications (org_id, employee_id, type, title, message)
+        SELECT e.org_id, e.id, 'birthday', 'Happy Birthday!', 'Today is ' || e.first_name || ' ' || e.last_name || '''s birthday!'
+        FROM hr_employees e
+        WHERE e.status = 'active'
+          AND e.date_of_birth IS NOT NULL
+          AND EXTRACT(MONTH FROM e.date_of_birth) = EXTRACT(MONTH FROM CURRENT_DATE)
+          AND EXTRACT(DAY FROM e.date_of_birth) = EXTRACT(DAY FROM CURRENT_DATE)
+          AND NOT EXISTS (
+              SELECT 1 FROM hr_notifications n 
+              WHERE n.employee_id = e.id AND n.type = 'birthday' 
+              AND n.created_at::date = CURRENT_DATE
+          );
 
         -- C. Probation Ending (Hired ~3 months ago, ending in next 14 days)
         INSERT INTO hr_notifications (org_id, employee_id, type, title, message)
