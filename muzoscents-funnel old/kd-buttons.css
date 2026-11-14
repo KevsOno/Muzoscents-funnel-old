@@ -1,0 +1,38 @@
+/* ============================================================
+   kd-buttons.css — additive button motion for Kevs bOS
+   Zero-specificity. Will never override existing transitions
+   or :active states. Safe to include on every page.
+   ============================================================ */
+
+/* Only sets a transition when the element has none of its own.
+   Note: Tailwind's `.transition` utility already includes
+   `transform` in its transition-property list, so buttons that
+   use it will animate smoothly without our help. */
+:where(button, [role="button"], a.btn, .btn):where(:not(:disabled)):where(:not([disabled])) {
+    transition: transform 140ms cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+/* Press-down feedback — tactile, layout-neutral, no reflow. */
+:where(button, [role="button"], a.btn, .btn):where(:not(:disabled)):where(:not([disabled])):active {
+    transform: scale(0.96);
+}
+
+/* Optional (recommended) subtle hover-lift — comment out if you
+   find it distracting on tabs / nav items. */
+:where(button, [role="button"], a.btn, .btn):where(:not(:disabled)):where(:not([disabled])):hover {
+    transform: translateY(-1px);
+}
+:where(button, [role="button"], a.btn, .btn):where(:not(:disabled)):where(:not([disabled])):active {
+    transform: scale(0.96) translateY(0); /* cancel lift while pressed */
+}
+
+/* Respect prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+    :where(button, [role="button"], a.btn, .btn) {
+        transition: none;
+    }
+    :where(button, [role="button"], a.btn, .btn):hover,
+    :where(button, [role="button"], a.btn, .btn):active {
+        transform: none;
+    }
+}
