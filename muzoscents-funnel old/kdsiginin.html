@@ -143,7 +143,6 @@
 
         <div id="tabs-container" class="flex border-b mb-6">
             <button id="login-tab" class="flex-1 py-2 font-medium text-blue-600 border-b-2 border-blue-600">Login</button>
-            <button id="register-tab" class="flex-1 py-2 font-medium text-gray-500">Register</button>
         </div>
 
         <!-- LOGIN FORM -->
@@ -170,31 +169,6 @@
             <button type="button" id="demo-login-btn" class="w-full bg-emerald-600 text-white py-2.5 rounded-lg hover:bg-emerald-700 font-medium flex items-center justify-center gap-2 transition">
                 <i class="fa-solid fa-bolt"></i> One-Click Demo Access
             </button>
-        </form>
-
-        <!-- REGISTER FORM -->
-        <form id="register-form" class="hidden">
-            <div class="grid grid-cols-2 gap-2 mb-2">
-                <div><label class="block text-xs text-gray-500 mb-1">First Name *</label><input type="text" id="reg-fname" placeholder="John" class="w-full p-3 border rounded-lg" required /></div>
-                <div><label class="block text-xs text-gray-500 mb-1">Last Name *</label><input type="text" id="reg-lname" placeholder="Doe" class="w-full p-3 border rounded-lg" required /></div>
-            </div>
-            <div><label class="block text-xs text-gray-500 mb-1">Phone Number *</label><input type="tel" id="reg-phone" placeholder="e.g., +2348123456789" class="w-full p-3 border rounded-lg mb-2" required /></div>
-            <div><label class="block text-xs text-gray-500 mb-1">Email *</label><input type="email" id="reg-email" placeholder="Email" class="w-full mb-2 p-3 border rounded-lg" required /></div>
-            <div>
-                <label class="block text-xs text-gray-500 mb-1">Password *</label>
-                <div class="relative mb-2">
-                    <input type="password" id="reg-password" placeholder="Password" class="w-full p-3 border rounded-lg pr-10" required />
-                    <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reg-password"><i class="fa-solid fa-eye"></i></button>
-                </div>
-            </div>
-            <div>
-                <label class="block text-xs text-gray-500 mb-1">Confirm Password *</label>
-                <div class="relative mb-4">
-                    <input type="password" id="reg-confirm-password" placeholder="Confirm Password" class="w-full p-3 border rounded-lg pr-10" required />
-                    <button type="button" class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600 toggle-password-btn" data-target="reg-confirm-password"><i class="fa-solid fa-eye"></i></button>
-                </div>
-            </div>
-            <button type="submit" class="w-full bg-green-600 text-white py-2.5 rounded-lg hover:bg-green-700 transition">Register</button>
         </form>
 
         <!-- RESET PASSWORD FORM (TWO-STEP) -->
@@ -434,76 +408,14 @@
 
         // ─── TAB SWITCHING ──────────────────────────────────────────────────
         const loginTab = document.getElementById('login-tab');
-        const registerTab = document.getElementById('register-tab');
 
         function showLoginTab() {
             document.getElementById('login-form').classList.remove('hidden');
-            document.getElementById('register-form').classList.add('hidden');
             document.getElementById('reset-password-form').classList.add('hidden');
             loginTab.classList.add('border-blue-600', 'text-blue-600');
-            registerTab.classList.remove('border-blue-600', 'text-blue-600');
-            registerTab.classList.add('text-gray-500');
             resetLoginBtn();
         }
         loginTab?.addEventListener('click', showLoginTab);
-        registerTab?.addEventListener('click', () => {
-            document.getElementById('login-form').classList.add('hidden');
-            document.getElementById('register-form').classList.remove('hidden');
-            document.getElementById('reset-password-form').classList.add('hidden');
-            registerTab.classList.add('border-blue-600', 'text-blue-600');
-            loginTab.classList.remove('border-blue-600', 'text-blue-600');
-            loginTab.classList.add('text-gray-500');
-            resetLoginBtn();
-        });
-
-        // ─── REGISTER SUBMIT ──────────────────────────────────────────────────
-        document.getElementById('register-form')?.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const email = document.getElementById('reg-email').value;
-            const password = document.getElementById('reg-password').value;
-            const confirm = document.getElementById('reg-confirm-password').value;
-            const fname = document.getElementById('reg-fname').value;
-            const lname = document.getElementById('reg-lname').value;
-            const phone = document.getElementById('reg-phone').value;
-
-            if (!email || !password || !fname || !lname || !phone) {
-                showToast('All fields are required.', 'error');
-                return;
-            }
-            if (password !== confirm) {
-                showToast('Passwords do not match.', 'error');
-                return;
-            }
-            if (password.length < 8) {
-                showToast('Password must be at least 8 characters.', 'error');
-                return;
-            }
-
-            const btn = e.target.querySelector('button[type="submit"]');
-            const original = btn.textContent;
-            btn.textContent = 'Registering…';
-            btn.disabled = true;
-
-            try {
-                const payload = {
-                    email,
-                    password,
-                    first_name: fname,
-                    last_name: lname,
-                    phone
-                };
-                await apiCall('/auth/register', 'POST', payload);
-                showToast('Registration successful! Please sign in.', 'success');
-                showLoginTab();
-                document.getElementById('login-email').value = email;
-                document.getElementById('login-password').value = '';
-            } catch (err) {
-                showToast(err.message || 'Registration failed.', 'error');
-            } finally {
-                btn.textContent = original;
-                btn.disabled = false;
-            }
-        });
 
         // ─── BACK TO LOGIN FROM RESET ────────────────────────────────────────
         document.getElementById('back-to-login-from-reset')?.addEventListener('click', () => {
@@ -532,7 +444,6 @@
 
         function showResetForm() {
             document.getElementById('login-form').classList.add('hidden');
-            document.getElementById('register-form').classList.add('hidden');
             document.getElementById('reset-password-form').classList.remove('hidden');
             document.getElementById('tabs-container').classList.add('hidden');
             document.getElementById('reset-step1').classList.remove('hidden');
