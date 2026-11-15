@@ -3821,12 +3821,11 @@
         init();
     </script>
 
-    <script>
-        
+    
 
 
     <script>
-        // --- EXPORT TO CSV LOGIC (Upgraded for Full Dataset) ---
+        // --- EXPORT TO CSV LOGIC (Clean) ---
         document.addEventListener('DOMContentLoaded', () => {
             const exportBtn = document.getElementById('export-csv-btn');
             
@@ -3837,18 +3836,15 @@
                     exportBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Fetching...';
                     
                     try {
-                        showToast('Fetching all SKUs for export...', 'info');
-                        
-                        // 1. Fetch ALL items via pagination loop
                         let allProducts = [];
                         let offset = 0;
-                        const fetchLimit = 200; // Backend max limit per request
+                        const fetchLimit = 200; 
                         let keepFetching = true;
+                        let pageCount = 0;
                         
                         while (keepFetching) {
+                            pageCount++;
                             let url = `/inventory/v2?limit=${fetchLimit}&offset=${offset}`;
-                            
-                            // Respect the currently selected location filter
                             if (typeof currentLocationFilter !== 'undefined' && currentLocationFilter) {
                                 url += `&location_id=${currentLocationFilter}`;
                             }
@@ -3860,18 +3856,19 @@
                                 allProducts = allProducts.concat(items);
                                 offset += fetchLimit;
                             } else {
-                                keepFetching = false; // Stop when we get an empty page
+                                keepFetching = false; 
+                            }
+                            
+                            if (pageCount > 100) {
+                                throw new Error("Safety limit reached. Aborting.");
                             }
                         }
 
                         if (allProducts.length === 0) {
-                            showToast('No products to export.', 'warning');
+                            alert('No products found to export.');
                             return;
                         }
 
-                        showToast(`Generating CSV for ${allProducts.length} products...`, 'info');
-
-                        // 2. Generate CSV
                         const headers = [
                             "SKU", "Description", "Category", "Price (NGN)", "Cost (NGN)", 
                             "Current Stock", "Handling Category", "Weight (kg)", "Expiry Date", "Location Stock"
@@ -3884,7 +3881,6 @@
                             if (p.location_stocks && p.location_stocks.length > 0) {
                                 locString = p.location_stocks.map(s => {
                                     const locId = s.location_id || s.id;
-                                    // Look up location name from allLocations array
                                     const foundLoc = (typeof allLocations !== 'undefined') ? allLocations.find(l => l.id == locId) : null;
                                     const locName = foundLoc ? foundLoc.name : (s.location_name || locId);
                                     return `${locName}: ${s.quantity}`;
@@ -3893,7 +3889,6 @@
                                 locString = `Total: ${p.current_qty || 0}`;
                             }
 
-                            // Escape quotes to prevent CSV breaking
                             const safeString = (str) => `"${String(str || '').replace(/"/g, '""')}"`;
 
                             const row = [
@@ -3911,28 +3906,24 @@
                             csvRows.push(row.join(','));
                         });
 
-                        // 3. Trigger Download
                         const csvString = csvRows.join('\n');
                         const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
                         
                         const link = document.createElement("a");
                         const url = URL.createObjectURL(blob);
                         const dateStr = new Date().toISOString().split('T')[0];
-                        const filterName = currentLocationFilter ? 'branch' : 'all';
                         
                         link.setAttribute("href", url);
-                        link.setAttribute("download", `inventory_${filterName}_${dateStr}.csv`);
+                        link.setAttribute("download", `inventory_export_${dateStr}.csv`);
                         link.style.visibility = 'hidden';
                         
                         document.body.appendChild(link);
                         link.click();
                         document.body.removeChild(link);
-                        
-                        showToast(`✅ Exported ${allProducts.length} products to CSV`, 'success');
 
                     } catch (err) {
-                        console.error("Export error:", err);
-                        showToast(`Export failed: ${err.message}`, 'error');
+                        console.error("Export Error:", err);
+                        alert("Export Failed: " + err.message);
                     } finally {
                         exportBtn.disabled = false;
                         exportBtn.innerHTML = originalText;
