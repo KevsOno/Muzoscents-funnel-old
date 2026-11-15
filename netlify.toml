@@ -7,6 +7,18 @@
   directory = "netlify/functions"
 
 # ================================================================
+# API PROXY
+# Routes /proxy/* through the Netlify Function so the backend URL
+# never reaches the browser. Status 200 = URL rewrite (address bar
+# keeps /proxy/..., which is same-origin and CSP-safe).
+# ================================================================
+[[redirects]]
+  from = "/proxy/*"
+  to = "/.netlify/functions/api-proxy/:splat"
+  status = 200
+  force = true
+
+# ================================================================
 # GLOBAL SECURITY HEADERS (applies to ALL pages)
 # ================================================================
 [[headers]]
@@ -28,7 +40,6 @@
 [[headers]]
   for = "/kdpos*"
   [headers.values]
-    # Allow camera for barcode scanning
     Permissions-Policy = "camera=(self), microphone=(), geolocation=(), payment=()"
     Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https:; img-src 'self' data: https:; font-src 'self' data: https://cdnjs.cloudflare.com; connect-src 'self' https://kevsono-kevs-digital-bos.hf.space https://*.supabase.co; frame-ancestors 'none';"
     Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
@@ -45,7 +56,6 @@
 [[headers]]
   for = "/kdadmin*"
   [headers.values]
-    # Allow camera for barcode scanning
     Permissions-Policy = "camera=(self), microphone=(), geolocation=(), payment=()"
     Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https:; img-src 'self' data: https:; font-src 'self' data: https://cdnjs.cloudflare.com; connect-src 'self' https://kevsono-kevs-digital-bos.hf.space https://*.supabase.co; frame-ancestors 'none';"
     Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
