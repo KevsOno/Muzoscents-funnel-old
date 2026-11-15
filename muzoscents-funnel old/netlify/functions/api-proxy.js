@@ -13,20 +13,19 @@ exports.handler = async (event) => {
         };
     }
 
-    // The rewrite in netlify.toml maps /api/* → this function.
-    // We reconstruct the original path by stripping the function prefix
-    // if Netlify gave us the raw path, and keeping the query string intact.
+    // Netlify rewrites /proxy/* → /.netlify/functions/api-proxy/:splat
+    // So event.path looks like /.netlify/functions/api-proxy/<original-path>
+    // Strip ONLY the function prefix so the original path is preserved
+    // exactly — including paths that themselves start with /api.
     let path = event.path || '';
     path = path.replace(/^\/\.netlify\/functions\/api-proxy/, '');
-    path = path.replace(/^\/api/, '');          // in case the rewrite didn't strip it
 
     const query = event.rawQuery ? '?' + event.rawQuery : '';
     const targetUrl = `${API_BASE}${path}${query}`;
 
-    // Forward the request, preserving method, headers and body.
     const headers = { ...event.headers };
-    delete headers.host;                        // let fetch set the correct Host
-    delete headers['content-length'];           // fetch recalculates this
+    delete headers.host;                 // let fetch set the correct Host
+    delete headers['content-length'];    // fetch recalculates this
 
     try {
         const response = await fetch(targetUrl, {
@@ -35,6 +34,7 @@ exports.handler = async (event) => {
             body: event.httpMethod === 'GET' || event.httpMethod === 'HEAD'
                 ? undefined
                 : event.body,
+            redirect: 'manual',
         });
 
         const responseBody = await response.text();
@@ -43,7 +43,7 @@ exports.handler = async (event) => {
             statusCode: response.status,
             headers: {
                 ...Object.fromEntries(response.headers.entries()),
-                'access-control-allow-origin': '*',   // optional: keeps CORS simple while testing
+                'access-control-allow-origin': '*',
             },
             body: responseBody,
         };
