@@ -3824,8 +3824,11 @@
     
 
 
+    
+
+
     <script>
-        // --- EXPORT TO CSV LOGIC (Clean) ---
+        // --- EXPORT TO CSV LOGIC (Fixed for End-of-Data) ---
         document.addEventListener('DOMContentLoaded', () => {
             const exportBtn = document.getElementById('export-csv-btn');
             
@@ -3849,17 +3852,32 @@
                                 url += `&location_id=${currentLocationFilter}`;
                             }
                             
-                            const res = await apiCall(url);
-                            const items = res.items || [];
-                            
-                            if (items.length > 0) {
-                                allProducts = allProducts.concat(items);
-                                offset += fetchLimit;
-                            } else {
-                                keepFetching = false; 
+                            try {
+                                const res = await apiCall(url);
+                                const items = res.items || [];
+                                
+                                if (items.length > 0) {
+                                    allProducts = allProducts.concat(items);
+                                    offset += fetchLimit;
+                                    
+                                    // If we got fewer items than the limit, we've reached the end
+                                    if (items.length < fetchLimit) {
+                                        keepFetching = false;
+                                    }
+                                } else {
+                                    keepFetching = false;
+                                }
+                            } catch (err) {
+                                // PGRST103 means we asked for a page past the end of the dataset.
+                                // Treat this as a successful end to the loop.
+                                if (err.message && (err.message.includes("PGRST103") || err.message.includes("Requested range not satisfiable"))) {
+                                    keepFetching = false;
+                                } else {
+                                    throw err; // Real error (network, auth, etc.)
+                                }
                             }
                             
-                            if (pageCount > 100) {
+                            if (pageCount > 200) {
                                 throw new Error("Safety limit reached. Aborting.");
                             }
                         }
@@ -3920,6 +3938,8 @@
                         document.body.appendChild(link);
                         link.click();
                         document.body.removeChild(link);
+                        
+                        showToast(`✅ Exported ${allProducts.length} products to CSV`, 'success');
 
                     } catch (err) {
                         console.error("Export Error:", err);
