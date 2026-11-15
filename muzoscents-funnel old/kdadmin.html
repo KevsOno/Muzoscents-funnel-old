@@ -3822,79 +3822,121 @@
     </script>
 
     <script>
-        // --- EXPORT TO CSV LOGIC ---
+        
+
+
+    <script>
+        // --- EXPORT TO CSV LOGIC (Upgraded for Full Dataset) ---
         document.addEventListener('DOMContentLoaded', () => {
             const exportBtn = document.getElementById('export-csv-btn');
             
             if (exportBtn) {
-                exportBtn.addEventListener('click', function() {
-                    // Ensure products exist in the global scope
-                    if (typeof products === 'undefined' || !products || products.length === 0) {
-                        showToast('No products to export. Please load inventory first.', 'warning');
-                        return;
-                    }
-
-                    showToast('Generating CSV...', 'info');
-
-                    const headers = [
-                        "SKU", "Description", "Category", "Price (NGN)", "Cost (NGN)", 
-                        "Current Stock", "Handling Category", "Weight (kg)", "Expiry Date", "Location Stock"
-                    ];
-
-                    const csvRows = [headers.join(',')];
-
-                    // Loop through the global 'products' array
-                    products.forEach(p => {
-                        // Flatten location stocks into a single string for CSV
-                        let locString = "";
-                        if (p.location_stocks && p.location_stocks.length > 0) {
-                            locString = p.location_stocks.map(s => {
-                                const locId = s.location_id || s.id;
-                                // Try to find the location name from allLocations
-                                const foundLoc = (typeof allLocations !== 'undefined') ? allLocations.find(l => l.id == locId) : null;
-                                const locName = foundLoc ? foundLoc.name : (s.location_name || locId);
-                                return `${locName}: ${s.quantity}`;
-                            }).join(" | ");
-                        } else {
-                            locString = `Total: ${p.current_qty || 0}`;
+                exportBtn.addEventListener('click', async function() {
+                    exportBtn.disabled = true;
+                    const originalText = exportBtn.innerHTML;
+                    exportBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Fetching...';
+                    
+                    try {
+                        showToast('Fetching all SKUs for export...', 'info');
+                        
+                        // 1. Fetch ALL items via pagination loop
+                        let allProducts = [];
+                        let offset = 0;
+                        const fetchLimit = 200; // Backend max limit per request
+                        let keepFetching = true;
+                        
+                        while (keepFetching) {
+                            let url = `/inventory/v2?limit=${fetchLimit}&offset=${offset}`;
+                            
+                            // Respect the currently selected location filter
+                            if (typeof currentLocationFilter !== 'undefined' && currentLocationFilter) {
+                                url += `&location_id=${currentLocationFilter}`;
+                            }
+                            
+                            const res = await apiCall(url);
+                            const items = res.items || [];
+                            
+                            if (items.length > 0) {
+                                allProducts = allProducts.concat(items);
+                                offset += fetchLimit;
+                            } else {
+                                keepFetching = false; // Stop when we get an empty page
+                            }
                         }
 
-                        // Escape strings to prevent CSV breaking (replace " with "")
-                        const safeString = (str) => `"${String(str || '').replace(/"/g, '""')}"`;
+                        if (allProducts.length === 0) {
+                            showToast('No products to export.', 'warning');
+                            return;
+                        }
 
-                        const row = [
-                            safeString(p.item_code || p.id),
-                            safeString(p.description),
-                            safeString(p.product_group),
-                            p.price_naira || 0,
-                            p.cost_price_naira || 0,
-                            p.current_qty || 0,
-                            safeString(p.handling_category || 'standard'),
-                            p.weight_kg || 0,
-                            safeString(p.expiry_date),
-                            safeString(locString)
+                        showToast(`Generating CSV for ${allProducts.length} products...`, 'info');
+
+                        // 2. Generate CSV
+                        const headers = [
+                            "SKU", "Description", "Category", "Price (NGN)", "Cost (NGN)", 
+                            "Current Stock", "Handling Category", "Weight (kg)", "Expiry Date", "Location Stock"
                         ];
-                        csvRows.push(row.join(','));
-                    });
 
-                    // Create the CSV file
-                    const csvString = csvRows.join('\n');
-                    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-                    
-                    // Trigger download
-                    const link = document.createElement("a");
-                    const url = URL.createObjectURL(blob);
-                    const dateStr = new Date().toISOString().split('T')[0];
-                    
-                    link.setAttribute("href", url);
-                    link.setAttribute("download", `inventory_export_${dateStr}.csv`);
-                    link.style.visibility = 'hidden';
-                    
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    
-                    showToast(`✅ Exported ${products.length} products to CSV`, 'success');
+                        const csvRows = [headers.join(',')];
+
+                        allProducts.forEach(p => {
+                            let locString = "";
+                            if (p.location_stocks && p.location_stocks.length > 0) {
+                                locString = p.location_stocks.map(s => {
+                                    const locId = s.location_id || s.id;
+                                    // Look up location name from allLocations array
+                                    const foundLoc = (typeof allLocations !== 'undefined') ? allLocations.find(l => l.id == locId) : null;
+                                    const locName = foundLoc ? foundLoc.name : (s.location_name || locId);
+                                    return `${locName}: ${s.quantity}`;
+                                }).join(" | ");
+                            } else {
+                                locString = `Total: ${p.current_qty || 0}`;
+                            }
+
+                            // Escape quotes to prevent CSV breaking
+                            const safeString = (str) => `"${String(str || '').replace(/"/g, '""')}"`;
+
+                            const row = [
+                                safeString(p.item_code || p.id),
+                                safeString(p.description),
+                                safeString(p.product_group),
+                                p.price_naira || 0,
+                                p.cost_price_naira || 0,
+                                p.current_qty || 0,
+                                safeString(p.handling_category || 'standard'),
+                                p.weight_kg || 0,
+                                safeString(p.expiry_date),
+                                safeString(locString)
+                            ];
+                            csvRows.push(row.join(','));
+                        });
+
+                        // 3. Trigger Download
+                        const csvString = csvRows.join('\n');
+                        const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+                        
+                        const link = document.createElement("a");
+                        const url = URL.createObjectURL(blob);
+                        const dateStr = new Date().toISOString().split('T')[0];
+                        const filterName = currentLocationFilter ? 'branch' : 'all';
+                        
+                        link.setAttribute("href", url);
+                        link.setAttribute("download", `inventory_${filterName}_${dateStr}.csv`);
+                        link.style.visibility = 'hidden';
+                        
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        
+                        showToast(`✅ Exported ${allProducts.length} products to CSV`, 'success');
+
+                    } catch (err) {
+                        console.error("Export error:", err);
+                        showToast(`Export failed: ${err.message}`, 'error');
+                    } finally {
+                        exportBtn.disabled = false;
+                        exportBtn.innerHTML = originalText;
+                    }
                 });
             }
         });
