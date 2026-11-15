@@ -1062,6 +1062,7 @@
         // CONFIGURATION
         // ================================================================
         const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
+
         let token = localStorage.getItem('access_token');
         let currentUser = null;
         let allLocations = [];
@@ -1069,11 +1070,39 @@
         let products = [];
         let selectedOrganisation = null;
         let userOrganisations = [];
+
         let currentPage = 1;
-        let currentView = 'cards'; // 'cards' or 'table'
+        let currentView = 'cards';
         const PAGE_SIZE = 120;
         let totalItems = 0;
         let totalPages = 1;
+
+        
+        let currentPage = 1;
+        let currentView = 'cards'; // 'cards' or 'table'
+
+        let totalItems = 0;
+        let totalPages = 1;
+        
+        let token = localStorage.getItem('access_token');
+        let currentUser = null;
+        let allLocations = [];
+        let currentLocationFilter = '';
+        let products = [];
+        let selectedOrganisation = null;
+        let userOrganisations = [];
+
+        let currentView = 'cards'; // 'cards' or 'table'
+
+        let token = localStorage.getItem('access_token');
+        let currentUser = null;
+        let allLocations = [];
+        let currentLocationFilter = '';
+        let products = [];
+        let selectedOrganisation = null;
+        let userOrganisations = [];
+
+        let currentView = 'cards'; // 'cards' or 'table'
 
         // ================================================================
         // SCANNER STATE
@@ -1741,7 +1770,34 @@
             return found ? found.name : null;
         }
 
+        // --- View Toggle Logic ---
+        document.getElementById('view-toggle-cards')?.addEventListener('click', function() {
+            currentView = 'cards';
+            this.className = 'px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white transition';
+            document.getElementById('view-toggle-table').className = 'px-3 py-1.5 text-sm rounded-md text-slate-400 hover:text-white transition';
+            document.getElementById('products-grid').classList.remove('hidden');
+            document.getElementById('products-table-container').classList.add('hidden');
+            renderProducts(products);
+        });
+
+        document.getElementById('view-toggle-table')?.addEventListener('click', function() {
+            currentView = 'table';
+            this.className = 'px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white transition';
+            document.getElementById('view-toggle-cards').className = 'px-3 py-1.5 text-sm rounded-md text-slate-400 hover:text-white transition';
+            document.getElementById('products-grid').classList.add('hidden');
+            document.getElementById('products-table-container').classList.remove('hidden');
+            renderProducts(products);
+        });
+
         function renderProducts(items) {
+            if (currentView === 'table') {
+                return renderProductsTable(items);
+            }
+
+            if (currentView === 'table') {
+                return renderProductsTable(items);
+            }
+
             const container = document.getElementById('products-grid');
             if (!items || items.length === 0) {
                 container.innerHTML = '<div class="col-span-full text-center py-8 text-slate-400">📭 No products found.</div>';
@@ -1833,6 +1889,75 @@
                 card.querySelector('.edit-product-btn')?.addEventListener('click', () => editProduct(p.id));
                 card.querySelector('.delete-product-btn')?.addEventListener('click', () => deleteProduct(p.id));
                 container.appendChild(card);
+            });
+        }
+
+        function renderProductsTable(items) {
+            const tbody = document.getElementById('products-table-body');
+            if (!items || items.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-slate-400">📭 No products found.</td></tr>';
+                return;
+            }
+
+            const locationNames = {};
+            allLocations.forEach(loc => { locationNames[loc.id] = loc.name; });
+
+            const getStockClass = (qty) => {
+                const num = parseInt(qty) || 0;
+                if (num <= 0) return 'text-red-400 font-bold';
+                if (num <= 10) return 'text-amber-400 font-bold';
+                return 'text-slate-300';
+            };
+
+            tbody.innerHTML = items.map(p => {
+                let stockDisplay = '';
+                if (p.location_stocks && p.location_stocks.length > 0) {
+                    stockDisplay = p.location_stocks.map(s => {
+                        const locId = s.location_id || s.id;
+                        const locName = locationNames[locId] || s.location_name || `Loc ${locId}`;
+                        return `<span class="block text-xs">${escapeHtml(locName)}: <span class="${getStockClass(s.quantity)}">${s.quantity}</span></span>`;
+                    }).join('');
+                } else {
+                    stockDisplay = `<span class="${getStockClass(p.current_qty)}">${p.current_qty || 0}</span>`;
+                }
+
+                let expiryDisplay = '<span class="text-slate-500">-</span>';
+                if (p.expiry_date) {
+                    const today = new Date();
+                    const expiry = new Date(p.expiry_date);
+                    const daysUntil = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+                    let color = 'text-slate-300';
+                    if (daysUntil <= 30) color = 'text-red-400 font-bold';
+                    else if (daysUntil <= 90) color = 'text-orange-400';
+                    else if (daysUntil <= 180) color = 'text-yellow-400';
+                    
+                    expiryDisplay = `<span class="${color}">${p.expiry_date}</span><br><span class="text-[10px] ${color}">${daysUntil}d left</span>`;
+                }
+
+                return `
+                    <tr class="border-b border-slate-700 hover:bg-slate-700/30 transition">
+                        <td class="p-3 font-mono text-xs">${escapeHtml(p.item_code || p.id)}</td>
+                        <td class="p-3">
+                            <div class="font-medium text-white">${escapeHtml(p.description)}</div>
+                            <div class="text-xs text-slate-400">${escapeHtml(p.product_group || '')}</div>
+                        </td>
+                        <td class="p-3">${stockDisplay}</td>
+                        <td class="p-3 text-right text-blue-400 font-bold">₦${(p.price_naira || 0).toLocaleString()}</td>
+                        <td class="p-3 text-right text-slate-400">₦${(p.cost_price_naira || 0).toLocaleString()}</td>
+                        <td class="p-3">${expiryDisplay}</td>
+                        <td class="p-3 text-center">
+                            <button class="text-blue-400 hover:text-blue-300 mx-1 edit-product-btn" data-id="${p.id}"><i class="fa-regular fa-pen-to-square"></i></button>
+                            <button class="text-red-400 hover:text-red-300 mx-1 delete-product-btn" data-id="${p.id}"><i class="fa-regular fa-trash-can"></i></button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            tbody.querySelectorAll('.edit-product-btn').forEach(btn => {
+                btn.addEventListener('click', () => editProduct(btn.dataset.id));
+            });
+            tbody.querySelectorAll('.delete-product-btn').forEach(btn => {
+                btn.addEventListener('click', () => deleteProduct(btn.dataset.id));
             });
         }
 
