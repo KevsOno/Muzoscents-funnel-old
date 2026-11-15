@@ -537,6 +537,9 @@
                             <button id="view-toggle-table" class="px-3 py-1.5 text-sm rounded-md text-slate-400 hover:text-white transition">
                                 <i class="fa-solid fa-list mr-1"></i> Table
                             </button>
+                            <button id="export-csv-btn" class="ml-2 px-3 py-1.5 text-sm rounded-md bg-emerald-600 hover:bg-emerald-700 text-white transition shadow-sm" title="Download current view as CSV">
+                                <i class="fa-solid fa-file-csv mr-1"></i> Export
+                            </button>
                         </div>
                     </div>
                     
@@ -3817,5 +3820,85 @@
 
         init();
     </script>
+
+    <script>
+        // --- EXPORT TO CSV LOGIC ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const exportBtn = document.getElementById('export-csv-btn');
+            
+            if (exportBtn) {
+                exportBtn.addEventListener('click', function() {
+                    // Ensure products exist in the global scope
+                    if (typeof products === 'undefined' || !products || products.length === 0) {
+                        showToast('No products to export. Please load inventory first.', 'warning');
+                        return;
+                    }
+
+                    showToast('Generating CSV...', 'info');
+
+                    const headers = [
+                        "SKU", "Description", "Category", "Price (NGN)", "Cost (NGN)", 
+                        "Current Stock", "Handling Category", "Weight (kg)", "Expiry Date", "Location Stock"
+                    ];
+
+                    const csvRows = [headers.join(',')];
+
+                    // Loop through the global 'products' array
+                    products.forEach(p => {
+                        // Flatten location stocks into a single string for CSV
+                        let locString = "";
+                        if (p.location_stocks && p.location_stocks.length > 0) {
+                            locString = p.location_stocks.map(s => {
+                                const locId = s.location_id || s.id;
+                                // Try to find the location name from allLocations
+                                const foundLoc = (typeof allLocations !== 'undefined') ? allLocations.find(l => l.id == locId) : null;
+                                const locName = foundLoc ? foundLoc.name : (s.location_name || locId);
+                                return `${locName}: ${s.quantity}`;
+                            }).join(" | ");
+                        } else {
+                            locString = `Total: ${p.current_qty || 0}`;
+                        }
+
+                        // Escape strings to prevent CSV breaking (replace " with "")
+                        const safeString = (str) => `"${String(str || '').replace(/"/g, '""')}"`;
+
+                        const row = [
+                            safeString(p.item_code || p.id),
+                            safeString(p.description),
+                            safeString(p.product_group),
+                            p.price_naira || 0,
+                            p.cost_price_naira || 0,
+                            p.current_qty || 0,
+                            safeString(p.handling_category || 'standard'),
+                            p.weight_kg || 0,
+                            safeString(p.expiry_date),
+                            safeString(locString)
+                        ];
+                        csvRows.push(row.join(','));
+                    });
+
+                    // Create the CSV file
+                    const csvString = csvRows.join('\n');
+                    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+                    
+                    // Trigger download
+                    const link = document.createElement("a");
+                    const url = URL.createObjectURL(blob);
+                    const dateStr = new Date().toISOString().split('T')[0];
+                    
+                    link.setAttribute("href", url);
+                    link.setAttribute("download", `inventory_export_${dateStr}.csv`);
+                    link.style.visibility = 'hidden';
+                    
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    
+                    showToast(`✅ Exported ${products.length} products to CSV`, 'success');
+                });
+            }
+        });
+    </script>
+
 </body>
 </html>
