@@ -21,8 +21,8 @@ export function useProfile() {
         role: (localStorage.getItem('user_role') || 'admin') as any,
         email: localStorage.getItem('user_email') || 'user@kevsdigital.com',
         full_name: localStorage.getItem('user_profile_display') || 'User',
-        branch_id: localStorage.getItem('branch_id') || 'all',
-        org_id: localStorage.getItem('org_id') || 'all',
+        branch_id: localStorage.getItem('branch_id') || 'default-branch-id',
+        org_id: localStorage.getItem('org_id') || 'default-org-id',
       });
     }
     setLoading(false);
