@@ -996,3 +996,87 @@ async def get_visible_user_ids(user_id: str, org_id: str, role: str) -> Optional
     visible = {r["user_id"] for r in (members_res.data or []) if r.get("user_id")}
     visible.add(user_id)
     return visible
+
+import time
+from typing import Optional, Dict, Tuple
+
+# ── SHARED INVENTORY/CHANNEL HELPERS ──
+_LOC_CHANNEL_CACHE: Dict[Tuple[str, str], Tuple[Optional[str], float]] = {}
+_LOC_CHANNEL_TTL = 300.0
+
+async def get_location_for_channel(org_id: str, channel: str) -> Optional[str]:
+    if not org_id:
+        return None
+    cache_key = (org_id, channel)
+    now = time.time()
+    hit = _LOC_CHANNEL_CACHE.get(cache_key)
+    if hit is not None and (now - hit[1]) < _LOC_CHANNEL_TTL:
+        return hit[0]
+
+    priority = {"pos": ["store", "warehouse"], "online": ["online_fulfillment", "warehouse"]}.get(channel, ["warehouse"])
+    client = get_admin_supabase()
+    resolved: Optional[str] = None
+
+    for loc_type in priority:
+        result = await run_sync_db_call(
+            client.table("locations").select("id").eq("org_id", org_id).eq("type", loc_type).eq("is_active", True).order("created_at", desc=False).limit(1).execute
+        )
+        if result.data:
+            resolved = result.data[0]["id"]
+            break
+
+    if resolved is None:
+        fallback = await run_sync_db_call(
+            client.table("locations").select("id").eq("org_id", org_id).eq("is_active", True).order("created_at", desc=False).limit(1).execute
+        )
+        resolved = fallback.data[0]["id"] if fallback.data else None
+
+    _LOC_CHANNEL_CACHE[cache_key] = (resolved, now)
+    return resolved
+
+_SALE_CACHE: Dict[str, Tuple[Dict[int, Dict], float]] = {}
+_SALE_TTL = 60.0
+
+async def get_active_sale_prices(org_id: str, inventory_ids: Optional[List[int]] = None) -> Dict[int, Dict]:
+    if not org_id:
+        return {}
+    now = time.time()
+    hit = _SALE_CACHE.get(org_id)
+    if hit is not None and (now - hit[1]) < _SALE_TTL:
+        sale_map = hit[0]
+    else:
+        client = get_supabase()
+        now_iso = datetime.now(timezone.utc).isoformat()
+        try:
+            q = (client.table("flash_sales").select("id, name, ends_at, flash_sale_items(inventory_id, original_price, sale_price)").eq("org_id", org_id).eq("is_active", True).lte("starts_at", now_iso).gte("ends_at", now_iso))
+            res = await run_sync_db_call(q.execute)
+        except Exception as e:
+            logger.error("get_active_sale_prices failed", org_id=org_id, error=str(e))
+            return {}
+
+        out: Dict[int, Dict] = {}
+        for sale in (res.data or []):
+            for item in (sale.get("flash_sale_items") or []):
+                inv_id = item.get("inventory_id")
+                if inv_id is None: continue
+                sale_price = float(item.get("sale_price") or 0)
+                existing = out.get(inv_id)
+                if existing is None or sale_price < existing["sale_price"]:
+                    out[inv_id] = {"sale_price": sale_price, "original_price": float(item.get("original_price") or 0), "sale_id": sale.get("id"), "sale_name": sale.get("name"), "ends_at": sale.get("ends_at")}
+        sale_map = out
+        _SALE_CACHE[org_id] = (sale_map, now)
+
+    if inventory_ids is None:
+        return dict(sale_map)
+    wanted = set(inventory_ids)
+    return {k: v for k, v in sale_map.items() if k in wanted}
+
+async def _assert_storefront_live(org_id: str) -> None:
+    if not org_id:
+        raise HTTPException(status_code=404, detail="Store not found")
+    from deps import fetch_org_flags
+    org = await fetch_org_flags(org_id)
+    if not org:
+        raise HTTPException(status_code=404, detail="Store not found")
+    if (org.get("status") or "active") in ("suspended", "churned"):
+        raise HTTPException(status_code=404, detail="Store not found")

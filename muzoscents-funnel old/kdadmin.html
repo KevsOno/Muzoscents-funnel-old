@@ -3830,122 +3830,59 @@
     
 
 
+    
+
+
     <script>
-        // --- EXPORT TO CSV LOGIC (Final Bulletproof Version) ---
+        // --- EXPORT TO CSV LOGIC (Streaming) ---
         document.addEventListener('DOMContentLoaded', () => {
             const exportBtn = document.getElementById('export-csv-btn');
-            
-            if (exportBtn) {
-                exportBtn.addEventListener('click', async function() {
-                    exportBtn.disabled = true;
-                    const originalText = exportBtn.innerHTML;
-                    exportBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Fetching...';
-                    
-                    try {
-                        let allProducts = [];
-                        let offset = 0;
-                        const fetchLimit = 200; 
-                        let keepFetching = true;
-                        
-                        while (keepFetching) {
-                            let url = `/inventory/v2?limit=${fetchLimit}&offset=${offset}`;
-                            // Respect the location filter dropdown
-                            if (typeof currentLocationFilter !== 'undefined' && currentLocationFilter) {
-                                url += `&location_id=${currentLocationFilter}`;
-                            }
-                            
-                            try {
-                                const res = await apiCall(url);
-                                const items = res.items || [];
-                                
-                                if (items.length > 0) {
-                                    allProducts = allProducts.concat(items);
-                                    offset += fetchLimit;
-                                } else {
-                                    keepFetching = false; // Stop if 0 items
-                                }
-                            } catch (err) {
-                                // Catch the end-of-data error from the backend gracefully
-                                const errStr = String(err.message || err);
-                                if (errStr.includes("PGRST103") || errStr.includes("Requested range not satisfiable") || errStr.includes("416")) {
-                                    keepFetching = false;
-                                } else {
-                                    throw err; // Real error (network, auth)
-                                }
-                            }
-                        }
+            if (!exportBtn) return;
 
-                        if (allProducts.length === 0) {
-                            alert('No products found to export for this location.');
-                            return;
-                        }
-
-                        // Show the user how many items were grabbed
-                        alert(`Successfully fetched ${allProducts.length} items. Generating CSV file now...`);
-
-                        const headers = [
-                            "SKU", "Description", "Category", "Price (NGN)", "Cost (NGN)", 
-                            "Current Stock", "Handling Category", "Weight (kg)", "Expiry Date", "Location Stock"
-                        ];
-
-                        const csvRows = [headers.join(',')];
-
-                        allProducts.forEach(p => {
-                            let locString = "";
-                            if (p.location_stocks && p.location_stocks.length > 0) {
-                                locString = p.location_stocks.map(s => {
-                                    const locId = s.location_id || s.id;
-                                    const foundLoc = (typeof allLocations !== 'undefined') ? allLocations.find(l => l.id == locId) : null;
-                                    const locName = foundLoc ? foundLoc.name : (s.location_name || locId);
-                                    return `${locName}: ${s.quantity}`;
-                                }).join(" | ");
-                            } else {
-                                locString = `Total: ${p.current_qty || 0}`;
-                            }
-
-                            const safeString = (str) => `"${String(str || '').replace(/"/g, '""')}"`;
-
-                            const row = [
-                                safeString(p.item_code || p.id),
-                                safeString(p.description),
-                                safeString(p.product_group),
-                                p.price_naira || 0,
-                                p.cost_price_naira || 0,
-                                p.current_qty || 0,
-                                safeString(p.handling_category || 'standard'),
-                                p.weight_kg || 0,
-                                safeString(p.expiry_date),
-                                safeString(locString)
-                            ];
-                            csvRows.push(row.join(','));
-                        });
-
-                        const csvString = csvRows.join('\n');
-                        const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-                        
-                        const link = document.createElement("a");
-                        const url = URL.createObjectURL(blob);
-                        const dateStr = new Date().toISOString().split('T')[0];
-                        
-                        link.setAttribute("href", url);
-                        link.setAttribute("download", `inventory_export_${dateStr}.csv`);
-                        link.style.visibility = 'hidden';
-                        
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                        
-                        showToast(`✅ Exported ${allProducts.length} products to CSV`, 'success');
-
-                    } catch (err) {
-                        console.error("Export Error:", err);
-                        alert("Export Failed: " + err.message);
-                    } finally {
-                        exportBtn.disabled = false;
-                        exportBtn.innerHTML = originalText;
+            exportBtn.addEventListener('click', async function() {
+                exportBtn.disabled = true;
+                const originalText = exportBtn.innerHTML;
+                exportBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Downloading...';
+                
+                try {
+                    let url = `${API_BASE}/inventory/export-csv`;
+                    if (typeof currentLocationFilter !== 'undefined' && currentLocationFilter) {
+                        url += `?location_id=${currentLocationFilter}`;
                     }
-                });
-            }
+                    
+                    const orgId = selectedOrganisation ? selectedOrganisation.id : localStorage.getItem('selected_org_id');
+                    const res = await fetch(url, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'X-Selected-Org-Id': orgId
+                        }
+                    });
+
+                    if (!res.ok) {
+                        const err = await res.json().catch(() => ({}));
+                        throw new Error(err.detail || "Export failed");
+                    }
+
+                    // The browser will download the stream
+                    const blob = await res.blob();
+                    const link = document.createElement("a");
+                    link.href = URL.createObjectURL(blob);
+                    const dateStr = new Date().toISOString().split('T')[0];
+                    link.download = `inventory_export_${dateStr}.csv`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    
+                    showToast('✅ CSV Downloaded successfully', 'success');
+
+                } catch (err) {
+                    console.error("Export Error:", err);
+                    alert("Export Failed: " + err.message);
+                } finally {
+                    exportBtn.disabled = false;
+                    exportBtn.innerHTML = originalText;
+                }
+            });
         });
     </script>
 
