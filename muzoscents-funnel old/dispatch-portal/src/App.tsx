@@ -36,7 +36,7 @@ function HomeRedirect() {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/dispatch">
       <Routes>
         {/* Public */}
         <Route path="/track/:tracking_code" element={<TrackOrder />} />
