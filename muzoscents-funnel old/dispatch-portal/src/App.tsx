@@ -55,7 +55,7 @@ export default function App() {
           <Route
             path="/driver"
             element={
-              <Gate allow={['driver']}>
+              <Gate allow={['driver', 'owner']}>
                 <DriverShift />
               </Gate>
             }

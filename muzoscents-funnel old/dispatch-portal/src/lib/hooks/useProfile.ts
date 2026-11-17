@@ -18,7 +18,7 @@ export function useProfile() {
     if (token) {
       setProfile({
         id: 'central-user',
-        role: 'admin' as any,
+        role: (localStorage.getItem('user_role') || 'admin') as any,
         email: localStorage.getItem('user_email') || 'user@kevsdigital.com',
         full_name: localStorage.getItem('user_profile_display') || 'User',
         branch_id: localStorage.getItem('branch_id') || 'all',

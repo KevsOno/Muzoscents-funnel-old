@@ -57,7 +57,7 @@ export function TrackOrder() {
         lng: data.driver_position.lng,
         label: 'Driver',
         tone: 'primary',
-      }]
+      }, 'owner']
     : [];
 
   const itemTotal = data.items.reduce((n, it) => n + Number(it.price) * it.quantity, 0);
