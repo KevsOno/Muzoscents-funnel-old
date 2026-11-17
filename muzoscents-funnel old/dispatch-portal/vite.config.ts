@@ -4,4 +4,8 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   base: '/dispatch/', 
+  build: {
+    outDir: '../dispatch',
+    emptyOutDir: true,
+  }
 })
