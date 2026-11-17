@@ -23,7 +23,7 @@ function Gate({
   const { profile, loading } = useProfile();
   if (loading) return <div className="p-6">Loading…</div>;
   if (!profile) return <Navigate to="/kdsiginin" replace />;
-  if (!allow.includes(profile.role)) return <NotAuthorised />;
+  if (!allow.includes(profile.role)) return null;
   return children;
 }
 
