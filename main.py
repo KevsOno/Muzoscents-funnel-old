@@ -20693,6 +20693,32 @@ if os.environ.get("AXIOM_TOKEN"):
     logging.getLogger().addHandler(axiom_handler)
     logger.info("axiom_logging_enabled")
 
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+import os
+
+# ============================================================
+# SERVE DISPATCH REACT APP
+# ============================================================
+DISPATCH_DIR = os.path.join(BASE_DIR, "muzoscents-funnel old", "dispatch-portal", "dist")
+
+if os.path.isdir(DISPATCH_DIR):
+    logger.info(f"Mounting Dispatch React App from {DISPATCH_DIR}")
+    
+    # Serve the static assets (JS, CSS, images)
+    app.mount("/dispatch/assets", StaticFiles(directory=os.path.join(DISPATCH_DIR, "assets")), name="dispatch-assets")
+    
+    # Catch-all route for React Router
+    @app.get("/dispatch", response_class=HTMLResponse)
+    @app.get("/dispatch/{path:path}", response_class=HTMLResponse)
+    async def serve_dispatch(path: str = ""):
+        return FileResponse(os.path.join(DISPATCH_DIR, "index.html"))
+else:
+    logger.warning(f"Dispatch build not found at {DISPATCH_DIR} — /dispatch/* will 404")
+
+
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=7860)
