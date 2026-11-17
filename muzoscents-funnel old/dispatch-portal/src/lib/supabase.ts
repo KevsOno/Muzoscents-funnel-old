@@ -19,7 +19,7 @@ export const supabase = createClient(url, anonKey, {
 });
 
 // Row types mirroring the DB prompt. Kept light — expand as needed.
-export type UserRole = 'master' | 'branch_manager' | 'fulfillment_officer' | 'driver';
+export type UserRole = 'master' | 'branch_manager' | 'fulfillment_officer' | 'driver' | 'owner';
 export type OrderStatus =
   | 'pending' | 'confirmed' | 'picked' | 'dispatched'
   | 'in_transit' | 'delivered' | 'cancelled' | 'failed';
