@@ -32,6 +32,28 @@ export function DebugConsole() {
     };
   }, []);
 
+  useEffect(() => {
+    const originalError = console.error;
+    const originalWarn = console.warn;
+
+    console.error = (...args) => {
+      setErrors((prev) => [...prev, `Console Error: ${args.map(String).join(' ')}`]);
+      originalError(...args);
+    };
+    
+    console.warn = (...args) => {
+      setErrors((prev) => [...prev, `Console Warn: ${args.map(String).join(' ')}`]);
+      originalWarn(...args);
+    };
+
+    // overrideConsole
+    return () => {
+      console.error = originalError;
+      console.warn = originalWarn;
+    };
+  }, []);
+
+
   if (!isOpen) {
     return (
       <button 
