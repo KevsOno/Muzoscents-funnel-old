@@ -111,11 +111,7 @@ function BatteryIndicator({
 }) {
   if (level === null) {
     return (
-      <
-    <div style={{ background: 'red', color: 'white', padding: '20px', fontSize: '24px', fontWeight: 'bold', margin: '20px', zIndex: 9999, position: 'relative' }}>
-      🚨 DEBUG: DispatchDashboard IS RENDERING 🚨
-    </div>
-span className="inline-flex items-center gap-1 text-slate-400">
+      <span className="inline-flex items-center gap-1 text-slate-400">
         <Battery className="h-3 w-3" />
         —
       </span>

@@ -36,7 +36,11 @@ function HomeRedirect() {
 
 export default function App() {
   return (
-    <BrowserRouter basename="/dispatch">
+    
+    <div style={{ background: 'red', color: 'white', padding: '20px', fontSize: '24px', fontWeight: 'bold', textAlign: 'center', zIndex: 9999, position: 'relative' }}>
+      🚨 APP.TSX IS RENDERING. Current URL: {window.location.pathname} 🚨
+    </div>
+<BrowserRouter>
       <Routes>
         {/* Public */}
         <Route path="/track/:tracking_code" element={<TrackOrder />} />
