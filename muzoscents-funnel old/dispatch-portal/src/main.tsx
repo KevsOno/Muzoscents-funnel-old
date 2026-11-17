@@ -2,6 +2,8 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { Toaster } from 'react-hot-toast';
 import App from './App';
+import { DebugConsole } from './components/DebugConsole';
+import { ErrorBoundary } from './components/ErrorBoundary';;
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
 
