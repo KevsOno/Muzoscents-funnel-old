@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
 import { Network } from '@capacitor/network';
-import { Battery } from '@capawesome/capacitor-battery';
+import { Device } from '@capacitor/device';
 import type {
   BackgroundGeolocationPlugin,
   Location,
@@ -71,9 +71,9 @@ let batteryCache: { at: number; promise: Promise<BatteryReading> } | null = null
 async function readBatteryNow(): Promise<BatteryReading> {
   try {
     if (Capacitor.isNativePlatform()) {
-      const info = await Battery.getBatteryInfo();
+      const info = await Device.getBatteryInfo();
       return {
-        p_battery: typeof info.level === 'number' ? Math.round(info.level * 100) : null,
+        p_battery: typeof info.batteryLevel === 'number' ? Math.round(info.batteryLevel * 100) : null,
         p_is_charging: typeof info.isCharging === 'boolean' ? info.isCharging : null,
       };
     }
