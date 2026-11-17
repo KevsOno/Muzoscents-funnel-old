@@ -158,6 +158,14 @@
                     <option value="delivered">Delivered</option>
                 </select>
             </div>
+            
+            <div>
+                <label class="text-sm block mb-1">Assign Driver</label>
+                <select id="modal-driver" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
+                    <option value="">-- Unassigned --</option>
+                </select>
+            </div>
+
             <div id="tracking-fields" class="hidden space-y-3">
                 <div>
                     <label class="text-sm block mb-1">Carrier</label>
@@ -798,6 +806,29 @@
         }
     }
     
+    
+    async function loadDriversForModal() {
+        const select = document.getElementById('modal-driver');
+        if (!select) return;
+        select.innerHTML = '<option value="">Loading drivers...</option>';
+        try {
+            const data = await apiCall('/organisations/me/users');
+            // Filter for drivers and logistics personnel
+            const drivers = (data.users || []).filter(u => 
+                ['driver', 'logistics'].includes((u.role || '').toLowerCase())
+            );
+            
+            select.innerHTML = '<option value="">-- Unassigned --</option>' + 
+                drivers.map(d => {
+                    const name = `${d.first_name || ''} ${d.last_name || ''}`.trim() || d.email;
+                    return `<option value="${d.id}">${escapeHtml(name)} (${d.role})</option>`;
+                }).join('');
+        } catch (err) {
+            console.error("Failed to load drivers", err);
+            select.innerHTML = '<option value="">Error loading drivers</option>';
+        }
+    }
+
     function openUpdateModal(orderId, receipt, currentStatus, paymentStatus) {
         if (!getAccessToken()) { redirectToKdsSignin(); return; }
         currentOrderId = orderId;
@@ -819,6 +850,7 @@
             confirmCheckbox.checked = false;
             confirmCheckbox.parentElement.classList.add('hidden');
         }
+        loadDriversForModal();
         document.getElementById('updateModal').classList.remove('hidden');
     }
     
@@ -829,6 +861,7 @@
         const tracking = document.getElementById('modal-tracking').value;
         const estimated = document.getElementById('modal-estimated').value;
         const notes = document.getElementById('modal-notes').value;
+        const driverId = document.getElementById('modal-driver')?.value || null;
         const confirmPayment = document.getElementById('modal-confirm-payment')?.checked || false;
         
         try {
@@ -838,6 +871,7 @@
                 shipping_carrier: carrier || null,
                 estimated_delivery: estimated || null,
                 notes: notes || null,
+                driver_id: driverId,
                 confirm_payment: confirmPayment
             };
             await apiCall(`/fulfillment/order/${currentOrderId}/status`, {
