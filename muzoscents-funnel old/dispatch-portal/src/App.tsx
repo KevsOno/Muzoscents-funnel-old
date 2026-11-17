@@ -22,7 +22,7 @@ function Gate({
 }) {
   const { profile, loading } = useProfile();
   if (loading) return <div className="p-6">Loading…</div>;
-  if (!profile) return <Navigate to="/login" replace />;
+  if (!profile) return <Navigate to="/kdsiginin" replace />;
   if (!allow.includes(profile.role)) return <NotAuthorised />;
   return children;
 }
@@ -30,7 +30,7 @@ function Gate({
 function HomeRedirect() {
   const { profile, loading } = useProfile();
   if (loading) return <div className="p-6">Loading…</div>;
-  if (!profile) return <Navigate to="/login" replace />;
+  if (!profile) return <Navigate to="/kdsiginin" replace />;
   return <Navigate to={homeFor(profile.role)} replace />;
 }
 
@@ -40,7 +40,7 @@ export default function App() {
       <Routes>
         {/* Public */}
         <Route path="/track/:tracking_code" element={<TrackOrder />} />
-        <Route path="/login" element={<Login />} />
+        
 
         {/* Staff — everything inside AppShell gets the nav bar */}
         <Route element={<AppShell />}>
