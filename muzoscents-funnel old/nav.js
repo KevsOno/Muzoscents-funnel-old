@@ -69,6 +69,34 @@
         const st = document.createElement('style');
         st.id = 'kevs-nav-style';
         st.textContent =
+            // --- Fallback Structural CSS (Fixes React App White Navbar) ---
+            '#kevs-nav-container > div { background-color: #1E3A5F !important; color: #ffffff !important; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); position: sticky; top: 0; z-index: 9999; font-family: system-ui, sans-serif; }' +
+            '#kevs-nav-container .max-w-7xl { max-width: 80rem; margin-left: auto; margin-right: auto; padding: 0.375rem 1rem; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }' +
+            '#kevs-nav-container .hidden { display: none; }' +
+            '@media (min-width: 768px) { #kevs-nav-container .md\\:flex { display: flex !important; } #kevs-nav-container .md\\:hidden { display: none !important; } }' +
+            '#kevs-nav-container .flex { display: flex; }' +
+            '#kevs-nav-container .items-center { align-items: center; }' +
+            '#kevs-nav-container .gap-1 { gap: 0.25rem; }' +
+            '#kevs-nav-container .gap-2 { gap: 0.5rem; }' +
+            '#kevs-nav-container .gap-3 { gap: 0.75rem; }' +
+            '#kevs-nav-container .bg-white\\/10 { background-color: rgba(255,255,255,0.1); }' +
+            '#kevs-nav-container .text-xs { font-size: 0.75rem; line-height: 1rem; }' +
+            '#kevs-nav-container .px-3 { padding-left: 0.75rem; padding-right: 0.75rem; }' +
+            '#kevs-nav-container .py-1\\.5 { padding-top: 0.375rem; padding-bottom: 0.375rem; }' +
+            '#kevs-nav-container .rounded-full { border-radius: 9999px; }' +
+            '#kevs-nav-container .text-lg { font-size: 1.125rem; line-height: 1.75rem; }' +
+            '#kevs-nav-container .font-bold { font-weight: 700; }' +
+            '#kevs-nav-container .text-orange-400 { color: #fb923c; }' +
+            '#kevs-nav-container .text-orange-500 { color: #f97316; }' +
+            '#kevs-nav-container .text-sm { font-size: 0.875rem; line-height: 1.25rem; }' +
+            '#kevs-nav-container .bg-red-500\\/80 { background-color: rgba(239, 68, 68, 0.8); }' +
+            '#kevs-nav-container .rounded-lg { border-radius: 0.5rem; }' +
+            '#kevs-nav-container .overflow-x-auto { overflow-x: auto; }' +
+            '#kevs-nav-container .pb-2 { padding-bottom: 0.5rem; }' +
+            '#kevs-nav-container .px-4 { padding-left: 1rem; padding-right: 1rem; }' +
+            '#kevs-nav-container .shrink-0 { flex-shrink: 0; }' +
+            '#kevs-nav-container .mr-1 { margin-right: 0.25rem; }' +
+
             '.kn-link{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;' +
                 'height:36px;min-width:36px;padding:0 10px;border-radius:8px;font-size:14px;font-weight:500;' +
                 'color:rgba(255,255,255,.8);transition:background .15s,color .15s;white-space:nowrap;text-decoration:none;}' +
