@@ -27,7 +27,7 @@ export function BranchDashboard() {
       const { data } = await supabase
         .from('driver_locations')
         .select('driver_id,lat,lng,updated_at')
-        .eq('branch_id', branchId);
+        ;
       if (cancelled) return;
       const map: Record<string, Loc> = {};
       for (const row of (data as Loc[]) ?? []) map[row.driver_id] = row;
@@ -55,7 +55,7 @@ export function BranchDashboard() {
       const { data } = await supabase
         .from('profiles')
         .select('id,user_id,email,full_name,phone,role,branch_id,driver_status,is_active')
-        .eq('branch_id', branchId)
+        
         .eq('role', 'driver');
       setDrivers((data as Profile[]) ?? []);
     })();

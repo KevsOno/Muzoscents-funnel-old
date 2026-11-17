@@ -23,7 +23,7 @@ export function DriverAssignment({ branchId, value, onChange, disabled }: Props)
       const { data, error } = await supabase
         .from('profiles')
         .select('id,user_id,email,full_name,phone,role,branch_id,driver_status,is_active')
-        .eq('branch_id', branchId)
+        
         .eq('role', 'driver')
         .eq('is_active', true)
         .order('full_name');

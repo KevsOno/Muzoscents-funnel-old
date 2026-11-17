@@ -181,7 +181,7 @@ export function DispatchDashboard() {
 
     if (profile.role !== 'master') {
       if (!profile.branch_id) return { drivers: [], locations: {}, orders: [] };
-      driversQuery = driversQuery.eq('branch_id', profile.branch_id || '00000000-0000-0000-0000-000000000000');
+      driversQuery = driversQuery;
     }
 
     const { data: driversData, error: driversErr } = await driversQuery;
