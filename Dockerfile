@@ -4,12 +4,15 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies required for sentence-transformers & cryptography
+# Install system dependencies required for Python AND Node.js (for the React build)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     libffi-dev \
     libssl-dev \
+    curl \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first (better layer caching)
@@ -18,8 +21,19 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the entire application (Python files, HTML, JS, config, etc.)
+# Copy the entire application
 COPY . .
+
+# ---------------------------------------------------------
+# BUILD THE DISPATCH PORTAL (React)
+# ---------------------------------------------------------
+WORKDIR /app/muzoscents-funnel old/dispatch-portal
+# We use --legacy-peer-deps because the original repo had a strict dependency conflict
+RUN npm install --legacy-peer-deps
+RUN npm run build
+
+# Return to the main directory
+WORKDIR /app
 
 # Expose the port used by FastAPI
 EXPOSE 7860
