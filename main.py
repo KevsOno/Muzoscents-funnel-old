@@ -187,6 +187,62 @@ logger = structlog.get_logger()
 # Set FORCE_MIGRATIONS=true in the environment to force a full re-run
 # without a code change (useful after manually altering the schema).
 # ─────────────────────────────────────────────────────────────────────
+async def ensure_driver_status_columns():
+    """
+    Ensures the Dispatch portal has the required columns on the profiles table
+    and the RPC to toggle driver status.
+    """
+    sql = """
+    ALTER TABLE public.profiles 
+        ADD COLUMN IF NOT EXISTS driver_status TEXT DEFAULT 'offline',
+        ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true,
+        ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'customer',
+        ADD COLUMN IF NOT EXISTS branch_id UUID,
+        ADD COLUMN IF NOT EXISTS full_name TEXT,
+        ADD COLUMN IF NOT EXISTS user_id UUID;
+
+    CREATE OR REPLACE FUNCTION public.set_my_driver_status(
+        p_status TEXT DEFAULT 'online',
+        p_is_active BOOLEAN DEFAULT true
+    )
+    RETURNS JSONB
+    LANGUAGE plpgsql
+    SECURITY DEFINER
+    AS $$
+    DECLARE
+        v_uid UUID := auth.uid();
+    BEGIN
+        IF v_uid IS NULL THEN
+            RAISE EXCEPTION 'Not authenticated';
+        END IF;
+
+        UPDATE public.profiles
+        SET driver_status = p_status,
+            is_active = p_is_active,
+            updated_at = NOW()
+        WHERE id = v_uid;
+        
+        RETURN jsonb_build_object('success', true, 'status', p_status, 'is_active', p_is_active);
+    END;
+    $$;
+    """
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
+            json={"query": sql},
+            headers=headers,
+        )
+    if resp.status_code not in (200, 204):
+        logger.error(f"driver status migration failed: {resp.text}")
+        raise RuntimeError(f"driver status migration failed: {resp.text}")
+    logger.info("driver_status columns and RPC installed on profiles")
+
+
 def _compute_migration_suite_hash() -> str:
     import inspect
     names = [
@@ -240,6 +296,7 @@ def _compute_migration_suite_hash() -> str:
         "ensure_expenses_table",
         "ensure_geo_schema",
         "ensure_payment_accounts_schema",
+        "ensure_driver_status_columns",
     ]
     h = hashlib.sha256()
     for name in names:
@@ -6293,6 +6350,7 @@ async def startup_event():
         await ensure_geo_schema()
         await ensure_payment_accounts_schema()
 
+        await ensure_driver_status_columns()
         await _record_migration_hash(
             suite_hash=current_hash,
             applied_by=instance_id,
