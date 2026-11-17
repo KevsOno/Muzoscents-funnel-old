@@ -39,6 +39,7 @@
         { path: '/kdbi',          name: 'Strategy',   icon: 'fa-chart-line',    title: 'Marketing metrics, leads & AI strategy',                 roles: ['owner','admin','sales_rep','finance'] },
         { path: '/kdpos',         name: 'POS',         icon: 'fa-cash-register', title: 'Multi‑tab sales, SKU search & online payments',         roles: ['owner','admin','sales_rep'] },
         { path: '/kdfulfillment', name: 'Fulfillment', icon: 'fa-truck-fast',    title: 'Order shipping, tracking & dispatch',                    roles: ['owner','admin','logistics'] },
+            { path: '/dispatch', name: 'Dispatch', icon: 'fa-map-location-dot', title: 'Live driver tracking & delivery dispatch', roles: ['owner','admin','logistics'] },
         { path: '/kdsupport',     name: 'Support',     icon: 'fa-headset',       title: 'Ticket management & customer context',                   roles: ['owner','admin','support'] },
         { path: '/kddashboard',   name: 'Exec. Dash.', icon: 'fa-chart-simple',  title: 'Executive revenue & profit overview',                    roles: ['owner','admin','finance'] },
         { path: '/kdadmin',       name: 'Inventory',   icon: 'fa-boxes',         title: 'Manage products, stock, bulk CSV upload',                roles: ['owner','admin','inventory_manager','warehouse'] },
