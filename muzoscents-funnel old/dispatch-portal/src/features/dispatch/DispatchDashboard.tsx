@@ -185,12 +185,12 @@ export function DispatchDashboard() {
       locMap[row.driver_id] = row;
     }
 
-    // FIX: Check both status and shipping_status. 
-    // If an order was manually set to 'picked' in status, we still want to see it.
+    // FIX: Fetch orders where either driver_id OR assigned_driver_id matches
+    // AND where either status OR shipping_status is active.
     const { data: ordersData, error: ordersErr } = await supabase
       .from('sales')
       .select('*')
-      .in('driver_id', driverIds)
+      .or(`driver_id.in.(${driverIds.join(',')}),assigned_driver_id.in.(${driverIds.join(',')})`)
       .or(`status.in.(${ACTIVE_STATUSES.join(',')}),shipping_status.in.(${ACTIVE_STATUSES.join(',')})`);
     
     if (ordersErr) throw ordersErr;
@@ -272,7 +272,7 @@ export function DispatchDashboard() {
           if (!row || !row.id) return;
           const id = row.id;
           const status = row.shipping_status || row.status; // Check both
-          const driverId = row.driver_id ?? null;
+          const driverId = row.driver_id || (row as any).assigned_driver_id || null; // Check both
 
           if (status === 'delivered' || status === 'cancelled') {
             setOrders((prev) => prev.filter((o) => o.id !== id));
@@ -341,10 +341,12 @@ export function DispatchDashboard() {
   const ordersByDriver = useMemo(() => {
     const m = new Map<string, OrderRow[]>();
     for (const o of orders) {
-      if (!o.driver_id) continue;
-      const arr = m.get(o.driver_id) ?? [];
+      // FIX: Fallback to assigned_driver_id if driver_id is missing
+      const dId = o.driver_id || (o as any).assigned_driver_id;
+      if (!dId) continue;
+      const arr = m.get(dId) ?? [];
       arr.push(o);
-      m.set(o.driver_id, arr);
+      m.set(dId, arr);
     }
     return m;
   }, [orders]);
