@@ -11,8 +11,8 @@ import { supabase, type OrderRow } from '../../lib/supabase';
 import { useProfile } from '../../lib/hooks/useProfile';
 import { useDriverTracking, type GpsMode } from './useDriverTracking';
 
-// FIX: Added 'processing' and 'shipped' so the driver sees newly assigned orders
-const ACTIVE_STATUSES = ['confirmed', 'dispatched', 'processing', 'shipped', 'picked', 'in_transit'] as const;
+// Include all active states from both columns
+const ACTIVE_STATUSES = ['confirmed', 'dispatched', 'processing', 'shipped', 'picked', 'in_transit'];
 
 const MODE_PILL_CLASS: Record<GpsMode, string> = {
   HIGH:     'border-green-200 bg-green-50 text-green-700',
@@ -118,8 +118,8 @@ function nextActionFor(status: string): NextAction | null {
   switch (status) {
     case 'confirmed':
     case 'dispatched':
-    case 'processing': // FIX: Added
-    case 'shipped':    // FIX: Added
+    case 'processing':
+    case 'shipped':
       return { next: 'picked', label: 'Picked up', Icon: PackageCheck, className: 'bg-blue-600 hover:bg-blue-700' };
     case 'picked':
       return { next: 'in_transit', label: 'In transit', Icon: Navigation, className: 'bg-indigo-600 hover:bg-indigo-700' };
@@ -138,6 +138,7 @@ const STATUS_LABEL: Record<string, string> = {
   picked: 'Picked up',
   in_transit: 'In transit',
   delivered: 'Delivered',
+  pending: 'Pending',
 };
 
 const MILESTONES = ['picked', 'in_transit', 'delivered'] as const;
@@ -198,12 +199,14 @@ export function DriverShift() {
     let cancelled = false;
 
     const load = async () => {
+      // FIX: Query BOTH `status` and `shipping_status` to catch manual DB edits
       const { data, error } = await supabase
         .from('sales')
         .select('*')
         .eq('driver_id', profile.id)
-        .in('status', [...ACTIVE_STATUSES])
+        .or(`status.in.(${ACTIVE_STATUSES.join(',')}),shipping_status.in.(${ACTIVE_STATUSES.join(',')})`)
         .order('created_at');
+        
       if (error) toast.error(error.message);
       if (!cancelled) setActiveOrders((data as OrderRow[]) ?? []);
     };
@@ -323,9 +326,11 @@ export function DriverShift() {
         {activeOrders.length === 0 && <p className="text-sm text-slate-400">No active deliveries.</p>}
 
         {activeOrders.map((o) => {
-          const action = nextActionFor(o.status);
+          // FIX: Use the true active status from either column
+          const displayStatus = o.shipping_status && o.shipping_status !== 'pending' ? o.shipping_status : o.status;
+          const action = nextActionFor(displayStatus);
           const isBusy = busyOrderId === o.id;
-          const step = milestoneIndex(o.status);
+          const step = milestoneIndex(displayStatus);
 
           return (
             <div key={o.id} className="rounded border border-slate-200 bg-white p-3">
@@ -334,9 +339,9 @@ export function DriverShift() {
                   <div className="font-medium">{o.delivery_address}</div>
                   <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
                     <Truck className="h-3.5 w-3.5" />
-                    <span className="uppercase">{STATUS_LABEL[o.status] ?? o.status}</span>
+                    <span className="uppercase">{STATUS_LABEL[displayStatus] ?? displayStatus}</span>
                     <span>·</span>
-                    <code className="rounded bg-slate-100 px-1">{o.tracking_code}</code>
+                    <code className="rounded bg-slate-100 px-1">{o.tracking_code || o.receipt_number}</code>
                   </div>
                   <div className="mt-3 flex items-center gap-1">
                     {MILESTONES.map((_, i) => (
