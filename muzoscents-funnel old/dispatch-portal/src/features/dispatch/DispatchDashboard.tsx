@@ -1,4 +1,3 @@
-const LIVE_DOT: Record<string, string> = { online: "bg-green-500", offline: "bg-slate-400", busy: "bg-amber-500", error: "bg-red-500" };
 // @ts-nocheck
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
