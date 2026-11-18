@@ -42,7 +42,7 @@ export function useProfile() {
 
         if (!cancelled) {
           // Fallbacks in case things are missing
-          const finalRole = profileData?.role || orgData?.role || user.user_metadata?.role || 'customer';
+          const finalRole = orgData?.role || profileData?.role || user.user_metadata?.role || 'customer';
           const finalOrgId = orgData?.org_id || user.user_metadata?.org_id || localStorage.getItem('org_id') || '';
 
           console.log('DEBUG PROFILE:', { profileData, orgData, finalRole, finalOrgId });
