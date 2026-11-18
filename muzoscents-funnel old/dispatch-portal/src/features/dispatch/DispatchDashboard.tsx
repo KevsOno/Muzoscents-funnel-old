@@ -171,7 +171,7 @@ export function DispatchDashboard() {
   }, [drivers]);
 
   const load = useCallback(async (): Promise<LoadResult> => {
-    if (!profile || !profile.org_id) return { drivers: [], locations: {}, orders: [] };
+    if (!profile) return { drivers: [], locations: {}, orders: [] };
 
     // 1. Get the user IDs of all drivers in this organisation
     const { data: membersData, error: membersErr } = await supabase

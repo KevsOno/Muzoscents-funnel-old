@@ -19,40 +19,32 @@ export function useProfile() {
 
     const load = async () => {
       try {
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        const { data: { user } } = await supabase.auth.getUser();
         
-        if (authError || !user) {
+        if (!user) {
           if (!cancelled) setLoading(false);
           return;
         }
 
-        // 1. Fetch the profile row
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .maybeSingle();
-
-        // 2. Fetch the org_members row for the org_id
-        const { data: orgData } = await supabase
-          .from('org_members')
-          .select('org_id, role')
-          .eq('user_id', user.id)
-          .maybeSingle();
+        // Use limit(1) instead of maybeSingle() to avoid throwing if multiple orgs exist
+        const [profileRes, orgRes] = await Promise.all([
+          supabase.from('profiles').select('*').eq('id', user.id).limit(1),
+          supabase.from('org_members').select('org_id, role').eq('user_id', user.id).limit(1)
+        ]);
 
         if (!cancelled) {
-          // Fallbacks in case things are missing
-          const finalRole = orgData?.role || profileData?.role || user.user_metadata?.role || 'customer';
-          const finalOrgId = orgData?.org_id || user.user_metadata?.org_id || localStorage.getItem('org_id') || '';
+          const p = profileRes.data?.[0];
+          const o = orgRes.data?.[0];
 
-          console.log('DEBUG PROFILE:', { profileData, orgData, finalRole, finalOrgId });
+          const finalRole = o?.role || p?.role || user.user_metadata?.role || 'customer';
+          const finalOrgId = o?.org_id || user.user_metadata?.org_id || '';
 
           setProfile({
             id: user.id,
             role: finalRole,
-            email: profileData?.email || user.email || '',
-            full_name: profileData?.full_name || user.user_metadata?.full_name || 'User',
-            branch_id: profileData?.branch_id || null,
+            email: p?.email || user.email || '',
+            full_name: p?.full_name || user.user_metadata?.full_name || 'User',
+            branch_id: p?.branch_id || null,
             org_id: finalOrgId,
           });
           setLoading(false);
@@ -69,5 +61,3 @@ export function useProfile() {
 
   return { profile, loading };
 }
-
-export function clearProfileCache() {}
