@@ -53,8 +53,8 @@ export function BranchDashboard() {
     if (!branchId) return;
     (async () => {
       const { data } = await supabase
-        .from('profiles')
-        .select('id,user_id,email,full_name,phone,role,branch_id,driver_status,is_active')
+        .from('org_members')
+        .select('user_id, profiles!inner(id,user_id,email,full_name,phone,role,branch_id,driver_status,is_active)')
         
         .eq('role', 'driver');
       setDrivers((data as Profile[]) ?? []);
