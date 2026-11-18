@@ -199,11 +199,11 @@ export function DriverShift() {
     let cancelled = false;
 
     const load = async () => {
-      // FIX: Query BOTH `status` and `shipping_status` to catch manual DB edits
+      // FIX: Query BOTH driver_id and assigned_driver_id, and BOTH status columns
       const { data, error } = await supabase
         .from('sales')
         .select('*')
-        .eq('driver_id', profile.id)
+        .or(`driver_id.eq.${profile.id},assigned_driver_id.eq.${profile.id}`)
         .or(`status.in.(${ACTIVE_STATUSES.join(',')}),shipping_status.in.(${ACTIVE_STATUSES.join(',')})`)
         .order('created_at');
         
@@ -214,7 +214,7 @@ export function DriverShift() {
     void load();
     const ch = supabase
       .channel(`driver-orders-${profile.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales', filter: `driver_id=eq.${profile.id}` }, () => { void load(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, () => { void load(); })
       .subscribe();
 
     return () => {
