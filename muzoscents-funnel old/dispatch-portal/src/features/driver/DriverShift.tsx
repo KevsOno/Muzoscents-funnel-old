@@ -193,7 +193,7 @@ export function DriverShift() {
       const { data, error } = await supabase
         .from('sales')
         .select('*')
-        .eq('assigned_driver_id', profile.id)
+        .eq('driver_id', profile.id)
         .in('status', [...ACTIVE_STATUSES])
         .order('created_at');
       if (error) toast.error(error.message);
@@ -203,7 +203,7 @@ export function DriverShift() {
     void load();
     const ch = supabase
       .channel(`driver-orders-${profile.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `assigned_driver_id=eq.${profile.id}` }, () => { void load(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales', filter: `driver_id=eq.${profile.id}` }, () => { void load(); })
       .subscribe();
 
     return () => {

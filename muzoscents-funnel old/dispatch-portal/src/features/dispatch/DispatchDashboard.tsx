@@ -207,7 +207,7 @@ export function DispatchDashboard() {
     const { data: ordersData, error: ordersErr } = await supabase
       .from('sales')
       .select('*')
-      .in('assigned_driver_id', driverIds)
+      .in('driver_id', driverIds)
       .in('status', [...ACTIVE_STATUSES]);
     if (ordersErr) throw ordersErr;
 
@@ -291,7 +291,7 @@ export function DispatchDashboard() {
           if (!row || !row.id) return;
           const id = row.id;
           const status = row.status;
-          const driverId = row.assigned_driver_id ?? null;
+          const driverId = row.driver_id ?? null;
 
           // Terminal statuses remove the order from the panel.
           if (status === 'delivered' || status === 'cancelled') {
@@ -362,10 +362,10 @@ export function DispatchDashboard() {
   const ordersByDriver = useMemo(() => {
     const m = new Map<string, OrderRow[]>();
     for (const o of orders) {
-      if (!o.assigned_driver_id) continue;
-      const arr = m.get(o.assigned_driver_id) ?? [];
+      if (!o.driver_id) continue;
+      const arr = m.get(o.driver_id) ?? [];
       arr.push(o);
-      m.set(o.assigned_driver_id, arr);
+      m.set(o.driver_id, arr);
     }
     return m;
   }, [orders]);

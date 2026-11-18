@@ -328,7 +328,7 @@ export function useDriverTracking({ enabled }: Options) {
         const { data, error } = await supabase
           .from('sales')
           .select('*')
-          .eq('assigned_driver_id', profileId)
+          .eq('driver_id', profileId)
           .in('status', [...ACTIVE_ORDER_STATUSES]);
         if (error) {
           console.error('Failed to load active orders for GPS mode', error);
@@ -356,7 +356,7 @@ export function useDriverTracking({ enabled }: Options) {
             event: '*',
             schema: 'public',
             table: 'orders',
-            filter: `assigned_driver_id=eq.${profileId}`,
+            filter: `driver_id=eq.${profileId}`,
           },
           () => { void load(); },
         )
