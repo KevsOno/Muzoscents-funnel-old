@@ -1,6 +1,5 @@
 // netlify/functions/api-proxy.js
-// Forwards requests to the backend URL stored in the API_BASE env var.
-// The HF URL never reaches the browser.
+const fetch = require('node-fetch');
 
 exports.handler = async (event) => {
     const API_BASE = process.env.API_BASE;
@@ -13,10 +12,7 @@ exports.handler = async (event) => {
         };
     }
 
-    // Netlify rewrites /proxy/* → /.netlify/functions/api-proxy/:splat
-    // So event.path looks like /.netlify/functions/api-proxy/<original-path>
-    // Strip ONLY the function prefix so the original path is preserved
-    // exactly — including paths that themselves start with /api.
+    // Strip the function prefix to get the original path
     let path = event.path || '';
     path = path.replace(/^\/\.netlify\/functions\/api-proxy/, '');
 
@@ -24,8 +20,8 @@ exports.handler = async (event) => {
     const targetUrl = `${API_BASE}${path}${query}`;
 
     const headers = { ...event.headers };
-    delete headers.host;                 // let fetch set the correct Host
-    delete headers['content-length'];    // fetch recalculates this
+    delete headers.host;
+    delete headers['content-length'];
 
     try {
         const response = await fetch(targetUrl, {
