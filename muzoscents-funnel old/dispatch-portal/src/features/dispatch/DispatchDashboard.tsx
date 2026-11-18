@@ -177,6 +177,7 @@ export function DispatchDashboard() {
       .from('profiles')
       .select('id,user_id,email,full_name,phone,role,branch_id,driver_status,is_active')
       .eq('role', 'driver')
+      .eq('org_id', profile?.org_id)
       .eq('is_active', true);
 
     if (profile.role !== 'master') {
