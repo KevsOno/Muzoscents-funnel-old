@@ -182,10 +182,10 @@ export function DispatchDashboard() {
 
     if (membersErr) throw membersErr;
     
-    const driverIds = (membersData || []).map(m => m.user_id);
+    const memberIds = (membersData || []).map(m => m.user_id);
     
     // If no drivers exist in this org, return empty
-    if (driverIds.length === 0) {
+    if (memberIds.length === 0) {
       return { drivers: [], locations: {}, orders: [] };
     }
 
@@ -193,7 +193,7 @@ export function DispatchDashboard() {
     const { data: driversData, error: driversErr } = await supabase
       .from('profiles')
       .select('id,user_id,email,full_name,phone,role,branch_id,driver_status,is_active')
-      .in('id', driverIds)
+      .in('id', memberIds)
       .eq('is_active', true);
 
     if (driversErr) throw driversErr;
