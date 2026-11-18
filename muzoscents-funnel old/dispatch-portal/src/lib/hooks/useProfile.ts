@@ -29,7 +29,8 @@ export function useProfile() {
               const payload = JSON.parse(atob(token.split('.')[1]));
               if (payload.sub) {
                 if (!cancelled) {
-                  setProfile({
+                  console.log('DEBUG PROFILE:', profileData);
+            setProfile({
                     id: payload.sub,
                     role: localStorage.getItem('user_role') || 'admin',
                     email: localStorage.getItem('user_email') || 'user@kevsdigital.com',
@@ -59,6 +60,7 @@ export function useProfile() {
         if (!cancelled) {
           if (profileError || !profileData) {
             // Fallback to auth metadata if profile row is missing
+            console.log('DEBUG PROFILE:', profileData);
             setProfile({
               id: user.id,
               role: user.user_metadata?.role || 'admin',
@@ -68,6 +70,7 @@ export function useProfile() {
               org_id: user.user_metadata?.org_id || '',
             });
           } else {
+            console.log('DEBUG PROFILE:', profileData);
             setProfile({
               id: profileData.id,
               role: profileData.role || 'admin',
