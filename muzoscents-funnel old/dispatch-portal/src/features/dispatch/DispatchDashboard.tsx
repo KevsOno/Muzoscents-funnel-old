@@ -18,8 +18,6 @@ import { MapWrapper } from '../../components/map/MapWrapper';
 import type { MapMarker } from '../../components/map/types';
 
 const ACTIVE_STATUSES = ['processing', 'shipped'];
-const DEFAULT_CENTER: [number, number] = [6.5244, 3.3792];
-
 const DEFAULT_CENTER = { lat: 6.5244, lng: 3.3792 };
 const DEFAULT_ZOOM = 12;
 const STALE_MS = 2 * 60 * 1000;
@@ -42,6 +40,12 @@ const ORDER_STATUS_PILL: Record<string, string> = {
   failed: 'bg-red-100 text-red-700',
 };
 
+const DRIVER_STATUS_RANK: Record<string, number> = {
+  on_delivery: 0,
+  available: 1,
+  offline: 2,
+};
+
 type LiveState = 'live' | 'connecting' | 'offline';
 type DriverLocation = any;
 
@@ -55,8 +59,7 @@ const LIVE_LABEL: Record<LiveState, string> = {
   live: 'Live',
   connecting: 'Connecting',
   offline: 'Offline',
-};ccs
-
+};
 
 interface LoadResult {
   drivers: Profile[];
@@ -159,7 +162,7 @@ export function DispatchDashboard() {
   const load = useCallback(async (): Promise<LoadResult> => {
     if (!profile) return { drivers: [], locations: {}, orders: [] };
 
-        // Bypass all org/branch logic. Just get every active driver.
+    // Bypass all org/branch logic. Just get every active driver.
     const { data: driversData, error: driversErr } = await supabase
       .from('profiles')
       .select('id,user_id,email,full_name,phone,role,branch_id,driver_status,is_active')
@@ -168,11 +171,9 @@ export function DispatchDashboard() {
 
     if (driversErr) {
       console.error("SUPABASE DRIVER FETCH ERROR:", driversErr);
-      return { drivers: [], locations: {}, orders: [], debugError: driversErr.message };
+      return { drivers: [], locations: {}, orders: [] };
     }
 
-
-    if (driversErr) throw driversErr;
     const visibleDrivers = (driversData as Profile[]) ?? [];
 
     if (visibleDrivers.length === 0) return { drivers: [], locations: {}, orders: [] };
@@ -223,7 +224,7 @@ export function DispatchDashboard() {
         setOrders(result.orders);
       } catch (err) {
         if (cancelled) return;
-        const message = err instanceof Error ? err.message : 'Failed to load dispatch data: {error}';
+        const message = err instanceof Error ? err.message : 'Failed to load dispatch data';
         setError(message);
         toast.error(message);
       } finally {
