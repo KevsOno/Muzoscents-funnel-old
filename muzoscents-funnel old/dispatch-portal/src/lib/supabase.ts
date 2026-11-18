@@ -91,3 +91,18 @@ export interface Product {
   image_url?: string;
   created_at?: string;
 }
+
+
+// ── Dispatch portal: inject the KDS auth token so Supabase RPCs see auth.uid() ──
+(() => {
+  try {
+    const _kds_access = localStorage.getItem('access_token');
+    const _kds_refresh = localStorage.getItem('refresh_token');
+    if (_kds_access && _kds_refresh) {
+      supabase.auth.setSession({
+        access_token: _kds_access,
+        refresh_token: _kds_refresh,
+      }).catch((err) => console.warn('[kds] Failed to set Supabase session:', err));
+    }
+  } catch (_) { /* ignore */ }
+})();
