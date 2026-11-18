@@ -86,6 +86,7 @@ from deps import (
     fetch_inventory_scoped_to_location,
     resolve_store_org,
     _assert_storefront_live,
+    get_location_for_channel,
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
