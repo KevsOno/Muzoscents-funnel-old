@@ -17,7 +17,7 @@ import { haversineMeters } from '../../lib/geo';
 import { MapWrapper } from '../../components/map/MapWrapper';
 import type { MapMarker } from '../../components/map/types';
 
-const ACTIVE_STATUSES = ['processing', 'shipped'];
+const ACTIVE_STATUSES = ['processing', 'shipped', 'picked', 'in_transit'];
 const DEFAULT_CENTER = { lat: 6.5244, lng: 3.3792 };
 const DEFAULT_ZOOM = 12;
 const STALE_MS = 2 * 60 * 1000;
@@ -167,11 +167,8 @@ export function DispatchDashboard() {
       return { drivers: [], locations: {}, orders: [] };
     }
 
-    // FIX: Map `id` to `user_id` so it matches the auth ID used in sales/locations
-    const visibleDrivers = ((driversData as any[]) ?? []).map((d) => ({
-      ...d,
-      id: d.user_id || d.id, 
-    }));
+    // FIX: profiles.id IS the auth ID. We must NOT map to user_id.
+    const visibleDrivers = (driversData as Profile[]) ?? [];
 
     if (visibleDrivers.length === 0) return { drivers: [], locations: {}, orders: [] };
 
@@ -188,11 +185,14 @@ export function DispatchDashboard() {
       locMap[row.driver_id] = row;
     }
 
+    // FIX: Check both status and shipping_status. 
+    // If an order was manually set to 'picked' in status, we still want to see it.
     const { data: ordersData, error: ordersErr } = await supabase
       .from('sales')
       .select('*')
       .in('driver_id', driverIds)
-      .in('shipping_status', ['processing', 'shipped']);
+      .or(`status.in.(${ACTIVE_STATUSES.join(',')}),shipping_status.in.(${ACTIVE_STATUSES.join(',')})`);
+    
     if (ordersErr) throw ordersErr;
 
     return {
@@ -259,7 +259,7 @@ export function DispatchDashboard() {
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'sales' }, // FIX: Changed from 'orders' to 'sales'
+        { event: '*', schema: 'public', table: 'sales' },
         (payload) => {
           if (payload.eventType === 'DELETE') {
             const oldRow = payload.old as { id?: string };
@@ -271,7 +271,7 @@ export function DispatchDashboard() {
           const row = payload.new as Partial<OrderRow> | null;
           if (!row || !row.id) return;
           const id = row.id;
-          const status = row.shipping_status; // FIX: Changed from `status` to `shipping_status`
+          const status = row.shipping_status || row.status; // Check both
           const driverId = row.driver_id ?? null;
 
           if (status === 'delivered' || status === 'cancelled') {
@@ -279,7 +279,7 @@ export function DispatchDashboard() {
             return;
           }
 
-          const isActive = !!status && (ACTIVE_STATUSES as readonly string[]).includes(status);
+          const isActive = !!status && ACTIVE_STATUSES.includes(status as any);
           const inScope = !!driverId && visibleDriverIdsRef.current.has(driverId);
 
           if (isActive && inScope) {
@@ -445,6 +445,7 @@ export function DispatchDashboard() {
                         <ul className="mt-2 space-y-1">
                           {driverOrders.map((o) => {
                             const eta = computeEta(loc, o);
+                            const displayStatus = o.shipping_status && o.shipping_status !== 'pending' ? o.shipping_status : o.status;
                             return (
                               <li
                                 key={o.id}
@@ -452,12 +453,12 @@ export function DispatchDashboard() {
                               >
                                 <div className="flex items-center justify-between gap-2">
                                   <code className="truncate font-mono text-slate-700">
-                                    {o.tracking_code}
+                                    {o.tracking_code || o.receipt_number}
                                   </code>
                                   <span
-                                    className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wide ${ORDER_STATUS_PILL[o.shipping_status || o.status]}`}
+                                    className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wide ${ORDER_STATUS_PILL[displayStatus]}`}
                                   >
-                                    {(o.shipping_status || o.status).replace('_', ' ')}
+                                    {displayStatus.replace('_', ' ')}
                                   </span>
                                 </div>
                                 <div className="truncate text-slate-600">{o.delivery_address}</div>
