@@ -175,9 +175,10 @@ export function DispatchDashboard() {
 
     let driversQuery = supabase
       .from('profiles')
-      .select('id,user_id,email,full_name,phone,role,branch_id,driver_status,is_active')
+      .select('id,user_id,email,full_name,phone,role,branch_id,driver_status,is_active, org_members!inner(org_id)')
       .eq('role', 'driver')
-      .eq('org_id', profile?.org_id)
+      .eq('org_members.org_id', profile?.org_id)
+      
       .eq('is_active', true);
 
     if (profile.role !== 'master') {
