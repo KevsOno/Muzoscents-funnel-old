@@ -20,6 +20,44 @@ import type { MapMarker } from '../../components/map/types';
 const ACTIVE_STATUSES = ['processing', 'shipped'];
 const DEFAULT_CENTER: [number, number] = [6.5244, 3.3792];
 
+const DEFAULT_CENTER = { lat: 6.5244, lng: 3.3792 };
+const DEFAULT_ZOOM = 12;
+const STALE_MS = 2 * 60 * 1000;
+const CO_LOCATION_OFFSET = 0.00005;
+
+const DRIVER_STATUS_PILL: Record<string, string> = {
+  available: 'bg-green-100 text-green-700',
+  on_delivery: 'bg-blue-100 text-blue-700',
+  offline: 'bg-slate-100 text-slate-600',
+};
+
+const ORDER_STATUS_PILL: Record<string, string> = {
+  pending: 'bg-slate-100 text-slate-600',
+  confirmed: 'bg-blue-100 text-blue-700',
+  dispatched: 'bg-indigo-100 text-indigo-700',
+  picked: 'bg-purple-100 text-purple-700',
+  in_transit: 'bg-blue-100 text-blue-700',
+  delivered: 'bg-green-100 text-green-700',
+  cancelled: 'bg-red-100 text-red-700',
+  failed: 'bg-red-100 text-red-700',
+};
+
+type LiveState = 'live' | 'connecting' | 'offline';
+type DriverLocation = any;
+
+const LIVE_DOT: Record<LiveState, string> = {
+  live: 'bg-green-500',
+  connecting: 'bg-amber-500',
+  offline: 'bg-slate-400',
+};
+
+const LIVE_LABEL: Record<LiveState, string> = {
+  live: 'Live',
+  connecting: 'Connecting',
+  offline: 'Offline',
+};ccs
+
+
 interface LoadResult {
   drivers: Profile[];
   locations: Record<string, DriverLocation>;
