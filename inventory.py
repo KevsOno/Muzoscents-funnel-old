@@ -15,6 +15,7 @@ from deps import (
     check_org_feature, _assert_storefront_live,
     get_location_for_channel, get_active_sale_prices,
     fetch_inventory_scoped_to_location,
+    resolve_store_org,
 )
 
 router = APIRouter(tags=["Inventory"])
@@ -338,7 +339,7 @@ async def public_inventory(
 ):
     await rate_limit(get_client_ip(request))
 
-    resolved_org_id = org_id or PUBLIC_STORE_ORG_ID
+    resolved_org_id = await resolve_store_org(request, org_id=org_id)
     if not resolved_org_id:
         raise HTTPException(status_code=400, detail="Organisation not specified")
 
@@ -436,7 +437,7 @@ async def public_categories(
     org_id: Optional[str] = Query(None),
 ):
     await rate_limit(get_client_ip(request))
-    resolved_org_id = org_id or PUBLIC_STORE_ORG_ID
+    resolved_org_id = await resolve_store_org(request, org_id=org_id)
     if not resolved_org_id:
         raise HTTPException(status_code=400, detail="Organisation not specified")
 

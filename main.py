@@ -9102,10 +9102,10 @@ async def register(request: Request, auth: RegisterRequest):
         except Exception as loc_err:
             logger.warning(f"Failed to create default branch/location: {loc_err}")
     else:
-        default_org_id = PUBLIC_STORE_ORG_ID
-        if not default_org_id:
-            raise HTTPException(status_code=500, detail="Public store organisation not configured")
-        org_id = default_org_id
+        if os.environ.get("SINGLE_TENANT_STOREFRONT", "false").lower() == "true" and PUBLIC_STORE_ORG_ID:
+            org_id = PUBLIC_STORE_ORG_ID
+        else:
+            raise HTTPException(status_code=400, detail="Organisation not specified. Sign up via your store URL.")
         role = "customer"
 
     try:
@@ -11533,7 +11533,7 @@ async def public_storefront_checkout(
     await rate_limit(get_client_ip(request))
 
     # Fall back to the public store org when the storefront didn't pass one.
-    resolved_org_id = req.org_id or PUBLIC_STORE_ORG_ID
+    resolved_org_id = await resolve_store_org(request, org_id=req.org_id)
     if not resolved_org_id:
         raise HTTPException(status_code=400, detail="Organisation not specified")
 
