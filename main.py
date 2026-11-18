@@ -743,6 +743,10 @@ async def get_default_location(org_id: str) -> Optional[int]:
 # such write path clears this cache explicitly (create_location,
 # update_location, delete_location). The 5-minute TTL is a safety net
 # for out-of-band changes, not the primary invalidation mechanism.
+# Flash sale price cache (in-process, 60s TTL)
+_SALE_CACHE: Dict[str, Tuple[Dict[int, Dict], float]] = {}
+_SALE_TTL = 60.0
+
 async def get_active_sale_prices(
     org_id: str,
     inventory_ids: Optional[List[int]] = None,
