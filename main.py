@@ -17451,6 +17451,7 @@ async def estimate_delivery(request: Request, req: DeliveryEstimateRequest, user
 # FULFILLMENT DASHBOARD ENDPOINTS
 # ------------------------------------------------------------------
 class FulfillmentUpdate(BaseModel):
+    driver_id: Optional[str] = None
     shipping_status: str
     tracking_number: Optional[str] = None
     shipping_carrier: Optional[str] = None

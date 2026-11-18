@@ -18,6 +18,7 @@ import { MapWrapper } from '../../components/map/MapWrapper';
 import type { MapMarker } from '../../components/map/types';
 
 const ACTIVE_STATUSES = ['processing', 'shipped'];
+const DEFAULT_CENTER: [number, number] = [6.5244, 3.3792];
 
 interface LoadResult {
   drivers: Profile[];
