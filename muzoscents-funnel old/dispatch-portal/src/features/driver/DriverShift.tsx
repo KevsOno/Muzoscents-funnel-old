@@ -11,7 +11,8 @@ import { supabase, type OrderRow } from '../../lib/supabase';
 import { useProfile } from '../../lib/hooks/useProfile';
 import { useDriverTracking, type GpsMode } from './useDriverTracking';
 
-const ACTIVE_STATUSES = ['confirmed', 'dispatched', 'picked', 'in_transit'] as const;
+// FIX: Added 'processing' and 'shipped' so the driver sees newly assigned orders
+const ACTIVE_STATUSES = ['confirmed', 'dispatched', 'processing', 'shipped', 'picked', 'in_transit'] as const;
 
 const MODE_PILL_CLASS: Record<GpsMode, string> = {
   HIGH:     'border-green-200 bg-green-50 text-green-700',
@@ -117,6 +118,8 @@ function nextActionFor(status: string): NextAction | null {
   switch (status) {
     case 'confirmed':
     case 'dispatched':
+    case 'processing': // FIX: Added
+    case 'shipped':    // FIX: Added
       return { next: 'picked', label: 'Picked up', Icon: PackageCheck, className: 'bg-blue-600 hover:bg-blue-700' };
     case 'picked':
       return { next: 'in_transit', label: 'In transit', Icon: Navigation, className: 'bg-indigo-600 hover:bg-indigo-700' };
@@ -130,6 +133,8 @@ function nextActionFor(status: string): NextAction | null {
 const STATUS_LABEL: Record<string, string> = {
   confirmed: 'Confirmed',
   dispatched: 'Dispatched',
+  processing: 'Processing',
+  shipped: 'Shipped',
   picked: 'Picked up',
   in_transit: 'In transit',
   delivered: 'Delivered',
@@ -145,7 +150,10 @@ const MILESTONE_LABEL: Record<string, string> = {
 function milestoneIndex(status: string): number {
   switch (status) {
     case 'confirmed':
-    case 'dispatched': return -1;
+    case 'dispatched':
+    case 'processing':
+    case 'shipped':
+      return -1;
     case 'picked': return 0;
     case 'in_transit': return 1;
     case 'delivered': return 2;
