@@ -17577,6 +17577,12 @@ async def update_fulfillment_status(
         "shipping_status": new_status,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+    
+    # --- FIX: Add driver_id to the update payload ---
+    if hasattr(update, "driver_id") and update.driver_id is not None:
+        data["driver_id"] = update.driver_id
+    # ------------------------------------------------
+
     if update.tracking_number is not None:
         data["tracking_number"] = update.tracking_number
     if update.shipping_carrier is not None:
