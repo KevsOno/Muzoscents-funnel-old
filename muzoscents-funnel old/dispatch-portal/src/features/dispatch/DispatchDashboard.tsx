@@ -205,7 +205,7 @@ export function DispatchDashboard() {
     }
 
     const { data: ordersData, error: ordersErr } = await supabase
-      .from('orders')
+      .from('sales')
       .select('*')
       .in('assigned_driver_id', driverIds)
       .in('status', [...ACTIVE_STATUSES]);

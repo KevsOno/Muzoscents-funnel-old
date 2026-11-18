@@ -17,7 +17,7 @@ export function useRealtimeOrders(branchId: string | null) {
 
     const load = async () => {
       let q = supabase
-        .from('orders')
+        .from('sales')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(200);

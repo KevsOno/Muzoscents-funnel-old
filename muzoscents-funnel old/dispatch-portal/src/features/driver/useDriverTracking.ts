@@ -326,7 +326,7 @@ export function useDriverTracking({ enabled }: Options) {
         // moment those columns are added, the mode logic starts working without
         // another code change -- and so we do not 400 on a missing column today.
         const { data, error } = await supabase
-          .from('orders')
+          .from('sales')
           .select('*')
           .eq('assigned_driver_id', profileId)
           .in('status', [...ACTIVE_ORDER_STATUSES]);

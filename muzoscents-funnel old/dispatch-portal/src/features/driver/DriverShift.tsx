@@ -191,7 +191,7 @@ export function DriverShift() {
 
     const load = async () => {
       const { data, error } = await supabase
-        .from('orders')
+        .from('sales')
         .select('*')
         .eq('assigned_driver_id', profile.id)
         .in('status', [...ACTIVE_STATUSES])

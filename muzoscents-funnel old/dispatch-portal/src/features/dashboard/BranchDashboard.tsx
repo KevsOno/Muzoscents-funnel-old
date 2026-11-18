@@ -119,7 +119,7 @@ export function BranchDashboard() {
                 branchId={branchId}
                 value={selected.assigned_driver_id}
                 onChange={async (driverId) => {
-                  await supabase.from('orders')
+                  await supabase.from('sales')
                     .update({ assigned_driver_id: driverId })
                     .eq('id', selected.id);
                 }}
