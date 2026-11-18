@@ -7,6 +7,9 @@ if (!url || !anonKey) {
   throw new Error('Missing VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY');
 }
 
+const token = localStorage.getItem('access_token');
+const refresh = localStorage.getItem('refresh_token');
+
 export const supabase = createClient(url, anonKey, {
   auth: {
     persistSession: true,
@@ -64,4 +67,15 @@ export interface OrderRow {
   delivery_address: string;
   created_at: string;
   updated_at: string;
+}
+
+
+// Restore the session into Supabase so auth.uid() works in RPCs
+const token = localStorage.getItem('access_token');
+const refresh = localStorage.getItem('refresh_token');
+if (token && refresh) {
+  supabase.auth.setSession({
+    access_token: token,
+    refresh_token: refresh
+  }).catch((err) => console.warn("Failed to set Supabase session:", err));
 }
