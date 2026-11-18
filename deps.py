@@ -1080,3 +1080,98 @@ async def _assert_storefront_live(org_id: str) -> None:
         raise HTTPException(status_code=404, detail="Store not found")
     if (org.get("status") or "active") in ("suspended", "churned"):
         raise HTTPException(status_code=404, detail="Store not found")
+
+
+# ============================================================
+# LOCATION-SCOPED INVENTORY READ  (moved from main.py — do not duplicate)
+# ============================================================
+async def fetch_inventory_scoped_to_location(
+    org_id: str,
+    location_id: str,
+    limit: int,
+    offset: int,
+    q: Optional[str] = None,
+    category: Optional[str] = None,
+    sort_by: str = "newest",
+    require_positive_stock: bool = False,
+    include_count: bool = True,
+) -> Tuple[List[Dict], int]:
+    """
+    Read inventory rows scoped to a single location.
+    Response row = full inventory row + location-scoped overrides:
+      - current_qty  : OVERRIDDEN to location-specific quantity
+      - location_qty : same value, explicit
+      - global_qty   : original inventory.current_qty (org-wide)
+      - location_id  : the location we scoped to
+
+    include_count:
+      When True (default), PostgREST returns an exact total via
+      count="exact", which costs a second COUNT(*) round trip
+      (2 network calls total for the list query). Callers that need
+      a real total for a pager (storefront) should leave this at
+      True. Callers that do not (POS terminal) should pass
+      include_count=False and save the second round trip.
+
+      When False, PostgREST returns no Content-Range header, so
+      result.count is None and total falls through to 0. Callers
+      that opted out of counting do not have a use for a total,
+      so returning 0 is the honest value: "we did not count."
+    """
+    client = get_supabase()
+
+    query = (
+        client.table("inventory")
+        .select(
+            "*, location_stocks!inner(location_id, quantity, reserved_quantity)",
+            count="exact" if include_count else None,
+        )
+        .eq("org_id", org_id)
+        .eq("location_stocks.location_id", location_id)
+    )
+
+    if q:
+        or_condition = (
+            f"description.ilike.%{q}%,"
+            f"item_code.ilike.%{q}%,"
+            f"product_group.ilike.%{q}%"
+        )
+        # supabase-py's SyncSelectRequestBuilder has no .or_() method, so
+        # set the raw PostgREST "or" parameter directly — same pattern as
+        # the /inventory/search endpoint. When ORG_SCOPE_CANARY is on,
+        # `query` is wrapped in _CanaryBuilder, whose __slots__ blocks
+        # attribute assignment, so unwrap via _inner before writing .params.
+        target = getattr(query, "_inner", query)
+        target.params = target.params.set("or", f"({or_condition})")
+
+    if category:
+        query = query.eq("product_group", category)
+
+    if require_positive_stock:
+        query = query.gt("location_stocks.quantity", 0)
+
+    if sort_by == "price_asc":
+        query = query.order("price_naira", desc=False)
+    elif sort_by == "price_desc":
+        query = query.order("price_naira", desc=True)
+    else:
+        query = query.order("id", desc=True)
+
+    result = await run_sync_db_call(query.range(offset, offset + limit - 1).execute)
+    rows = result.data or []
+    total = result.count or 0
+
+    items: List[Dict] = []
+    for row in rows:
+        stocks = row.pop("location_stocks", None) or []
+        # Sum across every batch at this location. The distribute_batch_to_locations
+        # trigger creates one location_stocks row per batch, so stocks[0] would
+        # report only the first batch's quantity once a second delivery lands.
+        loc_qty = sum(int(s.get("quantity") or 0) for s in stocks) if stocks else 0
+        global_qty = int(row.get("current_qty") or 0)
+        row["current_qty"]  = loc_qty
+        row["location_qty"] = loc_qty
+        row["global_qty"]   = global_qty
+        row["location_id"]  = location_id
+        items.append(row)
+
+    return items, total

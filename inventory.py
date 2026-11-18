@@ -13,7 +13,8 @@ from deps import (
     get_client_ip, rate_limit, require_role, require_feature,
     resolve_request_branch, resolve_request_branch_for_write,
     check_org_feature, _assert_storefront_live,
-    get_location_for_channel, get_active_sale_prices
+    get_location_for_channel, get_active_sale_prices,
+    fetch_inventory_scoped_to_location,
 )
 
 router = APIRouter(tags=["Inventory"])
