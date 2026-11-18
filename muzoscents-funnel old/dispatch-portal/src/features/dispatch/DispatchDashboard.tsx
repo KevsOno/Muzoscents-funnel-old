@@ -17,63 +17,7 @@ import { haversineMeters } from '../../lib/geo';
 import { MapWrapper } from '../../components/map/MapWrapper';
 import type { MapMarker } from '../../components/map/types';
 
-const ACTIVE_STATUSES = ['confirmed', 'dispatched', 'picked', 'in_transit'] as const;
-
-const DEFAULT_CENTER = { lat: 6.5244, lng: 3.3792 };
-const DEFAULT_ZOOM = 12;
-const STALE_MS = 2 * 60 * 1000;
-/** Tiny lat/lng offset applied when two drivers report identical coords. */
-const CO_LOCATION_OFFSET = 0.00005;
-
-const DRIVER_STATUS_PILL: Record<DriverStatus, string> = {
-  available:   'bg-green-100 text-green-700',
-  on_delivery: 'bg-blue-100 text-blue-700',
-  offline:     'bg-slate-100 text-slate-600',
-};
-
-const ORDER_STATUS_PILL: Record<OrderStatus, string> = {
-  pending:    'bg-slate-100 text-slate-600',
-  confirmed:  'bg-blue-100 text-blue-700',
-  dispatched: 'bg-indigo-100 text-indigo-700',
-  picked:     'bg-purple-100 text-purple-700',
-  in_transit: 'bg-blue-100 text-blue-700',
-  delivered:  'bg-green-100 text-green-700',
-  cancelled:  'bg-red-100 text-red-700',
-  failed:     'bg-red-100 text-red-700',
-};
-
-const DRIVER_STATUS_RANK: Record<DriverStatus, number> = {
-  on_delivery: 0,
-  available: 1,
-  offline: 2,
-};
-
-type LiveState = 'live' | 'connecting' | 'offline';
-
-const LIVE_DOT: Record<LiveState, string> = {
-  live: 'bg-green-500',
-  connecting: 'bg-amber-500',
-  offline: 'bg-slate-400',
-};
-
-const LIVE_LABEL: Record<LiveState, string> = {
-  live: 'Live',
-  connecting: 'Connecting',
-  offline: 'Offline',
-};
-
-export interface DriverLocation {
-  driver_id: string;
-  lat: number;
-  lng: number;
-  accuracy: number | null;
-  battery: number | null;
-  is_charging: boolean | null;
-  updated_at: string;
-}
-
-interface LoadResult {
-  drivers: Profile[];
+const ACTIVE_STATUSES = ['processing', 'shipped'];
   locations: Record<string, DriverLocation>;
   orders: OrderRow[];
 }
@@ -209,7 +153,7 @@ export function DispatchDashboard() {
       .from('sales')
       .select('*')
       .in('driver_id', driverIds)
-      .in('status', [...ACTIVE_STATUSES]);
+      .in('shipping_status', ['processing', 'shipped']);
     if (ordersErr) throw ordersErr;
 
     return {
