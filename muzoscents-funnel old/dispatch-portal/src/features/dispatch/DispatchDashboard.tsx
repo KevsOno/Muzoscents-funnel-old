@@ -38,6 +38,8 @@ const ORDER_STATUS_PILL: Record<string, string> = {
   delivered: 'bg-green-100 text-green-700',
   cancelled: 'bg-red-100 text-red-700',
   failed: 'bg-red-100 text-red-700',
+  processing: 'bg-amber-100 text-amber-700',
+  shipped: 'bg-indigo-100 text-indigo-700',
 };
 
 const DRIVER_STATUS_RANK: Record<string, number> = {
@@ -119,12 +121,6 @@ function BatteryIndicator({
   );
 }
 
-/**
- * ETA requires destination coordinates. `OrderRow` in src/lib/supabase.ts does
- * NOT declare delivery_lat / delivery_lng, so we defensively probe the row at
- * runtime; if those fields are absent (they currently are) we always return
- * null and the UI renders "ETA: —".
- */
 function computeEta(driverLoc: DriverLocation | undefined, order: OrderRow): number | null {
   if (!driverLoc) return null;
   const maybe = order as OrderRow & {
@@ -152,8 +148,6 @@ export function DispatchDashboard() {
   const [panTo, setPanTo] = useState<string | null>(null);
   const [liveState, setLiveState] = useState<LiveState>('connecting');
 
-  // Visible driver set is fixed for the session. Held in a ref so the realtime
-  // callback always reads the latest value without re-subscribing.
   const visibleDriverIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     visibleDriverIdsRef.current = new Set(drivers.map((d) => d.id));
@@ -162,7 +156,6 @@ export function DispatchDashboard() {
   const load = useCallback(async (): Promise<LoadResult> => {
     if (!profile) return { drivers: [], locations: {}, orders: [] };
 
-    // Bypass all org/branch logic. Just get every active driver.
     const { data: driversData, error: driversErr } = await supabase
       .from('profiles')
       .select('id,user_id,email,full_name,phone,role,branch_id,driver_status,is_active')
@@ -174,13 +167,16 @@ export function DispatchDashboard() {
       return { drivers: [], locations: {}, orders: [] };
     }
 
-    const visibleDrivers = (driversData as Profile[]) ?? [];
+    // FIX: Map `id` to `user_id` so it matches the auth ID used in sales/locations
+    const visibleDrivers = ((driversData as any[]) ?? []).map((d) => ({
+      ...d,
+      id: d.user_id || d.id, 
+    }));
 
     if (visibleDrivers.length === 0) return { drivers: [], locations: {}, orders: [] };
 
     const driverIds = visibleDrivers.map((d) => d.id);
 
-    // Battery columns added here so the side panel can show telemetry.
     const { data: locsData, error: locsErr } = await supabase
       .from('driver_locations')
       .select('driver_id,lat,lng,accuracy,battery,is_charging,updated_at')
@@ -206,7 +202,6 @@ export function DispatchDashboard() {
     };
   }, [profile]);
 
-  // Initial fetch on mount (unchanged behaviour).
   useEffect(() => {
     if (profileLoading) return;
     if (!profile) { setLoading(false); return; }
@@ -235,10 +230,9 @@ export function DispatchDashboard() {
     return () => { cancelled = true; };
   }, [profile, profileLoading, load]);
 
-  // Realtime deltas after the initial load. Single channel, two listeners.
   useEffect(() => {
     if (!profile) return;
-    if (loading) return; // wait for the initial fetch to settle
+    if (loading) return;
 
     const channel = supabase
       .channel('dispatch-dashboard')
@@ -259,14 +253,13 @@ export function DispatchDashboard() {
           }
           const row = payload.new as DriverLocation | null;
           if (!row || !row.driver_id) return;
-          // Out-of-scope drivers are ignored; the visible set is fixed for the session.
           if (!visibleDriverIdsRef.current.has(row.driver_id)) return;
           setLocations((prev) => ({ ...prev, [row.driver_id]: row }));
         },
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'orders' },
+        { event: '*', schema: 'public', table: 'sales' }, // FIX: Changed from 'orders' to 'sales'
         (payload) => {
           if (payload.eventType === 'DELETE') {
             const oldRow = payload.old as { id?: string };
@@ -278,10 +271,9 @@ export function DispatchDashboard() {
           const row = payload.new as Partial<OrderRow> | null;
           if (!row || !row.id) return;
           const id = row.id;
-          const status = row.status;
+          const status = row.shipping_status; // FIX: Changed from `status` to `shipping_status`
           const driverId = row.driver_id ?? null;
 
-          // Terminal statuses remove the order from the panel.
           if (status === 'delivered' || status === 'cancelled') {
             setOrders((prev) => prev.filter((o) => o.id !== id));
             return;
@@ -318,7 +310,6 @@ export function DispatchDashboard() {
       const key = `${loc.lat.toFixed(6)}|${loc.lng.toFixed(6)}`;
       const idx = coordCounts.get(key) ?? 0;
       coordCounts.set(key, idx + 1);
-      // Co-located drivers get a tiny offset so pins stay individually clickable.
       const offset = idx * CO_LOCATION_OFFSET;
       out.push({
         id: d.id,
@@ -464,9 +455,9 @@ export function DispatchDashboard() {
                                     {o.tracking_code}
                                   </code>
                                   <span
-                                    className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wide ${ORDER_STATUS_PILL[o.status]}`}
+                                    className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wide ${ORDER_STATUS_PILL[o.shipping_status || o.status]}`}
                                   >
-                                    {o.status.replace('_', ' ')}
+                                    {(o.shipping_status || o.status).replace('_', ' ')}
                                   </span>
                                 </div>
                                 <div className="truncate text-slate-600">{o.delivery_address}</div>
