@@ -173,19 +173,18 @@ export function DispatchDashboard() {
   const load = useCallback(async (): Promise<LoadResult> => {
     if (!profile) return { drivers: [], locations: {}, orders: [] };
 
-    // 1. Fetch drivers directly from profiles (bypassing org_members)
-    let driversQuery = supabase
+        // Bypass all org/branch logic. Just get every active driver.
+    const { data: driversData, error: driversErr } = await supabase
       .from('profiles')
       .select('id,user_id,email,full_name,phone,role,branch_id,driver_status,is_active')
       .eq('role', 'driver')
       .eq('is_active', true);
 
-    // If not an owner/admin, scope to their branch if they have one
-    if (profile.role !== 'owner' && profile.role !== 'admin' && profile.branch_id) {
-      driversQuery = driversQuery.eq('branch_id', profile.branch_id);
+    if (driversErr) {
+      console.error("SUPABASE DRIVER FETCH ERROR:", driversErr);
+      return { drivers: [], locations: {}, orders: [], debugError: driversErr.message };
     }
 
-    const { data: driversData, error: driversErr } = await driversQuery;
 
     if (driversErr) throw driversErr;
     const visibleDrivers = (driversData as Profile[]) ?? [];
@@ -238,7 +237,7 @@ export function DispatchDashboard() {
         setOrders(result.orders);
       } catch (err) {
         if (cancelled) return;
-        const message = err instanceof Error ? err.message : 'Failed to load dispatch data';
+        const message = err instanceof Error ? err.message : 'Failed to load dispatch data: {error}';
         setError(message);
         toast.error(message);
       } finally {
