@@ -173,28 +173,19 @@ export function DispatchDashboard() {
   const load = useCallback(async (): Promise<LoadResult> => {
     if (!profile) return { drivers: [], locations: {}, orders: [] };
 
-    // 1. Get the user IDs of all drivers in this organisation
-    const { data: membersData, error: membersErr } = await supabase
-      .from('org_members')
-      .select('user_id')
-      .eq('org_id', profile?.org_id)
-      .eq('role', 'driver');
-
-    if (membersErr) throw membersErr;
-    
-    const memberIds = (membersData || []).map(m => m.user_id);
-    
-    // If no drivers exist in this org, return empty
-    if (memberIds.length === 0) {
-      return { drivers: [], locations: {}, orders: [] };
-    }
-
-    // 2. Fetch the full profile data for those driver IDs
-    const { data: driversData, error: driversErr } = await supabase
+    // 1. Fetch drivers directly from profiles (bypassing org_members)
+    let driversQuery = supabase
       .from('profiles')
       .select('id,user_id,email,full_name,phone,role,branch_id,driver_status,is_active')
-      .in('id', memberIds)
+      .eq('role', 'driver')
       .eq('is_active', true);
+
+    // If not an owner/admin, scope to their branch if they have one
+    if (profile.role !== 'owner' && profile.role !== 'admin' && profile.branch_id) {
+      driversQuery = driversQuery.eq('branch_id', profile.branch_id);
+    }
+
+    const { data: driversData, error: driversErr } = await driversQuery;
 
     if (driversErr) throw driversErr;
     const visibleDrivers = (driversData as Profile[]) ?? [];
