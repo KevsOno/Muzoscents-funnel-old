@@ -9,9 +9,6 @@ export function useRealtimeOrders(branchId: string | null) {
     let cancelled = false;
     setLoading(true);
 
-    // Unique per hook instance so two components asking for the same branch
-    // don't collide on a shared channel (which triggers:
-    // "cannot add postgres_changes callbacks ... after subscribe()").
     const instanceId = Math.random().toString(36).slice(2, 8);
     const channelName = `orders-${branchId ?? 'all'}-${instanceId}`;
 
@@ -38,7 +35,7 @@ export function useRealtimeOrders(branchId: string | null) {
         {
           event: '*',
           schema: 'public',
-          table: 'orders',
+          table: 'sales', // FIX: Changed from 'orders' to 'sales'
           ...(filter ? { filter } : {}),
         },
         (payload) => {
