@@ -1,4 +1,4 @@
-
+// src/features/dashboard/BranchDashboard.tsx
 import { useEffect, useState } from 'react';
 import { supabase, type Profile } from '../../lib/supabase';
 import { useProfile } from '../../lib/hooks/useProfile';
@@ -18,7 +18,6 @@ export function BranchDashboard() {
   const [drivers, setDrivers] = useState<Profile[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 
-  // Live driver positions for this branch.
   useEffect(() => {
     if (!branchId) return;
     let cancelled = false;
@@ -26,8 +25,7 @@ export function BranchDashboard() {
     const load = async () => {
       const { data } = await supabase
         .from('driver_locations')
-        .select('driver_id,lat,lng,updated_at')
-        ;
+        .select('driver_id,lat,lng,updated_at');
       if (cancelled) return;
       const map: Record<string, Loc> = {};
       for (const row of (data as Loc[]) ?? []) map[row.driver_id] = row;
@@ -48,16 +46,22 @@ export function BranchDashboard() {
     return () => { cancelled = true; supabase.removeChannel(ch); };
   }, [branchId]);
 
-  // Driver directory (for names on markers).
   useEffect(() => {
     if (!branchId) return;
     (async () => {
+      // FIX: Query profiles directly and map `id` to `user_id`
       const { data } = await supabase
-        .from('org_members')
-        .select('user_id, profiles!inner(id,user_id,email,full_name,phone,role,branch_id,driver_status,is_active)')
-        
-        .eq('role', 'driver');
-      setDrivers((data as Profile[]) ?? []);
+        .from('profiles')
+        .select('id,user_id,email,full_name,phone,role,branch_id,driver_status,is_active')
+        .eq('role', 'driver')
+        .eq('is_active', true);
+      
+      if (data) {
+        setDrivers((data as any[]).map((d) => ({
+          ...d,
+          id: d.user_id || d.id,
+        })));
+      }
     })();
   }, [branchId]);
 
@@ -117,7 +121,7 @@ export function BranchDashboard() {
               <div className="text-sm"><b>Tracking code:</b> <code>{selected.tracking_code}</code></div>
               <DriverAssignment
                 branchId={branchId}
-                value={selected.assigned_driver_id}
+                value={selected.assigned_driver_id || selected.driver_id} // FIX: Use driver_id if assigned_driver_id is null
                 onChange={async (driverId) => {
                   await supabase.from('sales')
                     .update({ driver_id: driverId })
