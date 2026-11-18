@@ -18,6 +18,9 @@ import { MapWrapper } from '../../components/map/MapWrapper';
 import type { MapMarker } from '../../components/map/types';
 
 const ACTIVE_STATUSES = ['processing', 'shipped'];
+
+interface LoadResult {
+  drivers: Profile[];
   locations: Record<string, DriverLocation>;
   orders: OrderRow[];
 }
