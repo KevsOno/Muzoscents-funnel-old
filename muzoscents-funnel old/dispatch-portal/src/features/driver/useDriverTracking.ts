@@ -35,7 +35,7 @@ const MODE_CONFIG: Record<GpsMode, ModeConfig> = {
 const MODE_THRASH_MS = 30_000;
 const HIGH_RADIUS_M = 500;
 const BALANCED_RADIUS_M = 5_000;
-const ACTIVE_ORDER_STATUSES = ['confirmed', 'dispatched', 'picked', 'in_transit'] as const;
+const ACTIVE_ORDER_STATUSES = ['confirmed', 'dispatched', 'processing', 'shipped', 'picked', 'in_transit'] as const;
 
 interface DeliveryPoint {
   lat: number;
