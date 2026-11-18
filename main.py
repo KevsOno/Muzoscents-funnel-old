@@ -84,6 +84,7 @@ from deps import (
     resolve_request_branch, resolve_request_branch_for_write,
     get_visible_user_ids,
     fetch_inventory_scoped_to_location,
+    resolve_store_org,
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -12768,9 +12769,7 @@ async def get_top_products(
     org_id: Optional[str] = Query(None),
 ):
     await rate_limit(get_client_ip(request))
-    resolved_org_id = org_id or PUBLIC_STORE_ORG_ID
-    if not resolved_org_id:
-        raise HTTPException(status_code=400, detail="Organisation not specified")
+    resolved_org_id = await resolve_store_org(request, org_id=org_id)
 
     # Suspension is unconditional — see _assert_storefront_live.
     await _assert_storefront_live(resolved_org_id)
@@ -17071,14 +17070,8 @@ async def chat_stream(
             org_id = org_res.data["id"]
         else:
             # No slug. Caller is on the general URL (kdstore.html not
-            # served via /store/{slug}). Fall back to the designated
-            # public store org.
-            if not PUBLIC_STORE_ORG_ID:
-                raise HTTPException(
-                    status_code=500,
-                    detail="Public store organisation not configured",
-                )
-            org_id = PUBLIC_STORE_ORG_ID
+            # served via /store/{slug}). Resolve normally.
+            org_id = await resolve_store_org(request)
 
         user_id = f"guest_{get_client_ip(request)}"
         role = "guest"

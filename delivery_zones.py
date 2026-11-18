@@ -9,6 +9,7 @@ from deps import (
     rate_limit,
     get_client_ip,
     PUBLIC_STORE_ORG_ID,
+    resolve_store_org,
 )
 from geo import proxy_aws_places, calculate_intelligent_fee, resolve_delivery_coords
 
@@ -90,9 +91,7 @@ async def delete_zone(area_id: int, user_data = Depends(require_role(["owner", "
 async def estimate_fee(payload: dict, request: Request):
     await rate_limit(get_client_ip(request), request=request)
 
-    org_id = payload.get("org_id") or PUBLIC_STORE_ORG_ID
-    if not org_id:
-        raise HTTPException(400, "org_id is required")
+    org_id = await resolve_store_org(request, org_id=payload.get("org_id"))
 
     # FIX: Resolve coordinates dynamically using AWS Geocoding
     coords = await resolve_delivery_coords(

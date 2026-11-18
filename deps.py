@@ -1175,3 +1175,57 @@ async def fetch_inventory_scoped_to_location(
         items.append(row)
 
     return items, total
+
+# ============================================================
+# STOREFRONT ORG RESOLUTION
+# ============================================================
+async def resolve_store_org(
+    request: Request,
+    org_id: Optional[str] = None,
+    store_slug: Optional[str] = None,
+) -> str:
+    """
+    Resolve the org that owns the storefront being requested.
+
+    Resolution order (first match wins):
+      1. X-Selected-Org-Id request header  (multi-tenant client)
+      2. explicit `org_id` query / body param
+      3. `store_slug` lookup in organisations.store_slug
+      4. PUBLIC_STORE_ORG_ID — ONLY when SINGLE_TENANT_STOREFRONT=true
+
+    Raises 404 if none match. Never silently falls back to a global
+    org id in a multi-tenant deploy — that was the 2026-11 regression.
+    """
+    header_org = (request.headers.get("X-Selected-Org-Id") or "").strip()
+    if header_org:
+        return header_org
+
+    if org_id:
+        return org_id
+
+    if store_slug:
+        client = get_admin_supabase()
+        try:
+            res = await run_sync_db_call(
+                client.table("organisations")
+                .select("id")
+                .eq("store_slug", store_slug)
+                .maybe_single()
+                .execute
+            )
+            if res and res.data:
+                return res.data["id"]
+        except Exception as e:
+            logger.warning(
+                "resolve_store_org slug lookup failed",
+                store_slug=store_slug, error=str(e)[:200],
+            )
+
+    if (
+        os.environ.get("SINGLE_TENANT_STOREFRONT", "false").lower() == "true"
+        and PUBLIC_STORE_ORG_ID
+    ):
+        return PUBLIC_STORE_ORG_ID
+
+    raise HTTPException(status_code=404, detail="Store not found")
+
