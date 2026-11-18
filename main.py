@@ -85,6 +85,7 @@ from deps import (
     get_visible_user_ids,
     fetch_inventory_scoped_to_location,
     resolve_store_org,
+    _assert_storefront_live,
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
