@@ -156,28 +156,41 @@ export function DispatchDashboard() {
   const load = useCallback(async (): Promise<LoadResult> => {
     if (!profile) return { drivers: [], locations: {}, orders: [] };
 
-    const { data: driversData, error: driversErr } = await supabase
-      .from('profiles')
-      .select('id,user_id,email,full_name,phone,role,branch_id,driver_status,is_active')
-      .eq('role', 'driver')
-      .eq('is_active', true);
+    let visibleDrivers: Profile[] = [];
 
-    if (driversErr) {
-      console.error("SUPABASE DRIVER FETCH ERROR:", driversErr);
+    // 1. Fetch drivers via org_members (roles are stored here, not in profiles)
+    const { data: orgDrivers, error: orgErr } = await supabase
+      .from('org_members')
+      .select('user_id, profiles!inner(id,user_id,email,full_name,phone,role,branch_id,driver_status,is_active)')
+      .eq('role', 'driver');
+
+    if (!orgErr && orgDrivers && orgDrivers.length > 0) {
+      visibleDrivers = orgDrivers.map((om: any) => om.profiles).filter(Boolean);
+    } else {
+      // Fallback: just query profiles directly (we drop the is_active check because it might be null)
+      const { data: profilesData, error: profilesErr } = await supabase
+        .from('profiles')
+        .select('id,user_id,email,full_name,phone,role,branch_id,driver_status,is_active')
+        .eq('role', 'driver');
+
+      if (profilesErr) {
+        console.error("SUPABASE DRIVER FETCH ERROR:", profilesErr, orgErr);
+        return { drivers: [], locations: {}, orders: [] };
+      }
+      visibleDrivers = (profilesData as Profile[]) ?? [];
+    }
+
+    if (visibleDrivers.length === 0) {
       return { drivers: [], locations: {}, orders: [] };
     }
 
-    // FIX: profiles.id IS the auth ID. We must NOT map to user_id.
-    const visibleDrivers = (driversData as Profile[]) ?? [];
+    const activeDriverIds = visibleDrivers.map((d) => d.id);
 
-    if (visibleDrivers.length === 0) return { drivers: [], locations: {}, orders: [] };
-
-    const driverIds = visibleDrivers.map((d) => d.id);
-
+    // 2. Fetch driver locations
     const { data: locsData, error: locsErr } = await supabase
       .from('driver_locations')
       .select('driver_id,lat,lng,accuracy,battery,is_charging,updated_at')
-      .in('driver_id', driverIds);
+      .in('driver_id', activeDriverIds);
     if (locsErr) throw locsErr;
 
     const locMap: Record<string, DriverLocation> = {};
@@ -185,12 +198,12 @@ export function DispatchDashboard() {
       locMap[row.driver_id] = row;
     }
 
-    // FIX: Fetch orders where either driver_id OR assigned_driver_id matches
-    // AND where either status OR shipping_status is active.
+    // 3. Fetch orders
+    const idsString = activeDriverIds.join(',');
     const { data: ordersData, error: ordersErr } = await supabase
       .from('sales')
       .select('*')
-      .or(`driver_id.in.(${driverIds.join(',')}),assigned_driver_id.in.(${driverIds.join(',')})`)
+      .or(`driver_id.in.(${idsString}),assigned_driver_id.in.(${idsString})`)
       .or(`status.in.(${ACTIVE_STATUSES.join(',')}),shipping_status.in.(${ACTIVE_STATUSES.join(',')})`);
     
     if (ordersErr) throw ordersErr;
@@ -271,8 +284,8 @@ export function DispatchDashboard() {
           const row = payload.new as Partial<OrderRow> | null;
           if (!row || !row.id) return;
           const id = row.id;
-          const status = row.shipping_status || row.status; // Check both
-          const driverId = row.driver_id || (row as any).assigned_driver_id || null; // Check both
+          const status = row.shipping_status || row.status; 
+          const driverId = row.driver_id || (row as any).assigned_driver_id || null; 
 
           if (status === 'delivered' || status === 'cancelled') {
             setOrders((prev) => prev.filter((o) => o.id !== id));
@@ -341,7 +354,6 @@ export function DispatchDashboard() {
   const ordersByDriver = useMemo(() => {
     const m = new Map<string, OrderRow[]>();
     for (const o of orders) {
-      // FIX: Fallback to assigned_driver_id if driver_id is missing
       const dId = o.driver_id || (o as any).assigned_driver_id;
       if (!dId) continue;
       const arr = m.get(dId) ?? [];
