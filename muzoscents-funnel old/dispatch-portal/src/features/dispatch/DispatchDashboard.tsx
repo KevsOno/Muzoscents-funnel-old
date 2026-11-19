@@ -156,7 +156,8 @@ export function DispatchDashboard() {
   const load = useCallback(async (): Promise<LoadResult> => {
     if (!profile) return { drivers: [], locations: {}, orders: [] };
 
-    // 1. Fetch all active orders first (this guarantees we find who is driving)
+    // 1. Fetch active orders, but FILTER client-side to ONLY those assigned to a driver.
+    // This prevents POS orders (which have no driver) from polluting the dashboard.
     const { data: ordersData, error: ordersErr } = await supabase
       .from('sales')
       .select('*')
@@ -164,39 +165,26 @@ export function DispatchDashboard() {
     
     if (ordersErr) throw ordersErr;
 
-    const activeOrders = (ordersData as OrderRow[]) ?? [];
+    const allActiveOrders = (ordersData as OrderRow[]) ?? [];
+    const activeOrders = allActiveOrders.filter(o => o.driver_id || (o as any).assigned_driver_id);
     
-    // 2. Extract driver IDs from the active orders
+    // 2. Extract driver IDs from these assigned orders
     const driverIdsFromOrders = new Set<string>();
     activeOrders.forEach(o => {
       if (o.driver_id) driverIdsFromOrders.add(o.driver_id);
       if ((o as any).assigned_driver_id) driverIdsFromOrders.add((o as any).assigned_driver_id);
     });
 
-    // 3. Fetch ALL drivers from profiles, and merge with the ones from orders
-    const { data: profilesData, error: profilesErr } = await supabase
-      .from('profiles')
-      .select('id,user_id,email,full_name,phone,role,branch_id,driver_status,is_active')
-      .eq('role', 'driver');
-
-    if (profilesErr) console.error("Profiles fetch error:", profilesErr);
-
-    const visibleDriversMap = new Map<string, Profile>();
-    
-    // Add drivers from profiles
-    (profilesData as Profile[])?.forEach(d => visibleDriversMap.set(d.id, d));
-
-    // Add any drivers found in orders that aren't in the profiles list
-    const missingDriverIds = Array.from(driverIdsFromOrders).filter(id => !visibleDriversMap.has(id));
-    if (missingDriverIds.length > 0) {
-      const { data: extraProfiles } = await supabase
+    // 3. Fetch the profiles for these specific drivers
+    let visibleDrivers: Profile[] = [];
+    if (driverIdsFromOrders.size > 0) {
+      const { data: profilesData } = await supabase
         .from('profiles')
-        .select('id,user_id,email,full_name,phone,role,branch_id,driver_status,is_active')
-        .in('id', missingDriverIds);
-      (extraProfiles as Profile[])?.forEach(d => visibleDriversMap.set(d.id, d));
+        .select('*')
+        .in('id', Array.from(driverIdsFromOrders));
+      visibleDrivers = (profilesData as Profile[]) ?? [];
     }
 
-    const visibleDrivers = Array.from(visibleDriversMap.values());
     const activeDriverIds = visibleDrivers.map(d => d.id);
 
     // 4. Fetch locations for these drivers
@@ -291,13 +279,16 @@ export function DispatchDashboard() {
           const status = row.shipping_status || row.status; 
           const driverId = row.driver_id || (row as any).assigned_driver_id || null; 
 
+          // Only care about assigned orders
+          if (!driverId) return;
+
           if (status === 'delivered' || status === 'cancelled') {
             setOrders((prev) => prev.filter((o) => o.id !== id));
             return;
           }
 
           const isActive = !!status && ACTIVE_STATUSES.includes(status as any);
-          const inScope = !!driverId && visibleDriverIdsRef.current.has(driverId);
+          const inScope = visibleDriverIdsRef.current.has(driverId);
 
           if (isActive && inScope) {
             setOrders((prev) => {
