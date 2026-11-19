@@ -156,62 +156,66 @@ export function DispatchDashboard() {
   const load = useCallback(async (): Promise<LoadResult> => {
     if (!profile) return { drivers: [], locations: {}, orders: [] };
 
-    let visibleDrivers: Profile[] = [];
-
-    // 1. Fetch drivers via org_members (roles are stored here, not in profiles)
-    const { data: orgDrivers, error: orgErr } = await supabase
-      .from('org_members')
-      .select('user_id, profiles!inner(id,user_id,email,full_name,phone,role,branch_id,driver_status,is_active)')
-      .eq('role', 'driver');
-
-    if (!orgErr && orgDrivers && orgDrivers.length > 0) {
-      visibleDrivers = orgDrivers.map((om: any) => om.profiles).filter(Boolean);
-    } else {
-      // Fallback: just query profiles directly (we drop the is_active check because it might be null)
-      const { data: profilesData, error: profilesErr } = await supabase
-        .from('profiles')
-        .select('id,user_id,email,full_name,phone,role,branch_id,driver_status,is_active')
-        .eq('role', 'driver');
-
-      if (profilesErr) {
-        console.error("SUPABASE DRIVER FETCH ERROR:", profilesErr, orgErr);
-        return { drivers: [], locations: {}, orders: [] };
-      }
-      visibleDrivers = (profilesData as Profile[]) ?? [];
-    }
-
-    if (visibleDrivers.length === 0) {
-      return { drivers: [], locations: {}, orders: [] };
-    }
-
-    const activeDriverIds = visibleDrivers.map((d) => d.id);
-
-    // 2. Fetch driver locations
-    const { data: locsData, error: locsErr } = await supabase
-      .from('driver_locations')
-      .select('driver_id,lat,lng,accuracy,battery,is_charging,updated_at')
-      .in('driver_id', activeDriverIds);
-    if (locsErr) throw locsErr;
-
-    const locMap: Record<string, DriverLocation> = {};
-    for (const row of (locsData as DriverLocation[] | null) ?? []) {
-      locMap[row.driver_id] = row;
-    }
-
-    // 3. Fetch orders
-    const idsString = activeDriverIds.join(',');
+    // 1. Fetch all active orders first (this guarantees we find who is driving)
     const { data: ordersData, error: ordersErr } = await supabase
       .from('sales')
       .select('*')
-      .or(`driver_id.in.(${idsString}),assigned_driver_id.in.(${idsString})`)
       .or(`status.in.(${ACTIVE_STATUSES.join(',')}),shipping_status.in.(${ACTIVE_STATUSES.join(',')})`);
     
     if (ordersErr) throw ordersErr;
 
+    const activeOrders = (ordersData as OrderRow[]) ?? [];
+    
+    // 2. Extract driver IDs from the active orders
+    const driverIdsFromOrders = new Set<string>();
+    activeOrders.forEach(o => {
+      if (o.driver_id) driverIdsFromOrders.add(o.driver_id);
+      if ((o as any).assigned_driver_id) driverIdsFromOrders.add((o as any).assigned_driver_id);
+    });
+
+    // 3. Fetch ALL drivers from profiles, and merge with the ones from orders
+    const { data: profilesData, error: profilesErr } = await supabase
+      .from('profiles')
+      .select('id,user_id,email,full_name,phone,role,branch_id,driver_status,is_active')
+      .eq('role', 'driver');
+
+    if (profilesErr) console.error("Profiles fetch error:", profilesErr);
+
+    const visibleDriversMap = new Map<string, Profile>();
+    
+    // Add drivers from profiles
+    (profilesData as Profile[])?.forEach(d => visibleDriversMap.set(d.id, d));
+
+    // Add any drivers found in orders that aren't in the profiles list
+    const missingDriverIds = Array.from(driverIdsFromOrders).filter(id => !visibleDriversMap.has(id));
+    if (missingDriverIds.length > 0) {
+      const { data: extraProfiles } = await supabase
+        .from('profiles')
+        .select('id,user_id,email,full_name,phone,role,branch_id,driver_status,is_active')
+        .in('id', missingDriverIds);
+      (extraProfiles as Profile[])?.forEach(d => visibleDriversMap.set(d.id, d));
+    }
+
+    const visibleDrivers = Array.from(visibleDriversMap.values());
+    const activeDriverIds = visibleDrivers.map(d => d.id);
+
+    // 4. Fetch locations for these drivers
+    const locMap: Record<string, DriverLocation> = {};
+    if (activeDriverIds.length > 0) {
+      const { data: locsData } = await supabase
+        .from('driver_locations')
+        .select('*')
+        .in('driver_id', activeDriverIds);
+        
+      for (const row of (locsData as DriverLocation[] | null) ?? []) {
+        locMap[row.driver_id] = row;
+      }
+    }
+
     return {
       drivers: visibleDrivers,
       locations: locMap,
-      orders: (ordersData as OrderRow[]) ?? [],
+      orders: activeOrders,
     };
   }, [profile]);
 
@@ -346,7 +350,7 @@ export function DispatchDashboard() {
   const sortedDrivers = useMemo(
     () =>
       [...drivers].sort(
-        (a, b) => DRIVER_STATUS_RANK[a.driver_status] - DRIVER_STATUS_RANK[b.driver_status],
+        (a, b) => (DRIVER_STATUS_RANK[a.driver_status] || 99) - (DRIVER_STATUS_RANK[b.driver_status] || 99),
       ),
     [drivers],
   );
@@ -423,6 +427,7 @@ export function DispatchDashboard() {
                 {sortedDrivers.map((d) => {
                   const loc = locations[d.id];
                   const driverOrders = ordersByDriver.get(d.id) ?? [];
+                  const safeStatus = d.driver_status || 'offline';
                   return (
                     <li
                       key={d.id}
@@ -434,9 +439,9 @@ export function DispatchDashboard() {
                           {d.full_name ?? d.email}
                         </span>
                         <span
-                          className={`shrink-0 rounded px-2 py-0.5 text-[10px] uppercase tracking-wide ${DRIVER_STATUS_PILL[d.driver_status]}`}
+                          className={`shrink-0 rounded px-2 py-0.5 text-[10px] uppercase tracking-wide ${DRIVER_STATUS_PILL[safeStatus]}`}
                         >
-                          {d.driver_status.replace('_', ' ')}
+                          {safeStatus.replace('_', ' ')}
                         </span>
                       </div>
 
@@ -459,7 +464,7 @@ export function DispatchDashboard() {
                         <ul className="mt-2 space-y-1">
                           {driverOrders.map((o) => {
                             const eta = computeEta(loc, o);
-                            const displayStatus = o.shipping_status && o.shipping_status !== 'pending' ? o.shipping_status : o.status;
+                            const displayStatus = o.shipping_status && o.shipping_status !== 'pending' ? o.shipping_status : (o.status || 'pending');
                             return (
                               <li
                                 key={o.id}
@@ -470,7 +475,7 @@ export function DispatchDashboard() {
                                     {o.tracking_code || o.receipt_number}
                                   </code>
                                   <span
-                                    className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wide ${ORDER_STATUS_PILL[displayStatus]}`}
+                                    className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wide ${ORDER_STATUS_PILL[displayStatus] || 'bg-slate-100'}`}
                                   >
                                     {displayStatus.replace('_', ' ')}
                                   </span>
