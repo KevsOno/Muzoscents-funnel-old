@@ -156,8 +156,7 @@ export function DispatchDashboard() {
   const load = useCallback(async (): Promise<LoadResult> => {
     if (!profile) return { drivers: [], locations: {}, orders: [] };
 
-    // 1. Fetch active orders, but FILTER client-side to ONLY those assigned to a driver.
-    // This prevents POS orders (which have no driver) from polluting the dashboard.
+    // 1. Fetch active orders, filter to ONLY those assigned to a driver.
     const { data: ordersData, error: ordersErr } = await supabase
       .from('sales')
       .select('*')
@@ -167,28 +166,21 @@ export function DispatchDashboard() {
 
     const allActiveOrders = (ordersData as OrderRow[]) ?? [];
     const activeOrders = allActiveOrders.filter(o => o.driver_id || (o as any).assigned_driver_id);
-    
-    // 2. Extract driver IDs from these assigned orders
-    const driverIdsFromOrders = new Set<string>();
-    activeOrders.forEach(o => {
-      if (o.driver_id) driverIdsFromOrders.add(o.driver_id);
-      if ((o as any).assigned_driver_id) driverIdsFromOrders.add((o as any).assigned_driver_id);
-    });
 
-    // 3. Fetch the profiles for these specific drivers
-    let visibleDrivers: Profile[] = [];
-    if (driverIdsFromOrders.size > 0) {
-      const { data: profilesData } = await supabase
-        .from('profiles')
-        .select('*')
-        .in('id', Array.from(driverIdsFromOrders));
-      visibleDrivers = (profilesData as Profile[]) ?? [];
+    // 2. Fetch ALL drivers via our secure RPC to bypass RLS
+    const { data: profilesData, error: profilesErr } = await supabase.rpc('get_active_dispatch_drivers');
+    
+    if (profilesErr) {
+      console.error("RPC error fetching drivers:", profilesErr);
+      return { drivers: [], locations: {}, orders: activeOrders };
     }
 
-    const activeDriverIds = visibleDrivers.map(d => d.id);
+    const visibleDrivers = (profilesData as Profile[]) ?? [];
 
-    // 4. Fetch locations for these drivers
+    // 3. Fetch locations for all drivers
+    const activeDriverIds = visibleDrivers.map(d => d.id);
     const locMap: Record<string, DriverLocation> = {};
+    
     if (activeDriverIds.length > 0) {
       const { data: locsData } = await supabase
         .from('driver_locations')
