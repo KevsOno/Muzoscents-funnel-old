@@ -15,6 +15,14 @@ DEFAULTS = {
         "KDBS_CONCIERGE_URL",
         "https://kevsono-penafort-concierge.hf.space",
     ),
+    "DEFAULT_BACKROOM_URL": (
+        "KDBS_BACKROOM_URL",
+        "https://kevsbos.netlify.app",
+    ),
+    "DEFAULT_STORE_URL": (
+        "KDBS_STORE_URL",
+        "",
+    ),
 }
 
 config_path = os.path.join("muzoscents-funnel old", "kd-config.js")
@@ -23,9 +31,6 @@ with open(config_path, "r", encoding="utf-8") as f:
 
 for const_name, (env_key, fallback_val) in DEFAULTS.items():
     val = (os.environ.get(env_key) or fallback_val).strip().rstrip("/")
-    if not val:
-        print(f"Error: Empty value for {const_name}", file=sys.stderr)
-        sys.exit(1)
     content, count = re.subn(
         rf'const {const_name} = "[^"]*";',
         f'const {const_name} = "{val}";',
