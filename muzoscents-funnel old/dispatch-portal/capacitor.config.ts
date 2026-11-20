@@ -5,12 +5,17 @@ const config: CapacitorConfig = {
   appName: 'LogiFlow',
   webDir: 'dist',
   bundledWebRuntime: false,
+  server: {
+    hostname: 'kevsbos.netlify.app',
+    androidScheme: 'https',
+    iosScheme: 'https',
+  },
   android: {
-    allowMixedContent: true,
+    allowMixedContent: false,
   },
   plugins: {
     // The community background-geolocation plugin owns the foreground
-    // service — it declares its own Android permissions via the plugin
+    // service and declares its own Android permissions via the plugin
     // manifest so no extra entry is required here.
   },
 };

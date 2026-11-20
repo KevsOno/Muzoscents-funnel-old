@@ -7,28 +7,28 @@ on:
 
 jobs:
   build:
-    name: Build APK
+    name: Build Android Artifacts
     runs-on: ubuntu-latest
 
     env:
       # Core App Secrets
-      VITE_SUPABASE_URL:        ${{ secrets.VITE_SUPABASE_URL }}
-      VITE_SUPABASE_ANON_KEY:   ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-      VITE_GEOCODER:            ${{ vars.VITE_GEOCODER }}
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      VITE_GEOCODER: ${{ vars.VITE_GEOCODER }}
 
       # Geocoding & Mapping Providers (Legacy / Fallbacks)
-      VITE_MAPBOX_TOKEN:        ${{ secrets.VITE_MAPBOX_TOKEN }}
-      VITE_LOCATIONIQ_KEY:      ${{ secrets.VITE_LOCATIONIQ_KEY }}
+      VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
+      VITE_LOCATIONIQ_KEY: ${{ secrets.VITE_LOCATIONIQ_KEY }}
 
-      # Amazon Location Service (New)
-      VITE_AWS_REGION:          ${{ vars.VITE_AWS_REGION || 'eu-west-1' }}
-      VITE_AWS_LOCATION_MAP:    ${{ vars.VITE_AWS_LOCATION_MAP || 'logiflow-map' }}
+      # Amazon Location Service
+      VITE_AWS_REGION: ${{ vars.VITE_AWS_REGION || 'eu-west-1' }}
+      VITE_AWS_LOCATION_MAP: ${{ vars.VITE_AWS_LOCATION_MAP || 'logiflow-map' }}
       VITE_AWS_LOCATION_PLACES: ${{ vars.VITE_AWS_LOCATION_PLACES || 'logiflow-places' }}
       VITE_AWS_LOCATION_ROUTES: ${{ vars.VITE_AWS_LOCATION_ROUTES || 'logiflow-routes' }}
       VITE_AWS_LOCATION_API_KEY: ${{ secrets.VITE_AWS_LOCATION_API_KEY }}
 
       # Android Signing
-      ANDROID_KEYSTORE_BASE64:  ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
 
     steps:
       - name: Checkout
@@ -51,23 +51,7 @@ jobs:
           packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
 
       - name: Install dependencies
-        run: npm install
-
-      - name: Configure Capacitor Hostname for AWS API Key
-        run: |
-          node -e '
-            const fs = require("fs");
-            const file = "capacitor.config.json";
-            let config = {};
-            if (fs.existsSync(file)) {
-              config = JSON.parse(fs.readFileSync(file, "utf8"));
-            }
-            config.server = config.server || {};
-            config.server.hostname = "dispflow.netlify.app";
-            config.server.androidScheme = "https";
-            config.server.iosScheme = "https";
-            fs.writeFileSync(file, JSON.stringify(config, null, 2));
-          '
+        run: npm ci
 
       - name: Build web app
         run: npm run build
@@ -98,14 +82,14 @@ jobs:
         run: |
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
 
-      - name: Build signed release APK
+      - name: Configure release signing
         if: env.ANDROID_KEYSTORE_BASE64 != ''
         working-directory: android
         env:
-          KEYSTORE_PATH:     release.keystore
+          KEYSTORE_PATH: release.keystore
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS:         ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASSWORD:      ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           if ! grep -q "signingConfigs" app/build.gradle.kts; then
             python3 - <<'PY'
@@ -132,12 +116,16 @@ jobs:
           p.write_text(s)
           PY
           fi
-          ./gradlew assembleRelease --no-daemon
 
-      - name: Upload signed release APK
+      - name: Build signed release AAB
+        if: env.ANDROID_KEYSTORE_BASE64 != ''
+        working-directory: android
+        run: ./gradlew bundleRelease --no-daemon
+
+      - name: Upload signed release AAB
         if: env.ANDROID_KEYSTORE_BASE64 != ''
         uses: actions/upload-artifact@v4
         with:
-          name: app-release
-          path: android/app/build/outputs/apk/release/app-release.apk
+          name: app-release-aab
+          path: android/app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error
