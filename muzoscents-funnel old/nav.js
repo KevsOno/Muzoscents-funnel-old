@@ -58,7 +58,11 @@
     }
 
     function getUserRole() {
-        try { return localStorage.getItem('user_role') || 'customer'; }
+        try {
+            const saved = localStorage.getItem('user_role');
+            if (saved) return saved;
+            return localStorage.getItem('access_token') ? 'admin' : 'customer';
+        }
         catch (e) { return 'customer'; }
     }
 
@@ -70,7 +74,7 @@
         st.id = 'kevs-nav-style';
         st.textContent =
             // --- Fallback Structural CSS (Fixes React App White Navbar) ---
-            '#kevs-nav-container > div { background-color: #1E3A5F !important; color: #ffffff !important; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); position: sticky; top: 0; z-index: 9999; font-family: system-ui, sans-serif; }' +
+            '#kevs-nav-container { position: sticky; top: 0; z-index: 9999; }' +'#kevs-nav-container > div { background-color: #1E3A5F !important; color: #ffffff !important; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); font-family: system-ui, sans-serif; }' +
             '#kevs-nav-container .max-w-7xl { max-width: 80rem; margin-left: auto; margin-right: auto; padding: 0.375rem 1rem; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }' +
             '#kevs-nav-container .hidden { display: none; }' +
             '@media (min-width: 768px) { #kevs-nav-container .md\\:flex { display: flex !important; } #kevs-nav-container .md\\:hidden { display: none !important; } }' +
