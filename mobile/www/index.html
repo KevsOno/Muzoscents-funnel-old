@@ -26,13 +26,23 @@
       text-align: center;
       box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
     }
-    .logo {
-      width: 76px;
-      height: 76px;
+    .logo-wrap {
+      width: 84px;
+      height: 84px;
       border-radius: 18px;
       margin: 0 auto 16px;
+      padding: 8px;
+      background: #0F172A;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .logo {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
       display: block;
-      object-fit: cover;
     }
     h1 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
     p { font-size: 14px; line-height: 1.5; color: #CBD5E1; margin-bottom: 20px; }
@@ -60,10 +70,12 @@
 </head>
 <body>
   <div class="card">
-    <img src="icon.png" alt="Kevs Digital bOS" class="logo" />
+    <div class="logo-wrap">
+      <img src="icon.png" alt="Kevs Digital bOS" class="logo" />
+    </div>
     <h1>Kevs Digital bOS</h1>
-    <p id="message">Checking connection to your workspace...</p>
-    <div id="status" class="status">Target: https://kevsbos.netlify.app/kdsiginin</div>
+    <p id="message">No active internet connection right now. Connect to Wi-Fi or mobile data to reach your workspace.</p>
+    <div id="status" class="status">Offline mode active</div>
     <button id="retryBtn" type="button">Retry Connection</button>
   </div>
   <script>
@@ -72,36 +84,22 @@
     const statusEl = document.getElementById("status");
     const retryBtn = document.getElementById("retryBtn");
 
-    async function attemptReconnect() {
-      retryBtn.disabled = true;
-      messageEl.textContent = "Connecting to Kevs Digital bOS...";
-      statusEl.textContent = "Verifying network reachability...";
-
-      if (!navigator.onLine) {
+    function openWorkspaceIfOnline() {
+      if (navigator.onLine) {
+        retryBtn.disabled = true;
+        messageEl.textContent = "Connection detected. Opening Kevs Digital bOS...";
+        statusEl.textContent = "Target: " + TARGET_URL;
+        window.location.replace(TARGET_URL);
+      } else {
+        retryBtn.disabled = false;
         messageEl.textContent = "No active internet connection right now. Connect to Wi-Fi or mobile data to reach your workspace.";
         statusEl.textContent = "Offline mode active";
-        retryBtn.disabled = false;
-        return;
-      }
-
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 5000);
-      try {
-        await fetch(TARGET_URL, { mode: "no-cors", cache: "no-store", signal: controller.signal });
-        clearTimeout(timer);
-        statusEl.textContent = "Connected. Opening workspace...";
-        window.location.replace(TARGET_URL);
-      } catch (err) {
-        clearTimeout(timer);
-        messageEl.textContent = "Unable to reach Kevs Digital bOS right now. Check your data or DNS connection and try again.";
-        statusEl.textContent = "Server unreachable";
-        retryBtn.disabled = false;
       }
     }
 
-    retryBtn.addEventListener("click", attemptReconnect);
-    window.addEventListener("online", attemptReconnect);
-    attemptReconnect();
+    retryBtn.addEventListener("click", openWorkspaceIfOnline);
+    window.addEventListener("online", openWorkspaceIfOnline);
+    openWorkspaceIfOnline();
   </script>
 </body>
 </html>
