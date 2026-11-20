@@ -22,17 +22,17 @@ export function AppShell() {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center gap-6 px-4 py-3">
-          <div className="text-sm font-semibold text-slate-900">LogiFlow</div>
+        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3 sm:gap-6">
+          <div className="shrink-0 text-sm font-semibold text-slate-900">LogiFlow</div>
 
-          <nav className="flex flex-1 items-center gap-1">
+          <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-0.5">
             {items.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
                 className={({ isActive }) =>
                   [
-                    'rounded px-3 py-1.5 text-sm',
+                    'shrink-0 whitespace-nowrap rounded px-3 py-1.5 text-sm',
                     isActive
                       ? 'bg-slate-900 text-white'
                       : 'text-slate-600 hover:bg-slate-100',
@@ -44,7 +44,7 @@ export function AppShell() {
             ))}
           </nav>
 
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
             <div className="text-right">
               <div className="text-xs font-medium text-slate-800">
                 {profile.full_name ?? profile.email}
