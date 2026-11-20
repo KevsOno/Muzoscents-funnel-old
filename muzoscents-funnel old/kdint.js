@@ -20,7 +20,7 @@
   'use strict';
 
   // ─── Configuration ───
-  var API_BASE      = 'https://kevsono-kevs-digital-bos.hf.space';
+  var API_BASE      = window.KDBS_API_URL;
   var SUPPORT_EMAIL = 'mickevsono@gmail.com';
   var ALL_BRANCHES  = '__all__';
 

@@ -29,7 +29,7 @@
   }
 
   var K = window.KD402;
-  var API_BASE     = 'https://kevsono-kevs-digital-bos.hf.space';
+  var API_BASE     = window.KDBS_API_URL;
   var ALL_BRANCHES = K.ALL_BRANCHES;
 
   // ─── Internal state ───

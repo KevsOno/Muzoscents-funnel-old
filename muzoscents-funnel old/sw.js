@@ -71,7 +71,7 @@ const API_PATH_PREFIXES = [
   '/admin'
 ];
 
-const BACKEND_HOST = 'kevsono-kevs-digital-bos.hf.space';
+const BACKEND_HOST = (window.KDBS_API_HOST || new URL(window.KDBS_API_URL).hostname);
 
 
 // =====================================================================

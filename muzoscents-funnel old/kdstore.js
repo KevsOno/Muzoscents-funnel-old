@@ -21,7 +21,7 @@
 })();
 
 // ========== CONFIG ==========
-const API_BASE = "https://kevsono-kevs-digital-bos.hf.space";
+const API_BASE = window.KDBS_API_URL;
 let token = localStorage.getItem('access_token');
 let userProfile = null;
 let userLoyalty = { points: 0, tier: 'bronze' };

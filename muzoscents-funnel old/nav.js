@@ -22,7 +22,7 @@
 
     const APP_NAME   = 'Kd<span class="text-orange-500">bOS</span>';
     const LOGIN_URL  = '/kdsiginin';
-    const API_BASE   = 'https://kevsono-kevs-digital-bos.hf.space';
+    const API_BASE   = window.KDBS_API_URL;
 
     // ---------- runtime flags ----------
     const IS_TAURI   = !!(window.__TAURI_INTERNALS__ || window.__TAURI__);
