@@ -19,7 +19,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - run: npm ci || npm install
+      - run: npm install
       - run: npx cap sync android
       - run: chmod +x android/gradlew && ./android/gradlew assembleDebug
         working-directory: mobile/android
@@ -39,7 +39,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm ci || npm install
+      - run: npm install
       - run: npx cap sync ios
-      - run: xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO build
+      - name: Build iOS project
         working-directory: mobile
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphonesimulator \
+            CODE_SIGNING_ALLOWED=NO \
+            build | grep -E "error:|warning:|FAILED|CompileSwift|CompileAssetCatalog" || true
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphonesimulator \
+            CODE_SIGNING_ALLOWED=NO \
+            build
