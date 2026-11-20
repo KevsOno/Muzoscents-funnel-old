@@ -6,15 +6,34 @@
   <title>Kevs Digital bOS</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      min-height: 100vh;
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: #0F172A;
+      color: #F8FAFC;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
+    }
+    #appFrame {
+      display: none;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: #0F172A;
+    }
+    #appFrame.active {
+      display: block;
+    }
+    #offlineView {
+      width: 100%;
+      height: 100%;
       display: flex;
       align-items: center;
       justify-content: center;
       padding: 24px;
-      background: #0F172A;
-      color: #F8FAFC;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    #offlineView.hidden {
+      display: none;
     }
     .card {
       width: 100%;
@@ -27,11 +46,11 @@
       box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
     }
     .logo-wrap {
-      width: 84px;
-      height: 84px;
-      border-radius: 18px;
+      width: 96px;
+      height: 96px;
+      border-radius: 20px;
       margin: 0 auto 16px;
-      padding: 8px;
+      padding: 10px;
       background: #0F172A;
       border: 1px solid rgba(255, 255, 255, 0.08);
       display: flex;
@@ -69,37 +88,85 @@
   </style>
 </head>
 <body>
-  <div class="card">
-    <div class="logo-wrap">
-      <img src="icon.png" alt="Kevs Digital bOS" class="logo" />
+  <iframe id="appFrame" allow="camera; geolocation; clipboard-read; clipboard-write"></iframe>
+  <div id="offlineView">
+    <div class="card">
+      <div class="logo-wrap">
+        <img src="icon.png" alt="Kevs Digital bOS" class="logo" />
+      </div>
+      <h1>Kevs Digital bOS</h1>
+      <p id="message">No active internet connection right now. Connect to Wi-Fi or mobile data to reach your workspace.</p>
+      <div id="status" class="status">Offline mode active</div>
+      <button id="retryBtn" type="button">Retry Connection</button>
     </div>
-    <h1>Kevs Digital bOS</h1>
-    <p id="message">No active internet connection right now. Connect to Wi-Fi or mobile data to reach your workspace.</p>
-    <div id="status" class="status">Offline mode active</div>
-    <button id="retryBtn" type="button">Retry Connection</button>
   </div>
   <script>
     const TARGET_URL = "https://kevsbos.netlify.app/kdsiginin";
+    const appFrame = document.getElementById("appFrame");
+    const offlineView = document.getElementById("offlineView");
     const messageEl = document.getElementById("message");
     const statusEl = document.getElementById("status");
     const retryBtn = document.getElementById("retryBtn");
+    let loadTimer = null;
 
-    function openWorkspaceIfOnline() {
-      if (navigator.onLine) {
-        retryBtn.disabled = true;
-        messageEl.textContent = "Connection detected. Opening Kevs Digital bOS...";
-        statusEl.textContent = "Target: " + TARGET_URL;
-        window.location.replace(TARGET_URL);
-      } else {
-        retryBtn.disabled = false;
-        messageEl.textContent = "No active internet connection right now. Connect to Wi-Fi or mobile data to reach your workspace.";
-        statusEl.textContent = "Offline mode active";
-      }
+    function showOffline(msg, statusText) {
+      clearTimeout(loadTimer);
+      appFrame.classList.remove("active");
+      appFrame.removeAttribute("src");
+      offlineView.classList.remove("hidden");
+      retryBtn.disabled = false;
+      messageEl.textContent = msg;
+      statusEl.textContent = statusText;
     }
 
-    retryBtn.addEventListener("click", openWorkspaceIfOnline);
-    window.addEventListener("online", openWorkspaceIfOnline);
-    openWorkspaceIfOnline();
+    function loadInApp() {
+      clearTimeout(loadTimer);
+      if (!navigator.onLine) {
+        showOffline(
+          "No active internet connection right now. Connect to Wi-Fi or mobile data to reach your workspace.",
+          "Offline mode active"
+        );
+        return;
+      }
+
+      retryBtn.disabled = true;
+      messageEl.textContent = "Loading workspace inside Kevs Digital bOS...";
+      statusEl.textContent = "Connecting to workspace...";
+
+      appFrame.onload = () => {
+        clearTimeout(loadTimer);
+        offlineView.classList.add("hidden");
+        appFrame.classList.add("active");
+      };
+      appFrame.onerror = () => {
+        showOffline(
+          "Unable to load workspace right now. Check your connection and try again.",
+          "Connection interrupted"
+        );
+      };
+
+      loadTimer = setTimeout(() => {
+        if (!appFrame.classList.contains("active")) {
+          showOffline(
+            "Workspace took too long to respond. Check your connection and try again.",
+            "Connection timed out"
+          );
+        }
+      }, 10000);
+
+      appFrame.src = TARGET_URL;
+    }
+
+    retryBtn.addEventListener("click", loadInApp);
+    window.addEventListener("online", loadInApp);
+    window.addEventListener("offline", () => {
+      showOffline(
+        "No active internet connection right now. Connect to Wi-Fi or mobile data to reach your workspace.",
+        "Offline mode active"
+      );
+    });
+
+    loadInApp();
   </script>
 </body>
 </html>
