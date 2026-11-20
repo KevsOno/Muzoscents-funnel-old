@@ -4,8 +4,104 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Kevs Digital bOS</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: #0F172A;
+      color: #F8FAFC;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .card {
+      width: 100%;
+      max-width: 380px;
+      background: #1E293B;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 28px 24px;
+      text-align: center;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+    }
+    .logo {
+      width: 76px;
+      height: 76px;
+      border-radius: 18px;
+      margin: 0 auto 16px;
+      display: block;
+      object-fit: cover;
+    }
+    h1 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+    p { font-size: 14px; line-height: 1.5; color: #CBD5E1; margin-bottom: 20px; }
+    .status {
+      font-size: 12px;
+      color: #94A3B8;
+      background: rgba(15, 23, 42, 0.65);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 20px;
+    }
+    button {
+      width: 100%;
+      border: 0;
+      border-radius: 10px;
+      padding: 13px 16px;
+      font-size: 15px;
+      font-weight: 600;
+      color: #FFFFFF;
+      background: #2563EB;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.6; cursor: default; }
+  </style>
 </head>
 <body>
-  <p>Loading Kevs Digital bOS...</p>
+  <div class="card">
+    <img src="icon.png" alt="Kevs Digital bOS" class="logo" />
+    <h1>Kevs Digital bOS</h1>
+    <p id="message">Checking connection to your workspace...</p>
+    <div id="status" class="status">Target: https://kevsbos.netlify.app/kdsiginin</div>
+    <button id="retryBtn" type="button">Retry Connection</button>
+  </div>
+  <script>
+    const TARGET_URL = "https://kevsbos.netlify.app/kdsiginin";
+    const messageEl = document.getElementById("message");
+    const statusEl = document.getElementById("status");
+    const retryBtn = document.getElementById("retryBtn");
+
+    async function attemptReconnect() {
+      retryBtn.disabled = true;
+      messageEl.textContent = "Connecting to Kevs Digital bOS...";
+      statusEl.textContent = "Verifying network reachability...";
+
+      if (!navigator.onLine) {
+        messageEl.textContent = "No active internet connection right now. Connect to Wi-Fi or mobile data to reach your workspace.";
+        statusEl.textContent = "Offline mode active";
+        retryBtn.disabled = false;
+        return;
+      }
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      try {
+        await fetch(TARGET_URL, { mode: "no-cors", cache: "no-store", signal: controller.signal });
+        clearTimeout(timer);
+        statusEl.textContent = "Connected. Opening workspace...";
+        window.location.replace(TARGET_URL);
+      } catch (err) {
+        clearTimeout(timer);
+        messageEl.textContent = "Unable to reach Kevs Digital bOS right now. Check your data or DNS connection and try again.";
+        statusEl.textContent = "Server unreachable";
+        retryBtn.disabled = false;
+      }
+    }
+
+    retryBtn.addEventListener("click", attemptReconnect);
+    window.addEventListener("online", attemptReconnect);
+    attemptReconnect();
+  </script>
 </body>
 </html>
