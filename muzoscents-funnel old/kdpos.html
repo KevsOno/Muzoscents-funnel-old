@@ -2185,7 +2185,7 @@
             });
         }
 
-        function escapeAttr(str) { if (!str) return ''; return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+        function escapeAttr(str) { if (!str) return ''; return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 
         function selectCustomer(userId, name, phone, email, points) {
             const state = tabState[activeTab];
@@ -2213,11 +2213,14 @@
         async function loadCustomers() {
             try {
                 const data = await apiCall('/organisations/me/users');
-                allCustomers = data.users || [];
+                const list = Array.isArray(data) ? data : (data && (data.users || data.customers)) || [];
+                allCustomers = list;
                 for (const c of allCustomers) {
+                    if (!c) continue;
                     await DB.saveCustomer({ id: c.id, first_name: c.first_name, last_name: c.last_name, phone: c.phone, email: c.email, loyalty_points: c.loyalty_points || 0 });
                 }
             } catch (err) {
+                console.warn('loadCustomers API fallback:', err);
                 try { allCustomers = await DB.getCustomers(); } catch (_) { allCustomers = []; }
             }
         }
@@ -2456,8 +2459,12 @@
         desktopCheckoutBtn.addEventListener('click', processCheckout);
         mobileCheckoutBtn.addEventListener('click', processCheckout);
 
-        desktopAddCustomerBtn.addEventListener('click', () => {
+        desktopAddCustomerBtn.addEventListener('click', async () => {
             desktopCustomerForm.classList.toggle('hidden');
+            if (!desktopCustomerForm.classList.contains('hidden')) {
+                if (!allCustomers.length) await loadCustomers();
+                customerSearchInput?.focus();
+            }
         });
 
         ['name', 'phone', 'email'].forEach(field => {
@@ -2811,7 +2818,11 @@
 
         function initTabs() { tab1Btn.onclick = () => setActiveTab(1); tab2Btn.onclick = () => setActiveTab(2); }
         function initCustomerSearch() {
+            if (!customerSearchInput || !suggestionsDiv) return;
             customerSearchInput.addEventListener('input', renderSuggestions);
+            customerSearchInput.addEventListener('focus', () => {
+                if (customerSearchInput.value.trim()) renderSuggestions();
+            });
             document.addEventListener('click', (e) => { if (!customerSearchInput.contains(e.target) && !suggestionsDiv.contains(e.target)) suggestionsDiv.classList.add('hidden'); });
         }
 
