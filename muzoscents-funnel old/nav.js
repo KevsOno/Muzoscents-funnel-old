@@ -326,6 +326,76 @@
         document.getElementById('global-logout-btn')?.addEventListener('click', globalLogout);
     }
 
+    // ============================================================
+    // Offline fallback for online-only pages (exempts POS)
+    // ============================================================
+    function isPosRoute() {
+        const p = (location.pathname || '').toLowerCase();
+        return p.startsWith('/kdpos') || p.startsWith('/pos');
+    }
+
+    function removeOfflineBanner() {
+        const el = document.getElementById('kevs-offline-overlay');
+        if (el) el.remove();
+    }
+
+    function showOfflineBanner() {
+        if (isPosRoute()) {
+            removeOfflineBanner();
+            return;
+        }
+        if (document.getElementById('kevs-offline-overlay')) return;
+
+        const el = document.createElement('div');
+        el.id = 'kevs-offline-overlay';
+        el.style.cssText =
+            'position:fixed;inset:0;background:#0F172A;color:#F8FAFC;z-index:99998;' +
+            'display:flex;align-items:center;justify-content:center;padding:24px;' +
+            'font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;';
+        el.innerHTML =
+            '<div style="width:100%;max-width:380px;background:#1E293B;' +
+            'border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:28px 24px;' +
+            'text-align:center;box-shadow:0 20px 40px rgba(0,0,0,0.35);">' +
+            '<div style="font-size:20px;font-weight:700;margin-bottom:8px;">Kevs Digital bOS</div>' +
+            '<p style="font-size:14px;line-height:1.5;color:#CBD5E1;margin-bottom:18px;">' +
+            'Connection lost. Reconnect to Wi-Fi or mobile data to continue using this workspace.</p>' +
+            '<div style="font-size:12px;color:#94A3B8;background:rgba(15,23,42,0.65);' +
+            'border-radius:10px;padding:10px 12px;margin-bottom:18px;">Offline mode active</div>' +
+            '<button id="kevs-offline-retry" type="button" style="width:100%;border:0;' +
+            'border-radius:10px;padding:13px 16px;font-size:15px;font-weight:600;' +
+            'color:#FFFFFF;background:#2563EB;cursor:pointer;">Retry Connection</button>' +
+            '</div>';
+
+        (document.body || document.documentElement).appendChild(el);
+        const btn = document.getElementById('kevs-offline-retry');
+        if (btn) {
+            btn.addEventListener('click', () => {
+                if (navigator.onLine) {
+                    removeOfflineBanner();
+                    location.reload();
+                }
+            });
+        }
+    }
+
+    function installOfflineWatcher() {
+        window.addEventListener('offline', () => {
+            if (!isPosRoute()) showOfflineBanner();
+        });
+        window.addEventListener('online', () => {
+            removeOfflineBanner();
+            if (!isPosRoute()) location.reload();
+        });
+        if (!navigator.onLine && !isPosRoute()) {
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', showOfflineBanner, { once: true });
+            } else {
+                showOfflineBanner();
+            }
+        }
+    }
+
+    installOfflineWatcher();
     // Install lockdown as early as possible.
     installLockdown();
     installIdleLogout();
