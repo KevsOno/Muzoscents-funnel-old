@@ -317,10 +317,26 @@
         } catch (e) {}
     }
 
+    function installPwaSupport() {
+        try {
+            if (!document.querySelector('link[rel="manifest"]')) {
+                const link = document.createElement('link');
+                link.rel = 'manifest';
+                link.href = '/manifest.json';
+                document.head.appendChild(link);
+            }
+            const isNativeCap = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === "function" && window.Capacitor.isNativePlatform());
+            if ("serviceWorker" in navigator && !isNativeCap) {
+                navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {});
+            }
+        } catch (_) {}
+    }
+
     async function mount() {
         const container = document.getElementById('kevs-nav-container');
         if (!container) return;
         injectNavStyles();
+        installPwaSupport();
         await hydrateRoleIfMissing();
         container.innerHTML = buildNavbar();
         document.getElementById('global-logout-btn')?.addEventListener('click', globalLogout);
