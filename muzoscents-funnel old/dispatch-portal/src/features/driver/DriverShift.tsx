@@ -254,7 +254,7 @@ export function DriverShift() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-4">
-      <header className="flex items-center justify-between gap-3">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0 flex-1">
           <h1 className="text-lg font-semibold">Driver shift</h1>
           <p className="text-xs text-slate-500">
@@ -334,7 +334,7 @@ export function DriverShift() {
 
           return (
             <div key={o.id} className="rounded border border-slate-200 bg-white p-3">
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0 flex-1">
                   <div className="font-medium">{o.delivery_address}</div>
                   <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">

@@ -307,14 +307,14 @@ export function DispatchDashboard() {
     for (const d of drivers) {
       const loc = locations[d.id];
       if (!loc) continue;
-      const key = `${loc.lat.toFixed(6)}|${loc.lng.toFixed(6)}`;
+      const lat = Number(loc.lat); const lng = Number(loc.lng); if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue; const key = `${lat.toFixed(6)}|${lng.toFixed(6)}`;
       const idx = coordCounts.get(key) ?? 0;
       coordCounts.set(key, idx + 1);
       const offset = idx * CO_LOCATION_OFFSET;
       out.push({
         id: d.id,
-        lat: loc.lat + offset,
-        lng: loc.lng + offset,
+        lat: lat + offset,
+        lng: lng + offset,
         label: d.full_name ?? d.email,
         tone: computeTone(d, loc),
       });
@@ -363,7 +363,7 @@ export function DispatchDashboard() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-4">
-      <header className="flex items-center justify-between">
+      <header className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-semibold">Dispatch</h1>
         <div className="flex items-center gap-3">
           <span className="text-xs text-slate-500">
