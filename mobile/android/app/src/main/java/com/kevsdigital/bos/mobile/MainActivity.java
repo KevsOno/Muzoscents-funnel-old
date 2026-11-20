@@ -1,6 +1,5 @@
 package com.kevsdigital.bos.mobile;
 
-import android.net.Uri;
 import android.os.Bundle;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -9,18 +8,6 @@ import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebViewClient;
 
 public class MainActivity extends BridgeActivity {
-
-    private boolean isPosPath(String url) {
-        if (url == null) return false;
-        try {
-            String path = Uri.parse(url).getPath();
-            if (path == null) return false;
-            String lower = path.toLowerCase();
-            return lower.startsWith("/kdpos") || lower.startsWith("/pos");
-        } catch (Exception ignored) {
-            return false;
-        }
-    }
 
     private void showOfflineFallback(WebView webView, String failedUrl) {
         String safeUrl = failedUrl == null ? "" : failedUrl.replace("'", "\\'");
@@ -53,9 +40,7 @@ public class MainActivity extends BridgeActivity {
                     super.onReceivedError(view, request, error);
                     if (request != null && request.isForMainFrame()) {
                         String url = request.getUrl() != null ? request.getUrl().toString() : view.getUrl();
-                        if (!isPosPath(url)) {
-                            showOfflineFallback(view, url);
-                        }
+                        showOfflineFallback(view, url);
                     }
                 }
             });
