@@ -69,11 +69,24 @@ interface LoadResult {
   orders: OrderRow[];
 }
 
+function isLocationFresh(loc: DriverLocation): boolean {
+  if (!loc?.updated_at) return false;
+  const ts = new Date(loc.updated_at).getTime();
+  if (Number.isNaN(ts)) return false;
+  return Date.now() - ts <= STALE_MS;
+}
+
+function getEffectiveDriverStatus(d: Profile, loc: DriverLocation): 'available' | 'on_delivery' | 'offline' {
+  const raw = d.driver_status || 'offline';
+  if (raw === 'on_delivery') return 'on_delivery';
+  if (raw === 'available' && isLocationFresh(loc)) return 'available';
+  return 'offline';
+}
+
 function computeTone(d: Profile, loc: DriverLocation): NonNullable<MapMarker['tone']> {
-  if (d.driver_status === 'available') return 'success';
-  if (d.driver_status === 'on_delivery') return 'primary';
-  const age = Date.now() - new Date(loc.updated_at).getTime();
-  if (age > STALE_MS) return 'muted';
+  const effective = getEffectiveDriverStatus(d, loc);
+  if (effective === 'available') return 'success';
+  if (effective === 'on_delivery') return 'primary';
   return 'muted';
 }
 
@@ -333,7 +346,11 @@ export function DispatchDashboard() {
   const sortedDrivers = useMemo(
     () =>
       [...drivers].sort(
-        (a, b) => (DRIVER_STATUS_RANK[a.driver_status] || 99) - (DRIVER_STATUS_RANK[b.driver_status] || 99),
+        (a, b) => {
+          const sa = getEffectiveDriverStatus(a, nextLocations[a.id]);
+          const sb = getEffectiveDriverStatus(b, nextLocations[b.id]);
+          return (DRIVER_STATUS_RANK[sa] ?? 99) - (DRIVER_STATUS_RANK[sb] ?? 99);
+        },
       ),
     [drivers],
   );
@@ -410,7 +427,7 @@ export function DispatchDashboard() {
                 {sortedDrivers.map((d) => {
                   const loc = locations[d.id];
                   const driverOrders = ordersByDriver.get(d.id) ?? [];
-                  const safeStatus = d.driver_status || 'offline';
+                  const safeStatus = getEffectiveDriverStatus(d, loc);
                   return (
                     <li
                       key={d.id}
