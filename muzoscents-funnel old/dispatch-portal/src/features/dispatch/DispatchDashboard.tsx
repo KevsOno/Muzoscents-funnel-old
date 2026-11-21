@@ -90,8 +90,21 @@ function computeTone(d: Profile, loc: DriverLocation): NonNullable<MapMarker['to
   return 'muted';
 }
 
+function parseTimestampMs(iso: string): number {
+  const trimmed = iso.trim();
+  const hasTz = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(trimmed);
+  const normalized = !hasTz && /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(trimmed)
+    ? `${trimmed.replace(' ', 'T')}Z`
+    : trimmed;
+  return new Date(normalized).getTime();
+}
+
 function relativeTime(iso: string): string {
-  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  const parsed = parseTimestampMs(iso);
+  if (Number.isNaN(parsed)) return 'unknown';
+  const diffSec = Math.floor((Date.now() - parsed) / 1000);
+  if (diffSec < 0) return 'just now';
+  const s = diffSec;
   if (s < 60) return `${s}s ago`;
   const m = Math.floor(s / 60);
   if (m < 60) return `${m} min ago`;
@@ -347,12 +360,12 @@ export function DispatchDashboard() {
     () =>
       [...drivers].sort(
         (a, b) => {
-          const sa = getEffectiveDriverStatus(a, nextLocations[a.id]);
-          const sb = getEffectiveDriverStatus(b, nextLocations[b.id]);
+          const sa = getEffectiveDriverStatus(a, locations[a.id]);
+          const sb = getEffectiveDriverStatus(b, locations[b.id]);
           return (DRIVER_STATUS_RANK[sa] ?? 99) - (DRIVER_STATUS_RANK[sb] ?? 99);
         },
       ),
-    [drivers],
+    [drivers, locations],
   );
 
   const ordersByDriver = useMemo(() => {
