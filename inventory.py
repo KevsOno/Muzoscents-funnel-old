@@ -50,6 +50,165 @@ class InventoryItem(BaseModel):
         return v
 
 
+SENTINEL_BATCH_NUMBER = "UNBATCHED"
+SENTINEL_EXPIRY_DATE = "2099-12-31"
+
+
+async def get_next_auto_batch_number() -> str:
+    client = get_supabase()
+    try:
+        result = await run_sync_db_call(client.rpc('get_next_auto_batch_number', {}).execute)
+        next_num = result.data
+        return f"autogen{next_num:03d}"
+    except Exception as e:
+        logger.error(f"Failed to get next auto batch number: {e}")
+        return f"autogen{int(datetime.now(timezone.utc).timestamp()) % 10000:03d}"
+
+
+async def _resolve_or_create_batch(
+    client,
+    inventory_id: int,
+    batch_number: Optional[str],
+    expiry_date: Optional[str],
+    *,
+    lot_number: Optional[str] = None,
+    manufacture_date: Optional[str] = None,
+    cost_price_naira: Optional[float] = None,
+    supplier_name: Optional[str] = None,
+    supplier_invoice: Optional[str] = None,
+    received_quantity: int = 0,
+) -> Dict:
+    provided_batch = (batch_number or "").strip()
+    provided_expiry = (expiry_date or "").strip()
+
+    if not provided_expiry:
+        parent_inv = await run_sync_db_call(
+            client.table("inventory")
+            .select("expiry_date")
+            .eq("id", inventory_id)
+            .maybe_single()
+            .execute
+        )
+        if parent_inv and parent_inv.data and parent_inv.data.get("expiry_date"):
+            candidate = parent_inv.data["expiry_date"]
+            try:
+                year = int(str(candidate)[:4])
+            except (TypeError, ValueError):
+                year = 0
+            if 2020 <= year <= 2050:
+                provided_expiry = candidate
+
+    if provided_batch:
+        resolved_batch_number = provided_batch
+    elif provided_expiry:
+        resolved_batch_number = await get_next_auto_batch_number()
+    else:
+        resolved_batch_number = SENTINEL_BATCH_NUMBER
+
+    resolved_expiry = provided_expiry or SENTINEL_EXPIRY_DATE
+
+    existing = await run_sync_db_call(
+        client.table("inventory_batches")
+        .select("*")
+        .eq("inventory_id", inventory_id)
+        .eq("batch_number", resolved_batch_number)
+        .maybe_single()
+        .execute
+    )
+    if existing and existing.data:
+        return existing.data
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    batch_data = {
+        "inventory_id": inventory_id,
+        "batch_number": resolved_batch_number,
+        "lot_number": lot_number,
+        "quantity": int(received_quantity or 0),
+        "reserved_quantity": 0,
+        "manufacture_date": manufacture_date,
+        "expiry_date": resolved_expiry,
+        "cost_price_naira": cost_price_naira if cost_price_naira is not None else 0,
+        "supplier_name": supplier_name,
+        "supplier_invoice": supplier_invoice,
+        "created_at": now_iso,
+        "updated_at": now_iso,
+    }
+    created = await run_sync_db_call(
+        client.table("inventory_batches").insert(batch_data).execute
+    )
+    if not created.data:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Failed to create batch '{resolved_batch_number}' "
+                f"for inventory {inventory_id}"
+            ),
+        )
+    return created.data[0]
+
+
+async def _write_location_stock(
+    client,
+    location_id: str,
+    inventory_id: int,
+    batch_id: int,
+    quantity_delta: int,
+) -> None:
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    existing = await run_sync_db_call(
+        client.table("location_stocks")
+        .select("id, quantity")
+        .eq("location_id", location_id)
+        .eq("inventory_id", inventory_id)
+        .eq("batch_id", batch_id)
+        .maybe_single()
+        .execute
+    )
+
+    if existing and existing.data:
+        current = int(existing.data.get("quantity") or 0)
+        new_qty = current + int(quantity_delta)
+        if new_qty < 0:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Cannot reduce location_stocks below zero "
+                    f"(location={location_id}, inventory={inventory_id}, "
+                    f"batch={batch_id}, current={current}, delta={quantity_delta})"
+                ),
+            )
+        if new_qty == 0:
+            await run_sync_db_call(
+                client.table("location_stocks")
+                .delete()
+                .eq("id", existing.data["id"])
+                .execute
+            )
+        else:
+            await run_sync_db_call(
+                client.table("location_stocks")
+                .update({"quantity": new_qty, "updated_at": now_iso})
+                .eq("id", existing.data["id"])
+                .execute
+            )
+        return
+
+    if quantity_delta <= 0:
+        return
+
+    await run_sync_db_call(
+        client.table("location_stocks").insert({
+            "location_id": location_id,
+            "inventory_id": inventory_id,
+            "batch_id": batch_id,
+            "quantity": int(quantity_delta),
+            "reserved_quantity": 0,
+            "updated_at": now_iso,
+        }).execute
+    )
+
+
 # ------------------------------------------------------------------
 # OPTIMIZED STREAMING EXPORT (Backend CSV Generation)
 # ------------------------------------------------------------------
