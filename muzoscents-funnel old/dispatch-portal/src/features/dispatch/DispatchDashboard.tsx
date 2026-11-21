@@ -173,6 +173,7 @@ export function DispatchDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [panTo, setPanTo] = useState<string | null>(null);
   const [liveState, setLiveState] = useState<LiveState>('connecting');
+  const [nowTick, setNowTick] = useState<number>(() => Date.now());
 
   const visibleDriverIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
@@ -316,16 +317,48 @@ export function DispatchDashboard() {
           }
         },
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'profiles' },
+        (payload) => {
+          const row = payload.new as { id?: string } | null;
+          if (row?.id && visibleDriverIdsRef.current.has(row.id)) {
+            void load().then((result) => {
+              setDrivers(result.drivers);
+              setLocations(result.locations);
+              setOrders(result.orders);
+            }).catch((err) => {
+              console.error('Background profile sync failed:', err);
+            });
+          }
+        },
+      )
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') setLiveState('live');
         else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') setLiveState('connecting');
         else if (status === 'CLOSED') setLiveState('offline');
       });
 
+    const pollTimer = window.setInterval(() => {
+      void load().then((result) => {
+        setDrivers(result.drivers);
+        setLocations(result.locations);
+        setOrders(result.orders);
+      }).catch((err) => {
+        console.error('Background dispatch poll failed:', err);
+      });
+    }, 15000);
+
+    const tickTimer = window.setInterval(() => {
+      setNowTick(Date.now());
+    }, 5000);
+
     return () => {
+      window.clearInterval(pollTimer);
+      window.clearInterval(tickTimer);
       void supabase.removeChannel(channel);
     };
-  }, [profile, loading]);
+  }, [profile, loading, load]);
 
   const markers = useMemo<MapMarker[]>(() => {
     const out: MapMarker[] = [];
@@ -346,7 +379,7 @@ export function DispatchDashboard() {
       });
     }
     return out;
-  }, [drivers, locations]);
+  }, [drivers, locations, nowTick]);
 
   const center = useMemo(() => {
     if (markers.length === 0) return DEFAULT_CENTER;
@@ -365,7 +398,7 @@ export function DispatchDashboard() {
           return (DRIVER_STATUS_RANK[sa] ?? 99) - (DRIVER_STATUS_RANK[sb] ?? 99);
         },
       ),
-    [drivers, locations],
+    [drivers, locations, nowTick],
   );
 
   const ordersByDriver = useMemo(() => {
