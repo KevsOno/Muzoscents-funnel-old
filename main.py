@@ -9470,10 +9470,31 @@ async def list_org_members(
     ids_str = ",".join(user_ids)
     profiles = await supabase_rest_get(
         "profiles",
-        select="id,first_name,last_name,email,phone,status,created_at",
+        select="id,first_name,last_name,email,phone,status,driver_status,updated_at,created_at",
         filter_string=f"id=in.({ids_str})",
     )
     profile_map = {p["id"]: p for p in profiles}
+
+    driver_user_ids = [
+        m["user_id"]
+        for m in members
+        if (m.get("role") or "").lower() in ("driver", "logistics")
+    ]
+    location_last_seen = {}
+    if driver_user_ids:
+        try:
+            locs = await supabase_rest_get(
+                "driver_locations",
+                select="driver_id,updated_at",
+                filter_string=f"driver_id=in.({','.join(driver_user_ids)})",
+            )
+            for loc in locs:
+                did = loc.get("driver_id")
+                ts = loc.get("updated_at")
+                if did and ts and (did not in location_last_seen or ts > location_last_seen[did]):
+                    location_last_seen[did] = ts
+        except Exception as exc:
+            logger.warning(f"Could not load driver_locations for /organisations/me/users: {exc}")
 
     hr_records = await supabase_rest_get(
         "hr_employees",
@@ -9515,6 +9536,8 @@ async def list_org_members(
             "phone": profile.get("phone"),
             "role": m["role"],
             "status": profile.get("status", "active"),
+            "driver_status": profile.get("driver_status") or "offline",
+            "last_seen": location_last_seen.get(m["user_id"]) or profile.get("updated_at"),
             "joined_at": m["joined_at"],
             "employee_id": hr.get("id"),
             "employee_status": hr.get("status"),

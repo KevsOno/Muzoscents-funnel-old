@@ -808,21 +808,43 @@
     }
     
     
+    const DRIVER_STALE_MS = 2 * 60 * 1000;
+
+    function isFulfillmentDriverOnline(d) {
+        if (!d || typeof d !== 'object') return false;
+        const status = String(d.driver_status || '').toLowerCase().trim();
+        if (!['available', 'online'].includes(status)) return false;
+        if (d.last_seen) {
+            const ts = new Date(d.last_seen).getTime();
+            if (!Number.isNaN(ts) && (Date.now() - ts) > DRIVER_STALE_MS) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     async function loadDriversForModal() {
         const select = document.getElementById('modal-driver');
         if (!select) return;
         select.innerHTML = '<option value="">Loading drivers...</option>';
         try {
             const data = await apiCall('/organisations/me/users');
-            // Filter for drivers and logistics personnel
-            const drivers = (data.users || []).filter(u => 
-                ['driver', 'logistics'].includes((u.role || '').toLowerCase())
-            );
-            
-            select.innerHTML = '<option value="">-- Unassigned --</option>' + 
+            const drivers = (data.users || [])
+                .filter(u => ['driver', 'logistics'].includes((u.role || '').toLowerCase()))
+                .sort((a, b) => {
+                    const oa = isFulfillmentDriverOnline(a) ? 0 : 1;
+                    const ob = isFulfillmentDriverOnline(b) ? 0 : 1;
+                    if (oa !== ob) return oa - ob;
+                    const na = `${a.first_name || ''} ${a.last_name || ''}`.trim() || a.email || '';
+                    const nb = `${b.first_name || ''} ${b.last_name || ''}`.trim() || b.email || '';
+                    return na.localeCompare(nb);
+                });
+
+            select.innerHTML = '<option value="">-- Unassigned --</option>' +
                 drivers.map(d => {
                     const name = `${d.first_name || ''} ${d.last_name || ''}`.trim() || d.email;
-                    return `<option value="${d.id}">${escapeHtml(name)} (${d.role})</option>`;
+                    const label = isFulfillmentDriverOnline(d) ? 'Online' : 'Offline';
+                    return `<option value="${d.id}">${escapeHtml(name)} (${escapeHtml(d.role)}) - ${label}</option>`;
                 }).join('');
         } catch (err) {
             console.error("Failed to load drivers", err);
