@@ -646,6 +646,28 @@ async def list_transfers(
         )
         profiles_map = {p["id"]: p for p in (prof_res.data or [])}
 
+    sale_ids = list({str(r.get("id")).strip() for r in rows if r.get("id")})
+    items_by_sale: Dict[str, List[Dict]] = defaultdict(list)
+    if sale_ids:
+        try:
+            items_res = await run_sync_db_call(
+                client.table("sale_items")
+                .select("sale_id, product_name, quantity, unit_price, subtotal")
+                .in_("sale_id", sale_ids)
+                .execute
+            )
+            for it in (items_res.data or []):
+                sid = str(it.get("sale_id") or "").strip()
+                if sid:
+                    items_by_sale[sid].append({
+                        "product_name": it.get("product_name") or "Item",
+                        "quantity": it.get("quantity") or 1,
+                        "unit_price": float(it.get("unit_price") or 0),
+                        "subtotal": float(it.get("subtotal") or 0),
+                    })
+        except Exception as e:
+            logger.warning(f"sale_items lookup failed for transfers: {e}")
+
     transfers: List[Dict] = []
     for r in rows:
         acc = r.get("org_payment_account") or {}
@@ -665,6 +687,7 @@ async def list_transfers(
             "payment_transfer_reference": r.get("payment_transfer_reference"),
             "cashier_id":                 r.get("user_id"),
             "cashier_name":               cashier_name,
+            "items":                      items_by_sale.get(str(r.get("id") or "").strip(), []),
             "account": {
                 "id":             acc.get("id"),
                 "label":          acc.get("label"),
