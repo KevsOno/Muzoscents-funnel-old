@@ -26,6 +26,10 @@
         .role-badge { text-transform: capitalize; }
         .warn-badge { background: #fef3c7; color: #92400e; }
     </style>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 </head>
 <body class="bg-gray-50 font-sans">
 
@@ -119,6 +123,7 @@
                     <option value="admin">Admin</option>
                     <option value="inventory_manager">Inventory Manager</option>
                     <option value="sales_rep">Sales Representative</option>
+                    <option value="cashier_supervisor">Cashier Supervisor</option>
                     <option value="finance">Finance</option>
                     <option value="logistics">Logistics (Dispatcher)</option>
                     <option value="driver">Driver</option>
@@ -170,6 +175,7 @@
                 <option value="admin">Admin</option>
                 <option value="inventory_manager">Inventory Manager</option>
                 <option value="sales_rep">Sales Representative</option>
+                    <option value="cashier_supervisor">Cashier Supervisor</option>
                 <option value="finance">Finance</option>
                 <option value="logistics">Logistics (Dispatcher)</option>
                     <option value="driver">Driver</option>
@@ -593,5 +599,91 @@
         }
     })();
 </script>
+
+<div id="kdteam-org-profile-card" class="max-w-5xl mx-auto mt-6 mb-10 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+  <h3 class="text-lg font-bold text-gray-900 mb-1">Organisation &amp; Receipt Contact Details</h3>
+  <p class="text-xs text-gray-500 mb-4">Update your business name, address, and up to 3 phone numbers shown on POS &amp; accounting receipts.</p>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+    <div>
+      <label class="block text-xs font-medium text-gray-700 mb-1">Organisation Name</label>
+      <input id="kd-org-name" type="text" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Organisation name">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-700 mb-1">Address / Location</label>
+      <input id="kd-org-location" type="text" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Street address, city">
+    </div>
+  </div>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+    <div>
+      <label class="block text-xs font-medium text-gray-700 mb-1">Phone Number 1</label>
+      <input id="kd-org-phone-1" type="text" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="+234 ...">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-700 mb-1">Phone Number 2 (Optional)</label>
+      <input id="kd-org-phone-2" type="text" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="+234 ...">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-700 mb-1">Phone Number 3 (Optional)</label>
+      <input id="kd-org-phone-3" type="text" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="+234 ...">
+    </div>
+  </div>
+  <div class="flex items-center justify-between">
+    <span id="kd-org-profile-status" class="text-xs text-gray-500"></span>
+    <button id="kd-org-save-btn" type="button" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">Save Receipt &amp; Org Details</button>
+  </div>
+</div>
+<script>
+(function(){
+  const base = window.KDBS_API_URL || '';
+  const token = localStorage.getItem('access_token') || '';
+  const nameEl = document.getElementById('kd-org-name');
+  const locEl = document.getElementById('kd-org-location');
+  const p1El = document.getElementById('kd-org-phone-1');
+  const p2El = document.getElementById('kd-org-phone-2');
+  const p3El = document.getElementById('kd-org-phone-3');
+  const statusEl = document.getElementById('kd-org-profile-status');
+  const saveBtn = document.getElementById('kd-org-save-btn');
+  async function loadProfile() {
+    try {
+      const res = await fetch(`${base}/organisations/me/profile`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      if (!res.ok) return;
+      const d = await res.json();
+      if (nameEl) nameEl.value = d.org_name || localStorage.getItem('org_name') || '';
+      if (locEl) locEl.value = d.location || localStorage.getItem('org_address') || '';
+      const phones = Array.isArray(d.phones) ? d.phones.slice(0, 3) : [];
+      if (p1El) p1El.value = phones[0] || '';
+      if (p2El) p2El.value = phones[1] || '';
+      if (p3El) p3El.value = phones[2] || '';
+      if (d.org_name) localStorage.setItem('org_name', d.org_name);
+      if (d.location) localStorage.setItem('org_address', d.location);
+      localStorage.setItem('org_phones', JSON.stringify(phones));
+    } catch (_) {}
+  }
+  if (saveBtn) {
+    saveBtn.onclick = async () => {
+      const phones = [p1El?.value, p2El?.value, p3El?.value].map(v => (v || '').trim()).filter(Boolean).slice(0, 3);
+      const body = { org_name: (nameEl?.value || '').trim(), location: (locEl?.value || '').trim(), phones };
+      statusEl.textContent = 'Saving...';
+      try {
+        const res = await fetch(`${base}/organisations/me/profile`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Save failed');
+        if (body.org_name) localStorage.setItem('org_name', body.org_name);
+        localStorage.setItem('org_address', body.location);
+        localStorage.setItem('org_phones', JSON.stringify(phones));
+        statusEl.textContent = 'Saved! Receipts will now reflect these details.';
+      } catch (e) {
+        statusEl.textContent = e.message || 'Error saving profile';
+      }
+    };
+  }
+  loadProfile();
+})();
+</script>
+
 </body>
 </html>

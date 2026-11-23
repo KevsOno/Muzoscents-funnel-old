@@ -283,6 +283,10 @@
         }
 
     </style>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 </head>
 <body class="bg-gray-100 p-4 font-sans pb-24 lg:pb-4">
 
@@ -1022,6 +1026,12 @@
             function buildEscPosReceipt(receiptData, width) {
                 width = width || 32;
                 const orgName = (localStorage.getItem('org_name') || 'Kd Digital').slice(0, width);
+                const orgAddress = (localStorage.getItem('org_address') || localStorage.getItem('org_location') || '').trim();
+                let orgPhones = [];
+                try {
+                    const rawPhones = JSON.parse(localStorage.getItem('org_phones') || '[]');
+                    if (Array.isArray(rawPhones)) orgPhones = rawPhones.filter(Boolean).slice(0, 3);
+                } catch (_) {}
                 const dateStr = new Date().toLocaleString();
                 const pmt = receiptData.payment || {};
                 const cust = receiptData.customer || {};
@@ -1029,6 +1039,10 @@
 
                 parts.push(ESC.INIT);
                 parts.push(ESC.ALIGN_C, ESC.BOLD_ON, ESC.SIZE_DBL, orgName, ESC.FEED, ESC.SIZE_NORM, ESC.BOLD_OFF);
+                if (orgAddress) parts.push(orgAddress.slice(0, width), ESC.FEED);
+                for (const ph of orgPhones) {
+                    parts.push(`Tel: ${String(ph).trim()}`.slice(0, width), ESC.FEED);
+                }
                 parts.push(`Receipt #${receiptData.receiptNumber || ''}`.slice(0, width), ESC.FEED);
                 parts.push(`Cashier: ${receiptData.cashierName || 'Cashier'}`.slice(0, width), ESC.FEED);
                 parts.push(dateStr.slice(0, width), ESC.FEED);
@@ -1072,6 +1086,8 @@
 
                 parts.push('-'.repeat(width), ESC.FEED);
                 parts.push(ESC.ALIGN_C, 'Thank you for shopping!', ESC.FEED);
+                parts.push('Powered by kevsdigital'.slice(0, width), ESC.FEED);
+                parts.push('kevsdigital.netlify.app'.slice(0, width), ESC.FEED);
                 parts.push(ESC.FEED_LINES(3));
                 parts.push(ESC.CUT);
 
@@ -1176,6 +1192,12 @@
                     const printArea = document.getElementById('receipt-print-area');
                     if (!printArea) return;
                     const orgName = localStorage.getItem('org_name') || 'Kd Digital';
+                    const orgAddress = (localStorage.getItem('org_address') || localStorage.getItem('org_location') || '').trim();
+                    let orgPhones = [];
+                    try {
+                        const rawPhones = JSON.parse(localStorage.getItem('org_phones') || '[]');
+                        if (Array.isArray(rawPhones)) orgPhones = rawPhones.filter(Boolean).slice(0, 3);
+                    } catch (_) {}
                     const dateStr = new Date().toLocaleString();
                     const pmt = receiptData.payment || {};
                     const cust = receiptData.customer || {};
@@ -1196,8 +1218,16 @@
                     if (!pageStyle) { pageStyle = document.createElement('style'); pageStyle.id = 'pos-page-size'; document.head.appendChild(pageStyle); }
                     pageStyle.textContent = `@page { size: ${pageMm} auto; margin: 0; }`;
 
+                    const phonesHtml = orgPhones.length
+                        ? `<div style="text-align:center;font-size:10px;">Tel: ${orgPhones.map(ph => escapeHtml(String(ph).trim())).join(' | ')}</div>`
+                        : '';
+                    const addressHtml = orgAddress
+                        ? `<div style="text-align:center;font-size:10px;">${escapeHtml(orgAddress)}</div>`
+                        : '';
                     printArea.innerHTML = `
                         <div class="receipt-header">${escapeHtml(orgName)}</div>
+                        ${addressHtml}
+                        ${phonesHtml}
                         <div style="text-align:center;font-size:10px;">Receipt #${escapeHtml(receiptData.receiptNumber || '')}</div>
                         <div style="text-align:center;font-size:10px;">Cashier: ${escapeHtml(receiptData.cashierName || 'Cashier')}</div>
                         <div style="text-align:center;font-size:10px;">${escapeHtml(dateStr)}</div>
@@ -1214,6 +1244,7 @@
                         ${cust.pointsAfter !== undefined ? `<div style="text-align:center;font-size:10px;font-weight:bold;">Loyalty Points: ${cust.pointsAfter}</div>` : ''}
                         <div class="receipt-divider"></div>
                         <div class="receipt-footer">Thank you for shopping with us!</div>
+                        <div class="receipt-footer" style="margin-top:4px;font-size:9px;">Powered by kevsdigital &bull; kevsdigital.netlify.app</div>
                     `;
                     printArea.style.display = 'block';
                     try { window.print(); } finally {
@@ -3059,6 +3090,99 @@
             fitDesktopWorkspace();
         })();
     </script>
+
+
+<!-- Cashier Supervisor Daily Payments & References Modal -->
+<div id="supervisor-payments-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4">
+  <div class="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-xl max-h-[85vh] flex flex-col">
+    <div class="flex items-center justify-between border-b pb-3 mb-4">
+      <div>
+        <h3 class="text-lg font-bold text-gray-900">Daily Successful Payments &amp; References</h3>
+        <p class="text-xs text-gray-500">Verify daily POS transactions, payment methods, and references for accounting.</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <input type="date" id="supervisor-payments-date" class="border rounded-lg px-2.5 py-1.5 text-sm">
+        <button id="supervisor-payments-refresh" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-2 rounded-lg">Refresh</button>
+        <button id="supervisor-payments-close" class="text-gray-500 hover:text-gray-800 px-2 py-1 text-lg">&times;</button>
+      </div>
+    </div>
+    <div class="overflow-y-auto flex-1">
+      <table class="w-full text-left border-collapse text-xs">
+        <thead>
+          <tr class="border-b bg-gray-50 text-gray-600">
+            <th class="p-2">Time (WAT)</th>
+            <th class="p-2">Receipt #</th>
+            <th class="p-2">Method</th>
+            <th class="p-2">Reference</th>
+            <th class="p-2 text-right">Amount</th>
+          </tr>
+        </thead>
+        <tbody id="supervisor-payments-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  const role = (localStorage.getItem('user_role') || localStorage.getItem('role') || '').toLowerCase();
+  const modal = document.getElementById('supervisor-payments-modal');
+  const tbody = document.getElementById('supervisor-payments-tbody');
+  const dateInput = document.getElementById('supervisor-payments-date');
+  const refreshBtn = document.getElementById('supervisor-payments-refresh');
+  const closeBtn = document.getElementById('supervisor-payments-close');
+  function watToday() {
+    const now = new Date(Date.now() + 3600 * 1000);
+    return now.toISOString().slice(0, 10);
+  }
+  function watBounds(dateStr) {
+    const startUtc = new Date(`${dateStr}T00:00:00+01:00`).toISOString();
+    const endUtc = new Date(`${dateStr}T23:59:59.999+01:00`).toISOString();
+    return { startUtc, endUtc };
+  }
+  async function loadDailyPayments() {
+    const day = dateInput.value || watToday();
+    dateInput.value = day;
+    const { startUtc, endUtc } = watBounds(day);
+    const token = localStorage.getItem('access_token') || '';
+    const base = window.KDBS_API_URL || '';
+    tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500">Loading daily payments...</td></tr>';
+    try {
+      const res = await fetch(`${base}/sales?from_date=${encodeURIComponent(startUtc)}&to_date=${encodeURIComponent(endUtc)}&limit=500`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      const data = await res.json();
+      const rows = (Array.isArray(data) ? data : (data.sales || data.items || data.data || [])).filter(s => {
+        const st = String(s.status || '').toLowerCase();
+        return st === 'completed' || st === 'paid' || !!s.receipt_number;
+      });
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500">No successful payments found for this date.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map(r => {
+        const ref = r.payment_transfer_reference || r.payment_reference || r.reference || '-';
+        const dt = r.created_at ? new Date(r.created_at).toLocaleTimeString('en-NG', { timeZone: 'Africa/Lagos', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-';
+        return `<tr class="border-b hover:bg-gray-50"><td class="p-2">${escapeHtml(dt)}</td><td class="p-2 font-mono">${escapeHtml(r.receipt_number || r.id || '-')}</td><td class="p-2 uppercase">${escapeHtml(r.payment_method || '-')}</td><td class="p-2 font-mono">${escapeHtml(String(ref))}</td><td class="p-2 text-right font-semibold">₦${Number(r.total_amount || 0).toLocaleString()}</td></tr>`;
+      }).join('');
+    } catch (e) {
+      tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-red-600">Unable to load daily payments.</td></tr>';
+    }
+  }
+  if (role === 'cashier_supervisor' || role === 'admin' || role === 'owner') {
+    const printerBtn = document.getElementById('printer-btn');
+    if (printerBtn && printerBtn.parentElement) {
+      const tabBtn = document.createElement('button');
+      tabBtn.id = 'supervisor-payments-btn';
+      tabBtn.className = 'bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg text-sm font-medium';
+      tabBtn.innerHTML = '<i class="fa-solid fa-receipt"></i> Daily Payments';
+      tabBtn.onclick = () => { modal.classList.remove('hidden'); modal.classList.add('flex'); loadDailyPayments(); };
+      printerBtn.parentElement.insertBefore(tabBtn, printerBtn);
+    }
+  }
+  if (refreshBtn) refreshBtn.onclick = loadDailyPayments;
+  if (closeBtn) closeBtn.onclick = () => { modal.classList.add('hidden'); modal.classList.remove('flex'); };
+})();
+</script>
 
 </body>
 </html>

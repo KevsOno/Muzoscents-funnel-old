@@ -67,6 +67,10 @@
         .line-row button { background: #ef4444; color: white; padding: 0.25rem 0.75rem; border-radius: 4px; }
         .filter-active { border-color: #f59e0b !important; box-shadow: 0 0 0 2px rgba(245,158,11,0.15); }
     </style>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 </head>
 <body>
     <div id="root"></div>
@@ -91,6 +95,47 @@
         function getToken() { return localStorage.getItem(TOKEN_KEY); }
         function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
         function getRefresh() { return localStorage.getItem(REFRESH_KEY); }
+
+        
+        function toWatStartIso(dateStr) {
+            if (!dateStr) return '';
+            return /^\\d{4}-\\d{2}-\\d{2}$/.test(dateStr) ? `${dateStr}T00:00:00+01:00` : dateStr;
+        }
+        function toWatEndIso(dateStr) {
+            if (!dateStr) return '';
+            return /^\\d{4}-\\d{2}-\\d{2}$/.test(dateStr) ? `${dateStr}T23:59:59.999+01:00` : dateStr;
+        }
+        function reprintAccountingReceipt(record, channel) {
+            const orgName = localStorage.getItem('org_name') || 'Kevs Digital';
+            const orgAddress = localStorage.getItem('org_address') || localStorage.getItem('org_location') || '';
+            let phones = [];
+            try {
+                const parsed = JSON.parse(localStorage.getItem('org_phones') || '[]');
+                if (Array.isArray(parsed)) phones = parsed.filter(Boolean).slice(0, 3);
+            } catch (_) {}
+            const win = window.open('', '_blank', 'width=420,height=640');
+            if (!win) return;
+            const ref = record.payment_transfer_reference || record.payment_reference || record.reference || '';
+            const created = record.created_at ? new Date(record.created_at).toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }) : new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' });
+            win.document.write(`<!doctype html><html><head><title>Receipt Reprint</title><style>body{font-family:monospace;padding:16px;max-width:340px;margin:0 auto}.c{text-align:center}.row{display:flex;justify-content:space-between;margin:4px 0}.hr{border-top:1px dashed #333;margin:8px 0}</style></head><body>
+                <div class="c"><strong>${escapeHtml(orgName)}</strong></div>
+                ${orgAddress ? `<div class="c" style="font-size:11px">${escapeHtml(orgAddress)}</div>` : ''}
+                ${phones.length ? `<div class="c" style="font-size:11px">Tel: ${phones.map(p => escapeHtml(p)).join(' | ')}</div>` : ''}
+                <div class="c" style="font-size:11px">REPRINT (${escapeHtml(channel.toUpperCase())})</div>
+                <div class="hr"></div>
+                <div class="row"><span>Receipt #:</span><span>${escapeHtml(record.receipt_number || record.sale_id || record.id || '-')}</span></div>
+                <div class="row"><span>Date (WAT):</span><span>${escapeHtml(created)}</span></div>
+                <div class="row"><span>Cashier:</span><span>${escapeHtml(record.cashier_name || '-')}</span></div>
+                ${ref ? `<div class="row"><span>Ref:</span><span>${escapeHtml(String(ref))}</span></div>` : ''}
+                <div class="hr"></div>
+                <div class="row"><strong>TOTAL</strong><strong>${escapeHtml(formatCurrency(record.amount ?? record.total_amount ?? 0))}</strong></div>
+                <div class="hr"></div>
+                <div class="c" style="font-size:11px">Powered by kevsdigital<br>kevsdigital.netlify.app</div>
+            </body></html>`);
+            win.document.close();
+            win.focus();
+            win.print();
+        }
 
         function escapeHtml(str) {
             if (!str) return '';
@@ -651,8 +696,8 @@
             const buildUrl = (f) => {
                 const p = new URLSearchParams();
                 if (f.account_id) p.set('account_id', f.account_id);
-                if (f.from) p.set('from_date', f.from);
-                if (f.to) p.set('to_date', f.to);
+                if (f.from) p.set('from_date', toWatStartIso(f.from));
+                if (f.to) p.set('to_date', toWatEndIso(f.to));
                 p.set('limit', '500');
                 return `/payment-accounts/transfers?${p.toString()}`;
             };
@@ -1034,8 +1079,8 @@
 
             const buildUrl = (filter) => {
                 const params = new URLSearchParams();
-                if (filter.from) params.set('from_date', filter.from);
-                if (filter.to) params.set('to_date', filter.to);
+                if (filter.from) params.set('from_date', toWatStartIso(filter.from));
+                if (filter.to) params.set('to_date', toWatEndIso(filter.to));
                 params.set('limit', String(PAGE_SIZE));
                 return `/expenses?${params.toString()}`;
             };
@@ -1154,6 +1199,101 @@
         // ================================================================
         // MAIN APP
         // ================================================================
+        
+        const CashPaymentsTab = () => {
+            const [rows, setRows] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const [filter, setFilter] = useState({ from: '', to: '', query: '' });
+
+            const fetchCash = async (f) => {
+                setLoading(true);
+                try {
+                    const p = new URLSearchParams();
+                    p.set('payment_method', 'cash');
+                    if (f.from) p.set('from_date', toWatStartIso(f.from));
+                    if (f.to) p.set('to_date', toWatEndIso(f.to));
+                    p.set('limit', String(PAGE_SIZE));
+                    const res = await apiCall(`/sales?${p.toString()}`);
+                    const list = Array.isArray(res) ? res : (res.sales || res.items || res.data || []);
+                    setRows(list.filter(r => String(r.payment_method || 'cash').toLowerCase() === 'cash'));
+                } catch (err) {
+                    console.warn('cash fetch failed', err);
+                    setRows([]);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            useEffect(() => { fetchCash(filter); }, []);
+
+            const filteredRows = useMemo(() => {
+                const q = (filter.query || '').trim().toLowerCase();
+                if (!q) return rows;
+                return rows.filter(r =>
+                    String(r.receipt_number || '').toLowerCase().includes(q) ||
+                    String(r.cashier_name || '').toLowerCase().includes(q) ||
+                    String(r.customer_name || '').toLowerCase().includes(q)
+                );
+            }, [rows, filter.query]);
+
+            const cashTotal = useMemo(
+                () => filteredRows.reduce((s, r) => s + (Number(r.total_amount ?? r.amount) || 0), 0),
+                [filteredRows]
+            );
+
+            return (
+                <div className="bg-white p-4 rounded shadow">
+                    <div className="flex flex-wrap gap-3 items-end mb-4">
+                        <div>
+                            <label className="block text-xs text-gray-600 mb-1">From Date (WAT)</label>
+                            <input type="date" className="border p-2 rounded text-sm" value={filter.from} onChange={e => setFilter({ ...filter, from: e.target.value })} />
+                        </div>
+                        <div>
+                            <label className="block text-xs text-gray-600 mb-1">To Date (WAT)</label>
+                            <input type="date" className="border p-2 rounded text-sm" value={filter.to} onChange={e => setFilter({ ...filter, to: e.target.value })} />
+                        </div>
+                        <div>
+                            <label className="block text-xs text-gray-600 mb-1">Receipt / Cashier Search</label>
+                            <input type="text" placeholder="POS-... or name" className="border p-2 rounded text-sm" value={filter.query} onChange={e => setFilter({ ...filter, query: e.target.value })} />
+                        </div>
+                        <button type="button" onClick={() => fetchCash(filter)} className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">Apply Filter</button>
+                    </div>
+                    <div className="mb-3 text-xs text-gray-600">
+                        <strong>{filteredRows.length}</strong> cash transaction{filteredRows.length === 1 ? '' : 's'} · <strong>{formatCurrency(cashTotal)}</strong> total
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                            <thead>
+                                <tr className="border-b bg-gray-50 text-xs">
+                                    <th className="p-2">Time (WAT)</th>
+                                    <th className="p-2">Receipt #</th>
+                                    <th className="p-2">Customer</th>
+                                    <th className="p-2">Cashier</th>
+                                    <th className="p-2">Amount</th>
+                                    <th className="p-2">Receipt</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filteredRows.map(r => (
+                                    <tr key={r.id || r.sale_id} className="border-b hover:bg-gray-50 text-xs">
+                                        <td className="p-2 whitespace-nowrap">{r.created_at ? new Date(r.created_at).toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }) : '-'}</td>
+                                        <td className="p-2 font-mono">{r.receipt_number || r.id || '-'}</td>
+                                        <td className="p-2">{r.customer_name || <span className="text-gray-400">Walk-in</span>}</td>
+                                        <td className="p-2">{r.cashier_name || <span className="text-gray-400">—</span>}</td>
+                                        <td className="p-2 font-semibold">{formatCurrency(r.total_amount ?? r.amount ?? 0)}</td>
+                                        <td className="p-2"><button type="button" onClick={() => reprintAccountingReceipt(r, 'cash')} className="px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded text-xs font-medium">Reprint</button></td>
+                                    </tr>
+                                ))}
+                                {!loading && filteredRows.length === 0 && (
+                                    <tr><td colSpan="6" className="text-center p-4 text-gray-400">No cash transactions found</td></tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        };
+
         const App = () => {
             const [session, setSession] = useState(null);
             const [loading, setLoading] = useState(true);
@@ -1941,7 +2081,7 @@
                         {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>}
 
                         <div className="flex flex-wrap gap-2 border-b border-gray-300 mb-4">
-                            {['pl','coa','journal','ar','ap','expenses','bank_transfers','export'].map(tab => (
+                            {['pl','coa','journal','ar','ap','cash','expenses','bank_transfers','export'].map(tab => (
                                 <button
                                     key={tab}
                                     className={`px-4 py-2 rounded-t-lg font-medium transition ${activeTab === tab ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
@@ -1952,6 +2092,7 @@
                                     {tab === 'journal' && 'Journal Entries'}
                                     {tab === 'ar' && 'A/R'}
                                     {tab === 'ap' && 'A/P'}
+                                    {tab === 'cash' && 'Cash'}
                                     {tab === 'expenses' && 'Expenses'}
                                     {tab === 'bank_transfers' && 'Bank Transfers'}
                                     {tab === 'export' && 'Export & Sync'}
@@ -1962,7 +2103,7 @@
                         {fetching ? (
                             <div className="flex justify-center py-8"><div className="loading-spinner"></div></div>
                         ) : (
-                            renderTabContent()
+                            activeTab === 'cash' ? <CashPaymentsTab /> : renderTabContent()
                         )}
                     </div>
                 </div>

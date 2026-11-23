@@ -9466,7 +9466,10 @@ async def list_org_members(
     if not members:
         return {"users": []}
 
-    user_ids = [m["user_id"] for m in members]
+    # Strictly deduplicate valid non-empty user_ids scoped to org_id
+    user_ids = list(dict.fromkeys(str(m["user_id"]).strip() for m in members if m.get("user_id")))
+    if not user_ids:
+        return {"users": []}
     ids_str = ",".join(user_ids)
     profiles = await supabase_rest_get(
         "profiles",
@@ -9812,6 +9815,78 @@ async def create_staff_member(
 class UpdateStaffRoleRequest(BaseModel):
     role: str
 
+
+
+class OrgReceiptSettingsPayload(BaseModel):
+    org_name: Optional[str] = None
+    location: Optional[str] = None
+    phones: List[str] = []
+
+
+@app.get("/organisations/me/profile")
+async def get_org_receipt_profile(
+    request: Request,
+    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "manager", "finance", "cashier_supervisor", "cashier", "sales_rep"])),
+):
+    await rate_limit(get_client_ip(request), user_data[1], request=request)
+    _, org_id, _ = user_data
+    client = get_supabase()
+    res = await run_sync_db_call(
+        client.table("organisations")
+        .select("id, org_name, location, settings")
+        .eq("id", org_id)
+        .maybe_single()
+        .execute
+    )
+    row = (res.data if res and res.data else {}) or {}
+    settings = row.get("settings") if isinstance(row.get("settings"), dict) else {}
+    raw_phones = settings.get("phones") or settings.get("phone_numbers") or []
+    phones = [str(p).strip() for p in raw_phones if str(p).strip()][:3]
+    return {
+        "org_name": row.get("org_name") or "",
+        "location": row.get("location") or "",
+        "phones": phones,
+    }
+
+
+@app.put("/organisations/me/profile")
+async def update_org_receipt_profile(
+    request: Request,
+    payload: OrgReceiptSettingsPayload,
+    user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin"])),
+):
+    await rate_limit(get_client_ip(request), user_data[1], request=request)
+    _, org_id, _ = user_data
+    client = get_supabase()
+    cur_res = await run_sync_db_call(
+        client.table("organisations")
+        .select("org_name, location, settings")
+        .eq("id", org_id)
+        .maybe_single()
+        .execute
+    )
+    cur = (cur_res.data if cur_res and cur_res.data else {}) or {}
+    cur_settings = dict(cur.get("settings") or {}) if isinstance(cur.get("settings"), dict) else {}
+    clean_phones = [str(p).strip() for p in (payload.phones or []) if str(p).strip()][:3]
+    cur_settings["phones"] = clean_phones
+    cur_settings["phone_numbers"] = clean_phones
+
+    update_fields = {"settings": cur_settings}
+    if payload.org_name is not None and payload.org_name.strip():
+        update_fields["org_name"] = payload.org_name.strip()
+    if payload.location is not None:
+        update_fields["location"] = payload.location.strip()
+
+    await run_sync_db_call(
+        client.table("organisations").update(update_fields).eq("id", org_id).execute
+    )
+    return {
+        "message": "Organisation profile updated",
+        "org_name": update_fields.get("org_name", cur.get("org_name") or ""),
+        "location": update_fields.get("location", cur.get("location") or ""),
+        "phones": clean_phones,
+    }
+
 @app.put("/organisations/me/users/{target_user_id}/role")
 async def update_staff_role(
     request: Request,
@@ -9831,6 +9906,9 @@ async def update_staff_role(
     if not target_res.data:
         raise HTTPException(status_code=404, detail="User not found")
     
+    allowed_roles = {"owner", "admin", "manager", "finance", "auditor", "cashier", "cashier_supervisor", "sales_rep", "inventory", "fulfillment", "driver", "logistics", "staff"}
+    if new_role not in allowed_roles:
+        raise HTTPException(status_code=400, detail=f"Unsupported role: {new_role}")
     target_role = target_res.data[0]["role"]
     if target_role == "owner" and current_role != "owner":
         raise HTTPException(status_code=403, detail="Only an owner can change an owner's role")
@@ -17914,7 +17992,7 @@ async def list_ar(
         query = query.lte("due_date", to_date.isoformat())
 
     result = await run_sync_db_call(
-        query.order("due_date").range(offset, offset + limit - 1).execute
+        query.order("due_date", desc=True).order("created_at", desc=True).range(offset, offset + limit - 1).execute
     )
     rows = result.data or []
     total = result.count or 0
