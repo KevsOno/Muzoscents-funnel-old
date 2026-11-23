@@ -15345,12 +15345,35 @@ async def list_sales(
         except Exception as exc:
             logger.warning(f"Could not resolve cashier profiles for /sales: {exc}")
 
+    sale_ids = [r["id"] for r in rows if r.get("id") is not None]
+    items_by_sale = {}
+    if sale_ids:
+        try:
+            si_res = await run_sync_db_call(
+                client.table("sale_items")
+                .select("sale_id, product_name, quantity, unit_price, subtotal")
+                .in_("sale_id", sale_ids)
+                .execute
+            )
+            for si in (si_res.data or []):
+                sid = str(si.get("sale_id") or "")
+                if sid:
+                    items_by_sale.setdefault(sid, []).append({
+                        "product_name": si.get("product_name") or "Item",
+                        "quantity": si.get("quantity") or 0,
+                        "unit_price": si.get("unit_price") or 0,
+                        "subtotal": si.get("subtotal") or 0,
+                    })
+        except Exception as exc:
+            logger.warning(f"Could not resolve sale_items for /sales: {exc}")
+
     enriched = []
     for r in rows:
         uid = str(r.get("user_id") or "")
         item = dict(r)
         item["amount"] = item.get("total_amount", 0)
         item["cashier_name"] = cashier_map.get(uid, "")
+        item["items"] = items_by_sale.get(str(r.get("id") or ""), [])
         enriched.append(item)
 
     return {"sales": enriched, "count": len(enriched)}

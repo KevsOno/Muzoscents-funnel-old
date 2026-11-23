@@ -117,6 +117,18 @@
             if (!win) return;
             const ref = record.payment_transfer_reference || record.payment_reference || record.reference || '';
             const created = record.created_at ? new Date(record.created_at).toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }) : new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' });
+            const rawItems = Array.isArray(record.items)
+                ? record.items
+                : (Array.isArray(record.sale_items) ? record.sale_items : []);
+            const itemsHtml = rawItems.length
+                ? rawItems.map(it => {
+                    const name = it.product_name || it.name || it.description || 'Item';
+                    const qty = Number(it.quantity ?? it.qty ?? 1);
+                    const lineTotal = it.subtotal ?? (Number(it.unit_price ?? it.price ?? 0) * qty);
+                    return `<div class="row"><span>${escapeHtml(name)} x ${escapeHtml(qty)}</span><span>${escapeHtml(formatCurrency(lineTotal))}</span></div>`;
+                }).join('')
+                : `<div class="c" style="font-size:11px">No item details recorded</div>`;
+
             win.document.write(`<!doctype html><html><head><title>Receipt Reprint</title><style>body{font-family:monospace;padding:16px;max-width:340px;margin:0 auto}.c{text-align:center}.row{display:flex;justify-content:space-between;margin:4px 0}.hr{border-top:1px dashed #333;margin:8px 0}</style></head><body>
                 <div class="c"><strong>${escapeHtml(orgName)}</strong></div>
                 ${orgAddress ? `<div class="c" style="font-size:11px">${escapeHtml(orgAddress)}</div>` : ''}
@@ -127,6 +139,8 @@
                 <div class="row"><span>Date (WAT):</span><span>${escapeHtml(created)}</span></div>
                 <div class="row"><span>Cashier:</span><span>${escapeHtml(record.cashier_name || '-')}</span></div>
                 ${ref ? `<div class="row"><span>Ref:</span><span>${escapeHtml(String(ref))}</span></div>` : ''}
+                <div class="hr"></div>
+                ${itemsHtml}
                 <div class="hr"></div>
                 <div class="row"><strong>TOTAL</strong><strong>${escapeHtml(formatCurrency(record.amount ?? record.total_amount ?? 0))}</strong></div>
                 <div class="hr"></div>
