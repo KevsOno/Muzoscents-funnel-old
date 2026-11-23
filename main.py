@@ -15293,6 +15293,69 @@ async def product_stats(request: Request, start_date: str, end_date: str, user_d
         })
     return {"product_stats": product_stats_list}
 
+@app.get("/sales")
+async def list_sales(
+    request: Request,
+    payment_method: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    limit: int = 500,
+    user_data: Tuple[str, str, str] = Depends(
+        require_role(["owner", "admin", "manager", "finance", "auditor", "cashier_supervisor", "cashier", "sales_rep"])
+    ),
+):
+    await rate_limit(get_client_ip(request), user_data[1], request=request)
+    user_id, org_id, role = user_data
+    client = get_supabase()
+    selected_branch = await resolve_request_branch(request, user_id, org_id, role)
+
+    safe_limit = max(1, min(int(limit or 500), 1000))
+    q = (
+        client.table("sales")
+        .select("id, receipt_number, total_amount, payment_method, payment_transfer_reference, customer_name, customer_phone, customer_email, user_id, branch_id, created_at")
+        .eq("org_id", org_id)
+        .order("created_at", desc=True)
+        .limit(safe_limit)
+    )
+    if selected_branch:
+        q = q.eq("branch_id", selected_branch)
+    if payment_method and payment_method.strip():
+        q = q.eq("payment_method", payment_method.strip().lower())
+    if from_date and from_date.strip():
+        q = q.gte("created_at", from_date.strip())
+    if to_date and to_date.strip():
+        q = q.lte("created_at", to_date.strip())
+
+    res = await run_sync_db_call(q.execute)
+    rows = (res.data if hasattr(res, "data") and res.data else []) or []
+
+    cashier_ids = list({str(r["user_id"]).strip() for r in rows if r.get("user_id")})
+    cashier_map = {}
+    if cashier_ids:
+        try:
+            prof_res = await run_sync_db_call(
+                client.table("profiles")
+                .select("id, first_name, last_name, email")
+                .in_("id", cashier_ids)
+                .execute
+            )
+            for p in (prof_res.data or []):
+                full_name = f"{p.get('first_name') or ''} {p.get('last_name') or ''}".strip()
+                cashier_map[str(p["id"])] = full_name or p.get("email") or ""
+        except Exception as exc:
+            logger.warning(f"Could not resolve cashier profiles for /sales: {exc}")
+
+    enriched = []
+    for r in rows:
+        uid = str(r.get("user_id") or "")
+        item = dict(r)
+        item["amount"] = item.get("total_amount", 0)
+        item["cashier_name"] = cashier_map.get(uid, "")
+        enriched.append(item)
+
+    return {"sales": enriched, "count": len(enriched)}
+
+
 @app.get("/sales/summary")
 async def sales_summary(request: Request, start_date: str, end_date: str, user_data: Tuple[str, str, str] = Depends(require_role(["owner", "admin", "finance", "sales_rep"]))):
     await rate_limit(get_client_ip(request), user_data[1], request=request)
