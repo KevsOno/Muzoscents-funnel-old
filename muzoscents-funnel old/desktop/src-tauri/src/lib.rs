@@ -159,8 +159,7 @@ fn offline_fallback_script(target_url: &str) -> String {
     format!(
         r#"
         (() => {{
-            if (window.__KEVS_OFFLINE_FALLBACK_SHOWN__) return;
-            const checkOffline = () => {
+            const checkOffline = () => {{
                 if (window.__KEVS_OFFLINE_FALLBACK_SHOWN__) return;
                 const href = (location.href || '').toLowerCase();
                 const isBrowserErrorPage =
@@ -183,44 +182,47 @@ fn offline_fallback_script(target_url: &str) -> String {
                     (!hasAppMount && !hasText);
                 if (!isOfflineFailure) return;
                 renderOfflineCard();
-            };
-            const renderOfflineCard = () => {
-
-            window.__KEVS_OFFLINE_FALLBACK_SHOWN__ = true;
-            const retryTarget = "{escaped_url}" || "https://kevsbos.netlify.app/kdsiginin";
-            document.documentElement.innerHTML = `
-                <head>
-                    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-                    <style>
-                        *{{box-sizing:border-box;margin:0;padding:0}}
-                        body{{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#0F172A;color:#F8FAFC;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}}
-                        .card{{width:100%;max-width:380px;background:#1E293B;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:28px 24px;text-align:center;box-shadow:0 20px 40px rgba(0,0,0,0.35)}}
-                        h1{{font-size:20px;font-weight:700;margin-bottom:8px}}
-                        p{{font-size:14px;line-height:1.5;color:#CBD5E1;margin-bottom:18px}}
-                        .pill{{font-size:12px;color:#94A3B8;background:rgba(15,23,42,0.65);border-radius:10px;padding:10px 12px;margin-bottom:18px}}
-                        button{{width:100%;border:0;border-radius:10px;padding:13px 16px;font-size:15px;font-weight:600;color:#FFFFFF;background:#2563EB;cursor:pointer}}
-                    </style>
-                </head>
-                <body>
-                    <div class="card">
-                        <h1>Kevs Digital bOS</h1>
-                        <p>No active internet connection right now. Connect to Wi-Fi or mobile data to load this workspace.</p>
-                        <div class="pill">Offline mode active</div>
-                        <button id="kevs-tauri-retry" type="button">Retry Connection</button>
-                    </div>
-                </body>
-            `;
-            const btn = document.getElementById('kevs-tauri-retry');
-            if (btn) {{
-                btn.addEventListener('click', () => {{
-                    window.__KEVS_OFFLINE_FALLBACK_SHOWN__ = false;
-                    window.location.replace(retryTarget);
-                }});
-            }}
             }};
+
+            const renderOfflineCard = () => {{
+                if (window.__KEVS_OFFLINE_FALLBACK_SHOWN__) return;
+                window.__KEVS_OFFLINE_FALLBACK_SHOWN__ = true;
+                const retryTarget = "{escaped_url}" || "https://kevsbos.netlify.app/kdsiginin";
+                document.documentElement.innerHTML = `
+                    <head>
+                        <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+                        <style>
+                            *{{box-sizing:border-box;margin:0;padding:0}}
+                            body{{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#0F172A;color:#F8FAFC;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}}
+                            .card{{width:100%;max-width:380px;background:#1E293B;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:28px 24px;text-align:center;box-shadow:0 20px 40px rgba(0,0,0,0.35)}}
+                            h1{{font-size:20px;font-weight:700;margin-bottom:8px}}
+                            p{{font-size:14px;line-height:1.5;color:#CBD5E1;margin-bottom:18px}}
+                            .pill{{font-size:12px;color:#94A3B8;background:rgba(15,23,42,0.65);border-radius:10px;padding:10px 12px;margin-bottom:18px}}
+                            button{{width:100%;border:0;border-radius:10px;padding:13px 16px;font-size:15px;font-weight:600;color:#FFFFFF;background:#2563EB;cursor:pointer}}
+                        </style>
+                    </head>
+                    <body>
+                        <div class="card">
+                            <h1>Kevs Digital bOS</h1>
+                            <p>No active internet connection right now. Connect to Wi-Fi or mobile data to load this workspace.</p>
+                            <div class="pill">Offline mode active</div>
+                            <button id="kevs-tauri-retry" type="button">Retry Connection</button>
+                        </div>
+                    </body>
+                `;
+                const btn = document.getElementById('kevs-tauri-retry');
+                if (btn) {{
+                    btn.addEventListener('click', () => {{
+                        window.__KEVS_OFFLINE_FALLBACK_SHOWN__ = false;
+                        window.location.replace(retryTarget);
+                    }});
+                }}
+            }};
+
             setTimeout(checkOffline, 900);
         }})();
-        "#
+        "#,
+        escaped_url = escaped_url
     )
 }
 
