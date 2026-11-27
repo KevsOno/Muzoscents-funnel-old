@@ -160,9 +160,31 @@ fn offline_fallback_script(target_url: &str) -> String {
         r#"
         (() => {{
             if (window.__KEVS_OFFLINE_FALLBACK_SHOWN__) return;
-            const hasContent = !!(document.body && document.body.innerText && document.body.innerText.trim().length > 0);
-            const isErrorUrl = location.protocol === 'about:' || location.href.includes('error') || !hasContent;
-            if (!isErrorUrl) return;
+            const checkOffline = () => {
+                if (window.__KEVS_OFFLINE_FALLBACK_SHOWN__) return;
+                const href = (location.href || '').toLowerCase();
+                const isBrowserErrorPage =
+                    location.protocol === 'about:' ||
+                    href.startsWith('chrome-error://') ||
+                    href.startsWith('edge://') ||
+                    href.includes('neterror');
+                const hasAppMount = !!(
+                    document.getElementById('root') ||
+                    document.querySelector('script[src], main, form, #app')
+                );
+                const hasText = !!(
+                    document.body &&
+                    document.body.innerText &&
+                    document.body.innerText.trim().length > 0
+                );
+                const isOfflineFailure =
+                    isBrowserErrorPage ||
+                    (!navigator.onLine && !hasText) ||
+                    (!hasAppMount && !hasText);
+                if (!isOfflineFailure) return;
+                renderOfflineCard();
+            };
+            const renderOfflineCard = () => {
 
             window.__KEVS_OFFLINE_FALLBACK_SHOWN__ = true;
             const retryTarget = "{escaped_url}" || "https://kevsbos.netlify.app/kdsiginin";
@@ -195,6 +217,8 @@ fn offline_fallback_script(target_url: &str) -> String {
                     window.location.replace(retryTarget);
                 }});
             }}
+            }};
+            setTimeout(checkOffline, 900);
         }})();
         "#
     )
